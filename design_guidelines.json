@@ -1,0 +1,113 @@
+{
+  "theme": "dark",
+  "archetype": "The Performance Pro",
+  "typography": {
+    "headings": {
+      "font_family": "Outfit, sans-serif",
+      "weights": ["600", "700", "800"],
+      "usage": "Used for screen titles, step headers, and price offers. Gives a highly technical, precise automotive feel. Do NOT use Inter or standard defaults."
+    },
+    "body": {
+      "font_family": "Manrope, sans-serif",
+      "weights": ["400", "500", "600"],
+      "usage": "Used for form labels, vehicle specs, and list items. Manrope is highly legible in dense data tables and mobile screens."
+    },
+    "technical_data": {
+      "font_family": "JetBrains Mono, monospace",
+      "weights": ["400", "500"],
+      "usage": "Used for VIN numbers, license disc barcodes, mileage, and price figures."
+    }
+  },
+  "colors": {
+    "background": {
+      "default": "#050505",
+      "paper": "#121212",
+      "card": "#1A1A1A"
+    },
+    "primary": {
+      "default": "#007AFF",
+      "hover": "#005bb5",
+      "text": "#FFFFFF"
+    },
+    "secondary": {
+      "default": "#2C2C2E",
+      "text": "#E5E5EA"
+    },
+    "accent": {
+      "warning": "#FF9F0A",
+      "success": "#34C759",
+      "danger": "#FF3B30"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "#8E8E93",
+      "disabled": "#48484A"
+    },
+    "borders": "#2C2C2E"
+  },
+  "visual_enhancers": {
+    "surfaces": "Use 'Solid Flat' surfaces for form inputs and cards to avoid glare when outdoors on a lot. Do not use heavy glassmorphism for this utility app. Use a 1px solid border (#2C2C2E) around cards.",
+    "shadows": "Minimal shadows. Rely on border contrast and background lightness for hierarchy.",
+    "inputs": "Inputs should have a dark fill (#1A1A1A) with a 1px border. Focus state must change border to #007AFF with a subtle 2px ring.",
+    "buttons": "Pill-shaped (rounded-full) for primary CTAs like 'Submit Vehicle'. Rectangular with soft corners (rounded-lg) for secondary actions."
+  },
+  "layouts": {
+    "mobile_container": "For the mobile view, ensure content is contained within maximum width and utilizes Safe Area insets. Use sticky bottom bars (fixed bottom-0) for primary actions so they are always reachable.",
+    "forms": "Vertical stacks (flex-col gap-6). Labels above inputs.",
+    "grid_bento": "For the Admin Dashboard, use a dense grid layout (grid-cols-1 md:grid-cols-3) to show vehicle stats (Mileage, Year, Condition) compactly. Every pixel must be utilized."
+  },
+  "components": {
+    "cascading_selectors": "Use bottom sheet style or full-screen modals for Make -> Model -> Derivative selection to provide maximum screen space for long lists.",
+    "condition_slider": "A custom 1-10 slider. 1-3 (Red), 4-7 (Orange), 8-10 (Green) dynamically changing track color.",
+    "photo_uploader": "A 2-column grid showing 5 specific slots (Front, Side Right, Rear, Side Left, Interior). Show a placeholder wireframe or icon of the car angle in empty state.",
+    "admin_data_table": "Dense list view. Left side: Car Thumbnail. Right side: Make/Model, Year, Status badge (Pending/Priced).",
+    "license_scanner": "A full-screen camera view with a translucent overlay and a clear cutout bounding box for the barcode."
+  },
+  "media": {
+    "image_urls": {
+      "dealer_background": {
+        "url": "https://images.unsplash.com/photo-1565043666747-69f6646db940?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzl8MHwxfHNlYXJjaHwzfHxjYXIlMjBkZWFsZXJzaGlwJTIwcHJvZmVzc2lvbmFsfGVufDB8fHx8MTc4NDA3MDk3M3ww&ixlib=rb-4.1.0&q=85",
+        "description": "Professional car dealership background, used for login/registration screen",
+        "category": "auth_background"
+      },
+      "car_exterior_placeholder": {
+        "url": "https://images.unsplash.com/photo-1614461874287-16e6f4d869d0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMjh8MHwxfHNlYXJjaHwxfHxjYXIlMjBleHRlcmlvciUyMGZyb250JTIwYW5nbGV8ZW58MHx8fHwxNzg0MDcwOTczfDA&ixlib=rb-4.1.0&q=85",
+        "description": "White coupe front angle, used as a placeholder/example for exterior photo upload",
+        "category": "photo_upload_example"
+      },
+      "car_interior_placeholder": {
+        "url": "https://images.unsplash.com/photo-1533630217389-3a5e4dff5683?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2ODl8MHwxfHNlYXJjaHwxfHxjYXIlMjBpbnRlcmlvciUyMHN0ZWVyaW5nJTIwZGFzaGJvYXJkfGVufDB8fHx8MTc4NDA3MDk3NHww&ixlib=rb-4.1.0&q=85",
+        "description": "Mercedes steering dashboard, used as placeholder/example for interior photo upload",
+        "category": "photo_upload_example"
+      }
+    }
+  },
+  "motion": {
+    "transitions": "Use crisp, fast transitions (150ms ease-out) for form validations. No slow, floaty animations. It's a business tool.",
+    "page_transitions": "Slide-in from right for multi-step form progression.",
+    "micro_interactions": "Active states on photo upload slots should slightly scale down (scale-95) on press to confirm touch."
+  },
+  "accessibility": {
+    "contrast": "Ensure pure white text on deep gray backgrounds passes APCA contrast. Warning/Danger colors must be readable.",
+    "touch_targets": "Minimum 48x48px for all touch targets (buttons, list items, slider thumb)."
+  },
+  "instructions_to_main_agent": [
+    "Prioritize a mobile-first UI framework using standard Tailwind utilities.",
+    "Do NOT center align the app container. Keep standard mobile layouts with full-width rows and left-aligned text.",
+    "Implement the Make -> Model -> Derivative flow as a sequential selection where the next step is disabled until the previous is selected.",
+    "For the admin panel, create a toggleable view (or separate route) that displays a high-density table or card list.",
+    "Add 'data-testid' to all form inputs, the 1-10 slider, photo upload buttons, and the final submit button.",
+    "Do NOT use transparent backgrounds for the sticky headers or bottom CTA bars. Use solid #121212 with a top border.",
+    "Use Phosphor icons (or lucide-react) for technical icons like barcodes, camera, engine, and calendar."
+  ],
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "Do not converge toward generic AI outputs. Avoid simplistic gradients and uniform styling.",
+    "Create depth through layered design elements with z-index hierarchy and crisp borders.",
+    "You MUST NOT apply universal transition (e.g., transition: all). Add transitions to specific properties.",
+    "Always use modern button styles (pill-shaped or sharp) with interaction animations.",
+    "NEVER use emoji characters for icons. Use proper icon libraries.",
+    "Add data-testid attributes to all interactive and key informational elements.",
+    "Use sonner for toast notifications.",
+    "Ensure Javascript and React functional components are used properly, avoiding .tsx types since the environment uses standard .js."
+  ]
+}
