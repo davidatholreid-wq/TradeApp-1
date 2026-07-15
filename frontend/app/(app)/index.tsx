@@ -11,7 +11,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, radius } from "@/src/theme";
+import { colors, spacing, radius, fonts } from "@/src/theme";
 import { useAuth } from "@/src/context/AuthContext";
 import { apiFetch } from "@/src/api";
 
@@ -132,7 +132,7 @@ export default function DashboardScreen() {
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.greeting}>{isAdmin ? "Admin Dashboard" : "My Submissions"}</Text>
+          <Text style={styles.greeting}>{isAdmin ? "Fourbuy Admin" : "My Submissions"}</Text>
           <Text style={styles.subGreeting}>
             {items.length} {items.length === 1 ? "vehicle" : "vehicles"}
           </Text>
@@ -195,7 +195,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  greeting: { color: colors.text, fontSize: 22, fontWeight: "800" },
+  greeting: { color: colors.text, fontSize: 22, fontWeight: "700", fontFamily: fonts.serif, letterSpacing: 0.3 },
   subGreeting: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
   newBtn: {
     flexDirection: "row",
@@ -204,7 +204,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: radius.pill,
+    borderRadius: radius.sm,
   },
   newBtnText: { color: "#fff", fontWeight: "700" },
   list: { padding: spacing.md, paddingBottom: spacing.xl },
@@ -257,7 +257,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     paddingHorizontal: spacing.xl,
     paddingVertical: 12,
-    borderRadius: radius.pill,
+    borderRadius: radius.sm,
   },
   emptyBtnText: { color: "#fff", fontWeight: "700" },
 });

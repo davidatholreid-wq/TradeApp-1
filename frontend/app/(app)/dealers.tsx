@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, radius } from "@/src/theme";
+import { colors, spacing, radius, fonts } from "@/src/theme";
 import { apiFetch } from "@/src/api";
 
 type Dealer = {
@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  headerTitle: { color: colors.text, fontSize: 22, fontWeight: "800" },
+  headerTitle: { color: colors.text, fontSize: 22, fontWeight: "700", fontFamily: fonts.serif, letterSpacing: 0.3 },
   headerSub: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
   list: { padding: spacing.md, paddingBottom: spacing.xl },
   card: {

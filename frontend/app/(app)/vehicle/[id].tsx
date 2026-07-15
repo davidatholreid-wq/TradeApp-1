@@ -17,7 +17,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, radius } from "@/src/theme";
+import { colors, spacing, radius, fonts } from "@/src/theme";
 import { apiFetch } from "@/src/api";
 import { useAuth } from "@/src/context/AuthContext";
 
@@ -337,7 +337,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   backBtn: { padding: 4 },
-  headerTitle: { color: colors.text, fontSize: 17, fontWeight: "700", flex: 1, textAlign: "center" },
+  headerTitle: { color: colors.text, fontSize: 17, fontWeight: "700", fontFamily: fonts.serif, flex: 1, textAlign: "center" },
   scroll: { padding: spacing.lg, paddingBottom: 120 },
   priceBanner: {
     flexDirection: "row",
@@ -367,7 +367,7 @@ const styles = StyleSheet.create({
   pendingText: { color: colors.warning, fontWeight: "600" },
   titleBox: { marginBottom: spacing.md },
   brand: { color: colors.textSecondary, fontSize: 13, fontWeight: "600", textTransform: "uppercase", letterSpacing: 1 },
-  model: { color: colors.text, fontSize: 26, fontWeight: "800" },
+  model: { color: colors.text, fontSize: 26, fontWeight: "700", fontFamily: fonts.serif, letterSpacing: 0.3 },
   derivative: { color: colors.textSecondary, fontSize: 15, marginTop: 2 },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   gridItem: {
@@ -435,10 +435,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
     backgroundColor: colors.primary,
-    borderRadius: radius.pill,
+    borderRadius: radius.sm,
     paddingVertical: 14,
   },
-  priceBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  priceBtnText: { color: "#fff", fontWeight: "700", fontSize: 15, letterSpacing: 1, textTransform: "uppercase" },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
   modalSheet: {
     backgroundColor: colors.paper,
@@ -450,7 +450,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
-  modalTitle: { color: colors.text, fontSize: 20, fontWeight: "800" },
+  modalTitle: { color: colors.text, fontSize: 22, fontWeight: "700", fontFamily: fonts.serif, letterSpacing: 0.3 },
   modalHint: { color: colors.textSecondary, fontSize: 13, marginBottom: spacing.sm },
   label: { color: colors.textSecondary, fontSize: 13, marginTop: spacing.sm },
   priceInput: {
@@ -468,10 +468,10 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     backgroundColor: colors.primary,
     paddingVertical: 14,
-    borderRadius: radius.pill,
+    borderRadius: radius.sm,
     alignItems: "center",
   },
-  confirmBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  confirmBtnText: { color: "#fff", fontWeight: "700", fontSize: 15, letterSpacing: 1, textTransform: "uppercase" },
   photoPreviewOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.95)", alignItems: "center", justifyContent: "center" },
   photoPreviewImg: { width: "100%", height: "80%", resizeMode: "contain" },
 });

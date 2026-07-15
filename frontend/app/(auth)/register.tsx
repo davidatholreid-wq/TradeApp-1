@@ -13,7 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Link, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, radius } from "@/src/theme";
+import { colors, spacing, radius, fonts, BRAND } from "@/src/theme";
 import { useAuth } from "@/src/context/AuthContext";
 
 export default function Register() {
@@ -96,7 +96,7 @@ export default function Register() {
         </View>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <Text style={styles.title}>Dealer Registration</Text>
-          <Text style={styles.subtitle}>Register your dealership to submit vehicles</Text>
+          <Text style={styles.subtitle}>Register your dealership with {BRAND.short}</Text>
 
           <Text style={styles.sectionTitle}>Account</Text>
           {renderField("Email", "email", { autoCapitalize: "none", keyboardType: "email-address" })}
@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
   backBtn: { padding: spacing.xs, marginRight: spacing.sm },
   headerTitle: { color: colors.text, fontSize: 17, fontWeight: "700" },
   scroll: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
-  title: { color: colors.text, fontSize: 26, fontWeight: "800", marginBottom: 4 },
+  title: { color: colors.text, fontSize: 26, fontWeight: "700", fontFamily: fonts.serif, marginBottom: 4 },
   subtitle: { color: colors.textSecondary, fontSize: 14, marginBottom: spacing.lg },
   sectionTitle: {
     color: colors.textSecondary,
@@ -181,13 +181,13 @@ const styles = StyleSheet.create({
   error: { color: colors.danger, marginTop: spacing.sm, fontSize: 14 },
   primaryBtn: {
     backgroundColor: colors.primary,
-    borderRadius: radius.pill,
+    borderRadius: radius.sm,
     paddingVertical: 16,
     alignItems: "center",
     marginTop: spacing.lg,
   },
   disabledBtn: { opacity: 0.6 },
-  primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 15, letterSpacing: 1, textTransform: "uppercase" },
   linkRow: { flexDirection: "row", justifyContent: "center", marginTop: spacing.lg },
   linkText: { color: colors.textSecondary },
   linkAction: { color: colors.primary, fontWeight: "600" },

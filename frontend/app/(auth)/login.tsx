@@ -10,11 +10,11 @@ import {
   ScrollView,
   ActivityIndicator,
   ImageBackground,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Link, useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, radius } from "@/src/theme";
+import { colors, spacing, radius, fonts, BRAND } from "@/src/theme";
 import { useAuth } from "@/src/context/AuthContext";
 
 export default function Login() {
@@ -45,28 +45,29 @@ export default function Login() {
   return (
     <ImageBackground
       source={{
-        uri: "https://images.unsplash.com/photo-1565043666747-69f6646db940?crop=entropy&cs=srgb&fm=jpg&w=800&q=60",
+        uri: "https://fourbuy.b-cdn.net/wp-content/uploads/welcome-bg.webp",
       }}
       style={styles.bg}
-      imageStyle={{ opacity: 0.25 }}
+      imageStyle={{ opacity: 0.35 }}
     >
+      <View style={styles.overlay} />
       <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={{ flex: 1 }}
-        >
-          <ScrollView
-            contentContainerStyle={styles.scroll}
-            keyboardShouldPersistTaps="handled"
-          >
-            <View style={styles.brandRow}>
-              <View style={styles.logoBox}>
-                <Ionicons name="car-sport" size={32} color={colors.primary} />
-              </View>
-              <Text style={styles.brand}>AutoPricePro</Text>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+          <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+            {/* Fourbuy Logo */}
+            <View style={styles.logoBox}>
+              <Image
+                source={{ uri: BRAND.logoUrl }}
+                style={styles.logo}
+                resizeMode="contain"
+                accessibilityLabel="Fourbuy logo"
+              />
             </View>
+            <Text style={styles.subheading}>Car Buying Co.</Text>
 
-            <Text style={styles.title}>Welcome back</Text>
+            <View style={styles.divider} />
+
+            <Text style={styles.title}>Dealer Portal</Text>
             <Text style={styles.subtitle}>Sign in to submit vehicles for pricing</Text>
 
             <View style={styles.field}>
@@ -109,11 +110,7 @@ export default function Login() {
               onPress={handleLogin}
               disabled={loading}
             >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.primaryBtnText}>Sign In</Text>
-              )}
+              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>Sign In</Text>}
             </TouchableOpacity>
 
             <View style={styles.linkRow}>
@@ -126,9 +123,11 @@ export default function Login() {
             </View>
 
             <View style={styles.hintBox}>
-              <Text style={styles.hintTitle}>Admin demo credentials</Text>
-              <Text style={styles.hintText}>admin@autopricepro.com / admin123</Text>
+              <Text style={styles.hintTitle}>ADMIN DEMO CREDENTIALS</Text>
+              <Text style={styles.hintText}>admin@fourbuy.co.za / admin123</Text>
             </View>
+
+            <Text style={styles.footerTag}>{BRAND.tagline}</Text>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -138,24 +137,34 @@ export default function Login() {
 
 const styles = StyleSheet.create({
   bg: { flex: 1, backgroundColor: colors.bg },
+  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(10,10,10,0.7)" },
   safe: { flex: 1 },
   scroll: { padding: spacing.lg, paddingTop: spacing.xl, flexGrow: 1 },
-  brandRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: spacing.xl },
   logoBox: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.md,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
     alignItems: "center",
-    justifyContent: "center",
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
   },
-  brand: { color: colors.text, fontSize: 20, fontWeight: "800", letterSpacing: 0.5 },
-  title: { color: colors.text, fontSize: 32, fontWeight: "800", marginBottom: spacing.xs },
-  subtitle: { color: colors.textSecondary, fontSize: 15, marginBottom: spacing.xl },
+  logo: { width: 240, height: 72 },
+  subheading: {
+    color: colors.textSecondary,
+    fontFamily: fonts.serif,
+    fontSize: 15,
+    letterSpacing: 3,
+    textAlign: "center",
+    textTransform: "uppercase",
+  },
+  divider: {
+    alignSelf: "center",
+    width: 60,
+    height: 2,
+    backgroundColor: colors.accent,
+    marginVertical: spacing.lg,
+  },
+  title: { color: colors.text, fontSize: 28, fontWeight: "700", fontFamily: fonts.serif, letterSpacing: 0.5 },
+  subtitle: { color: colors.textSecondary, fontSize: 14, marginBottom: spacing.xl, marginTop: 4 },
   field: { marginBottom: spacing.md },
-  label: { color: colors.textSecondary, fontSize: 13, marginBottom: 6, fontWeight: "500" },
+  label: { color: colors.textSecondary, fontSize: 11, marginBottom: 6, fontWeight: "600", textTransform: "uppercase", letterSpacing: 1 },
   input: {
     backgroundColor: colors.inputBg,
     borderWidth: 1,
@@ -169,16 +178,16 @@ const styles = StyleSheet.create({
   error: { color: colors.danger, marginBottom: spacing.md, fontSize: 14 },
   primaryBtn: {
     backgroundColor: colors.primary,
-    borderRadius: radius.pill,
+    borderRadius: radius.sm,
     paddingVertical: 16,
     alignItems: "center",
     marginTop: spacing.md,
   },
   disabledBtn: { opacity: 0.6 },
-  primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 15, letterSpacing: 1, textTransform: "uppercase" },
   linkRow: { flexDirection: "row", justifyContent: "center", marginTop: spacing.lg },
   linkText: { color: colors.textSecondary },
-  linkAction: { color: colors.primary, fontWeight: "600" },
+  linkAction: { color: colors.primary, fontWeight: "700" },
   hintBox: {
     marginTop: spacing.xl,
     padding: spacing.md,
@@ -187,6 +196,15 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     backgroundColor: colors.card,
   },
-  hintTitle: { color: colors.textSecondary, fontSize: 12, fontWeight: "600", marginBottom: 4 },
-  hintText: { color: colors.text, fontSize: 13, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
+  hintTitle: { color: colors.textSecondary, fontSize: 10, fontWeight: "700", marginBottom: 6, letterSpacing: 1.5 },
+  hintText: { color: colors.text, fontSize: 13, fontFamily: fonts.mono },
+  footerTag: {
+    color: colors.textDisabled,
+    fontSize: 11,
+    fontFamily: fonts.serif,
+    fontStyle: "italic",
+    textAlign: "center",
+    marginTop: spacing.xl,
+    letterSpacing: 0.5,
+  },
 });

@@ -19,7 +19,7 @@ import { storage } from "@/src/utils/storage";
 import { SCAN_BUFFER_KEY } from "./scan";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { colors, spacing, radius } from "@/src/theme";
+import { colors, spacing, radius, fonts } from "@/src/theme";
 import { apiFetch } from "@/src/api";
 import OptionPicker, { Option } from "@/src/components/OptionPicker";
 
@@ -492,7 +492,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   backBtn: { padding: 4 },
-  headerTitle: { color: colors.text, fontSize: 17, fontWeight: "700" },
+  headerTitle: { color: colors.text, fontSize: 17, fontWeight: "700", fontFamily: fonts.serif, letterSpacing: 0.3 },
   scroll: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
   sectionTitle: {
     color: colors.textSecondary,
@@ -612,10 +612,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
     backgroundColor: colors.primary,
-    borderRadius: radius.pill,
+    borderRadius: radius.sm,
     paddingVertical: 16,
     marginTop: spacing.lg,
   },
-  submitBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  submitBtnText: { color: "#fff", fontWeight: "700", fontSize: 15, letterSpacing: 1, textTransform: "uppercase" },
   disabledBtn: { opacity: 0.6 },
 });

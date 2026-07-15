@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/src/context/AuthContext";
-import { colors, spacing, radius } from "@/src/theme";
+import { colors, spacing, radius, BRAND } from "@/src/theme";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
@@ -20,6 +20,7 @@ export default function Profile() {
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Profile</Text>
+        <Text style={styles.brandTag}>{BRAND.name}</Text>
       </View>
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.avatarBox}>

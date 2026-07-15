@@ -392,8 +392,8 @@ async def seed_data():
             "email": ADMIN_EMAIL.lower(),
             "password_hash": hash_password(ADMIN_PASSWORD),
             "role": "admin",
-            "dealer_info": {"first_name": "System", "last_name": "Admin", "phone": ""},
-            "company_info": {"company_name": "AutoPricePro", "company_address": ""},
+            "dealer_info": {"first_name": "Fourbuy", "last_name": "Admin", "phone": ""},
+            "company_info": {"company_name": "Fourbuy Car Buying Co.", "company_address": ""},
             "created_at": now_utc(),
         }
         await db.users.insert_one(admin_doc)
