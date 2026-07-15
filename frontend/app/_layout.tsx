@@ -44,9 +44,11 @@ function RootNavigation() {
   useEffect(() => {
     if (loading) return;
     const inAuthGroup = segments[0] === "(auth)";
+    const inAppGroup = segments[0] === "(app)";
     if (!user && !inAuthGroup) {
       router.replace("/(auth)/login");
-    } else if (user && inAuthGroup) {
+    } else if (user && !inAppGroup) {
+      // Covers both /(auth)/* AND the bare root "/" splash landing
       router.replace("/(app)");
     }
   }, [user, loading, segments, router]);

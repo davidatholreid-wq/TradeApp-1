@@ -1,0 +1,38 @@
+{
+  "summary": "Verified the blue-circle splash-spinner routing bug is fixed. RootNavigation in /app/frontend/app/_layout.tsx now redirects any logged-in user NOT in the (app) group to /(app), which covers both /(auth)/* AND the bare root '/'. All 12 checks PASSED on desktop (1440x900) and mobile (390x844): (1) Fresh visitor with cleared storage redirected to login in ~0.13s on both viewports (splash not stuck). (2) Admin login (admin@fourbuy.co.za/admin123) succeeded and rendered ADMIN COCKPIT on desktop / 'Fourbuy Admin' mobile tabs on mobile within ~0.15s. (3) THE KEY REGRESSION: after admin login, navigating to the bare root URL redirected into the dashboard in 0.11-0.13s on both viewports (splash-screen testID no longer stuck). (4) New dealer registration succeeded and landed on 'My Submissions'. (5) Dealer refresh-at-root also redirected within 0.13s. Tab-bar padding regression check on mobile: admin submissions last card bottom=717 vs tabbar top=791 (74px clearance), admin dealers last card bottom=717 vs tabbar top=790 (73px clearance), admin profile Sign Out bottom=360 vs tabbar top=790, dealer profile Sign Out bottom=526 (visually above tab bar). No content is obscured by the bottom tab bar. No new backend or frontend issues introduced.",
+  "test_matrix": {
+    "fresh_visitor_desktop": "PASS (login form in 0.13s, splash not stuck)",
+    "fresh_visitor_mobile": "PASS (login form in 0.12s, splash not stuck)",
+    "admin_login_desktop": "PASS (ADMIN COCKPIT in 0.15s)",
+    "admin_login_mobile": "PASS (Fourbuy Admin tabs)",
+    "admin_root_refresh_desktop": "PASS (redirected in 0.11s, NO SPINNER STUCK)",
+    "admin_root_refresh_mobile": "PASS (redirected in 0.13s, NO SPINNER STUCK)",
+    "dealer_register_and_login_mobile": "PASS",
+    "dealer_root_refresh_mobile": "PASS (0.13s)",
+    "admin_submissions_tabbar_padding_mobile": "PASS (74px clearance)",
+    "admin_dealers_tabbar_padding_mobile": "PASS (73px clearance)",
+    "admin_profile_tabbar_padding_mobile": "PASS (Sign Out clearly above tab bar)",
+    "dealer_profile_tabbar_padding_mobile": "PASS (Sign Out clearly above tab bar)"
+  },
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/backend/tests/test_phase3.py"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "The redirect fix at _layout.tsx:44-54 correctly covers the /(auth)/* AND '/' bare-root cases by inverting the check to `user && !inAppGroup`. This is the clean fix. Note however that at the very first render the segments hook may briefly return [] before Expo Router resolves, which is exactly why the previous fix was needed. Since the useEffect re-runs on segments change, the redirect will fire as soon as segments update. Good.",
+    "The safety-net splash hide at _layout.tsx:72-77 still fires at 2.5s unconditionally. Combined with the new redirect logic this is fine — an authenticated user landing on '/' will now be replaced with /(app) rapidly.",
+    "Prior-iteration flags still standing (not regressed by this change and not blocking): deprecated FastAPI @app.on_event, Pydantic .dict() calls, photos embedded as base64 in submission docs, useIconFonts uses jsdelivr CDN. Worth revisiting in a future iteration."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100% (12/12 checks)"},
+  "seed_data_creation": "Registered one throwaway dealer account (dealer_<timestamp>@test.com / Dealer123!) via the register screen to exercise the dealer login and refresh-at-root flows.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Blue-spinner routing bug fixed and verified. Base URL: https://fourbuy-admin.preview.emergentagent.com. Admin: admin@fourbuy.co.za / admin123. Dealer: register a fresh one — the 'dealer.test@example.com / Dealer123!' from test_credentials.md is documented as illustrative and is NOT seeded in the DB. Backend under /api. On desktop viewport admins see WebAdminDashboard (ADMIN COCKPIT); on mobile viewport admins see the same tabbed layout as dealers ('Fourbuy Admin' with Submissions/Dealers/Profile tabs) — this is expected. Tab-bar padding on mobile is correct across all 4 screens.",
+  "rca_of_issue": "Confirmed the RCA in the request: RootNavigation only redirected between (auth) <-> (app) groups. When a logged-in user landed on '/', segments[0] was undefined, so neither `!user && !inAuthGroup` nor `user && inAuthGroup` matched, and the splash ActivityIndicator rendered indefinitely. The fix changes the second branch to `user && !inAppGroup` — this correctly covers the bare-root case AND any /(auth)/* screen a logged-in user might land on. Playwright verified the redirect fires in 0.11-0.13s on both viewports for both admin and dealer users."
+}
