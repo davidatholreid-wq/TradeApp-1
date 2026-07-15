@@ -75,15 +75,12 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
     try {
       const data = await apiFetch("/api/admin/submissions");
       setSubs(data.submissions || []);
-      if (data.submissions?.length && !selectedId) {
-        setSelectedId(data.submissions[0].id);
-      }
     } catch (e) {
       console.log(e);
     } finally {
       setLoading(false);
     }
-  }, [selectedId]);
+  }, []);
 
   const loadSelected = useCallback(async () => {
     if (!selectedId) {

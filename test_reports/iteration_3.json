@@ -1,0 +1,47 @@
+{
+  "summary": "Perf-fix verification for the 'app taking long to load' report. All 6 checks (2 perf + 4 regression) PASSED against the public preview URL. Measured cold-load times on 1440x900: DOMContentLoaded 0.26s, login form visible+interactive 0.40s (target <3s), click-Sign-In to ADMIN COCKPIT visible 0.21s (target <5s). On 390x844 mobile viewport, login form visible in 0.35s and admin login succeeds. Regression: WebAdminDashboard no longer auto-selects a submission on mount (empty state 'Select a submission on the left' confirmed visible; 'SUBMITTED BY' NOT rendered before user interaction). Clicking any row populates the detail pane with SUBMITTED BY, PRICE OFFER and AI MARKET ANALYSIS sections. Backend endpoints healthy: POST /api/auth/login 200 in 299ms, GET /api/admin/submissions 200 in 91ms, GET /api/submissions/{id} 200 in 149ms. Splash-screen safety-net timeout (2.5s) and removal of the useIconFonts render blocker are in place at /app/frontend/app/_layout.tsx; loadList dep-array and auto-select-first removal confirmed at /app/frontend/src/components/WebAdminDashboard.tsx.",
+  "perf_measurements": {
+    "desktop_dom_content_loaded_s": 0.26,
+    "desktop_login_form_visible_s": 0.40,
+    "desktop_click_signin_to_cockpit_s": 0.21,
+    "mobile_login_form_visible_s": 0.35,
+    "backend_login_s": 0.30,
+    "backend_admin_submissions_s": 0.09,
+    "backend_single_submission_s": 0.15
+  },
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "WebAdminDashboard (mobile viewport 390x844)",
+        "issues": [
+          "The web/admin dashboard renders on mobile viewport with dealer bottom-tab bar ('Submissions/Dealers/Profile') still visible under the admin list. Not blocking and not part of this review, but the layout is not tuned for narrow viewports. Consider gating WebAdminDashboard behind a min-width breakpoint or hiding the bottom tabs when role=admin."
+        ]
+      }
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_phase3.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "The 2.5s safety-net timeout in _layout.tsx (lines 70-75) will unconditionally hide the splash even before RootNavigation has decided on the redirect target. That is fine on web (fast) but on Expo Go/native an unauthenticated user could briefly see a flash of the app root before router.replace('/(auth)/login') fires. Consider gating the timeout on !user or on segments != undefined, or accept the tiny flash as a deliberate trade-off vs. the previous 20s stall.",
+    "useIconFonts still points at cdn.jsdelivr.net — that is a single-point-of-failure external dependency for every StoreClient (Expo Go) launch. Non-blocking now, but consider bundling the .ttf files as assets or serving via app CDN so the fallback boxes window is minimised.",
+    "WebAdminDashboard.loadSelected still refetches the full submission (photos + everything) on every selectedId change — fine as-is, but if photo payloads get large, add a lightweight endpoint or lazy-load photos.",
+    "Prior-iteration flags still standing: deprecated @app.on_event, Pydantic .dict() calls, photos embedded as base64 in submission docs — none regressed by this change but worth revisiting."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (3/3 endpoints)", "frontend": "100% (6/6 checks: 2 perf + 4 regression)"},
+  "seed_data_creation": "None. Existing seeded submissions in the DB were reused for the click-detail check.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Perf fixes verified working. Both files changed by main agent are correct: _layout.tsx renders the tree immediately and hides splash after max 2.5s; WebAdminDashboard's loadList has an empty dep array and the auto-select-first behaviour is gone (loadSelected now no-ops when selectedId is null and sets selected=null). Base URL: https://auto-price-pro-1.preview.emergentagent.com. Admin creds: admin@fourbuy.co.za / admin123. Backend under /api. Regression suites still valid at /app/backend/tests/backend_test.py and /app/backend/tests/test_phase3.py.",
+  "rca_of_issue": "Original slowness RCA (from problem statement) was correct: (1) useIconFonts gating the entire render on ~19 CDN .ttf downloads, (2) WebAdminDashboard re-fetching /api/admin/submissions on every row click due to selectedId in loadList deps, (3) auto-selecting the first submission on mount and eagerly pulling photos. All three are fixed. On the preview URL from within-datacenter the total 'blank-to-login' was 0.40s and 'click-to-cockpit' 0.21s; on real slow client networks the icon-font CDN could still take 5-20s but that no longer blocks the app since the splash force-hides at 2.5s and the tree renders immediately."
+}
