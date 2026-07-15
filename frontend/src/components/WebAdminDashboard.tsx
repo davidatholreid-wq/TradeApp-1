@@ -13,6 +13,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { colors, spacing, radius, fonts, BRAND } from "@/src/theme";
 import { apiFetch } from "@/src/api";
+import { buildWhatsappUrl, buildDealerMessage } from "@/src/utils/whatsapp";
 
 type Submission = {
   id: string;
@@ -36,6 +37,8 @@ type Submission = {
 type SubmissionFull = Submission & {
   photos?: Record<string, string>;
   dealer_email?: string;
+  dealer_phone?: string;
+  dealer_first_name?: string;
   license_disk_data?: string;
   price_notes?: string | null;
   market_analysis?: {
@@ -418,9 +421,42 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
               {/* Dealer */}
               <View style={styles.dealerBox}>
                 <Text style={styles.boxTitle}>SUBMITTED BY</Text>
-                <Text style={styles.dealerName}>{selected.dealer_name}</Text>
-                <Text style={styles.dealerMeta}>{selected.company_name}</Text>
-                <Text style={styles.dealerMeta}>{selected.dealer_email}</Text>
+                <View style={styles.dealerRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.dealerName}>{selected.dealer_name}</Text>
+                    <Text style={styles.dealerMeta}>{selected.company_name}</Text>
+                    <Text style={styles.dealerMeta}>{selected.dealer_email}</Text>
+                    {selected.dealer_phone ? (
+                      <Text style={styles.dealerMeta}>{selected.dealer_phone}</Text>
+                    ) : null}
+                  </View>
+                  {selected.dealer_phone ? (
+                    <TouchableOpacity
+                      testID="admin-whatsapp-button"
+                      style={styles.whatsappBtn}
+                      onPress={() => {
+                        const url = buildWhatsappUrl(
+                          selected.dealer_phone!,
+                          buildDealerMessage({
+                            dealerFirstName: selected.dealer_first_name,
+                            reference: selected.reference,
+                            year: selected.year,
+                            make: selected.make_name,
+                            model: selected.model_name,
+                            derivative: selected.derivative_name,
+                            price: selected.price,
+                            priceNotes: selected.price_notes,
+                          })
+                        );
+                        // @ts-ignore web-only
+                        window.open(url, "_blank");
+                      }}
+                    >
+                      <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
+                      <Text style={styles.whatsappBtnText}>WhatsApp</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
               </View>
 
               {/* Pricing */}
@@ -754,6 +790,19 @@ const styles = StyleSheet.create({
   boxTitle: { color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 1.5 },
   dealerName: { color: colors.text, fontSize: 15, fontWeight: "700", marginTop: 6 },
   dealerMeta: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
+  dealerRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  whatsappBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 10,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: "#25D366",
+    backgroundColor: "#25D36618",
+  },
+  whatsappBtnText: { color: "#25D366", fontWeight: "800", fontSize: 13, letterSpacing: 0.5 },
 
   priceBox: {
     marginTop: spacing.md,

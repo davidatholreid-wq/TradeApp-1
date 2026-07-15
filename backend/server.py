@@ -277,6 +277,8 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         "dealer_id": current["id"],
         "dealer_email": current["email"],
         "dealer_name": f"{current['dealer_info']['first_name']} {current['dealer_info']['last_name']}",
+        "dealer_first_name": current["dealer_info"].get("first_name", ""),
+        "dealer_phone": current["dealer_info"].get("phone", ""),
         "company_name": current["company_info"]["company_name"],
         "make_id": payload.make_id,
         "make_name": payload.make_name,

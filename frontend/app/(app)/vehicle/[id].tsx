@@ -17,15 +17,19 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import * as Linking from "expo-linking";
 import { colors, spacing, radius, fonts } from "@/src/theme";
 import { apiFetch } from "@/src/api";
 import { useAuth } from "@/src/context/AuthContext";
+import { buildWhatsappUrl, buildDealerMessage } from "@/src/utils/whatsapp";
 
 type Submission = {
   id: string;
   reference?: string;
   dealer_id: string;
   dealer_name?: string;
+  dealer_first_name?: string;
+  dealer_phone?: string;
   dealer_email?: string;
   company_name?: string;
   make_name: string;
@@ -423,6 +427,34 @@ export default function VehicleDetail() {
               <Text style={styles.dealerName}>{sub.dealer_name}</Text>
               <Text style={styles.dealerCompany}>{sub.company_name}</Text>
               <Text style={styles.dealerEmail}>{sub.dealer_email}</Text>
+              {sub.dealer_phone ? (
+                <Text style={styles.dealerEmail}>{sub.dealer_phone}</Text>
+              ) : null}
+              {sub.dealer_phone ? (
+                <TouchableOpacity
+                  testID="whatsapp-dealer-button"
+                  style={styles.whatsappBtn}
+                  onPress={() => {
+                    const url = buildWhatsappUrl(
+                      sub.dealer_phone!,
+                      buildDealerMessage({
+                        dealerFirstName: sub.dealer_first_name,
+                        reference: sub.reference,
+                        year: sub.year,
+                        make: sub.make_name,
+                        model: sub.model_name,
+                        derivative: sub.derivative_name,
+                        price: sub.price,
+                        priceNotes: sub.price_notes,
+                      })
+                    );
+                    Linking.openURL(url);
+                  }}
+                >
+                  <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
+                  <Text style={styles.whatsappBtnText}>Contact on WhatsApp</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           </>
         ) : null}
@@ -655,6 +687,20 @@ const styles = StyleSheet.create({
   dealerName: { color: colors.text, fontSize: 15, fontWeight: "700" },
   dealerCompany: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
   dealerEmail: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+  whatsappBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: spacing.md,
+    paddingVertical: 12,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: "#25D366",
+    backgroundColor: "#25D36618",
+  },
+  whatsappBtnText: { color: "#25D366", fontWeight: "700", fontSize: 14, letterSpacing: 0.5 },
   footer: {
     position: "absolute",
     left: 0,
