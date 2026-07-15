@@ -17,6 +17,7 @@ import { apiFetch } from "@/src/api";
 
 type Submission = {
   id: string;
+  reference?: string;
   dealer_name?: string;
   company_name?: string;
   make_name: string;
@@ -71,6 +72,9 @@ export default function DashboardScreen() {
     >
       <View style={styles.cardTop}>
         <View style={{ flex: 1 }}>
+          {item.reference ? (
+            <Text style={styles.cardRef}>{item.reference}</Text>
+          ) : null}
           <Text style={styles.cardTitle} numberOfLines={1}>
             {item.year} {item.make_name} {item.model_name}
           </Text>
@@ -217,6 +221,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   cardTop: { flexDirection: "row", alignItems: "flex-start", gap: spacing.sm },
+  cardRef: { color: colors.accent, fontSize: 11, fontWeight: "800", letterSpacing: 1.5, fontFamily: fonts.mono, marginBottom: 4 },
   cardTitle: { color: colors.text, fontSize: 16, fontWeight: "700" },
   cardSubtitle: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
   badge: {

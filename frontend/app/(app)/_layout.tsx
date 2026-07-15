@@ -1,12 +1,30 @@
-import { Tabs } from "expo-router";
+import { Tabs, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { Platform, useWindowDimensions, View } from "react-native";
 import { colors } from "@/src/theme";
 import { useAuth } from "@/src/context/AuthContext";
+import WebAdminDashboard from "@/src/components/WebAdminDashboard";
 
 export default function AppLayout() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const router = useRouter();
+  const { width } = useWindowDimensions();
   const isDealer = user?.role === "dealer";
   const isAdmin = user?.role === "admin";
+
+  // Wide-screen web admin cockpit
+  if (Platform.OS === "web" && isAdmin && width >= 1024) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.bg }}>
+        <WebAdminDashboard
+          onLogout={async () => {
+            await logout();
+            router.replace("/(auth)/login");
+          }}
+        />
+      </View>
+    );
+  }
 
   return (
     <Tabs

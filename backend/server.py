@@ -13,6 +13,8 @@ from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional, Literal
 from datetime import datetime, timezone, timedelta
 
+from emergentintegrations.llm.chat import LlmChat, UserMessage
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
@@ -25,6 +27,7 @@ ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
 
 PUSH_BASE_URL = "https://integrations.emergentagent.com"
 PUSH_KEY = os.environ.get("EMERGENT_PUSH_KEY", "placeholder")
+EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -100,6 +103,18 @@ async def send_push(recipients: List[str], data: dict) -> None:
             logger.warning(f"Push send failed status={resp.status_code} body={resp.text[:200]}")
     except Exception as e:
         logger.warning(f"Push send error: {e}")
+
+
+async def next_reference_number() -> str:
+    """Generate an auto-incrementing FB-000001 reference."""
+    result = await db.counters.find_one_and_update(
+        {"_id": "submission_ref"},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=True,
+    )
+    seq = result["seq"] if result else 1
+    return f"FB-{seq:06d}"
 
 
 # ============ Models ============
@@ -255,8 +270,10 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
     if not (1 <= payload.condition <= 10):
         raise HTTPException(400, "Condition must be 1-10")
     sub_id = str(uuid.uuid4())
+    reference = await next_reference_number()
     doc = {
         "id": sub_id,
+        "reference": reference,
         "dealer_id": current["id"],
         "dealer_email": current["email"],
         "dealer_name": f"{current['dealer_info']['first_name']} {current['dealer_info']['last_name']}",
@@ -279,6 +296,8 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         "price": None,
         "price_notes": None,
         "priced_at": None,
+        "market_analysis": None,
+        "market_analysis_at": None,
         "created_at": now_utc(),
     }
     await db.submissions.insert_one(doc)
@@ -323,7 +342,6 @@ async def admin_price(sub_id: str, offer: PriceOffer, current: dict = Depends(re
         "priced_at": now_utc(),
     }
     await db.submissions.update_one({"id": sub_id}, {"$set": update})
-    # Send push notification to dealer
     try:
         await send_push(
             recipients=[sub["dealer_id"]],
@@ -336,6 +354,86 @@ async def admin_price(sub_id: str, offer: PriceOffer, current: dict = Depends(re
     except Exception as e:
         logger.warning(f"Push failed (non-blocking): {e}")
     return {"status": "priced", "price": offer.price}
+
+
+@api_router.delete("/admin/submissions/{sub_id}")
+async def admin_delete_submission(sub_id: str, current: dict = Depends(require_admin)):
+    result = await db.submissions.delete_one({"id": sub_id})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Submission not found")
+    return {"status": "deleted"}
+
+
+# ============ Market analysis (AI) ============
+@api_router.post("/submissions/{sub_id}/market-analysis")
+async def market_analysis(sub_id: str, current: dict = Depends(get_current_user)):
+    sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0, "photos": 0})
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+    if current["role"] != "admin" and sub["dealer_id"] != current["id"]:
+        raise HTTPException(403, "Not authorized")
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(500, "LLM key not configured")
+
+    system_prompt = (
+        "You are a South African used-car market analyst with deep knowledge of pricing on autotrader.co.za "
+        "and cars.co.za for the local ZAR (Rand) market. Given a specific vehicle's specs, provide a concise "
+        "market overview in this exact JSON format (no markdown, only valid JSON):\n"
+        "{\n"
+        '  "estimated_market_range_zar": {"low": <int>, "high": <int>, "typical": <int>},\n'
+        '  "trade_price_estimate_zar": <int>,\n'
+        '  "retail_price_estimate_zar": <int>,\n'
+        '  "listings_summary": "<2-3 sentences about how many similar vehicles are typically listed on autotrader.co.za and cars.co.za and their price patterns>",\n'
+        '  "key_factors": ["<factor 1>", "<factor 2>", "<factor 3>"],\n'
+        '  "confidence": "low|medium|high",\n'
+        '  "disclaimer": "Prices based on general market knowledge (no live scraping)."\n'
+        "}\n"
+        "Consider mileage, year, condition, warranty status, and accident damage. Trade should be 15-20% below retail."
+    )
+    prompt = (
+        f"Vehicle:\n"
+        f"- Make: {sub['make_name']}\n"
+        f"- Model: {sub['model_name']}\n"
+        f"- Derivative: {sub['derivative_name']}\n"
+        f"- Year: {sub['year']}\n"
+        f"- Mileage: {sub['mileage']:,} km\n"
+        f"- Colour: {sub['colour']}\n"
+        f"- Condition: {sub['condition']}/10\n"
+        f"- Factory warranty: {'Yes' if sub['factory_warranty'] else 'No'}\n"
+        f"- Accident damage: {'Yes' if sub['accident_damage'] else 'None reported'}\n"
+        f"\nProvide the JSON market analysis for the South African market."
+    )
+
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"market-{sub_id}",
+            system_message=system_prompt,
+        ).with_model("openai", "gpt-5.2")
+        reply = await chat.send_message(UserMessage(text=prompt))
+    except Exception as e:
+        logger.exception("LLM market analysis failed")
+        raise HTTPException(502, f"Market analysis unavailable: {e}")
+
+    # Parse JSON reply (LLM may return with or without code fences)
+    import json, re
+    text = reply.strip()
+    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.MULTILINE).strip()
+    try:
+        analysis = json.loads(text)
+    except Exception:
+        analysis = {"raw": text, "disclaimer": "Analysis returned in non-JSON format"}
+
+    payload = {
+        "analysis": analysis,
+        "generated_at": now_utc(),
+        "model": "gpt-5.2",
+    }
+    await db.submissions.update_one(
+        {"id": sub_id},
+        {"$set": {"market_analysis": payload, "market_analysis_at": payload["generated_at"]}},
+    )
+    return payload
 
 
 # ============ Admin dealer management ============
@@ -367,7 +465,7 @@ async def admin_delete_dealer(dealer_id: str, current: dict = Depends(require_ad
 # ============ Health ============
 @api_router.get("/")
 async def root():
-    return {"message": "AutoPricePro API", "status": "ok"}
+    return {"message": "Fourbuy Car Buying Co. API", "status": "ok"}
 
 
 app.include_router(api_router)

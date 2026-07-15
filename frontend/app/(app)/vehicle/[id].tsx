@@ -23,6 +23,7 @@ import { useAuth } from "@/src/context/AuthContext";
 
 type Submission = {
   id: string;
+  reference?: string;
   dealer_id: string;
   dealer_name?: string;
   dealer_email?: string;
@@ -42,7 +43,26 @@ type Submission = {
   price: number | null;
   price_notes?: string | null;
   priced_at?: string | null;
+  market_analysis?: MarketAnalysisPayload | null;
+  market_analysis_at?: string | null;
   created_at: string;
+};
+
+type MarketAnalysis = {
+  estimated_market_range_zar?: { low: number; high: number; typical: number };
+  trade_price_estimate_zar?: number;
+  retail_price_estimate_zar?: number;
+  listings_summary?: string;
+  key_factors?: string[];
+  confidence?: "low" | "medium" | "high";
+  disclaimer?: string;
+  raw?: string;
+};
+
+type MarketAnalysisPayload = {
+  analysis: MarketAnalysis;
+  generated_at: string;
+  model: string;
 };
 
 const PHOTO_LABELS: Record<string, string> = {
@@ -66,6 +86,8 @@ export default function VehicleDetail() {
   const [notesInput, setNotesInput] = useState("");
   const [submittingPrice, setSubmittingPrice] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [analysing, setAnalysing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -105,6 +127,45 @@ export default function VehicleDetail() {
     }
   };
 
+  const handleMarketAnalysis = async () => {
+    if (!sub) return;
+    setAnalysing(true);
+    try {
+      const data = await apiFetch(`/api/submissions/${id}/market-analysis`, { method: "POST" });
+      setSub({ ...sub, market_analysis: data, market_analysis_at: data.generated_at });
+    } catch (e: any) {
+      Alert.alert("Analysis failed", e.message);
+    } finally {
+      setAnalysing(false);
+    }
+  };
+
+  const handleDelete = () => {
+    if (!sub) return;
+    Alert.alert(
+      "Delete Vehicle",
+      `Permanently remove ${sub.reference ?? "this submission"}? This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              await apiFetch(`/api/admin/submissions/${id}`, { method: "DELETE" });
+              router.back();
+            } catch (e: any) {
+              Alert.alert("Error", e.message);
+            } finally {
+              setDeleting(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   if (loading || !sub) {
     return (
       <View style={styles.center}>
@@ -123,9 +184,19 @@ export default function VehicleDetail() {
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>
-          {sub.year} {sub.make_name}
+          {sub.reference ?? `${sub.year} ${sub.make_name}`}
         </Text>
-        <View style={{ width: 32 }} />
+        {isAdmin ? (
+          <TouchableOpacity testID="delete-vehicle-button" onPress={handleDelete} disabled={deleting} style={styles.deleteBtn}>
+            {deleting ? (
+              <ActivityIndicator color={colors.danger} size="small" />
+            ) : (
+              <Ionicons name="trash-outline" size={22} color={colors.danger} />
+            )}
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 32 }} />
+        )}
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -220,6 +291,119 @@ export default function VehicleDetail() {
             </TouchableOpacity>
           ))}
         </View>
+
+        {/* AI Market Analysis */}
+        <View style={styles.analysisHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.sectionTitle}>AI Market Analysis</Text>
+            {sub.market_analysis?.generated_at ? (
+              <Text style={styles.analysisTs}>
+                Generated {new Date(sub.market_analysis.generated_at).toLocaleString()}
+              </Text>
+            ) : null}
+          </View>
+          <TouchableOpacity
+            testID="market-analysis-button"
+            style={[styles.analysisBtn, analysing && { opacity: 0.6 }]}
+            onPress={handleMarketAnalysis}
+            disabled={analysing}
+          >
+            {analysing ? (
+              <ActivityIndicator color={colors.primary} size="small" />
+            ) : (
+              <>
+                <Ionicons name="sparkles" size={14} color={colors.primary} />
+                <Text style={styles.analysisBtnText}>
+                  {sub.market_analysis ? "Refresh" : "Analyse"}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {sub.market_analysis?.analysis ? (
+          <View style={styles.analysisCard} testID="market-analysis-card">
+            {sub.market_analysis.analysis.estimated_market_range_zar ? (
+              <View style={styles.rangeBox}>
+                <View style={styles.rangeCol}>
+                  <Text style={styles.rangeLabel}>LOW</Text>
+                  <Text style={styles.rangeValue}>
+                    R {sub.market_analysis.analysis.estimated_market_range_zar.low.toLocaleString()}
+                  </Text>
+                </View>
+                <View style={[styles.rangeCol, styles.rangeColMid]}>
+                  <Text style={styles.rangeLabel}>TYPICAL</Text>
+                  <Text style={[styles.rangeValue, { color: colors.accent }]}>
+                    R {sub.market_analysis.analysis.estimated_market_range_zar.typical.toLocaleString()}
+                  </Text>
+                </View>
+                <View style={styles.rangeCol}>
+                  <Text style={styles.rangeLabel}>HIGH</Text>
+                  <Text style={styles.rangeValue}>
+                    R {sub.market_analysis.analysis.estimated_market_range_zar.high.toLocaleString()}
+                  </Text>
+                </View>
+              </View>
+            ) : null}
+
+            <View style={styles.tradeRow}>
+              {sub.market_analysis.analysis.trade_price_estimate_zar ? (
+                <View style={styles.tradeCol}>
+                  <Text style={styles.tradeLabel}>Trade Estimate</Text>
+                  <Text style={styles.tradeValue}>
+                    R {sub.market_analysis.analysis.trade_price_estimate_zar.toLocaleString()}
+                  </Text>
+                </View>
+              ) : null}
+              {sub.market_analysis.analysis.retail_price_estimate_zar ? (
+                <View style={styles.tradeCol}>
+                  <Text style={styles.tradeLabel}>Retail Estimate</Text>
+                  <Text style={styles.tradeValue}>
+                    R {sub.market_analysis.analysis.retail_price_estimate_zar.toLocaleString()}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            {sub.market_analysis.analysis.listings_summary ? (
+              <Text style={styles.summary}>{sub.market_analysis.analysis.listings_summary}</Text>
+            ) : null}
+
+            {sub.market_analysis.analysis.key_factors?.length ? (
+              <View style={styles.factorsBox}>
+                <Text style={styles.factorsTitle}>KEY FACTORS</Text>
+                {sub.market_analysis.analysis.key_factors.map((f, i) => (
+                  <View key={i} style={styles.factorRow}>
+                    <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
+                    <Text style={styles.factorText}>{f}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
+            {sub.market_analysis.analysis.confidence ? (
+              <Text style={styles.confidence}>
+                Confidence: {sub.market_analysis.analysis.confidence.toUpperCase()}
+              </Text>
+            ) : null}
+
+            {sub.market_analysis.analysis.raw ? (
+              <Text style={styles.summary}>{sub.market_analysis.analysis.raw}</Text>
+            ) : null}
+
+            {sub.market_analysis.analysis.disclaimer ? (
+              <Text style={styles.disclaimer}>{sub.market_analysis.analysis.disclaimer}</Text>
+            ) : null}
+          </View>
+        ) : (
+          <View style={styles.analysisEmpty}>
+            <Ionicons name="analytics-outline" size={20} color={colors.textSecondary} />
+            <Text style={styles.analysisEmptyText}>
+              Tap Analyse for a GPT-5.2 market overview comparing this car against typical
+              autotrader.co.za and cars.co.za listings.
+            </Text>
+          </View>
+        )}
 
         {/* License disk */}
         {sub.license_disk_data ? (
@@ -336,6 +520,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  deleteBtn: { padding: 4 },
   backBtn: { padding: 4 },
   headerTitle: { color: colors.text, fontSize: 17, fontWeight: "700", fontFamily: fonts.serif, flex: 1, textAlign: "center" },
   scroll: { padding: spacing.lg, paddingBottom: 120 },
@@ -415,6 +600,57 @@ const styles = StyleSheet.create({
   photoLabel: { color: "#fff", fontSize: 12, fontWeight: "600" },
   diskBox: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
   diskText: { color: colors.text, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 12 },
+  analysisHeader: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", marginTop: spacing.lg, marginBottom: spacing.sm },
+  analysisTs: { color: colors.textDisabled, fontSize: 11, marginTop: 2 },
+  analysisBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.primary + "18",
+    minWidth: 90,
+    justifyContent: "center",
+  },
+  analysisBtnText: { color: colors.primary, fontWeight: "700", fontSize: 12, letterSpacing: 0.5 },
+  analysisCard: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
+  rangeBox: {
+    flexDirection: "row",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    overflow: "hidden",
+    marginBottom: spacing.md,
+  },
+  rangeCol: { flex: 1, padding: spacing.sm, alignItems: "center" },
+  rangeColMid: { backgroundColor: colors.accent + "18", borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border },
+  rangeLabel: { color: colors.textSecondary, fontSize: 10, letterSpacing: 1, fontWeight: "700", marginBottom: 4 },
+  rangeValue: { color: colors.text, fontSize: 13, fontWeight: "700", fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
+  tradeRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md },
+  tradeCol: { flex: 1, padding: spacing.sm, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm },
+  tradeLabel: { color: colors.textSecondary, fontSize: 10, letterSpacing: 1, fontWeight: "700", marginBottom: 4 },
+  tradeValue: { color: colors.success, fontSize: 15, fontWeight: "700", fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
+  summary: { color: colors.text, fontSize: 13, lineHeight: 19, marginBottom: spacing.sm },
+  factorsBox: { marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, gap: 6 },
+  factorsTitle: { color: colors.textSecondary, fontSize: 10, letterSpacing: 1, fontWeight: "700", marginBottom: 4 },
+  factorRow: { flexDirection: "row", alignItems: "flex-start", gap: 6 },
+  factorText: { color: colors.text, fontSize: 12, flex: 1, lineHeight: 17 },
+  confidence: { color: colors.textSecondary, fontSize: 11, fontWeight: "700", marginTop: spacing.sm, letterSpacing: 1 },
+  disclaimer: { color: colors.textDisabled, fontSize: 11, fontStyle: "italic", marginTop: 4 },
+  analysisEmpty: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderStyle: "dashed",
+    borderRadius: radius.md,
+    backgroundColor: colors.card + "88",
+  },
+  analysisEmptyText: { color: colors.textSecondary, fontSize: 12, flex: 1, lineHeight: 17 },
   dealerBox: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
   dealerName: { color: colors.text, fontSize: 15, fontWeight: "700" },
   dealerCompany: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
