@@ -1,16 +1,20 @@
 {
   "expo": {
-    "name": "frontend",
+    "name": "AutoPricePro",
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
-    "userInterfaceStyle": "automatic",
+    "scheme": "autopricepro",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.autopricepro.lc5csz"
+      "bundleIdentifier": "com.emergent.autopricepro.lc5csz",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Scan license disks and capture vehicle photos",
+        "NSPhotoLibraryUsageDescription": "Attach vehicle photos to your submissions"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -18,7 +22,11 @@
         "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.emergent.autopricepro.lc5csz"
+      "package": "com.emergent.autopricepro.lc5csz",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -27,6 +35,19 @@
     },
     "plugins": [
       "expo-router",
+      "expo-notifications",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Scan license disks and capture vehicle photos"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Attach vehicle photos to your submissions"
+        }
+      ],
       [
         "expo-splash-screen",
         {
