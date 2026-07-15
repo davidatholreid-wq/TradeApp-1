@@ -29,6 +29,6 @@
   "seed_data_creation": "Tests create ephemeral dealers with unique emails (TEST_ prefix on company_name). One dealer is deleted via the admin delete endpoint; the primary session dealer remains but is uniquely suffixed per run so it does not pollute future test runs (though DB will accumulate over iterations).",
   "retest_needed": false,
   "should_main_agent_self_test": false,
-  "context_for_next_testing_agent": "Backend fully green. Use /app/backend/tests/backend_test.py as regression suite. Admin creds: admin@autopricepro.com / admin123 (seeded on startup). All /api/admin/* require Bearer JWT with role=admin; dealers get 403. EMERGENT_PUSH_KEY is placeholder and confirmed non-blocking on pricing endpoint. Base URL: https://auto-price-pro-1.preview.emergentagent.com.",
+  "context_for_next_testing_agent": "Backend fully green. Use /app/backend/tests/backend_test.py as regression suite. Admin creds: admin@autopricepro.com / admin123 (seeded on startup). All /api/admin/* require Bearer JWT with role=admin; dealers get 403. EMERGENT_PUSH_KEY is placeholder and confirmed non-blocking on pricing endpoint. Base URL: https://fourbuy-admin.preview.emergentagent.com.",
   "rca_of_issue": "N/A - no failures encountered."
 }

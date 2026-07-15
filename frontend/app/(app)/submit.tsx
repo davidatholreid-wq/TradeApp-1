@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { storage } from "@/src/utils/storage";
 import { SCAN_BUFFER_KEY } from "./scan";
 import { Ionicons } from "@expo/vector-icons";
@@ -35,6 +36,7 @@ const PHOTO_SLOTS: PhotoSlot[] = ["front", "side_right", "rear", "side_left", "i
 
 export default function SubmitVehicle() {
   const router = useRouter();
+  const tabBarHeight = useBottomTabBarHeight();
 
   const [make, setMake] = useState<Option | null>(null);
   const [model, setModel] = useState<Option | null>(null);
@@ -212,7 +214,7 @@ export default function SubmitVehicle() {
         <View style={{ width: 32 }} />
       </View>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + 24 }]} keyboardShouldPersistTaps="handled">
           {/* Section: Vehicle */}
           <Text style={styles.sectionTitle}>Vehicle</Text>
 

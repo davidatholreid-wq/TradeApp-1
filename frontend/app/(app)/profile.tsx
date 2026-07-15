@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useAuth } from "@/src/context/AuthContext";
 import { colors, spacing, radius, BRAND } from "@/src/theme";
 import { Ionicons } from "@expo/vector-icons";
@@ -8,6 +9,7 @@ import { useRouter } from "expo-router";
 export default function Profile() {
   const { user, logout } = useAuth();
   const router = useRouter();
+  const tabBarHeight = useBottomTabBarHeight();
 
   const handleLogout = async () => {
     await logout();
@@ -22,7 +24,7 @@ export default function Profile() {
         <Text style={styles.headerTitle}>Profile</Text>
         <Text style={styles.brandTag}>{BRAND.name}</Text>
       </View>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.md }]}>
         <View style={styles.avatarBox}>
           <View style={styles.avatar}>
             <Ionicons

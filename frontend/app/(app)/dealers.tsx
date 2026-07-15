@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { colors, spacing, radius, fonts } from "@/src/theme";
 import { apiFetch } from "@/src/api";
 
@@ -25,6 +26,7 @@ type Dealer = {
 };
 
 export default function Dealers() {
+  const tabBarHeight = useBottomTabBarHeight();
   const [dealers, setDealers] = useState<Dealer[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -129,7 +131,7 @@ export default function Dealers() {
           data={dealers}
           keyExtractor={(i) => i.id}
           renderItem={renderItem}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: tabBarHeight + spacing.md }]}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}

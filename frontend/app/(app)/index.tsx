@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { colors, spacing, radius, fonts } from "@/src/theme";
 import { useAuth } from "@/src/context/AuthContext";
 import { apiFetch } from "@/src/api";
@@ -35,6 +36,7 @@ type Submission = {
 export default function DashboardScreen() {
   const { user } = useAuth();
   const router = useRouter();
+  const tabBarHeight = useBottomTabBarHeight();
   const [items, setItems] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -179,7 +181,7 @@ export default function DashboardScreen() {
           data={items}
           keyExtractor={(i) => i.id}
           renderItem={renderItem}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: tabBarHeight + spacing.md }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         />
       )}

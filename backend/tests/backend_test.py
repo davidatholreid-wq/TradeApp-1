@@ -8,7 +8,7 @@ import base64
 import pytest
 import requests
 
-BASE_URL = "https://auto-price-pro-1.preview.emergentagent.com"
+BASE_URL = "https://fourbuy-admin.preview.emergentagent.com"
 API = f"{BASE_URL}/api"
 
 ADMIN_EMAIL = "admin@autopricepro.com"

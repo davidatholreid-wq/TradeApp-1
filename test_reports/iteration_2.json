@@ -32,6 +32,6 @@
   "seed_data_creation": "Two ephemeral dealers per run (phase3_owner_* and phase3_other_*, TEST_ prefixed company names). Multiple submissions created; one is deleted via the admin endpoint. Remaining ephemeral submissions accumulate in DB per run (dealer_id filters keep them isolated).",
   "retest_needed": false,
   "should_main_agent_self_test": false,
-  "context_for_next_testing_agent": "Phase 3 backend fully green. Use /app/backend/tests/test_phase3.py plus the existing /app/backend/tests/backend_test.py as regression suite. Admin creds: admin@fourbuy.co.za / admin123 (primary) or legacy admin@autopricepro.com / admin123. Reference counter is stored in db.counters with _id='submission_ref'. Market-analysis endpoint calls GPT-5.2 via emergentintegrations LlmChat and takes ~3-8s per call - increase pytest timeout accordingly (we used 120s). Base URL: https://auto-price-pro-1.preview.emergentagent.com.",
+  "context_for_next_testing_agent": "Phase 3 backend fully green. Use /app/backend/tests/test_phase3.py plus the existing /app/backend/tests/backend_test.py as regression suite. Admin creds: admin@fourbuy.co.za / admin123 (primary) or legacy admin@autopricepro.com / admin123. Reference counter is stored in db.counters with _id='submission_ref'. Market-analysis endpoint calls GPT-5.2 via emergentintegrations LlmChat and takes ~3-8s per call - increase pytest timeout accordingly (we used 120s). Base URL: https://fourbuy-admin.preview.emergentagent.com.",
   "rca_of_issue": "N/A - no failures encountered."
 }
