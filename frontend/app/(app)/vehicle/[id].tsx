@@ -47,9 +47,14 @@ type Submission = {
   year: number;
   factory_warranty?: boolean;
   condition: number;
+  // Legacy (may exist on older submissions)
   exterior_condition?: number;
-  interior_condition?: number;
   tyre_condition?: number;
+  // Four condition pillars
+  mechanical_condition?: number;
+  cosmetic_condition?: number;
+  interior_condition?: number;
+  history_condition?: number;
   windscreen_condition?: string;
   service_history?: string;
   last_service_date?: string;
@@ -146,11 +151,25 @@ export default function VehicleDetail() {
 
   const averageRating = useMemo(() => {
     if (!sub) return null;
-    const arr = [sub.exterior_condition, sub.interior_condition, sub.tyre_condition].filter(
+    // Prefer the four new pillars; fall back to legacy exterior/interior/tyre
+    // for older submissions that predate the pillar rewrite.
+    const pillars = [
+      sub.mechanical_condition,
+      sub.cosmetic_condition,
+      sub.interior_condition,
+      sub.history_condition,
+    ].filter((x): x is number => typeof x === "number" && x > 0);
+    if (pillars.length === 4) {
+      return pillars.reduce((a, b) => a + b, 0) / pillars.length;
+    }
+    const legacy = [sub.exterior_condition, sub.interior_condition, sub.tyre_condition].filter(
       (x): x is number => typeof x === "number" && x > 0
     );
-    if (arr.length === 0) return null;
-    return arr.reduce((a, b) => a + b, 0) / arr.length;
+    if (pillars.length > 0) {
+      return pillars.reduce((a, b) => a + b, 0) / pillars.length;
+    }
+    if (legacy.length === 0) return null;
+    return legacy.reduce((a, b) => a + b, 0) / legacy.length;
   }, [sub]);
 
   const handleOfferPrice = async () => {
@@ -259,9 +278,20 @@ export default function VehicleDetail() {
               <View style={[styles.heroBarFill, { width: `${(averageRating / 10) * 100}%` }]} />
             </View>
             <View style={styles.heroBreakdown}>
-              <HeroPill label="EXT" value={sub.exterior_condition} />
-              <HeroPill label="INT" value={sub.interior_condition} />
-              <HeroPill label="TYRES" value={sub.tyre_condition} />
+              {typeof sub.mechanical_condition === "number" ? (
+                <>
+                  <HeroPill label="MECH" value={sub.mechanical_condition} />
+                  <HeroPill label="COSM" value={sub.cosmetic_condition} />
+                  <HeroPill label="INT" value={sub.interior_condition} />
+                  <HeroPill label="HIST" value={sub.history_condition} />
+                </>
+              ) : (
+                <>
+                  <HeroPill label="EXT" value={sub.exterior_condition} />
+                  <HeroPill label="INT" value={sub.interior_condition} />
+                  <HeroPill label="TYRES" value={sub.tyre_condition} />
+                </>
+              )}
             </View>
           </View>
         ) : null}
@@ -316,12 +346,23 @@ export default function VehicleDetail() {
           />
         </View>
 
-        {/* Condition breakdown — vertical rows for readability */}
+        {/* Condition breakdown — 4 pillars for new submissions, legacy 3 fallback. */}
         <Text style={styles.sectionTitle}>Condition</Text>
         <View style={styles.detailsList}>
-          <DetailRow label="Exterior" value={sub.exterior_condition ? `${sub.exterior_condition} / 10` : "—"} />
-          <DetailRow label="Interior" value={sub.interior_condition ? `${sub.interior_condition} / 10` : "—"} />
-          <DetailRow label="Tyres" value={sub.tyre_condition ? `${sub.tyre_condition} / 10` : "—"} />
+          {typeof sub.mechanical_condition === "number" ? (
+            <>
+              <DetailRow label="Mechanical Health" value={`${sub.mechanical_condition} / 10`} />
+              <DetailRow label="Cosmetic Appearance" value={`${sub.cosmetic_condition} / 10`} />
+              <DetailRow label="Interior Condition" value={`${sub.interior_condition} / 10`} />
+              <DetailRow label="History / Maintenance" value={`${sub.history_condition} / 10`} />
+            </>
+          ) : (
+            <>
+              <DetailRow label="Exterior" value={sub.exterior_condition ? `${sub.exterior_condition} / 10` : "—"} />
+              <DetailRow label="Interior" value={sub.interior_condition ? `${sub.interior_condition} / 10` : "—"} />
+              <DetailRow label="Tyres" value={sub.tyre_condition ? `${sub.tyre_condition} / 10` : "—"} />
+            </>
+          )}
           <DetailRow label="Windscreen" value={sub.windscreen_condition ?? "—"} />
           <DetailRow
             label="Previous Accident Damage"

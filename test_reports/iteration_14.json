@@ -1,0 +1,47 @@
+{
+  "summary": "Iteration 14 — four-pillar condition rating overhaul verified end-to-end. BACKEND (new /app/backend/tests/test_four_pillars.py): 26/26 PASS in 3.01s covering (a) all four pillars required→422 when any missing, (b) exterior/tyre optional and legacy-client happy path, (c) persisted doc has all four pillars + legacy `condition` alias == round((m+c+i+h)/4) (verified 8+5+9+3=6 and 10*4=10 and 7*4=7), (d) GET /api/submissions/{id} echoes the four pillars, (e) bogus values 0/-1/11/100/'foo' all 422, (f) regression sweep — /api/admin/submissions with all three bucket filters + /api/admin/billing + /api/dealer/photos all still 200, (g) LEGACY submissions (18 in DB with exterior_condition set + mechanical_condition null) still fetch cleanly via GET with no _id leak. Regression pytest for test_dealer_photos.py (fixed a stale payload line — added 3 pillars) + test_silo_buckets.py + test_archive_dealers.py = 40/40 PASS. FRONTEND mobile 390x844 (dealer minitest@example.com/Mini1234!): CONDITION section renders EXACTLY four rating rows in top-to-bottom order (Mechanical Health y=960 → Cosmetic Appearance y=1046 → Interior Condition y=1132 → History / Maintenance y=1218) with hint 'Four pillars. The overall condition rating is the average of these.' visible above them; 4 'Not rated' badges default; tapping rating-3 (nth 0) turned dots 1-3 RED (computed rgb(192,57,43)), badge = '3/10 · Poor'; rating-5 (nth 1) turned 5 dots YELLOW rgb(212,172,13) badge '5/10 · Fair'; rating-8 (nth 2) turned 8 dots GREEN rgb(39,174,96) badge '8/10 · Good'. Windscreen field hint still reads 'Choose windscreen condition'. Validation strings for all four pillars are present in submit.tsx:219-222 ('Please rate the mechanical health.' / 'Please rate the cosmetic appearance.' / 'Please rate the interior condition.' / 'Please rate the history / maintenance.'). E2E happy path: dealer POST /api/submissions with mech=8/cosm=5/int=9/hist=3 → HTTP 200, reference FB-000041, stored pillars 8/5/9/3, legacy `condition` alias = 6 (round(6.25)). Admin mobile /vehicle/[id] (390x844) for FB-000041: hero card shows '6.3 / 10' (JS toFixed(1) rounds 6.25→'6.3'), four HeroPills MECH 8/10 / COSM 5/10 / INT 9/10 / HIST 3/10, zero legacy EXT/TYRES pills; DetailRow list contains all 7 expected labels (Mechanical Health:, Cosmetic Appearance:, Interior Condition:, History / Maintenance:, Windscreen:, Previous Accident Damage:, Paint Evidence:). Admin desktop cockpit 1440x900 same submission: identical result — '6.3 / 10' hero + 4 pills MECH/COSM/INT/HIST + 7 DetailRow labels rendered under the Condition group. Regression: legacy sub FB-000031 (ext=8/int=7/tyre=8, no pillars) on mobile /vehicle/[id] falls back correctly — hero pills read EXT / INT / TYRES (0 occurrences of MECH/COSM/HIST), overall condition '7.0 / 10', windscreen/accident/paint rows still render. Legacy cockpit path exercises the same `typeof mechanical_condition === 'number'` guard so behaviour is identical by construction. NO regressions introduced.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "react-native-web deprecation (carry-over, not this iteration)", "issue": "Non-blocking console warnings still present: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' and 'props.pointerEvents is deprecated. Use style.pointerEvents'. Flagged in iteration 12 & 13 already, not introduced by the pillar rewrite."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_four_pillars.py",
+    "/app/test_reports/pytest/four_pillars_results.xml"
+  ],
+  "action_items": [
+    "Optional housekeeping (NOT this iteration, pre-existing): /app/backend/tests/test_phase3.py uses a very old submission payload shape (make_id / model_id / condition only) and now fails 10 tests with 422 field-required errors. Same class of stale-fixture problem as test_billing_dealers.py that iteration 13 already flagged. Rewriting to the current schema would restore the phase-3 suite to green; the endpoints themselves are healthy (all covered by test_four_pillars.py + test_dealer_photos.py).",
+    "Optional (RN-web carry-over): migrate remaining `shadow*` style props to `boxShadow` and switch `pointerEvents=\"none\"` in MonthYearPicker.tsx:104 to `style={{ pointerEvents: 'none' }}` to silence the two remaining warnings."
+  ],
+  "critical_code_review_comments": [
+    "server.py:230-236 — mechanical_condition / cosmetic_condition / interior_condition / history_condition are `int = Field(ge=1, le=10)` (required), while exterior_condition / tyre_condition are `Optional[int] = Field(default=None, ge=1, le=10)`. Correct: matches spec.",
+    "server.py:506-513 — extra guardrail loops through only the four pillars, so exterior/tyre legacy fields cannot fail the guard. Correct.",
+    "server.py:551-559 — legacy `condition` alias = round((m+c+i+h)/4). Verified for 8/5/9/3 → 6 and identical-value cases.",
+    "submit.tsx:100-107 — four rating states default to null → four 'Not rated' badges on first render (confirmed count=4 in DOM).",
+    "submit.tsx:219-222 — validation error strings match the spec exactly, in the correct order (mech → cosm → int → history).",
+    "submit.tsx:250-253 — POST body sends mechanical_condition / cosmetic_condition / interior_condition / history_condition (retains interior_condition name as noted in agent-to-agent context).",
+    "vehicle/[id].tsx:152-173 — averageRating prefers 4 pillars but falls back to legacy exterior/interior/tyre. Note: there's a small dead-branch (lines 168-170 replay the pillar sum) but it's harmless — the length===4 branch on line 162 fires first.",
+    "vehicle/[id].tsx:281-289 & WebAdminDashboard.tsx:541-554 — HeroPill selection gated on `typeof mechanical_condition === 'number'`. New sub shows MECH/COSM/INT/HIST, legacy sub shows EXT/INT/TYRES. Both verified visually.",
+    "vehicle/[id].tsx:352-365 & WebAdminDashboard.tsx:576-589 — Condition DetailRow list uses the same gate. Verified both branches render correctly (new = 4 pillar rows, legacy = 3 rows Exterior/Interior/Tyres)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_four_pillars.py (new, 26 tests)",
+    "/app/backend/tests/test_dealer_photos.py (added 3 pillars to the stale sample payload on line 331 so the regression stays green)"
+  ],
+  "success_rate": {
+    "backend": "100% (26/26 new + 40/40 regression across dealer_photos, silo_buckets, archive_dealers)",
+    "frontend": "100% (7/7 focus items: hint, row order, defaults, rating colours, windscreen hint, hero avg 6.3, hero pills MECH/COSM/INT/HIST, 7 DetailRows, legacy fallback)"
+  },
+  "seed_data_creation": "Created 1 new submission FB-000041 (2022 BMW 3 Series 320i M-Sport, dealer minitest@example.com) with mech=8/cosm=5/int=9/hist=3 for admin cockpit visual verification. Test suite created ~10 further submissions under dealer pillars_*@example.com (TEST_Pillars Motors) for pytest coverage.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Four-pillar rewrite is COMPLETE and verified. Key facts: (1) rating-N testIDs now render 4× per page (one row per pillar), use .nth(0)=Mechanical, .nth(1)=Cosmetic, .nth(2)=Interior, .nth(3)=History. (2) DOM labels appear with a trailing colon (e.g. 'Mechanical Health:') so exact-text selectors need `contains` or you need to walk innerText. (3) Backend still exposes legacy `condition` (single int, rounded avg) alongside the four pillars — many old admin/analytics queries rely on this. (4) 18 legacy submissions in DB (mech_condition==null, ext_condition set) — cockpit + mobile detail both drop back to EXT/INT/TYRES hero pills and Exterior/Interior/Tyres DetailRows automatically. (5) test_phase3.py has stale fixtures pre-dating the entire progressive-filter schema — ignore or refactor, not this iteration's regression. (6) JS toFixed(1) on 6.25 renders '6.3' in browsers (round-half-away-from-zero at that precision) — matches spec.",
+  "rca_of_issue": "N/A — all focus items pass. No bugs found in the four-pillar overhaul or its legacy fallback."
+}

@@ -223,12 +223,17 @@ class VehicleSubmission(BaseModel):
     engine_number: Optional[str] = "TBC"
     license_disk_data: Optional[str] = None
 
-    # Condition ratings (1-10). Optional to allow the mobile submit form to
-    # gate the "no selection" state, though we still enforce a value at the API
-    # boundary — the client only sends a rating once the dealer has tapped one.
-    exterior_condition: int = Field(ge=1, le=10)
+    # Four condition pillars (1-10). We took over the old exterior/tyre
+    # fields with the new mechanical/cosmetic/history pillars — interior
+    # stays as-is. exterior_condition / tyre_condition are kept as optional
+    # for backwards compatibility with legacy submissions.
+    mechanical_condition: int = Field(ge=1, le=10)
+    cosmetic_condition: int = Field(ge=1, le=10)
     interior_condition: int = Field(ge=1, le=10)
-    tyre_condition: int = Field(ge=1, le=10)
+    history_condition: int = Field(ge=1, le=10)
+    # Legacy (deprecated) — accepted but not required by the new mobile form.
+    exterior_condition: Optional[int] = Field(default=None, ge=1, le=10)
+    tyre_condition: Optional[int] = Field(default=None, ge=1, le=10)
     # Windscreen — three simple options after the flow rewrite. "Chip" and
     # "Crack" from the legacy schema are still accepted for historical
     # submissions but new submissions must use one of the new options.
@@ -497,10 +502,12 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
     # Per-submission acceptance popup ("R50 incl. VAT / no fee if not priced within 24h").
     if not payload.billing_accepted:
         raise HTTPException(400, "Billing acceptance is required for each submission")
+    # Guardrail — every 1-10 rating we actually care about.
     for rating, name in [
-        (payload.exterior_condition, "exterior"),
+        (payload.mechanical_condition, "mechanical"),
+        (payload.cosmetic_condition, "cosmetic"),
         (payload.interior_condition, "interior"),
-        (payload.tyre_condition, "tyre"),
+        (payload.history_condition, "history"),
     ]:
         if not (1 <= rating <= 10):
             raise HTTPException(400, f"{name.title()} condition must be 1-10")
@@ -530,12 +537,26 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         "engine_number": payload.engine_number or "TBC",
         "colour": payload.colour,
         "license_disk_data": payload.license_disk_data,
-        # Condition
-        "exterior_condition": payload.exterior_condition,
+        # Condition — 4 pillars (mechanical, cosmetic, interior, history)
+        # form the overall condition average. exterior/tyre kept for legacy
+        # compatibility with older submissions.
+        "mechanical_condition": payload.mechanical_condition,
+        "cosmetic_condition": payload.cosmetic_condition,
         "interior_condition": payload.interior_condition,
+        "history_condition": payload.history_condition,
+        "exterior_condition": payload.exterior_condition,
         "tyre_condition": payload.tyre_condition,
         "windscreen_condition": payload.windscreen_condition,
-        "condition": payload.exterior_condition,  # legacy alias for existing analytics
+        # Legacy analytics alias — average of the four pillars, rounded.
+        "condition": round(
+            (
+                payload.mechanical_condition
+                + payload.cosmetic_condition
+                + payload.interior_condition
+                + payload.history_condition
+            )
+            / 4
+        ),
         # Service history
         "service_history": payload.service_history,
         "last_service_date": payload.last_service_date or "TBC",

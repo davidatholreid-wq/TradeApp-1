@@ -304,15 +304,48 @@ frontend:
           Detail views (mobile /vehicle/[id] + WebAdminDashboard) now show
           "Damage Types" and "Paint Quality" rows when set.
 
+  - task: "Four-pillar condition rating (Mechanical / Cosmetic / Interior / History)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py, /app/frontend/app/(app)/submit.tsx, /app/frontend/app/(app)/vehicle/[id].tsx, /app/frontend/src/components/WebAdminDashboard.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Overhaul of the condition rating system. Removed Exterior + Tyres
+          from the submit flow; replaced with four pillars:
+            1. Mechanical Health
+            2. Cosmetic Appearance
+            3. Interior Condition (retained)
+            4. History / Maintenance
+          Backend VehicleSubmission model now requires mechanical_condition,
+          cosmetic_condition, interior_condition and history_condition
+          (all int 1-10). exterior_condition and tyre_condition are now
+          Optional[int] for legacy compatibility so existing seeded rows
+          still validate. Persistence layer saves all 6 fields and computes
+          the legacy `condition` int alias as the rounded average of the four
+          pillars.
+          Frontend submit.tsx renders 4 rating rows (each with color-coded
+          dots red/yellow/green + Not rated → N/10 · Poor|Fair|Good badge)
+          and enforces validation that all 4 are rated. Admin hero average
+          on both mobile /vehicle/[id] and desktop cockpit uses the 4 pillars
+          when present, falling back to legacy 3-value average for historical
+          submissions. Hero breakdown pills show MECH / COSM / INT / HIST for
+          new submissions and EXT / INT / TYRES for legacy. Condition
+          DetailRow list mirrors the same conditional rendering.
+
 metadata:
   created_by: "main_agent"
-  version: "1.3"
-  test_sequence: 13
+  version: "1.4"
+  test_sequence: 14
   run_ui: true
 
 test_plan:
   current_focus:
-    - "Submit form UX overhaul — color-coded ratings, new windscreen options, month/year date picker, conditional paint quality & accident type sub-panels"
+    - "Four-pillar condition rating (Mechanical / Cosmetic / Interior / History)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"

@@ -330,6 +330,7 @@ class TestRegression:
             "billing_accepted": True,
             "exterior_condition": 8, "interior_condition": 7,
             "tyre_condition": 8, "windscreen_condition": "Perfect",
+            "mechanical_condition": 8, "cosmetic_condition": 7, "history_condition": 8,
             "service_history": "Full Service History with Agents", "paint_evidence": False,
             # Use new photo keys
             "photos": {

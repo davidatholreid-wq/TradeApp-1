@@ -52,9 +52,14 @@ type SubmissionFull = Submission & {
   year_of_production?: number;
   transmission?: string;
   year_registered?: number;
+  // Legacy fields
   exterior_condition?: number;
-  interior_condition?: number;
   tyre_condition?: number;
+  // Four condition pillars
+  mechanical_condition?: number;
+  cosmetic_condition?: number;
+  interior_condition?: number;
+  history_condition?: number;
   windscreen_condition?: string;
   service_history?: string;
   last_service_date?: string;
@@ -168,13 +173,22 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
 
   const averageRating = useMemo(() => {
     if (!selected) return null;
-    const arr = [
+    const pillars = [
+      selected.mechanical_condition,
+      selected.cosmetic_condition,
+      selected.interior_condition,
+      selected.history_condition,
+    ].filter((x): x is number => typeof x === "number" && x > 0);
+    if (pillars.length > 0) {
+      return pillars.reduce((a, b) => a + b, 0) / pillars.length;
+    }
+    const legacy = [
       selected.exterior_condition,
       selected.interior_condition,
       selected.tyre_condition,
     ].filter((x): x is number => typeof x === "number" && x > 0);
-    if (arr.length === 0) return null;
-    return arr.reduce((a, b) => a + b, 0) / arr.length;
+    if (legacy.length === 0) return null;
+    return legacy.reduce((a, b) => a + b, 0) / legacy.length;
   }, [selected]);
 
   const filtered = subs.filter((s) => {
@@ -524,9 +538,20 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                     </View>
                   </View>
                   <View style={styles.heroBreakdown}>
-                    <HeroPill label="EXT" value={selected.exterior_condition} />
-                    <HeroPill label="INT" value={selected.interior_condition} />
-                    <HeroPill label="TYRES" value={selected.tyre_condition} />
+                    {typeof selected.mechanical_condition === "number" ? (
+                      <>
+                        <HeroPill label="MECH" value={selected.mechanical_condition} />
+                        <HeroPill label="COSM" value={selected.cosmetic_condition} />
+                        <HeroPill label="INT" value={selected.interior_condition} />
+                        <HeroPill label="HIST" value={selected.history_condition} />
+                      </>
+                    ) : (
+                      <>
+                        <HeroPill label="EXT" value={selected.exterior_condition} />
+                        <HeroPill label="INT" value={selected.interior_condition} />
+                        <HeroPill label="TYRES" value={selected.tyre_condition} />
+                      </>
+                    )}
                   </View>
                 </View>
               ) : null}
@@ -545,12 +570,23 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 <DetailRow label="Year of Production" value={String(selected.year_of_production ?? selected.year)} last />
               </View>
 
-              {/* Condition detail — vertical rows */}
+              {/* Condition detail — 4 pillars for new submissions, legacy 3 fallback. */}
               <Text style={styles.groupTitle}>Condition</Text>
               <View style={styles.detailsList}>
-                <DetailRow label="Exterior" value={selected.exterior_condition ? `${selected.exterior_condition} / 10` : "—"} />
-                <DetailRow label="Interior" value={selected.interior_condition ? `${selected.interior_condition} / 10` : "—"} />
-                <DetailRow label="Tyres" value={selected.tyre_condition ? `${selected.tyre_condition} / 10` : "—"} />
+                {typeof selected.mechanical_condition === "number" ? (
+                  <>
+                    <DetailRow label="Mechanical Health" value={`${selected.mechanical_condition} / 10`} />
+                    <DetailRow label="Cosmetic Appearance" value={`${selected.cosmetic_condition} / 10`} />
+                    <DetailRow label="Interior Condition" value={`${selected.interior_condition} / 10`} />
+                    <DetailRow label="History / Maintenance" value={`${selected.history_condition} / 10`} />
+                  </>
+                ) : (
+                  <>
+                    <DetailRow label="Exterior" value={selected.exterior_condition ? `${selected.exterior_condition} / 10` : "—"} />
+                    <DetailRow label="Interior" value={selected.interior_condition ? `${selected.interior_condition} / 10` : "—"} />
+                    <DetailRow label="Tyres" value={selected.tyre_condition ? `${selected.tyre_condition} / 10` : "—"} />
+                  </>
+                )}
                 <DetailRow label="Windscreen" value={selected.windscreen_condition ?? "—"} />
                 <DetailRow
                   label="Previous Accident Damage"

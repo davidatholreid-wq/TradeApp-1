@@ -98,10 +98,13 @@ export default function SubmitVehicle() {
   const [vin, setVin] = useState<string>("TBC");
   const [engineNo, setEngineNo] = useState<string>("TBC");
 
-  // Condition — start unrated so the dealer must consciously pick a rating.
-  const [exteriorRating, setExteriorRating] = useState<number | null>(null);
+  // The four condition pillars. Each starts unrated so the dealer must
+  // consciously grade the vehicle across all four before we compute the
+  // overall condition average.
+  const [mechanicalRating, setMechanicalRating] = useState<number | null>(null);
+  const [cosmeticRating, setCosmeticRating] = useState<number | null>(null);
   const [interiorRating, setInteriorRating] = useState<number | null>(null);
-  const [tyreRating, setTyreRating] = useState<number | null>(null);
+  const [historyRating, setHistoryRating] = useState<number | null>(null);
   const [windscreen, setWindscreen] = useState<Windscreen | null>(null);
 
   // Service
@@ -212,10 +215,11 @@ export default function SubmitVehicle() {
     // If no VIN from scan and no manual colour picked → force colour.
     if ((!vin || vin === "TBC") && !colour) return "Please pick a colour (or scan the license disc).";
     for (const p of PHOTO_ORDER) if (!photos[p.key]) return `Photo missing: ${p.label}`;
-    // Condition ratings must be explicitly chosen.
-    if (!exteriorRating) return "Please rate the exterior condition.";
+    // Condition ratings must be explicitly chosen — all four pillars.
+    if (!mechanicalRating) return "Please rate the mechanical health.";
+    if (!cosmeticRating) return "Please rate the cosmetic appearance.";
     if (!interiorRating) return "Please rate the interior condition.";
-    if (!tyreRating) return "Please rate the tyre condition.";
+    if (!historyRating) return "Please rate the history / maintenance.";
     if (!windscreen) return "Please choose the windscreen condition.";
     if (!serviceHistory) return "Please choose the service history.";
     if (paintEvidence && !paintQuality) return "Choose the paintwork quality (Excellent, Fair or Poor).";
@@ -243,9 +247,10 @@ export default function SubmitVehicle() {
           colour: colour || (licenseDiskInfo?.colour ?? "TBC"),
           vin: vin || "TBC", engine_number: engineNo || "TBC",
           license_disk_data: licenseDisk,
-          exterior_condition: exteriorRating,
+          mechanical_condition: mechanicalRating,
+          cosmetic_condition: cosmeticRating,
           interior_condition: interiorRating,
-          tyre_condition: tyreRating,
+          history_condition: historyRating,
           windscreen_condition: windscreen,
           service_history: serviceHistory,
           last_service_date: lastServiceDate || null,
@@ -368,19 +373,32 @@ export default function SubmitVehicle() {
           )}
 
           <Text style={styles.sectionTitle}>CONDITION</Text>
+          <Text style={styles.sectionHint}>
+            Four pillars. The overall condition rating is the average of these.
+          </Text>
 
           <View style={styles.ratingHeader}>
-            <Text style={styles.ratingTitle}>Exterior</Text>
-            <View style={[styles.ratingBadge, { borderColor: ratingColor(exteriorRating) }]}>
-              <Text style={[styles.ratingBadgeText, { color: ratingColor(exteriorRating) }]}>
-                {exteriorRating != null ? `${exteriorRating}/10 · ${ratingLabelFor(exteriorRating)}` : "Not rated"}
+            <Text style={styles.ratingTitle}>Mechanical Health</Text>
+            <View style={[styles.ratingBadge, { borderColor: ratingColor(mechanicalRating) }]}>
+              <Text style={[styles.ratingBadgeText, { color: ratingColor(mechanicalRating) }]}>
+                {mechanicalRating != null ? `${mechanicalRating}/10 · ${ratingLabelFor(mechanicalRating)}` : "Not rated"}
               </Text>
             </View>
           </View>
-          <RatingDots value={exteriorRating} onChange={setExteriorRating} />
+          <RatingDots value={mechanicalRating} onChange={setMechanicalRating} />
 
           <View style={styles.ratingHeader}>
-            <Text style={styles.ratingTitle}>Interior</Text>
+            <Text style={styles.ratingTitle}>Cosmetic Appearance</Text>
+            <View style={[styles.ratingBadge, { borderColor: ratingColor(cosmeticRating) }]}>
+              <Text style={[styles.ratingBadgeText, { color: ratingColor(cosmeticRating) }]}>
+                {cosmeticRating != null ? `${cosmeticRating}/10 · ${ratingLabelFor(cosmeticRating)}` : "Not rated"}
+              </Text>
+            </View>
+          </View>
+          <RatingDots value={cosmeticRating} onChange={setCosmeticRating} />
+
+          <View style={styles.ratingHeader}>
+            <Text style={styles.ratingTitle}>Interior Condition</Text>
             <View style={[styles.ratingBadge, { borderColor: ratingColor(interiorRating) }]}>
               <Text style={[styles.ratingBadgeText, { color: ratingColor(interiorRating) }]}>
                 {interiorRating != null ? `${interiorRating}/10 · ${ratingLabelFor(interiorRating)}` : "Not rated"}
@@ -390,14 +408,14 @@ export default function SubmitVehicle() {
           <RatingDots value={interiorRating} onChange={setInteriorRating} />
 
           <View style={styles.ratingHeader}>
-            <Text style={styles.ratingTitle}>Tyres</Text>
-            <View style={[styles.ratingBadge, { borderColor: ratingColor(tyreRating) }]}>
-              <Text style={[styles.ratingBadgeText, { color: ratingColor(tyreRating) }]}>
-                {tyreRating != null ? `${tyreRating}/10 · ${ratingLabelFor(tyreRating)}` : "Not rated"}
+            <Text style={styles.ratingTitle}>History / Maintenance</Text>
+            <View style={[styles.ratingBadge, { borderColor: ratingColor(historyRating) }]}>
+              <Text style={[styles.ratingBadgeText, { color: ratingColor(historyRating) }]}>
+                {historyRating != null ? `${historyRating}/10 · ${ratingLabelFor(historyRating)}` : "Not rated"}
               </Text>
             </View>
           </View>
-          <RatingDots value={tyreRating} onChange={setTyreRating} />
+          <RatingDots value={historyRating} onChange={setHistoryRating} />
 
           <Field label="Windscreen" value={windscreen} onPress={() => openWheel("windscreen_condition")} testID="pick-windscreen" hint="Choose windscreen condition" />
 
