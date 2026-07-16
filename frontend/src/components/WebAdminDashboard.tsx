@@ -60,6 +60,8 @@ type SubmissionFull = Submission & {
   last_service_date?: string;
   last_service_mileage?: number | null;
   paint_evidence?: boolean;
+  paint_quality?: string | null;
+  accident_damage_types?: string[];
   reconditioning_items?: ReconItem[];
   reconditioning_total_zar?: number;
   vin?: string;
@@ -555,12 +557,22 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                   value={selected.accident_damage ? "Yes" : "None"}
                   color={selected.accident_damage ? colors.danger : colors.text}
                 />
+                {selected.accident_damage && selected.accident_damage_types && selected.accident_damage_types.length > 0 ? (
+                  <DetailRow
+                    label="Damage Types"
+                    value={selected.accident_damage_types.join(", ")}
+                    color={colors.danger}
+                  />
+                ) : null}
                 <DetailRow
                   label="Paint Evidence"
                   value={selected.paint_evidence ? "Yes" : "No"}
                   color={selected.paint_evidence ? colors.danger : colors.text}
-                  last
+                  last={!(selected.paint_evidence && selected.paint_quality)}
                 />
+                {selected.paint_evidence && selected.paint_quality ? (
+                  <DetailRow label="Paint Quality" value={selected.paint_quality} last />
+                ) : null}
               </View>
 
               {/* Service history */}

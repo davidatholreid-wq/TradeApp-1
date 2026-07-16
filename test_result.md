@@ -266,16 +266,53 @@ frontend:
           row typography for consistency. Added a `type` scale in theme.ts for
           future consistency.
 
+  - task: "Submit form UX overhaul — color-coded ratings, new windscreen options, month/year date picker, conditional paint quality & accident type sub-panels"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/(app)/submit.tsx, /app/frontend/src/components/MonthYearPicker.tsx, /app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Submit vehicle form changes:
+          1. Ratings (Exterior/Interior/Tyres) now start as null. RatingDots
+             renders color-coded when set: 1-3 red (#C0392B), 4-6 yellow
+             (#D4AC0D), 7-10 green (#27AE60). Badge next to each label shows
+             "N/10 · Poor|Fair|Good" or "Not rated" when null. Validation
+             requires all three ratings before submit.
+          2. Windscreen options simplified to: Perfect, Chip Repairs, Needs
+             Replacement (Chip/Crack legacy values still accepted server-side).
+             Field defaults to null with "Choose windscreen condition" hint.
+          3. Service History defaults to null. Last Service Date replaced with
+             a tap-to-open iOS-style two-column MonthYearPicker (month names
+             left, years right, snapping ScrollView with highlight bar). Also
+             has a "Mark as TBC (unknown)" fallback.
+          4. Paint Evidence checkbox now reveals a Excellent/Fair/Poor pill row
+             (paint_quality); clearing the checkbox clears the selection.
+             Validation requires paint_quality when paint_evidence is true.
+          5. Accident Damage checkbox reveals a multi-select of Cosmetic /
+             Structural / Mechanical / Glass / Electrical/Functional. At least
+             one must be selected when accident_damage is true.
+          Backend: VehicleSubmission model gains paint_quality (Optional
+          Literal Excellent/Fair/Poor) and accident_damage_types (list[str]).
+          Windscreen Literal broadened to accept new + legacy values.
+          Persistence layer stores paint_quality and accident_damage_types on
+          the submission doc (or None / [] when the respective checkbox is off).
+          Detail views (mobile /vehicle/[id] + WebAdminDashboard) now show
+          "Damage Types" and "Paint Quality" rows when set.
+
 metadata:
   created_by: "main_agent"
-  version: "1.2"
-  test_sequence: 12
+  version: "1.3"
+  test_sequence: 13
   run_ui: true
 
 test_plan:
   current_focus:
-    - "Dealers management inside web admin cockpit"
-    - "Vertical spec list + softer typography on detail views"
+    - "Submit form UX overhaul — color-coded ratings, new windscreen options, month/year date picker, conditional paint quality & accident type sub-panels"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"

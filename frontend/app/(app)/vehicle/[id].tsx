@@ -55,7 +55,9 @@ type Submission = {
   last_service_date?: string;
   last_service_mileage?: number | null;
   paint_evidence?: boolean;
+  paint_quality?: string | null;
   accident_damage: boolean;
+  accident_damage_types?: string[];
   reconditioning_items?: ReconItem[];
   reconditioning_total_zar?: number;
   colour: string;
@@ -326,12 +328,22 @@ export default function VehicleDetail() {
             value={sub.accident_damage ? "Yes" : "None"}
             valueColor={sub.accident_damage ? colors.danger : colors.text}
           />
+          {sub.accident_damage && sub.accident_damage_types && sub.accident_damage_types.length > 0 ? (
+            <DetailRow
+              label="Damage Types"
+              value={sub.accident_damage_types.join(", ")}
+              valueColor={colors.danger}
+            />
+          ) : null}
           <DetailRow
             label="Paint Evidence"
             value={sub.paint_evidence ? "Yes" : "No"}
             valueColor={sub.paint_evidence ? colors.danger : colors.text}
-            last
+            last={!(sub.paint_evidence && sub.paint_quality)}
           />
+          {sub.paint_evidence && sub.paint_quality ? (
+            <DetailRow label="Paint Quality" value={sub.paint_quality} last />
+          ) : null}
         </View>
 
         {/* Service history */}

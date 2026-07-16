@@ -223,12 +223,19 @@ class VehicleSubmission(BaseModel):
     engine_number: Optional[str] = "TBC"
     license_disk_data: Optional[str] = None
 
-    # Condition ratings (1-10)
+    # Condition ratings (1-10). Optional to allow the mobile submit form to
+    # gate the "no selection" state, though we still enforce a value at the API
+    # boundary — the client only sends a rating once the dealer has tapped one.
     exterior_condition: int = Field(ge=1, le=10)
     interior_condition: int = Field(ge=1, le=10)
     tyre_condition: int = Field(ge=1, le=10)
-    # Windscreen — discrete options
-    windscreen_condition: Literal["Perfect", "Chip", "Crack", "Needs Replacement"]
+    # Windscreen — three simple options after the flow rewrite. "Chip" and
+    # "Crack" from the legacy schema are still accepted for historical
+    # submissions but new submissions must use one of the new options.
+    windscreen_condition: Literal[
+        "Perfect", "Chip Repairs", "Needs Replacement",
+        "Chip", "Crack",  # legacy
+    ]
 
     # Service history
     service_history: Literal[
@@ -246,7 +253,14 @@ class VehicleSubmission(BaseModel):
 
     # Damage / paint
     paint_evidence: bool
+    # Optional detail selected when paint_evidence == True
+    paint_quality: Optional[Literal["Excellent", "Fair", "Poor"]] = None
     accident_damage: bool
+    # Multiple damage categories identifiable in the dealer's inspection.
+    # Free-string list so the enum can grow without a migration; the UI
+    # currently offers: Cosmetic, Structural, Mechanical, Glass,
+    # Electrical/Functional.
+    accident_damage_types: list[str] = []
 
     # Reconditioning costs: list of {label: str, amount_zar: float}
     reconditioning_items: list[dict] = []
@@ -528,7 +542,9 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         "last_service_mileage": payload.last_service_mileage,  # None → treated as TBC
         # Damage
         "paint_evidence": payload.paint_evidence,
+        "paint_quality": payload.paint_quality if payload.paint_evidence else None,
         "accident_damage": payload.accident_damage,
+        "accident_damage_types": payload.accident_damage_types if payload.accident_damage else [],
         # Reconditioning
         "reconditioning_items": payload.reconditioning_items,
         "reconditioning_total_zar": round(float(total_recon), 2),

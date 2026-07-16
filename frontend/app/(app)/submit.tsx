@@ -23,6 +23,7 @@ import * as ImagePicker from "expo-image-picker";
 import { colors, spacing, radius, fonts } from "@/src/theme";
 import { apiFetch } from "@/src/api";
 import WheelPicker from "@/src/components/WheelPicker";
+import MonthYearPicker, { formatIsoMonthYear } from "@/src/components/MonthYearPicker";
 import { decodeLicenseDisk, LicenseDiskInfo } from "@/src/utils/licenseDisk";
 
 type PhotoKey = "front" | "driver_side" | "passenger_side" | "rear" | "interior";
@@ -34,7 +35,7 @@ const PHOTO_ORDER: { key: PhotoKey; label: string }[] = [
   { key: "interior", label: "Interior" },
 ];
 
-const WINDSCREEN_OPTIONS = ["Perfect", "Chip", "Crack", "Needs Replacement"] as const;
+const WINDSCREEN_OPTIONS = ["Perfect", "Chip Repairs", "Needs Replacement"] as const;
 type Windscreen = typeof WINDSCREEN_OPTIONS[number];
 const SERVICE_HISTORY = [
   "Full Service History with Agents",
@@ -44,6 +45,33 @@ const SERVICE_HISTORY = [
 ] as const;
 type ServiceHistory = typeof SERVICE_HISTORY[number];
 const COLOURS = ["White", "Black", "Silver", "Grey", "Blue", "Red", "Green", "Yellow", "Orange", "Brown", "Beige", "Gold", "Maroon"];
+
+const PAINT_QUALITY_OPTIONS = ["Excellent", "Fair", "Poor"] as const;
+type PaintQuality = typeof PAINT_QUALITY_OPTIONS[number];
+
+const ACCIDENT_DAMAGE_OPTIONS = [
+  "Cosmetic",
+  "Structural",
+  "Mechanical",
+  "Glass",
+  "Electrical / Functional",
+] as const;
+type AccidentDamageType = typeof ACCIDENT_DAMAGE_OPTIONS[number];
+
+// Colour-code a 1-10 condition rating: 1-3 red, 4-6 yellow, 7-10 green.
+// Kept muted so it plays well with the strict monochrome theme.
+const ratingColor = (n: number | null): string => {
+  if (n == null || n <= 0) return colors.border;
+  if (n <= 3) return "#C0392B"; // red
+  if (n <= 6) return "#D4AC0D"; // yellow
+  return "#27AE60"; // green
+};
+const ratingLabelFor = (n: number | null): string => {
+  if (n == null || n <= 0) return "Not rated";
+  if (n <= 3) return "Poor";
+  if (n <= 6) return "Fair";
+  return "Good";
+};
 
 type WheelField =
   | "make" | "fuel_type" | "year_of_production" | "transmission"
@@ -70,16 +98,17 @@ export default function SubmitVehicle() {
   const [vin, setVin] = useState<string>("TBC");
   const [engineNo, setEngineNo] = useState<string>("TBC");
 
-  // Condition
-  const [exteriorRating, setExteriorRating] = useState<number>(7);
-  const [interiorRating, setInteriorRating] = useState<number>(7);
-  const [tyreRating, setTyreRating] = useState<number>(7);
-  const [windscreen, setWindscreen] = useState<Windscreen>("Perfect");
+  // Condition — start unrated so the dealer must consciously pick a rating.
+  const [exteriorRating, setExteriorRating] = useState<number | null>(null);
+  const [interiorRating, setInteriorRating] = useState<number | null>(null);
+  const [tyreRating, setTyreRating] = useState<number | null>(null);
+  const [windscreen, setWindscreen] = useState<Windscreen | null>(null);
 
   // Service
-  const [serviceHistory, setServiceHistory] = useState<ServiceHistory>("Full Service History with Agents");
+  const [serviceHistory, setServiceHistory] = useState<ServiceHistory | null>(null);
   const [lastServiceDate, setLastServiceDate] = useState<string>("");
   const [lastServiceMileage, setLastServiceMileage] = useState<string>("");
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
 
   // Photos + mileage
   const [photos, setPhotos] = useState<Record<PhotoKey, string>>({ front: "", driver_side: "", passenger_side: "", rear: "", interior: "" });
@@ -87,7 +116,9 @@ export default function SubmitVehicle() {
 
   // Damage / paint
   const [paintEvidence, setPaintEvidence] = useState(false);
+  const [paintQuality, setPaintQuality] = useState<PaintQuality | null>(null);
   const [accidentDamage, setAccidentDamage] = useState(false);
+  const [accidentTypes, setAccidentTypes] = useState<AccidentDamageType[]>([]);
 
   // Reconditioning items
   const [reconItems, setReconItems] = useState<{ label: string; amount: string }[]>([]);
@@ -181,6 +212,14 @@ export default function SubmitVehicle() {
     // If no VIN from scan and no manual colour picked → force colour.
     if ((!vin || vin === "TBC") && !colour) return "Please pick a colour (or scan the license disc).";
     for (const p of PHOTO_ORDER) if (!photos[p.key]) return `Photo missing: ${p.label}`;
+    // Condition ratings must be explicitly chosen.
+    if (!exteriorRating) return "Please rate the exterior condition.";
+    if (!interiorRating) return "Please rate the interior condition.";
+    if (!tyreRating) return "Please rate the tyre condition.";
+    if (!windscreen) return "Please choose the windscreen condition.";
+    if (!serviceHistory) return "Please choose the service history.";
+    if (paintEvidence && !paintQuality) return "Choose the paintwork quality (Excellent, Fair or Poor).";
+    if (accidentDamage && accidentTypes.length === 0) return "Select at least one type of accident damage.";
     return null;
   };
 
@@ -213,7 +252,9 @@ export default function SubmitVehicle() {
           last_service_mileage: lastServiceMileage ? parseInt(lastServiceMileage) : null,
           photos, mileage: parseInt(mileage),
           paint_evidence: paintEvidence,
+          paint_quality: paintEvidence ? paintQuality : null,
           accident_damage: accidentDamage,
+          accident_damage_types: accidentDamage ? accidentTypes : [],
           reconditioning_items: reconItems.filter(r => r.label.trim() && parseFloat(r.amount) > 0).map(r => ({ label: r.label.trim(), amount_zar: parseFloat(r.amount) })),
           billing_accepted: true,
         }),
@@ -234,18 +275,29 @@ export default function SubmitVehicle() {
     </TouchableOpacity>
   );
 
-  const RatingDots = ({ value, onChange }: { value: number; onChange: (n: number) => void }) => (
-    <View style={styles.dotsRow}>
-      {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
-        const active = n <= value;
-        return (
-          <TouchableOpacity key={n} style={[styles.dot, active && styles.dotActive]} onPress={() => onChange(n)} testID={`rating-${n}`}>
-            <Text style={[styles.dotText, active && styles.dotTextActive]}>{n}</Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
+  const RatingDots = ({ value, onChange }: { value: number | null; onChange: (n: number) => void }) => {
+    const activeColor = ratingColor(value);
+    return (
+      <View style={styles.dotsRow}>
+        {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
+          const active = value != null && n <= value;
+          return (
+            <TouchableOpacity
+              key={n}
+              style={[
+                styles.dot,
+                active && { backgroundColor: activeColor, borderColor: activeColor },
+              ]}
+              onPress={() => onChange(n)}
+              testID={`rating-${n}`}
+            >
+              <Text style={[styles.dotText, active && styles.dotTextActive]}>{n}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    );
+  };
 
   const wheelOptionsFor = (): { title: string; options: any[]; value: any; onSelect: (v: any) => void; formatter?: (v: any) => string } => {
     switch (wheelField) {
@@ -263,8 +315,8 @@ export default function SubmitVehicle() {
         return { title: "Year Registered", options: yrs, value: yearRegistered, onSelect: setYearRegistered };
       }
       case "colour": return { title: "Colour", options: COLOURS, value: colour, onSelect: setColour };
-      case "windscreen_condition": return { title: "Windscreen", options: [...WINDSCREEN_OPTIONS], value: windscreen, onSelect: (v: any) => setWindscreen(v) };
-      case "service_history": return { title: "Service History", options: [...SERVICE_HISTORY], value: serviceHistory, onSelect: (v: any) => setServiceHistory(v) };
+      case "windscreen_condition": return { title: "Windscreen", options: [...WINDSCREEN_OPTIONS], value: windscreen, onSelect: (v: any) => setWindscreen(v as Windscreen) };
+      case "service_history": return { title: "Service History", options: [...SERVICE_HISTORY], value: serviceHistory, onSelect: (v: any) => setServiceHistory(v as ServiceHistory) };
       default: return { title: "", options: [], value: null, onSelect: () => {} };
     }
   };
@@ -316,20 +368,54 @@ export default function SubmitVehicle() {
           )}
 
           <Text style={styles.sectionTitle}>CONDITION</Text>
-          <Text style={styles.ratingLabel}>Exterior · {exteriorRating}/10</Text>
+
+          <View style={styles.ratingHeader}>
+            <Text style={styles.ratingTitle}>Exterior</Text>
+            <View style={[styles.ratingBadge, { borderColor: ratingColor(exteriorRating) }]}>
+              <Text style={[styles.ratingBadgeText, { color: ratingColor(exteriorRating) }]}>
+                {exteriorRating != null ? `${exteriorRating}/10 · ${ratingLabelFor(exteriorRating)}` : "Not rated"}
+              </Text>
+            </View>
+          </View>
           <RatingDots value={exteriorRating} onChange={setExteriorRating} />
-          <Text style={styles.ratingLabel}>Interior · {interiorRating}/10</Text>
+
+          <View style={styles.ratingHeader}>
+            <Text style={styles.ratingTitle}>Interior</Text>
+            <View style={[styles.ratingBadge, { borderColor: ratingColor(interiorRating) }]}>
+              <Text style={[styles.ratingBadgeText, { color: ratingColor(interiorRating) }]}>
+                {interiorRating != null ? `${interiorRating}/10 · ${ratingLabelFor(interiorRating)}` : "Not rated"}
+              </Text>
+            </View>
+          </View>
           <RatingDots value={interiorRating} onChange={setInteriorRating} />
-          <Text style={styles.ratingLabel}>Tyres · {tyreRating}/10</Text>
+
+          <View style={styles.ratingHeader}>
+            <Text style={styles.ratingTitle}>Tyres</Text>
+            <View style={[styles.ratingBadge, { borderColor: ratingColor(tyreRating) }]}>
+              <Text style={[styles.ratingBadgeText, { color: ratingColor(tyreRating) }]}>
+                {tyreRating != null ? `${tyreRating}/10 · ${ratingLabelFor(tyreRating)}` : "Not rated"}
+              </Text>
+            </View>
+          </View>
           <RatingDots value={tyreRating} onChange={setTyreRating} />
-          <Field label="Windscreen" value={windscreen} onPress={() => openWheel("windscreen_condition")} testID="pick-windscreen" />
+
+          <Field label="Windscreen" value={windscreen} onPress={() => openWheel("windscreen_condition")} testID="pick-windscreen" hint="Choose windscreen condition" />
 
           <Text style={styles.sectionTitle}>SERVICE HISTORY</Text>
-          <Field label="Service History" value={serviceHistory} onPress={() => openWheel("service_history")} testID="pick-service" />
+          <Field label="Service History" value={serviceHistory} hint="Choose service history" onPress={() => openWheel("service_history")} testID="pick-service" />
           <View style={styles.row2}>
             <View style={{ flex: 1 }}>
               <Text style={styles.subLabel}>LAST SERVICE DATE</Text>
-              <TextInput style={styles.input} value={lastServiceDate} onChangeText={setLastServiceDate} placeholder="YYYY-MM-DD (TBC)" placeholderTextColor={colors.textDisabled} />
+              <TouchableOpacity
+                testID="pick-last-service-date"
+                style={styles.dateBtn}
+                onPress={() => setDatePickerOpen(true)}
+              >
+                <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
+                <Text style={[styles.dateBtnText, !lastServiceDate && styles.dateBtnPlaceholder]}>
+                  {lastServiceDate ? (lastServiceDate === "TBC" ? "TBC" : formatIsoMonthYear(lastServiceDate)) : "Tap to pick"}
+                </Text>
+              </TouchableOpacity>
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.subLabel}>LAST SERVICE MILEAGE</Text>
@@ -357,14 +443,80 @@ export default function SubmitVehicle() {
           </View>
 
           <Text style={styles.sectionTitle}>DAMAGE</Text>
-          <TouchableOpacity style={styles.checkRow} onPress={() => setPaintEvidence((v) => !v)} testID="toggle-paint">
+          <TouchableOpacity
+            style={styles.checkRow}
+            onPress={() => {
+              setPaintEvidence((v) => {
+                const next = !v;
+                if (!next) setPaintQuality(null);
+                return next;
+              });
+            }}
+            testID="toggle-paint"
+          >
             <View style={[styles.checkbox, paintEvidence && styles.checkboxOn]}>{paintEvidence ? <Ionicons name="checkmark" size={14} color="#000" /> : null}</View>
             <Text style={styles.checkText}>Evidence of paint work</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.checkRow} onPress={() => setAccidentDamage((v) => !v)} testID="toggle-accident">
+          {paintEvidence ? (
+            <View style={styles.subPanel}>
+              <Text style={styles.subPanelLabel}>Paintwork quality</Text>
+              <View style={styles.pillRow}>
+                {PAINT_QUALITY_OPTIONS.map((q) => {
+                  const active = paintQuality === q;
+                  return (
+                    <TouchableOpacity
+                      key={q}
+                      testID={`paint-quality-${q.toLowerCase()}`}
+                      onPress={() => setPaintQuality(q)}
+                      style={[styles.pill, active && styles.pillActive]}
+                    >
+                      <Text style={[styles.pillText, active && styles.pillTextActive]}>{q}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
+
+          <TouchableOpacity
+            style={styles.checkRow}
+            onPress={() => {
+              setAccidentDamage((v) => {
+                const next = !v;
+                if (!next) setAccidentTypes([]);
+                return next;
+              });
+            }}
+            testID="toggle-accident"
+          >
             <View style={[styles.checkbox, accidentDamage && styles.checkboxOn]}>{accidentDamage ? <Ionicons name="checkmark" size={14} color="#000" /> : null}</View>
             <Text style={styles.checkText}>Evidence of accident damage</Text>
           </TouchableOpacity>
+          {accidentDamage ? (
+            <View style={styles.subPanel}>
+              <Text style={styles.subPanelLabel}>Damage identified · select all that apply</Text>
+              {ACCIDENT_DAMAGE_OPTIONS.map((opt) => {
+                const on = accidentTypes.includes(opt);
+                return (
+                  <TouchableOpacity
+                    key={opt}
+                    testID={`accident-type-${opt.split(" ")[0].toLowerCase()}`}
+                    style={styles.subCheckRow}
+                    onPress={() => {
+                      setAccidentTypes((prev) =>
+                        prev.includes(opt) ? prev.filter((x) => x !== opt) : [...prev, opt]
+                      );
+                    }}
+                  >
+                    <View style={[styles.checkbox, on && styles.checkboxOn]}>
+                      {on ? <Ionicons name="checkmark" size={14} color="#000" /> : null}
+                    </View>
+                    <Text style={styles.checkText}>{opt}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : null}
 
           <Text style={styles.sectionTitle}>RECONDITIONING COSTS</Text>
           <Text style={styles.sectionHint}>Itemise what you would need to spend to get this car to showroom condition.</Text>
@@ -397,6 +549,13 @@ export default function SubmitVehicle() {
         onClose={() => setWheelField(null)}
         formatter={wheelProps.formatter}
         testID={`wheel-${wheelField ?? "none"}`}
+      />
+
+      <MonthYearPicker
+        visible={datePickerOpen}
+        value={lastServiceDate || null}
+        onSelect={(iso) => setLastServiceDate(iso)}
+        onClose={() => setDatePickerOpen(false)}
       />
 
       {/* Billing confirmation */}
@@ -456,11 +615,84 @@ const styles = StyleSheet.create({
   tbcHl: { color: colors.text, fontWeight: "800" },
 
   ratingLabel: { color: colors.text, fontSize: 13, fontWeight: "700", marginTop: 6 },
-  dotsRow: { flexDirection: "row", gap: 4, marginTop: 6, marginBottom: 4 },
+  ratingHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: spacing.sm,
+    marginBottom: 4,
+  },
+  ratingTitle: { color: colors.text, fontSize: 14, fontWeight: "700", letterSpacing: 0.2 },
+  ratingBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    backgroundColor: colors.card,
+  },
+  ratingBadgeText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.3 },
+
+  dotsRow: { flexDirection: "row", gap: 4, marginTop: 4, marginBottom: 4 },
   dot: { flex: 1, height: 30, borderRadius: 6, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center", backgroundColor: colors.card },
   dotActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   dotText: { color: colors.textSecondary, fontSize: 11, fontWeight: "700" },
   dotTextActive: { color: "#000", fontWeight: "800" },
+
+  // Sub-panels revealed when Paint/Accident checkboxes are ticked
+  subPanel: {
+    marginTop: 6,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    borderRadius: radius.md,
+    backgroundColor: colors.card,
+    gap: 8,
+  },
+  subPanelLabel: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+    marginBottom: 4,
+  },
+  subCheckRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 6,
+  },
+
+  // Paint quality pill selector
+  pillRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
+  pill: {
+    flex: 1,
+    minWidth: 90,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    backgroundColor: colors.paper,
+    alignItems: "center",
+  },
+  pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  pillText: { color: colors.textSecondary, fontSize: 13, fontWeight: "700", letterSpacing: 0.2 },
+  pillTextActive: { color: "#000", fontWeight: "800" },
+
+  // Date picker trigger button (styled like a text input for consistency)
+  dateBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.inputBg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  dateBtnText: { color: colors.text, fontSize: 14, fontWeight: "700", flex: 1 },
+  dateBtnPlaceholder: { color: colors.textDisabled, fontWeight: "500" },
 
   row2: { flexDirection: "row", gap: spacing.sm },
   subLabel: { color: colors.textSecondary, fontSize: 10, fontWeight: "800", letterSpacing: 1.2, marginBottom: 4 },
