@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
@@ -65,6 +66,8 @@ export default function SubmitVehicle() {
   const [pickerLoading, setPickerLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [billingConfirmOpen, setBillingConfirmOpen] = useState(false);
+  const [billingAckChecked, setBillingAckChecked] = useState(false);
 
   // Try to auto-match a scanned Make against the DB and, if unique, preload it.
   const autoMatchMake = useCallback(async (rawMakeName: string) => {
@@ -207,6 +210,13 @@ export default function SubmitVehicle() {
       setError(err);
       return;
     }
+    // Open the billing-confirmation modal — actual API call happens on confirm.
+    setError(null);
+    setBillingConfirmOpen(true);
+  };
+
+  const performSubmit = async () => {
+    setBillingConfirmOpen(false);
     setSubmitting(true);
     setError(null);
     try {
@@ -227,6 +237,7 @@ export default function SubmitVehicle() {
           colour: colour.trim(),
           license_disk_data: licenseDisk,
           photos,
+          billing_accepted: true,
         }),
       });
       router.replace("/(app)");
@@ -565,6 +576,79 @@ export default function SubmitVehicle() {
         }}
         testID="derivative-picker"
       />
+
+      {/* Billing confirmation — shown for EVERY submission before we POST. */}
+      <Modal
+        visible={billingConfirmOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setBillingConfirmOpen(false)}
+      >
+        <View style={styles.billBackdrop}>
+          <View style={styles.billCard} testID="billing-confirm-modal">
+            <View style={styles.billHeader}>
+              <Ionicons name="cash-outline" size={22} color={colors.neon} />
+              <Text style={styles.billTitle}>Confirm Submission</Text>
+            </View>
+            <View style={styles.billBody}>
+              <Text style={styles.billLine}>
+                You are about to submit a vehicle for pricing.
+              </Text>
+              <View style={styles.billFeeBox}>
+                <Text style={styles.billFeeAmount}>R50.00</Text>
+                <Text style={styles.billFeeCaption}>per priced submission · incl. VAT</Text>
+              </View>
+              <Text style={styles.billNote}>
+                <Text style={styles.billStrong}>No fee</Text> if Fourbuy does not
+                return a price within{" "}
+                <Text style={styles.billStrong}>24 hours</Text> of your submission.
+              </Text>
+
+              <TouchableOpacity
+                testID="billing-confirm-check"
+                style={styles.billCheckRow}
+                onPress={() => setBillingAckChecked((v) => !v)}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.billCheckbox, billingAckChecked && styles.billCheckboxChecked]}>
+                  {billingAckChecked ? (
+                    <Ionicons name="checkmark" size={14} color="#000" />
+                  ) : null}
+                </View>
+                <Text style={styles.billCheckLabel}>
+                  I understand and agree to the R50 fee for this submission.
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.billFooter}>
+              <TouchableOpacity
+                testID="billing-confirm-cancel"
+                style={styles.billCancelBtn}
+                onPress={() => {
+                  setBillingConfirmOpen(false);
+                  setBillingAckChecked(false);
+                }}
+              >
+                <Text style={styles.billCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="billing-confirm-submit"
+                style={[styles.billSubmitBtn, !billingAckChecked && { opacity: 0.4 }]}
+                onPress={() => {
+                  if (!billingAckChecked) return;
+                  setBillingAckChecked(false);
+                  performSubmit();
+                }}
+                disabled={!billingAckChecked}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="paper-plane" size={16} color="#000" />
+                <Text style={styles.billSubmitText}>Confirm & Submit</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -812,4 +896,98 @@ const styles = StyleSheet.create({
   },
   submitBtnText: { color: "#000", fontWeight: "800", fontSize: 15, letterSpacing: 1.5, textTransform: "uppercase" },
   disabledBtn: { opacity: 0.6 },
+
+  // Billing confirmation modal
+  billBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.85)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: spacing.lg,
+  },
+  billCard: {
+    width: "100%",
+    maxWidth: 440,
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.neon + "88",
+    overflow: "hidden",
+  },
+  billHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  billTitle: { color: colors.text, fontSize: 16, fontWeight: "800", letterSpacing: 1, textTransform: "uppercase" },
+  billBody: { padding: spacing.md },
+  billLine: { color: colors.text, fontSize: 14, lineHeight: 20, marginBottom: spacing.md, textAlign: "center" },
+  billFeeBox: {
+    alignItems: "center",
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.neon + "55",
+    borderRadius: radius.md,
+    backgroundColor: colors.neon + "10",
+    marginBottom: spacing.md,
+  },
+  billFeeAmount: { color: colors.neon, fontSize: 34, fontWeight: "800", letterSpacing: 1 },
+  billFeeCaption: { color: colors.textSecondary, fontSize: 12, marginTop: 4, letterSpacing: 0.5 },
+  billNote: { color: colors.text, fontSize: 13, lineHeight: 20, textAlign: "center", marginBottom: spacing.md },
+  billStrong: { color: colors.neon, fontWeight: "800" },
+  billCheckRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    backgroundColor: colors.paper,
+  },
+  billCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  billCheckboxChecked: { backgroundColor: colors.neon, borderColor: colors.neon },
+  billCheckLabel: { color: colors.text, fontSize: 13, flex: 1, lineHeight: 18 },
+  billFooter: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  billCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    backgroundColor: colors.card,
+  },
+  billCancelText: { color: colors.textSecondary, fontWeight: "700", fontSize: 13 },
+  billSubmitBtn: {
+    flex: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+  },
+  billSubmitText: { color: "#000", fontWeight: "800", fontSize: 14, letterSpacing: 1, textTransform: "uppercase" },
 });

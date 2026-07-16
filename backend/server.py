@@ -47,10 +47,40 @@ _push_client = httpx.AsyncClient(
 
 # ============ Helpers ============
 ARCHIVE_AFTER_DAYS = 14
+BILLING_FEE_ZAR = 50.0
+BILLING_SLA_HOURS = 24
 
 
 def now_utc() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def parse_iso(ts: Optional[str]) -> Optional[datetime]:
+    if not ts:
+        return None
+    try:
+        dt = datetime.fromisoformat(ts)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except Exception:
+        return None
+
+
+def is_billable(sub: dict) -> bool:
+    """A submission is billable only if it was PRICED within BILLING_SLA_HOURS
+    (24h) of being submitted. If admin took longer than the SLA, no fee.
+    """
+    if sub.get("status") != "priced":
+        return False
+    created = parse_iso(sub.get("created_at"))
+    priced = parse_iso(sub.get("priced_at"))
+    if not created or not priced:
+        return False
+    delta = priced - created
+    if delta < timedelta(0):
+        return False
+    return delta <= timedelta(hours=BILLING_SLA_HOURS)
 
 
 def compute_bucket(sub: dict) -> str:
@@ -192,11 +222,29 @@ class VehicleSubmission(BaseModel):
     colour: str
     license_disk_data: Optional[str] = None
     photos: dict  # {front, side_right, rear, side_left, interior} -> base64 strings
+    billing_accepted: bool = False  # dealer ticked the R50 popup at submit time
 
 
 class PriceOffer(BaseModel):
     price: float
     notes: Optional[str] = None
+
+
+class DealerEditRequest(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[EmailStr] = None
+    company_name: Optional[str] = None
+    company_address: Optional[str] = None
+
+
+class DealerPasswordReset(BaseModel):
+    new_password: str = Field(min_length=6)
+
+
+class DealerActiveToggle(BaseModel):
+    active: bool
 
 
 # ============ Auth routes ============
@@ -211,6 +259,8 @@ async def register(payload: RegisterRequest):
         "email": payload.email.lower(),
         "password_hash": hash_password(payload.password),
         "role": "dealer",
+        "active": True,
+        "agreement_accepted_at": None,
         "dealer_info": payload.dealer_info.dict(),
         "company_info": payload.company_info.dict(),
         "created_at": now_utc(),
@@ -234,6 +284,12 @@ async def login(payload: LoginRequest):
     user = await db.users.find_one({"email": payload.email.lower()})
     if not user or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(401, "Invalid email or password")
+    # Suspended dealers cannot log in. Admins are always allowed.
+    if user.get("role") == "dealer" and user.get("active") is False:
+        raise HTTPException(
+            403,
+            "Your account has been suspended. Please contact Fourbuy to settle any outstanding balance.",
+        )
     token = sign_token(user["id"], user["email"], user["role"])
     return {
         "token": token,
@@ -241,6 +297,8 @@ async def login(payload: LoginRequest):
             "id": user["id"],
             "email": user["email"],
             "role": user["role"],
+            "active": user.get("active", True),
+            "agreement_accepted_at": user.get("agreement_accepted_at"),
             "dealer_info": user.get("dealer_info"),
             "company_info": user.get("company_info"),
         },
@@ -249,7 +307,33 @@ async def login(payload: LoginRequest):
 
 @api_router.get("/auth/me")
 async def me(current: dict = Depends(get_current_user)):
+    # Include billing-related fields that the client uses to gate flows.
+    current["active"] = current.get("active", True)
     return {"user": current}
+
+
+# ============ Billing agreement ============
+@api_router.get("/agreement/status")
+async def agreement_status(current: dict = Depends(get_current_user)):
+    user = await db.users.find_one({"id": current["id"]}, {"_id": 0, "password_hash": 0})
+    return {
+        "accepted": bool(user and user.get("agreement_accepted_at")),
+        "accepted_at": (user or {}).get("agreement_accepted_at"),
+        "fee_zar": BILLING_FEE_ZAR,
+        "sla_hours": BILLING_SLA_HOURS,
+    }
+
+
+@api_router.post("/agreement/accept")
+async def agreement_accept(current: dict = Depends(get_current_user)):
+    if current["role"] != "dealer":
+        raise HTTPException(400, "Only dealers accept the agreement")
+    ts = now_utc()
+    await db.users.update_one(
+        {"id": current["id"]},
+        {"$set": {"agreement_accepted_at": ts}},
+    )
+    return {"accepted_at": ts}
 
 
 # ============ Push registration ============
@@ -295,6 +379,21 @@ async def get_derivatives(model_id: str):
 async def create_submission(payload: VehicleSubmission, current: dict = Depends(get_current_user)):
     if current["role"] != "dealer":
         raise HTTPException(403, "Only dealers can submit vehicles")
+    if current.get("active") is False:
+        raise HTTPException(
+            403,
+            "Your account has been suspended. Please contact Fourbuy to settle any outstanding balance.",
+        )
+    # Must have accepted the one-time master agreement.
+    user_doc = await db.users.find_one({"id": current["id"]}, {"agreement_accepted_at": 1})
+    if not user_doc or not user_doc.get("agreement_accepted_at"):
+        raise HTTPException(
+            409,
+            "You must accept the Fourbuy Pricing Agreement before submitting vehicles.",
+        )
+    # Per-submission acceptance popup ("R50 incl. VAT / no fee if not priced within 24h").
+    if not payload.billing_accepted:
+        raise HTTPException(400, "Billing acceptance is required for each submission")
     if not (1 <= payload.condition <= 10):
         raise HTTPException(400, "Condition must be 1-10")
     sub_id = str(uuid.uuid4())
@@ -328,6 +427,7 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         "priced_at": None,
         "market_analysis": None,
         "market_analysis_at": None,
+        "billing_accepted_at": now_utc(),
         "created_at": now_utc(),
     }
     await db.submissions.insert_one(doc)
@@ -381,6 +481,7 @@ async def admin_list_submissions(
     for s in subs:
         b = compute_bucket(s)
         s["bucket"] = b
+        s["billable"] = is_billable(s)
         counts[b] += 1
     if bucket and bucket != "all":
         subs = [s for s in subs if s["bucket"] == bucket]
@@ -500,10 +601,84 @@ async def admin_list_dealers(current: dict = Depends(require_admin)):
         {"role": "dealer"},
         {"_id": 0, "password_hash": 0},
     ).sort("created_at", -1).to_list(2000)
-    # Add submission count
     for d in dealers:
+        d["active"] = d.get("active", True)
         d["submission_count"] = await db.submissions.count_documents({"dealer_id": d["id"]})
-    return {"dealers": dealers}
+        # Total billable priced submissions (all-time).
+        subs = await db.submissions.find(
+            {"dealer_id": d["id"], "status": "priced"},
+            {"_id": 0, "created_at": 1, "priced_at": 1, "status": 1},
+        ).to_list(10000)
+        billable = sum(1 for s in subs if is_billable(s))
+        d["billable_count"] = billable
+        d["billable_total_zar"] = round(billable * BILLING_FEE_ZAR, 2)
+    return {"dealers": dealers, "fee_zar": BILLING_FEE_ZAR, "sla_hours": BILLING_SLA_HOURS}
+
+
+@api_router.patch("/admin/dealers/{dealer_id}")
+async def admin_edit_dealer(
+    dealer_id: str,
+    payload: DealerEditRequest,
+    current: dict = Depends(require_admin),
+):
+    user = await db.users.find_one({"id": dealer_id})
+    if not user or user.get("role") != "dealer":
+        raise HTTPException(404, "Dealer not found")
+
+    updates: dict = {}
+    if payload.first_name is not None:
+        updates["dealer_info.first_name"] = payload.first_name
+    if payload.last_name is not None:
+        updates["dealer_info.last_name"] = payload.last_name
+    if payload.phone is not None:
+        updates["dealer_info.phone"] = payload.phone
+    if payload.email is not None:
+        new_email = payload.email.lower()
+        if new_email != user["email"]:
+            existing = await db.users.find_one({"email": new_email, "id": {"$ne": dealer_id}})
+            if existing:
+                raise HTTPException(409, "Email is already registered to another user")
+            updates["email"] = new_email
+    if payload.company_name is not None:
+        updates["company_info.company_name"] = payload.company_name
+    if payload.company_address is not None:
+        updates["company_info.company_address"] = payload.company_address
+
+    if not updates:
+        raise HTTPException(400, "No fields provided to update")
+
+    await db.users.update_one({"id": dealer_id}, {"$set": updates})
+    fresh = await db.users.find_one({"id": dealer_id}, {"_id": 0, "password_hash": 0})
+    return {"dealer": fresh}
+
+
+@api_router.post("/admin/dealers/{dealer_id}/password")
+async def admin_reset_dealer_password(
+    dealer_id: str,
+    payload: DealerPasswordReset,
+    current: dict = Depends(require_admin),
+):
+    user = await db.users.find_one({"id": dealer_id})
+    if not user or user.get("role") != "dealer":
+        raise HTTPException(404, "Dealer not found")
+    await db.users.update_one(
+        {"id": dealer_id},
+        {"$set": {"password_hash": hash_password(payload.new_password)}},
+    )
+    return {"status": "password_reset"}
+
+
+@api_router.post("/admin/dealers/{dealer_id}/active")
+async def admin_toggle_dealer_active(
+    dealer_id: str,
+    payload: DealerActiveToggle,
+    current: dict = Depends(require_admin),
+):
+    user = await db.users.find_one({"id": dealer_id})
+    if not user or user.get("role") != "dealer":
+        raise HTTPException(404, "Dealer not found")
+    await db.users.update_one({"id": dealer_id}, {"$set": {"active": bool(payload.active)}})
+    return {"active": bool(payload.active)}
 
 
 @api_router.delete("/admin/dealers/{dealer_id}")
@@ -514,9 +689,106 @@ async def admin_delete_dealer(dealer_id: str, current: dict = Depends(require_ad
     if user["role"] != "dealer":
         raise HTTPException(400, "Can only remove dealer accounts")
     await db.users.delete_one({"id": dealer_id})
-    # Optionally remove their submissions
     await db.submissions.delete_many({"dealer_id": dealer_id})
     return {"status": "deleted"}
+
+
+# ============ Admin billing report ============
+@api_router.get("/admin/billing")
+async def admin_billing(
+    month: Optional[str] = None,   # YYYY-MM, defaults to current month
+    current: dict = Depends(require_admin),
+):
+    """Per-dealer billing tally for a calendar month.
+
+    A submission counts as billable when it was PRICED within 24 hours of
+    being submitted (SLA). Fee is R50 incl. VAT per billable submission.
+    """
+    if month:
+        try:
+            year, mo = [int(x) for x in month.split("-", 1)]
+            start = datetime(year, mo, 1, tzinfo=timezone.utc)
+        except Exception:
+            raise HTTPException(400, "month must be YYYY-MM")
+    else:
+        today = datetime.now(timezone.utc)
+        start = datetime(today.year, today.month, 1, tzinfo=timezone.utc)
+
+    # Compute month-end boundary.
+    if start.month == 12:
+        end = datetime(start.year + 1, 1, 1, tzinfo=timezone.utc)
+    else:
+        end = datetime(start.year, start.month + 1, 1, tzinfo=timezone.utc)
+
+    # Aggregate: fetch every priced submission in the window, filter by billable,
+    # then group by dealer.
+    all_subs = await db.submissions.find(
+        {"status": "priced"},
+        {"_id": 0, "id": 1, "dealer_id": 1, "reference": 1, "make_name": 1,
+         "model_name": 1, "year": 1, "created_at": 1, "priced_at": 1, "price": 1,
+         "status": 1},
+    ).to_list(20000)
+
+    by_dealer: dict = {}
+    for s in all_subs:
+        priced_at = parse_iso(s.get("priced_at"))
+        if not priced_at or not (start <= priced_at < end):
+            continue
+        billable = is_billable(s)
+        did = s.get("dealer_id")
+        row = by_dealer.setdefault(did, {"dealer_id": did, "priced_count": 0,
+                                         "billable_count": 0, "items": []})
+        row["priced_count"] += 1
+        if billable:
+            row["billable_count"] += 1
+        row["items"].append({
+            "id": s.get("id"),
+            "reference": s.get("reference"),
+            "vehicle": f"{s.get('year')} {s.get('make_name')} {s.get('model_name')}",
+            "price": s.get("price"),
+            "priced_at": s.get("priced_at"),
+            "created_at": s.get("created_at"),
+            "billable": billable,
+        })
+
+    # Attach dealer profile info.
+    dealer_ids = list(by_dealer.keys())
+    dealers = await db.users.find(
+        {"id": {"$in": dealer_ids}},
+        {"_id": 0, "id": 1, "email": 1, "dealer_info": 1, "company_info": 1, "active": 1},
+    ).to_list(2000) if dealer_ids else []
+    dealers_by_id = {d["id"]: d for d in dealers}
+
+    rows = []
+    for did, row in by_dealer.items():
+        d = dealers_by_id.get(did, {})
+        info = d.get("dealer_info") or {}
+        company = d.get("company_info") or {}
+        rows.append({
+            **row,
+            "dealer_name": f"{info.get('first_name', '')} {info.get('last_name', '')}".strip() or "(deleted dealer)",
+            "dealer_email": d.get("email", ""),
+            "company_name": company.get("company_name", ""),
+            "active": d.get("active", True),
+            "amount_zar": round(row["billable_count"] * BILLING_FEE_ZAR, 2),
+        })
+    rows.sort(key=lambda r: r["billable_count"], reverse=True)
+
+    total_billable = sum(r["billable_count"] for r in rows)
+    total_priced = sum(r["priced_count"] for r in rows)
+    total_zar = round(total_billable * BILLING_FEE_ZAR, 2)
+
+    return {
+        "month": f"{start.year:04d}-{start.month:02d}",
+        "fee_zar": BILLING_FEE_ZAR,
+        "sla_hours": BILLING_SLA_HOURS,
+        "rows": rows,
+        "totals": {
+            "priced_count": total_priced,
+            "billable_count": total_billable,
+            "amount_zar": total_zar,
+        },
+    }
 
 
 # ============ Health ============

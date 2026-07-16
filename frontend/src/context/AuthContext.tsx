@@ -8,6 +8,8 @@ export type User = {
   id: string;
   email: string;
   role: "dealer" | "admin";
+  active?: boolean;
+  agreement_accepted_at?: string | null;
   dealer_info?: { first_name: string; last_name: string; phone: string };
   company_info?: { company_name: string; company_address: string };
 };
@@ -18,6 +20,7 @@ type AuthContextType = {
   login: (email: string, password: string) => Promise<void>;
   register: (payload: any) => Promise<void>;
   logout: () => Promise<void>;
+  markAgreementAccepted: (at: string) => void;
 };
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
@@ -87,8 +90,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   };
 
+  const markAgreementAccepted = (at: string) => {
+    setUser((prev) => (prev ? { ...prev, agreement_accepted_at: at } : prev));
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, markAgreementAccepted }}>
       {children}
     </AuthContext.Provider>
   );

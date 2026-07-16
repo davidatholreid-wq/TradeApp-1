@@ -14,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { colors, spacing, radius, fonts, BRAND } from "@/src/theme";
 import { apiFetch } from "@/src/api";
 import { buildWhatsappUrl, buildDealerMessage } from "@/src/utils/whatsapp";
+import BillingScreen from "@/app/(app)/billing";
 
 type Submission = {
   id: string;
@@ -58,9 +59,11 @@ type SubmissionFull = Submission & {
 };
 
 type Bucket = "incoming" | "priced" | "archived";
+type CockpitView = "submissions" | "billing";
 
 export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }) {
   const { width } = useWindowDimensions();
+  const [view, setView] = useState<CockpitView>("submissions");
   const [subs, setSubs] = useState<Submission[]>([]);
   const [counts, setCounts] = useState<Record<Bucket, number>>({ incoming: 0, priced: 0, archived: 0 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -250,6 +253,29 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
           />
           <View style={styles.divider} />
           <Text style={styles.topbarSub}>ADMIN COCKPIT</Text>
+          <View style={{ width: 12 }} />
+          <View style={styles.viewSwitch}>
+            <TouchableOpacity
+              testID="cockpit-view-submissions"
+              style={[styles.viewBtn, view === "submissions" && styles.viewBtnActive]}
+              onPress={() => setView("submissions")}
+            >
+              <Ionicons name="list" size={14} color={view === "submissions" ? "#000" : colors.text} />
+              <Text style={[styles.viewBtnText, view === "submissions" && styles.viewBtnTextActive]}>
+                Submissions
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="cockpit-view-billing"
+              style={[styles.viewBtn, view === "billing" && styles.viewBtnActive]}
+              onPress={() => setView("billing")}
+            >
+              <Ionicons name="cash" size={14} color={view === "billing" ? "#000" : colors.text} />
+              <Text style={[styles.viewBtnText, view === "billing" && styles.viewBtnTextActive]}>
+                Billing
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
         <View style={styles.topbarRight}>
           <View style={styles.statPill}>
@@ -274,6 +300,11 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
         </View>
       </View>
 
+      {view === "billing" ? (
+        <View style={{ flex: 1 }}>
+          <BillingScreen />
+        </View>
+      ) : (
       <View style={styles.body}>
         {/* Left: list */}
         <View style={[styles.leftPane, { width: Math.max(360, Math.min(480, width * 0.32)) }]}>
@@ -638,6 +669,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
           )}
         </View>
       </View>
+      )}
     </View>
   );
 }
@@ -674,6 +706,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textTransform: "uppercase",
   },
+  viewSwitch: {
+    flexDirection: "row",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    backgroundColor: colors.card,
+    overflow: "hidden",
+  },
+  viewBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  viewBtnActive: { backgroundColor: colors.primary },
+  viewBtnText: { color: colors.text, fontSize: 12, fontWeight: "700", letterSpacing: 0.5 },
+  viewBtnTextActive: { color: "#000", fontWeight: "800" },
   statPill: {
     paddingHorizontal: spacing.md,
     paddingVertical: 6,

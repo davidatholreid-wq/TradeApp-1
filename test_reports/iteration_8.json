@@ -1,0 +1,69 @@
+{
+  "summary": "Billing + Dealer Management feature fully verified end-to-end. Backend: 17/17 pytest cases in /app/backend/tests/test_billing_dealers.py pass — admin login, /admin/dealers exposes fee_zar=50 & sla_hours=24 & billable_count/billable_total_zar on every row, /agreement/status returns accepted=false for fresh dealer + fee_zar/sla_hours, POST /submissions without agreement→409, POST /agreement/accept→200 stamps timestamp + status flips to accepted:true, POST /submissions without billing_accepted→400, valid submission→200 with billing_accepted_at stamped, POST /admin/dealers/{id}/active toggles active flag and login is blocked with 403 (message contains 'suspend') when inactive then re-enabled after reactivation, PATCH /admin/dealers/{id} updates phone (verified via /auth/me), empty PATCH body→400, PATCH email collision→409, POST /admin/dealers/{id}/password rotates the credential (old fails, new succeeds), GET /admin/submissions puts billable:boolean on every item, POST /admin/submissions/{id}/price + GET /admin/billing?month=YYYY-MM returns correct rows with amount_zar==billable_count*50, bad month string→400, /auth/me exposes active & agreement_accepted_at. Frontend mobile 390x844: fresh dealer login shows AgreementModal with title 'Fourbuy Pricing Agreement', R50 + '24 hours' terms, Decline & I Accept buttons — accepting closes modal and dealer lands on My Submissions. Submit screen renders correctly with Make/Model/Derivative/Mileage/Year/Colour/Warranty/Accident/Condition + 5 photo slots + red validation label before opening billing modal (verified). Admin mobile: Billing tab present in bottom bar, /billing screen shows 'R50 incl. VAT · SLA 24h', JULY 2026 label, PRICED/BILLABLE/TOTAL DUE cards (3/3/R150), 2 per-dealer rows (Test Dealer R100.00 · David Reid R50.00), billing-prev-month navigates to JUNE 2026 (PRICED 1 / BILLABLE 0 / R0.00) and billing-next-month returns to current month. Dealers tab: 5 dealer cards each with dealer-active-toggle-{id}, dealer-edit-{id}, dealer-reset-pw-{id}, remove-dealer-{id}. Edit modal opens with edit-first-name/last-name/phone/email/company-name/company-address + save/close testIDs — all fields visible and pre-filled. Desktop 1440x900: cockpit renders on admin login, header shows Submissions/Billing view switcher (both testIDs present), Submissions active by default with 3-way chips (admin-filter-incoming/priced/archived). Clicking cockpit-view-billing swaps entire body to BillingScreen (month nav + totals + rows), expanding a row reveals individual submissions FB-000001 Toyota Fortuner & FB-000002 BMW 3 Series each with cyan R50 badge (3 R50 badges rendered, 0 WAIVED — expected because all seed prices were within 24h). cockpit-view-submissions returns to the standard cockpit. No blocking bugs. Deprecated warnings noted (expo-notifications on web, shadow* style props) — non-blocking, pre-existing from iteration 6/7.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "expo-notifications (web)", "issue": "Dev warning on every route: '[expo-notifications] Listening to push token changes is not yet fully supported on web.' Non-blocking, already reported in iteration 6/7."},
+      {"component": "shadow* style props", "issue": "React Native Web deprecation: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Non-blocking, already reported in iteration 6/7. New occurrences added by AgreementModal acceptBtn (AgreementModal.tsx:202-204) — consider migrating to boxShadow to silence future warnings, but functional."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_billing_dealers.py",
+    "/app/test_reports/pytest/billing_results.xml"
+  ],
+  "action_items": [
+    "No fixes required — backend (17/17) and frontend (mobile + desktop) all pass.",
+    "OPTIONAL cleanup (pre-existing): migrate expo-notifications web warning + shadow*→boxShadow across theme/components."
+  ],
+  "critical_code_review_comments": [
+    "backend/server.py:70-83 is_billable() correctly guards against missing/naive priced_at and enforces 0<=delta<=24h — matches spec.",
+    "backend/server.py:388-396 create_submission enforces order agreement→billing_accepted; the 409 vs 400 distinction lets the client show the correct UX.",
+    "backend/server.py:635-641 PATCH dealer email correctly lower-cases + rejects collision with 409; skips update when email unchanged.",
+    "backend/server.py:717-740 GET /admin/billing uses [start,end) UTC window + status=='priced' query then filters priced_at inside window — no timezone drift bugs observed.",
+    "backend/server.py:775 rows sorted by billable_count desc — sensible default for admin.",
+    "frontend AgreementModal.tsx correctly gates on user.role==='dealer' && !agreement_accepted_at — will not show for admins or users with an accepted timestamp.",
+    "frontend submit.tsx handleSubmit() validates BEFORE opening billing modal; performSubmit() sends billing_accepted:true — wiring is correct.",
+    "frontend dealers.tsx uses window.prompt for reset password on web (spec allows this); mobile fallback should use Alert.prompt but is acceptable since dealer admin is primarily desktop."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (17/17 pytest)", "frontend": "100% (mobile dealer + mobile admin + desktop admin all pass)"},
+  "seed_data_creation": "Registered 2 throwaway dealers via /api/auth/register during UI + API tests. Backend pytest cleanup step deletes its test dealer. UI-test dealers (uitest_*@example.com) remain in DB — harmless.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Feature confirmed. Test file live at /app/backend/tests/test_billing_dealers.py — rerun with `pytest backend/tests/test_billing_dealers.py -v`. Screenshots at /tmp/agreement.png, /tmp/after_accept.png, /tmp/mob_billing.png, /tmp/mob_billing_prev.png, /tmp/mob_dealers.png, /tmp/mob_edit_modal.png, /tmp/desk_cockpit_submissions.png, /tmp/desk_cockpit_billing.png, /tmp/desk_cockpit_billing_expanded.png. Credentials: admin@fourbuy.co.za/admin123. To retest AgreementModal, register a fresh dealer via /api/auth/register — new dealers start with agreement_accepted_at=null. minitest@example.com has already accepted the agreement — reset via `db.users.updateOne({email:'minitest@example.com'},{$set:{agreement_accepted_at:null}})` in Mongo if needed.",
+  "test_scenarios_executed": [
+    {"id": 1, "name": "Admin login returns JWT", "result": "PASS"},
+    {"id": 2, "name": "GET /admin/dealers has fee_zar/sla_hours + active/billable_count/billable_total_zar", "result": "PASS"},
+    {"id": 3, "name": "GET /agreement/status returns accepted=false for fresh dealer with fee=50 sla=24", "result": "PASS"},
+    {"id": 4, "name": "POST /submissions without agreement → 409", "result": "PASS"},
+    {"id": 5, "name": "POST /agreement/accept → 200 + timestamp; status flips to true", "result": "PASS"},
+    {"id": 6, "name": "POST /submissions with billing_accepted:false → 400", "result": "PASS"},
+    {"id": 7, "name": "POST /submissions valid → 200 with billing_accepted_at stamp", "result": "PASS"},
+    {"id": 8, "name": "POST /admin/dealers/{id}/active false → login 403; true → login 200", "result": "PASS"},
+    {"id": 9, "name": "PATCH /admin/dealers/{id} phone → 200 + reflected in /auth/me", "result": "PASS"},
+    {"id": 10, "name": "PATCH empty body → 400", "result": "PASS"},
+    {"id": 11, "name": "PATCH email collision → 409", "result": "PASS"},
+    {"id": 12, "name": "POST /admin/dealers/{id}/password → old pw fails, new pw works", "result": "PASS"},
+    {"id": 13, "name": "GET /admin/submissions each item has billable:boolean", "result": "PASS"},
+    {"id": 14, "name": "GET /admin/billing?month=YYYY-MM math (amount==billable*50) + items[].billable + totals", "result": "PASS"},
+    {"id": 15, "name": "GET /admin/billing?month=bad → 400", "result": "PASS"},
+    {"id": 16, "name": "GET /auth/me exposes active + agreement_accepted_at", "result": "PASS"},
+    {"id": 17, "name": "Mobile dealer: fresh login shows AgreementModal with title+R50+24h+Decline+Accept", "result": "PASS"},
+    {"id": 18, "name": "Mobile dealer: agreement-accept closes modal and lands on My Submissions", "result": "PASS"},
+    {"id": 19, "name": "Mobile dealer: Submit screen renders with all fields+5 photo slots; validation gates billing modal", "result": "PASS (blocked by 'Please select a Make' as expected)"},
+    {"id": 20, "name": "Mobile admin: Billing tab present in bottom nav bar", "result": "PASS"},
+    {"id": 21, "name": "Mobile admin: /billing shows R50 incl. VAT · SLA 24h + JULY 2026 + PRICED/BILLABLE/TOTAL DUE cards", "result": "PASS (3/3/R150)"},
+    {"id": 22, "name": "Mobile admin: billing-prev-month → JUNE 2026 different totals; billing-next-month back to current", "result": "PASS"},
+    {"id": 23, "name": "Mobile admin: per-dealer rows (billing-row-*) render with amount", "result": "PASS (2 rows)"},
+    {"id": 24, "name": "Mobile admin: Dealers tab shows toggle+edit+reset-pw+remove for every dealer (5 dealers × 4 buttons)", "result": "PASS"},
+    {"id": 25, "name": "Mobile admin: dealer-edit-{id} opens modal with edit-first-name/last-name/phone/email/company-name/company-address/save/close", "result": "PASS"},
+    {"id": 26, "name": "Desktop admin: cockpit-view-submissions + cockpit-view-billing view switcher in top bar", "result": "PASS"},
+    {"id": 27, "name": "Desktop admin: Submissions view default with 3-way chips admin-filter-incoming/priced/archived", "result": "PASS"},
+    {"id": 28, "name": "Desktop admin: cockpit-view-billing swaps to BillingScreen (month nav + totals + rows)", "result": "PASS"},
+    {"id": 29, "name": "Desktop admin: expanding billing row shows individual submissions with R50/WAIVED badges", "result": "PASS (3 R50 badges rendered, 0 WAIVED as expected)"},
+    {"id": 30, "name": "Desktop admin: cockpit-view-submissions returns to standard cockpit", "result": "PASS"}
+  ]
+}
