@@ -144,7 +144,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     borderRadius: radius.pill,
   },
-  permBtnText: { color: "#fff", fontWeight: "700" },
+  permBtnText: { color: "#000", fontWeight: "800", letterSpacing: 1 },
   overlay: { flex: 1, backgroundColor: "transparent" },
   topBar: {
     flexDirection: "row",

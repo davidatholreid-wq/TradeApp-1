@@ -701,7 +701,7 @@ const styles = StyleSheet.create({
   },
   chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { color: colors.textSecondary, fontSize: 11, fontWeight: "700", letterSpacing: 1 },
-  chipTextActive: { color: "#fff" },
+  chipTextActive: { color: "#000", fontWeight: "800" },
   emptyList: { color: colors.textSecondary, textAlign: "center", marginTop: 40 },
   row: {
     padding: spacing.md,
@@ -709,9 +709,9 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     backgroundColor: colors.paper,
   },
-  rowActive: { backgroundColor: colors.card, borderLeftWidth: 3, borderLeftColor: colors.accent },
+  rowActive: { backgroundColor: colors.card, borderLeftWidth: 3, borderLeftColor: colors.neon },
   rowHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  rowRef: { color: colors.accent, fontSize: 11, fontWeight: "800", fontFamily: fonts.mono, letterSpacing: 1 },
+  rowRef: { color: colors.neon, fontSize: 11, fontWeight: "800", fontFamily: fonts.mono, letterSpacing: 1 },
   rowBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.sm },
   rowBadgeText: { fontSize: 9, fontWeight: "800", letterSpacing: 1 },
   rowTitle: { color: colors.text, fontSize: 14, fontWeight: "700", marginTop: 6 },
@@ -735,7 +735,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     marginBottom: spacing.md,
   },
-  detailRef: { color: colors.accent, fontFamily: fonts.mono, fontSize: 13, fontWeight: "800", letterSpacing: 1.5 },
+  detailRef: { color: colors.neon, fontFamily: fonts.mono, fontSize: 13, fontWeight: "800", letterSpacing: 1.5 },
   detailTitle: { color: colors.text, fontSize: 28, fontWeight: "700", fontFamily: fonts.serif, marginTop: 4 },
   detailSub: { color: colors.textSecondary, fontSize: 14, marginTop: 2 },
   deleteBtn: {
@@ -840,7 +840,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     minWidth: 140,
   },
-  sendBtnText: { color: "#fff", fontWeight: "800", fontSize: 13, letterSpacing: 1 },
+  sendBtnText: { color: "#000", fontWeight: "800", fontSize: 13, letterSpacing: 1.5 },
   notesInput: {
     marginTop: spacing.sm,
     backgroundColor: colors.inputBg,

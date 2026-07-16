@@ -149,7 +149,7 @@ export default function DashboardScreen() {
             style={styles.newBtn}
             onPress={() => router.push("/(app)/submit" as any)}
           >
-            <Ionicons name="add" size={20} color="#fff" />
+            <Ionicons name="add" size={20} color="#000" />
             <Text style={styles.newBtnText}>New</Text>
           </TouchableOpacity>
         ) : null}
@@ -212,7 +212,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: radius.sm,
   },
-  newBtnText: { color: "#fff", fontWeight: "700" },
+  newBtnText: { color: "#000", fontWeight: "800", letterSpacing: 0.5 },
   list: { padding: spacing.md, paddingBottom: spacing.xl },
   card: {
     backgroundColor: colors.card,
@@ -223,7 +223,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   cardTop: { flexDirection: "row", alignItems: "flex-start", gap: spacing.sm },
-  cardRef: { color: colors.accent, fontSize: 11, fontWeight: "800", letterSpacing: 1.5, fontFamily: fonts.mono, marginBottom: 4 },
+  cardRef: { color: colors.neon, fontSize: 11, fontWeight: "800", letterSpacing: 1.5, fontFamily: fonts.mono, marginBottom: 4 },
   cardTitle: { color: colors.text, fontSize: 16, fontWeight: "700" },
   cardSubtitle: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
   badge: {
@@ -266,5 +266,5 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: radius.sm,
   },
-  emptyBtnText: { color: "#fff", fontWeight: "700" },
+  emptyBtnText: { color: "#000", fontWeight: "800", letterSpacing: 0.5 },
 });

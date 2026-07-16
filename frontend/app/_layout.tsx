@@ -53,7 +53,7 @@ function RootNavigation() {
     }
   }, [user, loading, segments, router]);
 
-  return <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: "#050505" } }} />;
+  return <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: "#000000" } }} />;
 }
 
 export default function RootLayout() {

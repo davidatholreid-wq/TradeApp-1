@@ -432,7 +432,7 @@ export default function VehicleDetail() {
                   </View>
                 );
               }
-              const rows: Array<[string, string | undefined]> = [
+              const rows: [string, string | undefined][] = [
                 ["Licence No", info.licenceNo],
                 ["Register No", info.vehicleRegisterNo],
                 ["Make", info.make],
@@ -513,7 +513,7 @@ export default function VehicleDetail() {
               setPriceModal(true);
             }}
           >
-            <Ionicons name="pricetag" size={18} color="#fff" />
+            <Ionicons name="pricetag" size={18} color="#000" />
             <Text style={styles.priceBtnText}>{sub.status === "priced" ? "Update Price" : "Offer Price"}</Text>
           </TouchableOpacity>
         </View>
@@ -793,7 +793,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     paddingVertical: 14,
   },
-  priceBtnText: { color: "#fff", fontWeight: "700", fontSize: 15, letterSpacing: 1, textTransform: "uppercase" },
+  priceBtnText: { color: "#000", fontWeight: "800", fontSize: 15, letterSpacing: 1.5, textTransform: "uppercase" },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
   modalSheet: {
     backgroundColor: colors.paper,
@@ -826,7 +826,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     alignItems: "center",
   },
-  confirmBtnText: { color: "#fff", fontWeight: "700", fontSize: 15, letterSpacing: 1, textTransform: "uppercase" },
+  confirmBtnText: { color: "#000", fontWeight: "800", fontSize: 15, letterSpacing: 1.5, textTransform: "uppercase" },
   photoPreviewOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.95)", alignItems: "center", justifyContent: "center" },
   photoPreviewImg: { width: "100%", height: "80%", resizeMode: "contain" },
 });

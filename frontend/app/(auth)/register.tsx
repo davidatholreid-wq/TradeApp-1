@@ -187,7 +187,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   disabledBtn: { opacity: 0.6 },
-  primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 15, letterSpacing: 1, textTransform: "uppercase" },
+  primaryBtnText: { color: "#000", fontWeight: "800", fontSize: 15, letterSpacing: 1.5, textTransform: "uppercase" },
   linkRow: { flexDirection: "row", justifyContent: "center", marginTop: spacing.lg },
   linkText: { color: colors.textSecondary },
   linkAction: { color: colors.primary, fontWeight: "600" },

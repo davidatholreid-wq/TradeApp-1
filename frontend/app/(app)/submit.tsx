@@ -515,10 +515,10 @@ export default function SubmitVehicle() {
             disabled={submitting}
           >
             {submitting ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color="#000" />
             ) : (
               <>
-                <Ionicons name="paper-plane" size={18} color="#fff" />
+                <Ionicons name="paper-plane" size={18} color="#000" />
                 <Text style={styles.submitBtnText}>Submit for Pricing</Text>
               </>
             )}
@@ -796,6 +796,6 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     marginTop: spacing.lg,
   },
-  submitBtnText: { color: "#fff", fontWeight: "700", fontSize: 15, letterSpacing: 1, textTransform: "uppercase" },
+  submitBtnText: { color: "#000", fontWeight: "800", fontSize: 15, letterSpacing: 1.5, textTransform: "uppercase" },
   disabledBtn: { opacity: 0.6 },
 });
