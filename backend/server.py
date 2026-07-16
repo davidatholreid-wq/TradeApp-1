@@ -208,21 +208,51 @@ class RegisterPushBody(BaseModel):
 
 
 class VehicleSubmission(BaseModel):
-    make_id: str
-    make_name: str
-    model_id: str
-    model_name: str
-    derivative_id: str
-    derivative_name: str
-    mileage: int
-    year: int
-    factory_warranty: bool
-    condition: int  # 1-10
-    accident_damage: bool
+    # Progressive-filter picks (all now driven by /api/vehicles/options)
+    make: str
+    fuel_type: str
+    year_of_production: int
+    transmission: str
+    model: str
+    derivative: str
+    year_registered: int
+
+    # Auto-filled from the license disc scan (may be "TBC")
     colour: str
+    vin: Optional[str] = "TBC"
+    engine_number: Optional[str] = "TBC"
     license_disk_data: Optional[str] = None
-    photos: dict  # {front, side_right, rear, side_left, interior} -> base64 strings
-    billing_accepted: bool = False  # dealer ticked the R50 popup at submit time
+
+    # Condition ratings (1-10)
+    exterior_condition: int = Field(ge=1, le=10)
+    interior_condition: int = Field(ge=1, le=10)
+    tyre_condition: int = Field(ge=1, le=10)
+    # Windscreen — discrete options
+    windscreen_condition: Literal["Perfect", "Chip", "Crack", "Needs Replacement"]
+
+    # Service history
+    service_history: Literal[
+        "Full Service History with Agents",
+        "Full Service History with Agents & Non-Agents",
+        "Partial Service History",
+        "No Service History",
+    ]
+    last_service_date: Optional[str] = None   # ISO date or None → "TBC"
+    last_service_mileage: Optional[int] = None
+
+    # Photos: {front, driver_side, passenger_side, rear, interior}
+    photos: dict
+    mileage: int
+
+    # Damage / paint
+    paint_evidence: bool
+    accident_damage: bool
+
+    # Reconditioning costs: list of {label: str, amount_zar: float}
+    reconditioning_items: list[dict] = []
+
+    # Compliance
+    billing_accepted: bool = False
 
 
 class PriceOffer(BaseModel):
@@ -382,6 +412,50 @@ async def get_derivatives(model_id: str):
     return {"derivatives": derivatives}
 
 
+@api_router.get("/vehicles/options")
+async def vehicle_options(
+    make: Optional[str] = None,
+    fuel_type: Optional[str] = None,
+    year_of_production: Optional[int] = None,
+    transmission: Optional[str] = None,
+    model: Optional[str] = None,
+):
+    """Progressive filter over the seeded Disk Drive-shaped vehicle spec DB.
+
+    Given any subset of filters, returns the DISTINCT remaining values for
+    every other field. The mobile submit form uses this to eliminate options
+    as the dealer moves through the wheel-picker sequence:
+    Make → Fuel Type → Year → Transmission → Model → Derivative.
+    """
+    query: dict = {}
+    if make:
+        query["make"] = make
+    if fuel_type:
+        query["fuel_type"] = fuel_type
+    if year_of_production is not None:
+        query["year_of_production"] = year_of_production
+    if transmission:
+        query["transmission"] = transmission
+    if model:
+        query["model"] = model
+
+    rows = await db.vehicle_specs.find(query, {"_id": 0}).to_list(20000)
+
+    def distinct_sorted(key: str, numeric: bool = False):
+        vals = sorted({r[key] for r in rows if r.get(key) is not None}, reverse=numeric)
+        return list(vals)
+
+    return {
+        "makes": distinct_sorted("make"),
+        "fuel_types": distinct_sorted("fuel_type"),
+        "years": distinct_sorted("year_of_production", numeric=True),
+        "transmissions": distinct_sorted("transmission"),
+        "models": distinct_sorted("model"),
+        "derivatives": distinct_sorted("derivative"),
+        "count": len(rows),
+    }
+
+
 # ============ Submissions ============
 @api_router.post("/submissions")
 async def create_submission(payload: VehicleSubmission, current: dict = Depends(get_current_user)):
@@ -402,8 +476,14 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
     # Per-submission acceptance popup ("R50 incl. VAT / no fee if not priced within 24h").
     if not payload.billing_accepted:
         raise HTTPException(400, "Billing acceptance is required for each submission")
-    if not (1 <= payload.condition <= 10):
-        raise HTTPException(400, "Condition must be 1-10")
+    for rating, name in [
+        (payload.exterior_condition, "exterior"),
+        (payload.interior_condition, "interior"),
+        (payload.tyre_condition, "tyre"),
+    ]:
+        if not (1 <= rating <= 10):
+            raise HTTPException(400, f"{name.title()} condition must be 1-10")
+    total_recon = sum((r.get("amount_zar", 0) or 0) for r in payload.reconditioning_items)
     sub_id = str(uuid.uuid4())
     reference = await next_reference_number()
     doc = {
@@ -415,19 +495,40 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         "dealer_first_name": current["dealer_info"].get("first_name", ""),
         "dealer_phone": current["dealer_info"].get("phone", ""),
         "company_name": current["company_info"]["company_name"],
-        "make_id": payload.make_id,
-        "make_name": payload.make_name,
-        "model_id": payload.model_id,
-        "model_name": payload.model_name,
-        "derivative_id": payload.derivative_id,
-        "derivative_name": payload.derivative_name,
-        "mileage": payload.mileage,
-        "year": payload.year,
-        "factory_warranty": payload.factory_warranty,
-        "condition": payload.condition,
-        "accident_damage": payload.accident_damage,
+        # Vehicle spec (progressive filter)
+        "make_name": payload.make,
+        "model_name": payload.model,
+        "derivative_name": payload.derivative,
+        "fuel_type": payload.fuel_type,
+        "year_of_production": payload.year_of_production,
+        "transmission": payload.transmission,
+        "year": payload.year_registered,  # keep legacy alias
+        "year_registered": payload.year_registered,
+        # Identity
+        "vin": payload.vin or "TBC",
+        "engine_number": payload.engine_number or "TBC",
         "colour": payload.colour,
         "license_disk_data": payload.license_disk_data,
+        # Condition
+        "exterior_condition": payload.exterior_condition,
+        "interior_condition": payload.interior_condition,
+        "tyre_condition": payload.tyre_condition,
+        "windscreen_condition": payload.windscreen_condition,
+        "condition": payload.exterior_condition,  # legacy alias for existing analytics
+        # Service history
+        "service_history": payload.service_history,
+        "last_service_date": payload.last_service_date or "TBC",
+        "last_service_mileage": payload.last_service_mileage,  # None → treated as TBC
+        # Damage
+        "paint_evidence": payload.paint_evidence,
+        "accident_damage": payload.accident_damage,
+        # Reconditioning
+        "reconditioning_items": payload.reconditioning_items,
+        "reconditioning_total_zar": round(float(total_recon), 2),
+        # Legacy fields kept for backward compat with older views
+        "factory_warranty": False,
+        # Photos & mileage
+        "mileage": payload.mileage,
         "photos": payload.photos,
         "status": "pending",
         "price": None,
@@ -964,6 +1065,19 @@ async def seed_data():
                         "name": deriv,
                     })
         logger.info("Seeded vehicle database")
+
+    # Seed the flat vehicle_specs collection (Disk Drive-shaped) if empty.
+    if await db.vehicle_specs.count_documents({}) == 0:
+        try:
+            from vehicle_specs_seed import expand_specs
+            rows = expand_specs()
+            if rows:
+                for r in rows:
+                    r["id"] = str(uuid.uuid4())
+                await db.vehicle_specs.insert_many(rows)
+                logger.info(f"Seeded {len(rows)} vehicle spec rows")
+        except Exception as e:
+            logger.warning(f"vehicle_specs seed failed: {e}")
 
 
 @app.on_event("shutdown")

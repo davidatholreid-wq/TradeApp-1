@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Switch,
   Image,
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -23,70 +22,122 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { colors, spacing, radius, fonts } from "@/src/theme";
 import { apiFetch } from "@/src/api";
-import OptionPicker, { Option } from "@/src/components/OptionPicker";
+import WheelPicker from "@/src/components/WheelPicker";
 import { decodeLicenseDisk, LicenseDiskInfo } from "@/src/utils/licenseDisk";
 
-type PhotoSlot = "front" | "side_right" | "rear" | "side_left" | "interior";
-const PHOTO_LABELS: Record<PhotoSlot, string> = {
-  front: "Front",
-  side_right: "Right Side",
-  rear: "Rear",
-  side_left: "Left Side",
-  interior: "Interior",
-};
-const PHOTO_SLOTS: PhotoSlot[] = ["front", "side_right", "rear", "side_left", "interior"];
+type PhotoKey = "front" | "driver_side" | "passenger_side" | "rear" | "interior";
+const PHOTO_ORDER: { key: PhotoKey; label: string }[] = [
+  { key: "front", label: "Front" },
+  { key: "driver_side", label: "Driver's Side" },
+  { key: "passenger_side", label: "Passenger Side" },
+  { key: "rear", label: "Rear" },
+  { key: "interior", label: "Interior" },
+];
+
+const WINDSCREEN_OPTIONS = ["Perfect", "Chip", "Crack", "Needs Replacement"] as const;
+type Windscreen = typeof WINDSCREEN_OPTIONS[number];
+const SERVICE_HISTORY = [
+  "Full Service History with Agents",
+  "Full Service History with Agents & Non-Agents",
+  "Partial Service History",
+  "No Service History",
+] as const;
+type ServiceHistory = typeof SERVICE_HISTORY[number];
+const COLOURS = ["White", "Black", "Silver", "Grey", "Blue", "Red", "Green", "Yellow", "Orange", "Brown", "Beige", "Gold", "Maroon"];
+
+type WheelField =
+  | "make" | "fuel_type" | "year_of_production" | "transmission"
+  | "model" | "derivative" | "year_registered" | "colour"
+  | "windscreen_condition" | "service_history";
 
 export default function SubmitVehicle() {
   const router = useRouter();
   const tabBarHeight = useBottomTabBarHeight();
 
-  const [make, setMake] = useState<Option | null>(null);
-  const [model, setModel] = useState<Option | null>(null);
-  const [derivative, setDerivative] = useState<Option | null>(null);
-  const [mileage, setMileage] = useState("");
-  const [year, setYear] = useState("");
-  const [factoryWarranty, setFactoryWarranty] = useState(false);
-  const [condition, setCondition] = useState(7);
-  const [accidentDamage, setAccidentDamage] = useState(false);
-  const [colour, setColour] = useState("");
+  // Progressive-filter picks
+  const [make, setMake] = useState<string | null>(null);
+  const [fuelType, setFuelType] = useState<string | null>(null);
+  const [yearOfProduction, setYearOfProduction] = useState<number | null>(null);
+  const [transmission, setTransmission] = useState<string | null>(null);
+  const [model, setModel] = useState<string | null>(null);
+  const [derivative, setDerivative] = useState<string | null>(null);
+  const [yearRegistered, setYearRegistered] = useState<number | null>(null);
+
+  // Identity (license-disc-scan-fed or manual)
   const [licenseDisk, setLicenseDisk] = useState<string | null>(null);
   const [licenseDiskInfo, setLicenseDiskInfo] = useState<LicenseDiskInfo | null>(null);
-  const [photos, setPhotos] = useState<Record<PhotoSlot, string | null>>({
-    front: null,
-    side_right: null,
-    rear: null,
-    side_left: null,
-    interior: null,
-  });
+  const [colour, setColour] = useState<string | null>(null);
+  const [vin, setVin] = useState<string>("TBC");
+  const [engineNo, setEngineNo] = useState<string>("TBC");
 
-  const [makesList, setMakesList] = useState<Option[]>([]);
-  const [modelsList, setModelsList] = useState<Option[]>([]);
-  const [derivativesList, setDerivativesList] = useState<Option[]>([]);
-  const [pickerOpen, setPickerOpen] = useState<null | "make" | "model" | "derivative">(null);
-  const [pickerLoading, setPickerLoading] = useState(false);
+  // Condition
+  const [exteriorRating, setExteriorRating] = useState<number>(7);
+  const [interiorRating, setInteriorRating] = useState<number>(7);
+  const [tyreRating, setTyreRating] = useState<number>(7);
+  const [windscreen, setWindscreen] = useState<Windscreen>("Perfect");
+
+  // Service
+  const [serviceHistory, setServiceHistory] = useState<ServiceHistory>("Full Service History with Agents");
+  const [lastServiceDate, setLastServiceDate] = useState<string>("");
+  const [lastServiceMileage, setLastServiceMileage] = useState<string>("");
+
+  // Photos + mileage
+  const [photos, setPhotos] = useState<Record<PhotoKey, string>>({ front: "", driver_side: "", passenger_side: "", rear: "", interior: "" });
+  const [mileage, setMileage] = useState<string>("");
+
+  // Damage / paint
+  const [paintEvidence, setPaintEvidence] = useState(false);
+  const [accidentDamage, setAccidentDamage] = useState(false);
+
+  // Reconditioning items
+  const [reconItems, setReconItems] = useState<{ label: string; amount: string }[]>([]);
+
+  // Wheel state + option cache
+  const [wheelField, setWheelField] = useState<WheelField | null>(null);
+  const [options, setOptions] = useState<{ makes: string[]; fuel_types: string[]; years: number[]; transmissions: string[]; models: string[]; derivatives: string[] }>({ makes: [], fuel_types: [], years: [], transmissions: [], models: [], derivatives: [] });
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [billingConfirmOpen, setBillingConfirmOpen] = useState(false);
   const [billingAckChecked, setBillingAckChecked] = useState(false);
 
-  // Try to auto-match a scanned Make against the DB and, if unique, preload it.
-  const autoMatchMake = useCallback(async (rawMakeName: string) => {
-    if (!rawMakeName) return;
-    try {
-      const data = await apiFetch("/api/vehicles/makes");
-      const items: Option[] = data.makes || [];
-      const needle = rawMakeName.toUpperCase().trim();
-      // Exact match first, then startsWith, then contains.
-      const match =
-        items.find((m) => m.name.toUpperCase() === needle) ||
-        items.find((m) => m.name.toUpperCase().startsWith(needle)) ||
-        items.find((m) => m.name.toUpperCase().includes(needle));
-      if (match) setMake(match);
-    } catch {
-      /* best-effort */
-    }
-  }, []);
+  // Fetch options with current filters applied. Called before opening each wheel.
+  const fetchOptions = useCallback(async (partial: Partial<Record<string, any>>) => {
+    const params = new URLSearchParams();
+    if (partial.make ?? make) params.set("make", partial.make ?? make ?? "");
+    if (partial.fuel_type ?? fuelType) params.set("fuel_type", partial.fuel_type ?? fuelType ?? "");
+    const y = partial.year_of_production ?? yearOfProduction;
+    if (y != null) params.set("year_of_production", String(y));
+    if (partial.transmission ?? transmission) params.set("transmission", partial.transmission ?? transmission ?? "");
+    if (partial.model ?? model) params.set("model", partial.model ?? model ?? "");
+    const q = params.toString();
+    const data = await apiFetch(`/api/vehicles/options${q ? "?" + q : ""}`);
+    setOptions({
+      makes: data.makes || [],
+      fuel_types: data.fuel_types || [],
+      years: data.years || [],
+      transmissions: data.transmissions || [],
+      models: data.models || [],
+      derivatives: data.derivatives || [],
+    });
+  }, [make, fuelType, yearOfProduction, transmission, model]);
 
+  const openWheel = async (field: WheelField) => {
+    // For the discrete pickers, we don't need to hit the API.
+    if (field !== "windscreen_condition" && field !== "service_history" && field !== "colour" && field !== "year_registered") {
+      await fetchOptions({});
+    }
+    setWheelField(field);
+  };
+
+  // Whenever the picks change, clear downstream fields that no longer apply.
+  const setMakePick = (v: string) => { setMake(v); setFuelType(null); setYearOfProduction(null); setTransmission(null); setModel(null); setDerivative(null); };
+  const setFuelPick = (v: string) => { setFuelType(v); setYearOfProduction(null); setTransmission(null); setModel(null); setDerivative(null); };
+  const setYearPick = (v: number) => { setYearOfProduction(v); setTransmission(null); setModel(null); setDerivative(null); };
+  const setTransPick = (v: string) => { setTransmission(v); setModel(null); setDerivative(null); };
+  const setModelPick = (v: string) => { setModel(v); setDerivative(null); };
+
+  // ------ License disc parsing on focus ------
   useFocusEffect(
     useCallback(() => {
       (async () => {
@@ -95,122 +146,47 @@ export default function SubmitVehicle() {
           setLicenseDisk(buf);
           const parsedStr = await storage.getItem<string>(SCAN_PARSED_KEY, "");
           let parsed: LicenseDiskInfo | null = null;
-          if (parsedStr) {
-            try {
-              parsed = JSON.parse(parsedStr) as LicenseDiskInfo;
-            } catch {
-              parsed = decodeLicenseDisk(buf);
-            }
-          } else {
-            parsed = decodeLicenseDisk(buf);
-          }
+          try { parsed = parsedStr ? JSON.parse(parsedStr) : decodeLicenseDisk(buf); } catch { parsed = decodeLicenseDisk(buf); }
           setLicenseDiskInfo(parsed);
-          // Auto-fill known form fields (non-destructive: only fills when empty).
           if (parsed?.colour) setColour((prev) => prev || parsed!.colour!);
-          if (parsed?.make) autoMatchMake(parsed.make);
+          if (parsed?.vin) setVin(parsed.vin);
+          if (parsed?.engineNo) setEngineNo(parsed.engineNo);
           await storage.removeItem(SCAN_BUFFER_KEY);
           await storage.removeItem(SCAN_PARSED_KEY);
         }
       })();
-    }, [autoMatchMake])
+    }, [])
   );
 
-  const openMakePicker = useCallback(async () => {
-    setPickerOpen("make");
-    setPickerLoading(true);
-    try {
-      const data = await apiFetch("/api/vehicles/makes");
-      setMakesList(data.makes);
-    } finally {
-      setPickerLoading(false);
-    }
-  }, []);
-
-  const openModelPicker = useCallback(async () => {
-    if (!make) return;
-    setPickerOpen("model");
-    setPickerLoading(true);
-    try {
-      const data = await apiFetch(`/api/vehicles/models?make_id=${make.id}`);
-      setModelsList(data.models);
-    } finally {
-      setPickerLoading(false);
-    }
-  }, [make]);
-
-  const openDerivativePicker = useCallback(async () => {
-    if (!model) return;
-    setPickerOpen("derivative");
-    setPickerLoading(true);
-    try {
-      const data = await apiFetch(`/api/vehicles/derivatives?model_id=${model.id}`);
-      setDerivativesList(data.derivatives);
-    } finally {
-      setPickerLoading(false);
-    }
-  }, [model]);
-
-  const pickPhoto = async (slot: PhotoSlot) => {
+  const pickPhoto = async (key: PhotoKey) => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert("Permission required", "Please allow photo access to attach vehicle photos.");
+      Alert.alert("Permission required", "Photo library access is needed to attach images.");
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.5,
-      base64: true,
-    });
-    if (!result.canceled && result.assets[0].base64) {
-      setPhotos((p) => ({ ...p, [slot]: `data:image/jpeg;base64,${result.assets[0].base64}` }));
-    }
+    const res = await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.5, allowsEditing: true, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+    if (res.canceled || !res.assets?.[0]?.base64) return;
+    setPhotos((p) => ({ ...p, [key]: `data:image/jpeg;base64,${res.assets![0].base64}` }));
   };
 
-  const takePhoto = async (slot: PhotoSlot) => {
-    const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert("Camera permission required", "Please allow camera access to capture vehicle photos.");
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      quality: 0.5,
-      base64: true,
-    });
-    if (!result.canceled && result.assets[0].base64) {
-      setPhotos((p) => ({ ...p, [slot]: `data:image/jpeg;base64,${result.assets[0].base64}` }));
-    }
-  };
-
-  const promptPhotoSource = (slot: PhotoSlot) => {
-    Alert.alert(PHOTO_LABELS[slot] + " Photo", "Choose a source", [
-      { text: "Camera", onPress: () => takePhoto(slot) },
-      { text: "Gallery", onPress: () => pickPhoto(slot) },
-      { text: "Cancel", style: "cancel" },
-    ]);
-  };
+  const addReconItem = () => setReconItems((r) => [...r, { label: "", amount: "" }]);
+  const updateReconItem = (i: number, patch: Partial<{ label: string; amount: string }>) => setReconItems((r) => r.map((x, ix) => (ix === i ? { ...x, ...patch } : x)));
+  const removeReconItem = (i: number) => setReconItems((r) => r.filter((_, ix) => ix !== i));
+  const reconTotal = useMemo(() => reconItems.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0), [reconItems]);
 
   const validate = (): string | null => {
-    if (!make) return "Please select a Make";
-    if (!model) return "Please select a Model";
-    if (!derivative) return "Please select a Derivative";
-    const mi = parseInt(mileage);
-    if (isNaN(mi) || mi < 0) return "Enter a valid mileage";
-    const yr = parseInt(year);
-    if (isNaN(yr) || yr < 1980 || yr > 2030) return "Enter a valid year (1980-2030)";
-    if (!colour.trim()) return "Enter the colour";
-    for (const slot of PHOTO_SLOTS) {
-      if (!photos[slot]) return `Please add a photo for: ${PHOTO_LABELS[slot]}`;
-    }
+    if (!make || !fuelType || !yearOfProduction || !transmission || !model || !derivative) return "Please complete all vehicle spec fields.";
+    if (!yearRegistered) return "Please choose year registered.";
+    if (!mileage || isNaN(parseInt(mileage))) return "Enter mileage.";
+    // If no VIN from scan and no manual colour picked → force colour.
+    if ((!vin || vin === "TBC") && !colour) return "Please pick a colour (or scan the license disc).";
+    for (const p of PHOTO_ORDER) if (!photos[p.key]) return `Photo missing: ${p.label}`;
     return null;
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     const err = validate();
-    if (err) {
-      setError(err);
-      return;
-    }
-    // Open the billing-confirmation modal — actual API call happens on confirm.
+    if (err) { setError(err); return; }
     setError(null);
     setBillingConfirmOpen(true);
   };
@@ -223,427 +199,230 @@ export default function SubmitVehicle() {
       await apiFetch("/api/submissions", {
         method: "POST",
         body: JSON.stringify({
-          make_id: make!.id,
-          make_name: make!.name,
-          model_id: model!.id,
-          model_name: model!.name,
-          derivative_id: derivative!.id,
-          derivative_name: derivative!.name,
-          mileage: parseInt(mileage),
-          year: parseInt(year),
-          factory_warranty: factoryWarranty,
-          condition,
-          accident_damage: accidentDamage,
-          colour: colour.trim(),
+          make, fuel_type: fuelType, year_of_production: yearOfProduction, transmission,
+          model, derivative, year_registered: yearRegistered,
+          colour: colour || (licenseDiskInfo?.colour ?? "TBC"),
+          vin: vin || "TBC", engine_number: engineNo || "TBC",
           license_disk_data: licenseDisk,
-          photos,
+          exterior_condition: exteriorRating,
+          interior_condition: interiorRating,
+          tyre_condition: tyreRating,
+          windscreen_condition: windscreen,
+          service_history: serviceHistory,
+          last_service_date: lastServiceDate || null,
+          last_service_mileage: lastServiceMileage ? parseInt(lastServiceMileage) : null,
+          photos, mileage: parseInt(mileage),
+          paint_evidence: paintEvidence,
+          accident_damage: accidentDamage,
+          reconditioning_items: reconItems.filter(r => r.label.trim() && parseFloat(r.amount) > 0).map(r => ({ label: r.label.trim(), amount_zar: parseFloat(r.amount) })),
           billing_accepted: true,
         }),
       });
       router.replace("/(app)");
-    } catch (e: any) {
-      setError(e.message || "Failed to submit");
-    } finally {
-      setSubmitting(false);
+    } catch (e: any) { setError(e.message || "Failed to submit"); }
+    finally { setSubmitting(false); }
+  };
+
+  // -------------------------- UI --------------------------
+  const Field = ({ label, value, onPress, testID, hint }: { label: string; value: string | null; onPress: () => void; testID?: string; hint?: string }) => (
+    <TouchableOpacity style={styles.field} onPress={onPress} testID={testID} activeOpacity={0.75}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.fieldLabel}>{label.toUpperCase()}</Text>
+        <Text style={[styles.fieldValue, !value && styles.fieldValuePlaceholder]}>{value ?? hint ?? "Tap to choose"}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+    </TouchableOpacity>
+  );
+
+  const RatingDots = ({ value, onChange }: { value: number; onChange: (n: number) => void }) => (
+    <View style={styles.dotsRow}>
+      {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
+        const active = n <= value;
+        return (
+          <TouchableOpacity key={n} style={[styles.dot, active && styles.dotActive]} onPress={() => onChange(n)} testID={`rating-${n}`}>
+            <Text style={[styles.dotText, active && styles.dotTextActive]}>{n}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+
+  const wheelOptionsFor = (): { title: string; options: any[]; value: any; onSelect: (v: any) => void; formatter?: (v: any) => string } => {
+    switch (wheelField) {
+      case "make": return { title: "Make", options: options.makes, value: make, onSelect: setMakePick };
+      case "fuel_type": return { title: "Fuel Type", options: options.fuel_types, value: fuelType, onSelect: setFuelPick };
+      case "year_of_production": return { title: "Year of Production", options: options.years, value: yearOfProduction, onSelect: setYearPick };
+      case "transmission": return { title: "Transmission", options: options.transmissions, value: transmission, onSelect: setTransPick };
+      case "model": return { title: "Model", options: options.models, value: model, onSelect: setModelPick };
+      case "derivative": return { title: "Derivative", options: options.derivatives, value: derivative, onSelect: setDerivative };
+      case "year_registered": {
+        const yrs: number[] = [];
+        const now = new Date().getFullYear();
+        const start = yearOfProduction ?? (now - 10);
+        for (let y = start; y <= now + 1; y++) yrs.push(y);
+        return { title: "Year Registered", options: yrs, value: yearRegistered, onSelect: setYearRegistered };
+      }
+      case "colour": return { title: "Colour", options: COLOURS, value: colour, onSelect: setColour };
+      case "windscreen_condition": return { title: "Windscreen", options: [...WINDSCREEN_OPTIONS], value: windscreen, onSelect: (v: any) => setWindscreen(v) };
+      case "service_history": return { title: "Service History", options: [...SERVICE_HISTORY], value: serviceHistory, onSelect: (v: any) => setServiceHistory(v) };
+      default: return { title: "", options: [], value: null, onSelect: () => {} };
     }
   };
 
-  const conditionColor =
-    condition <= 3 ? colors.danger : condition <= 7 ? colors.warning : colors.success;
+  const wheelProps = wheelOptionsFor();
+  const scannedIdentity = !!(licenseDiskInfo?.vin || licenseDiskInfo?.colour);
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <View style={styles.header}>
-        <TouchableOpacity testID="submit-back-button" onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Submit Vehicle</Text>
-        <View style={{ width: 32 }} />
-      </View>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + 24 }]} keyboardShouldPersistTaps="handled">
-          {/* Section: Vehicle */}
-          <Text style={styles.sectionTitle}>Vehicle</Text>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()}><Ionicons name="chevron-back" size={22} color={colors.text} /></TouchableOpacity>
+          <Text style={styles.headerTitle}>SUBMIT VEHICLE</Text>
+          <View style={{ width: 22 }} />
+        </View>
 
-          <TouchableOpacity
-            testID="select-make-button"
-            style={styles.selector}
-            onPress={openMakePicker}
-          >
-            <Text style={styles.selectorLabel}>Make</Text>
-            <View style={styles.selectorRight}>
-              <Text style={[styles.selectorValue, !make && styles.placeholder]}>
-                {make?.name || "Select make"}
-              </Text>
-              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-            </View>
-          </TouchableOpacity>
+        <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + 40 }]} keyboardShouldPersistTaps="handled">
+          <Text style={styles.sectionTitle}>VEHICLE SPECIFICATION</Text>
+          <Field label="Make" value={make} onPress={() => openWheel("make")} testID="pick-make" />
+          <Field label="Fuel Type" value={fuelType} onPress={() => make ? openWheel("fuel_type") : setError("Choose Make first")} testID="pick-fuel" />
+          <Field label="Year of Production" value={yearOfProduction?.toString() ?? null} onPress={() => fuelType ? openWheel("year_of_production") : setError("Choose Fuel first")} testID="pick-yop" />
+          <Field label="Transmission" value={transmission} onPress={() => yearOfProduction ? openWheel("transmission") : setError("Choose Year first")} testID="pick-trans" />
+          <Field label="Model" value={model} onPress={() => transmission ? openWheel("model") : setError("Choose Transmission first")} testID="pick-model" />
+          <Field label="Derivative" value={derivative} onPress={() => model ? openWheel("derivative") : setError("Choose Model first")} testID="pick-deriv" />
+          <Field label="Year Registered" value={yearRegistered?.toString() ?? null} onPress={() => openWheel("year_registered")} testID="pick-yr-reg" />
 
-          <TouchableOpacity
-            testID="select-model-button"
-            style={[styles.selector, !make && styles.disabled]}
-            onPress={openModelPicker}
-            disabled={!make}
-          >
-            <Text style={styles.selectorLabel}>Model</Text>
-            <View style={styles.selectorRight}>
-              <Text style={[styles.selectorValue, !model && styles.placeholder]}>
-                {model?.name || "Select model"}
-              </Text>
-              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            testID="select-derivative-button"
-            style={[styles.selector, !model && styles.disabled]}
-            onPress={openDerivativePicker}
-            disabled={!model}
-          >
-            <Text style={styles.selectorLabel}>Derivative</Text>
-            <View style={styles.selectorRight}>
-              <Text style={[styles.selectorValue, !derivative && styles.placeholder]}>
-                {derivative?.name || "Select derivative"}
-              </Text>
-              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-            </View>
-          </TouchableOpacity>
-
-          {/* Section: Details */}
-          <Text style={styles.sectionTitle}>Details</Text>
-
-          <View style={styles.field}>
-            <Text style={styles.label}>Mileage (km)</Text>
-            <TextInput
-              testID="mileage-input"
-              style={styles.input}
-              value={mileage}
-              onChangeText={setMileage}
-              keyboardType="number-pad"
-              placeholder="e.g. 45000"
-              placeholderTextColor={colors.textDisabled}
-            />
-          </View>
-
-          <View style={styles.field}>
-            <Text style={styles.label}>Year Registered</Text>
-            <TextInput
-              testID="year-input"
-              style={styles.input}
-              value={year}
-              onChangeText={setYear}
-              keyboardType="number-pad"
-              placeholder="e.g. 2022"
-              placeholderTextColor={colors.textDisabled}
-              maxLength={4}
-            />
-          </View>
-
-          <View style={styles.field}>
-            <Text style={styles.label}>Colour</Text>
-            <TextInput
-              testID="colour-input"
-              style={styles.input}
-              value={colour}
-              onChangeText={setColour}
-              placeholder="e.g. Pearl White"
-              placeholderTextColor={colors.textDisabled}
-            />
-          </View>
-
-          <View style={styles.toggleRow}>
+          <Text style={styles.sectionTitle}>IDENTITY</Text>
+          <TouchableOpacity testID="scan-license-disk-button" style={styles.scanBtn} onPress={() => router.push({ pathname: "/(app)/scan", params: { returnPath: "submit" } } as any)}>
+            <Ionicons name="barcode-outline" size={22} color={colors.text} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.toggleLabel}>Factory Warranty</Text>
-              <Text style={styles.toggleHint}>Still under factory warranty</Text>
-            </View>
-            <Switch
-              testID="factory-warranty-toggle"
-              value={factoryWarranty}
-              onValueChange={setFactoryWarranty}
-              trackColor={{ true: colors.primary, false: colors.border }}
-            />
-          </View>
-
-          <View style={styles.toggleRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.toggleLabel}>Accident Damage</Text>
-              <Text style={styles.toggleHint}>Vehicle has been in an accident</Text>
-            </View>
-            <Switch
-              testID="accident-damage-toggle"
-              value={accidentDamage}
-              onValueChange={setAccidentDamage}
-              trackColor={{ true: colors.danger, false: colors.border }}
-            />
-          </View>
-
-          {/* Condition */}
-          <Text style={styles.sectionTitle}>Condition</Text>
-          <View style={styles.conditionBox}>
-            <View style={styles.conditionHeader}>
-              <Text style={styles.label}>Rate 1-10</Text>
-              <Text style={[styles.conditionValue, { color: conditionColor }]} testID="condition-value">
-                {condition}/10
-              </Text>
-            </View>
-            <View style={styles.conditionRow}>
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => {
-                const active = n <= condition;
-                const nColor = n <= 3 ? colors.danger : n <= 7 ? colors.warning : colors.success;
-                return (
-                  <TouchableOpacity
-                    key={n}
-                    testID={`condition-${n}`}
-                    onPress={() => setCondition(n)}
-                    style={[
-                      styles.conditionDot,
-                      { backgroundColor: active ? nColor : colors.card, borderColor: active ? nColor : colors.border },
-                    ]}
-                  >
-                    <Text style={[styles.conditionDotText, { color: active ? "#000" : colors.textSecondary }]}>
-                      {n}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-
-          {/* License disk scan */}
-          <Text style={styles.sectionTitle}>License Disk (optional)</Text>
-          <TouchableOpacity
-            testID="scan-license-disk-button"
-            style={styles.scanBtn}
-            onPress={() =>
-              router.push({
-                pathname: "/(app)/scan",
-                params: { returnPath: "submit" },
-              } as any)
-            }
-          >
-            <Ionicons name="barcode-outline" size={24} color={colors.primary} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.scanBtnText}>
-                {licenseDisk ? (licenseDiskInfo?.vin ? "Decoded" : "Scanned") : "Scan license disk barcode"}
-              </Text>
-              {licenseDisk ? (
-                <Text style={styles.scanBtnHint} numberOfLines={1}>
-                  Tap to re-scan
-                </Text>
-              ) : null}
+              <Text style={styles.scanText}>{licenseDisk ? (scannedIdentity ? "License Disc Decoded" : "Scanned") : "Scan License Disc (optional)"}</Text>
+              {licenseDisk && <Text style={styles.scanHint}>Tap to re-scan</Text>}
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
           </TouchableOpacity>
-
-          {licenseDiskInfo && (licenseDiskInfo.vin || licenseDiskInfo.make || licenseDiskInfo.licenceNo) ? (
-            <View style={styles.diskCard} testID="license-disk-decoded-card">
-              <View style={styles.diskCardHeader}>
-                <Ionicons name="shield-checkmark" size={16} color={colors.primary} />
-                <Text style={styles.diskCardTitle}>Decoded from disc</Text>
-                <TouchableOpacity
-                  testID="clear-license-disk"
-                  onPress={() => {
-                    setLicenseDisk(null);
-                    setLicenseDiskInfo(null);
-                  }}
-                  style={styles.diskClearBtn}
-                >
-                  <Ionicons name="close" size={14} color={colors.textSecondary} />
-                </TouchableOpacity>
-              </View>
-              <View style={styles.diskGrid}>
-                {licenseDiskInfo.licenceNo ? (
-                  <DiskField label="Licence No" value={licenseDiskInfo.licenceNo} />
-                ) : null}
-                {licenseDiskInfo.vehicleRegisterNo ? (
-                  <DiskField label="Register No" value={licenseDiskInfo.vehicleRegisterNo} />
-                ) : null}
-                {licenseDiskInfo.make ? <DiskField label="Make" value={licenseDiskInfo.make} /> : null}
-                {licenseDiskInfo.model ? <DiskField label="Model" value={licenseDiskInfo.model} /> : null}
-                {licenseDiskInfo.colour ? (
-                  <DiskField label="Colour" value={licenseDiskInfo.colour} />
-                ) : null}
-                {licenseDiskInfo.vin ? (
-                  <DiskField label="VIN" value={licenseDiskInfo.vin} mono full />
-                ) : null}
-                {licenseDiskInfo.engineNo ? (
-                  <DiskField label="Engine No" value={licenseDiskInfo.engineNo} mono />
-                ) : null}
-                {licenseDiskInfo.vehicleDescription ? (
-                  <DiskField label="Description" value={licenseDiskInfo.vehicleDescription} full />
-                ) : null}
-                {licenseDiskInfo.expiryDate ? (
-                  <DiskField label="Expires" value={licenseDiskInfo.expiryDate} mono />
-                ) : null}
-                {licenseDiskInfo.licenceDiscNo ? (
-                  <DiskField label="Disc No" value={licenseDiskInfo.licenceDiscNo} mono full />
-                ) : null}
-              </View>
-              <Text style={styles.diskHint}>
-                Values auto-filled where possible — please verify against the disc before submitting.
-              </Text>
+          {scannedIdentity && licenseDiskInfo ? (
+            <View style={styles.diskInfo}>
+              {licenseDiskInfo.vin ? <Text style={styles.diskLine}>VIN: <Text style={styles.diskMono}>{licenseDiskInfo.vin}</Text></Text> : null}
+              {licenseDiskInfo.engineNo ? <Text style={styles.diskLine}>Engine: <Text style={styles.diskMono}>{licenseDiskInfo.engineNo}</Text></Text> : null}
+              {licenseDiskInfo.colour ? <Text style={styles.diskLine}>Colour: <Text style={styles.diskMono}>{licenseDiskInfo.colour}</Text></Text> : null}
             </View>
-          ) : null}
+          ) : (
+            <>
+              <Field label="Colour" value={colour} hint="Choose colour" onPress={() => openWheel("colour")} testID="pick-colour" />
+              <View style={styles.tbcRow}>
+                <Text style={styles.tbcLabel}>VIN & Engine will default to <Text style={styles.tbcHl}>TBC</Text> until scanned.</Text>
+              </View>
+            </>
+          )}
 
-          {/* Photos */}
-          <Text style={styles.sectionTitle}>Photos (5 required)</Text>
+          <Text style={styles.sectionTitle}>CONDITION</Text>
+          <Text style={styles.ratingLabel}>Exterior · {exteriorRating}/10</Text>
+          <RatingDots value={exteriorRating} onChange={setExteriorRating} />
+          <Text style={styles.ratingLabel}>Interior · {interiorRating}/10</Text>
+          <RatingDots value={interiorRating} onChange={setInteriorRating} />
+          <Text style={styles.ratingLabel}>Tyres · {tyreRating}/10</Text>
+          <RatingDots value={tyreRating} onChange={setTyreRating} />
+          <Field label="Windscreen" value={windscreen} onPress={() => openWheel("windscreen_condition")} testID="pick-windscreen" />
+
+          <Text style={styles.sectionTitle}>SERVICE HISTORY</Text>
+          <Field label="Service History" value={serviceHistory} onPress={() => openWheel("service_history")} testID="pick-service" />
+          <View style={styles.row2}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.subLabel}>LAST SERVICE DATE</Text>
+              <TextInput style={styles.input} value={lastServiceDate} onChangeText={setLastServiceDate} placeholder="YYYY-MM-DD (TBC)" placeholderTextColor={colors.textDisabled} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.subLabel}>LAST SERVICE MILEAGE</Text>
+              <TextInput style={styles.input} value={lastServiceMileage} onChangeText={setLastServiceMileage} placeholder="TBC" placeholderTextColor={colors.textDisabled} keyboardType="numeric" />
+            </View>
+          </View>
+
+          <Text style={styles.sectionTitle}>ODOMETER</Text>
+          <TextInput testID="mileage-input" style={styles.input} value={mileage} onChangeText={setMileage} placeholder="Current mileage (km)" placeholderTextColor={colors.textDisabled} keyboardType="numeric" />
+
+          <Text style={styles.sectionTitle}>PHOTOS</Text>
           <View style={styles.photoGrid}>
-            {PHOTO_SLOTS.map((slot) => (
-              <TouchableOpacity
-                key={slot}
-                testID={`photo-slot-${slot}`}
-                style={styles.photoSlot}
-                onPress={() => promptPhotoSource(slot)}
-                activeOpacity={0.7}
-              >
-                {photos[slot] ? (
-                  <>
-                    <Image source={{ uri: photos[slot]! }} style={styles.photoImg} />
-                    <View style={styles.photoOverlay}>
-                      <Text style={styles.photoLabelActive}>{PHOTO_LABELS[slot]}</Text>
-                    </View>
-                  </>
+            {PHOTO_ORDER.map((p) => (
+              <TouchableOpacity key={p.key} style={styles.photoBox} onPress={() => pickPhoto(p.key)} testID={`photo-${p.key}`}>
+                {photos[p.key] ? (
+                  <Image source={{ uri: photos[p.key] }} style={styles.photo} />
                 ) : (
-                  <>
-                    <Ionicons name="camera-outline" size={28} color={colors.textSecondary} />
-                    <Text style={styles.photoLabel}>{PHOTO_LABELS[slot]}</Text>
-                  </>
+                  <View style={styles.photoEmpty}>
+                    <Ionicons name="camera-outline" size={20} color={colors.textSecondary} />
+                  </View>
                 )}
+                <Text style={styles.photoLabel} numberOfLines={1}>{p.label}</Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          {error ? (
-            <Text style={styles.error} testID="submit-error">
-              {error}
-            </Text>
-          ) : null}
+          <Text style={styles.sectionTitle}>DAMAGE</Text>
+          <TouchableOpacity style={styles.checkRow} onPress={() => setPaintEvidence((v) => !v)} testID="toggle-paint">
+            <View style={[styles.checkbox, paintEvidence && styles.checkboxOn]}>{paintEvidence ? <Ionicons name="checkmark" size={14} color="#000" /> : null}</View>
+            <Text style={styles.checkText}>Evidence of paint work</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.checkRow} onPress={() => setAccidentDamage((v) => !v)} testID="toggle-accident">
+            <View style={[styles.checkbox, accidentDamage && styles.checkboxOn]}>{accidentDamage ? <Ionicons name="checkmark" size={14} color="#000" /> : null}</View>
+            <Text style={styles.checkText}>Evidence of accident damage</Text>
+          </TouchableOpacity>
 
-          <TouchableOpacity
-            testID="submit-vehicle-button"
-            style={[styles.submitBtn, submitting && styles.disabledBtn]}
-            onPress={handleSubmit}
-            disabled={submitting}
-          >
-            {submitting ? (
-              <ActivityIndicator color="#000" />
-            ) : (
-              <>
-                <Ionicons name="paper-plane" size={18} color="#000" />
-                <Text style={styles.submitBtnText}>Submit for Pricing</Text>
-              </>
-            )}
+          <Text style={styles.sectionTitle}>RECONDITIONING COSTS</Text>
+          <Text style={styles.sectionHint}>Itemise what you would need to spend to get this car to showroom condition.</Text>
+          {reconItems.map((item, i) => (
+            <View key={i} style={styles.reconRow}>
+              <TextInput style={[styles.input, { flex: 2 }]} value={item.label} onChangeText={(v) => updateReconItem(i, { label: v })} placeholder="e.g. Paint front bumper" placeholderTextColor={colors.textDisabled} />
+              <TextInput style={[styles.input, { flex: 1 }]} value={item.amount} onChangeText={(v) => updateReconItem(i, { amount: v })} placeholder="R" placeholderTextColor={colors.textDisabled} keyboardType="numeric" />
+              <TouchableOpacity style={styles.reconRemove} onPress={() => removeReconItem(i)}><Ionicons name="close" size={16} color={colors.danger} /></TouchableOpacity>
+            </View>
+          ))}
+          <TouchableOpacity style={styles.reconAdd} onPress={addReconItem} testID="add-recon">
+            <Ionicons name="add" size={16} color={colors.text} />
+            <Text style={styles.reconAddText}>ADD LINE ITEM</Text>
+          </TouchableOpacity>
+          {reconTotal > 0 ? <Text style={styles.reconTotal}>Total reconditioning: R {reconTotal.toFixed(2)}</Text> : null}
+
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+          <TouchableOpacity style={[styles.submitBtn, submitting && styles.submitBtnDisabled]} onPress={handleSubmit} disabled={submitting} testID="submit-button">
+            {submitting ? <ActivityIndicator color="#000" /> : (<><Ionicons name="paper-plane" size={18} color="#000" /><Text style={styles.submitBtnText}>Submit for Pricing</Text></>)}
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <OptionPicker
-        visible={pickerOpen === "make"}
-        title="Select Make"
-        options={makesList}
-        loading={pickerLoading}
-        onClose={() => setPickerOpen(null)}
-        onSelect={(o) => {
-          setMake(o);
-          setModel(null);
-          setDerivative(null);
-          setPickerOpen(null);
-        }}
-        testID="make-picker"
-      />
-      <OptionPicker
-        visible={pickerOpen === "model"}
-        title="Select Model"
-        options={modelsList}
-        loading={pickerLoading}
-        onClose={() => setPickerOpen(null)}
-        onSelect={(o) => {
-          setModel(o);
-          setDerivative(null);
-          setPickerOpen(null);
-        }}
-        testID="model-picker"
-      />
-      <OptionPicker
-        visible={pickerOpen === "derivative"}
-        title="Select Derivative"
-        options={derivativesList}
-        loading={pickerLoading}
-        onClose={() => setPickerOpen(null)}
-        onSelect={(o) => {
-          setDerivative(o);
-          setPickerOpen(null);
-        }}
-        testID="derivative-picker"
+      <WheelPicker
+        visible={wheelField != null}
+        title={wheelProps.title}
+        options={wheelProps.options}
+        value={wheelProps.value}
+        onSelect={wheelProps.onSelect}
+        onClose={() => setWheelField(null)}
+        formatter={wheelProps.formatter}
+        testID={`wheel-${wheelField ?? "none"}`}
       />
 
-      {/* Billing confirmation — shown for EVERY submission before we POST. */}
-      <Modal
-        visible={billingConfirmOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setBillingConfirmOpen(false)}
-      >
+      {/* Billing confirmation */}
+      <Modal visible={billingConfirmOpen} transparent animationType="fade" onRequestClose={() => setBillingConfirmOpen(false)}>
         <View style={styles.billBackdrop}>
           <View style={styles.billCard} testID="billing-confirm-modal">
             <View style={styles.billHeader}>
-              <Ionicons name="cash-outline" size={22} color={colors.neon} />
-              <Text style={styles.billTitle}>Confirm Submission</Text>
+              <Ionicons name="cash-outline" size={22} color={colors.text} />
+              <Text style={styles.billTitle}>CONFIRM SUBMISSION</Text>
             </View>
-            <View style={styles.billBody}>
-              <Text style={styles.billLine}>
-                You are about to submit a vehicle for pricing.
-              </Text>
+            <View style={{ padding: spacing.md }}>
               <View style={styles.billFeeBox}>
                 <Text style={styles.billFeeAmount}>R50.00</Text>
                 <Text style={styles.billFeeCaption}>per priced submission · incl. VAT</Text>
               </View>
-              <Text style={styles.billNote}>
-                <Text style={styles.billStrong}>No fee</Text> if Fourbuy does not
-                return a price within{" "}
-                <Text style={styles.billStrong}>24 hours</Text> of your submission.
-              </Text>
-
-              <TouchableOpacity
-                testID="billing-confirm-check"
-                style={styles.billCheckRow}
-                onPress={() => setBillingAckChecked((v) => !v)}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.billCheckbox, billingAckChecked && styles.billCheckboxChecked]}>
-                  {billingAckChecked ? (
-                    <Ionicons name="checkmark" size={14} color="#000" />
-                  ) : null}
-                </View>
-                <Text style={styles.billCheckLabel}>
-                  I understand and agree to the R50 fee for this submission.
-                </Text>
+              <Text style={styles.billNote}>No fee if Fourbuy does not return a price within 24 hours.</Text>
+              <TouchableOpacity testID="billing-confirm-check" style={styles.billCheckRow} onPress={() => setBillingAckChecked((v) => !v)}>
+                <View style={[styles.checkbox, billingAckChecked && styles.checkboxOn]}>{billingAckChecked ? <Ionicons name="checkmark" size={14} color="#000" /> : null}</View>
+                <Text style={styles.checkText}>I agree to the R50 fee for this submission.</Text>
               </TouchableOpacity>
             </View>
             <View style={styles.billFooter}>
-              <TouchableOpacity
-                testID="billing-confirm-cancel"
-                style={styles.billCancelBtn}
-                onPress={() => {
-                  setBillingConfirmOpen(false);
-                  setBillingAckChecked(false);
-                }}
-              >
-                <Text style={styles.billCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                testID="billing-confirm-submit"
-                style={[styles.billSubmitBtn, !billingAckChecked && { opacity: 0.4 }]}
-                onPress={() => {
-                  if (!billingAckChecked) return;
-                  setBillingAckChecked(false);
-                  performSubmit();
-                }}
-                disabled={!billingAckChecked}
-                activeOpacity={0.85}
-              >
+              <TouchableOpacity style={styles.billCancel} onPress={() => { setBillingConfirmOpen(false); setBillingAckChecked(false); }} testID="billing-confirm-cancel"><Text style={styles.billCancelText}>Cancel</Text></TouchableOpacity>
+              <TouchableOpacity style={[styles.billOk, !billingAckChecked && { opacity: 0.4 }]} disabled={!billingAckChecked} onPress={() => { setBillingAckChecked(false); performSubmit(); }} testID="billing-confirm-submit">
                 <Ionicons name="paper-plane" size={16} color="#000" />
-                <Text style={styles.billSubmitText}>Confirm & Submit</Text>
+                <Text style={styles.billOkText}>Confirm & Submit</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -653,341 +432,74 @@ export default function SubmitVehicle() {
   );
 }
 
-function DiskField({
-  label,
-  value,
-  mono,
-  full,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-  full?: boolean;
-}) {
-  return (
-    <View
-      style={[
-        styles.diskField,
-        full && { flexBasis: "100%", minWidth: "100%", width: "100%" },
-      ]}
-    >
-      <Text style={styles.diskFieldLabel}>{label.toUpperCase()}</Text>
-      <Text
-        style={[
-          styles.diskFieldValue,
-          mono && styles.diskFieldValueMono,
-        ]}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={0.6}
-        ellipsizeMode="middle"
-      >
-        {value}
-      </Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.paper,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  backBtn: { padding: 4 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.md, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.paper },
   headerTitle: { color: colors.text, fontSize: 17, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 2, textTransform: "uppercase" },
-  scroll: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
-  sectionTitle: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "800",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    marginTop: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  selector: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: spacing.md,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    marginBottom: spacing.sm,
-  },
-  selectorLabel: { color: colors.textSecondary, fontSize: 13, fontWeight: "500" },
-  selectorRight: { flexDirection: "row", alignItems: "center", gap: 6, flex: 1, justifyContent: "flex-end" },
-  selectorValue: { color: colors.text, fontSize: 15, fontWeight: "600" },
-  placeholder: { color: colors.textDisabled, fontWeight: "400" },
-  disabled: { opacity: 0.5 },
-  field: { marginBottom: spacing.sm },
-  label: { color: colors.textSecondary, fontSize: 13, marginBottom: 6 },
-  input: {
-    backgroundColor: colors.inputBg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 14,
-    color: colors.text,
-    fontSize: 16,
-  },
-  toggleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: spacing.md,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    marginBottom: spacing.sm,
-  },
-  toggleLabel: { color: colors.text, fontSize: 15, fontWeight: "600" },
-  toggleHint: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
-  conditionBox: {
-    padding: spacing.md,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-  },
-  conditionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.sm },
-  conditionValue: { fontSize: 18, fontWeight: "800", fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
-  conditionRow: { flexDirection: "row", justifyContent: "space-between", gap: 4 },
-  conditionDot: {
-    flex: 1,
-    aspectRatio: 1,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  conditionDotText: { fontSize: 13, fontWeight: "700" },
-  scanBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    padding: spacing.md,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    marginBottom: spacing.sm,
-  },
-  scanBtnText: { color: colors.text, fontSize: 15, fontWeight: "600" },
-  scanBtnHint: { color: colors.textSecondary, fontSize: 12, marginTop: 2, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
+  scroll: { padding: spacing.md, gap: spacing.sm },
+  sectionTitle: { color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 2, marginTop: spacing.md, marginBottom: 4, textTransform: "uppercase" },
+  sectionHint: { color: colors.textSecondary, fontSize: 12, marginBottom: spacing.sm, fontStyle: "italic" },
 
-  diskCard: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.primary + "55",
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  diskCardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: spacing.sm,
-  },
-  diskCardTitle: {
-    flex: 1,
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
-  diskClearBtn: {
-    padding: 4,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  diskGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  diskField: {
-    minWidth: "45%",
-    flexGrow: 1,
-    flexShrink: 1,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    backgroundColor: colors.paper,
-  },
-  diskFieldLabel: {
-    color: colors.textSecondary,
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 1,
-    marginBottom: 4,
-  },
-  diskFieldValue: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  diskFieldValueMono: {
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    fontSize: 12,
-    letterSpacing: 0,
-    fontWeight: "600",
-  },
-  diskHint: {
-    color: colors.textDisabled,
-    fontSize: 11,
-    fontStyle: "italic",
-    marginTop: 4,
-  },
-  photoGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  photoSlot: {
-    width: "48%",
-    aspectRatio: 1,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderStyle: "dashed",
-    borderRadius: radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  photoImg: { width: "100%", height: "100%" },
-  photoOverlay: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "rgba(0,0,0,0.7)",
-    paddingVertical: 6,
-    alignItems: "center",
-  },
-  photoLabel: { color: colors.textSecondary, fontSize: 12, marginTop: 6, fontWeight: "600" },
-  photoLabelActive: { color: "#fff", fontSize: 12, fontWeight: "700" },
-  error: { color: colors.danger, marginTop: spacing.md, fontSize: 14 },
-  submitBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: colors.primary,
-    borderRadius: radius.sm,
-    paddingVertical: 16,
-    marginTop: spacing.lg,
-  },
+  field: { flexDirection: "row", alignItems: "center", backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: 14, marginBottom: 8 },
+  fieldLabel: { color: colors.textSecondary, fontSize: 10, fontWeight: "800", letterSpacing: 1.5, marginBottom: 3 },
+  fieldValue: { color: colors.text, fontSize: 15, fontWeight: "700" },
+  fieldValuePlaceholder: { color: colors.textDisabled, fontWeight: "500" },
+
+  scanBtn: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: 14, marginBottom: 8 },
+  scanText: { color: colors.text, fontSize: 14, fontWeight: "700" },
+  scanHint: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
+  diskInfo: { backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.borderLight, borderRadius: radius.sm, padding: spacing.sm, marginBottom: spacing.sm, gap: 4 },
+  diskLine: { color: colors.text, fontSize: 12 },
+  diskMono: { fontFamily: fonts.mono, color: colors.text, fontWeight: "700" },
+  tbcRow: { padding: 10, backgroundColor: colors.paper, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.borderLight, marginTop: 4 },
+  tbcLabel: { color: colors.textSecondary, fontSize: 11 },
+  tbcHl: { color: colors.text, fontWeight: "800" },
+
+  ratingLabel: { color: colors.text, fontSize: 13, fontWeight: "700", marginTop: 6 },
+  dotsRow: { flexDirection: "row", gap: 4, marginTop: 6, marginBottom: 4 },
+  dot: { flex: 1, height: 30, borderRadius: 6, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center", backgroundColor: colors.card },
+  dotActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  dotText: { color: colors.textSecondary, fontSize: 11, fontWeight: "700" },
+  dotTextActive: { color: "#000", fontWeight: "800" },
+
+  row2: { flexDirection: "row", gap: spacing.sm },
+  subLabel: { color: colors.textSecondary, fontSize: 10, fontWeight: "800", letterSpacing: 1.2, marginBottom: 4 },
+  input: { backgroundColor: colors.inputBg, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, paddingHorizontal: 12, paddingVertical: 10, color: colors.text, fontSize: 14 },
+
+  photoGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  photoBox: { width: "31.5%", aspectRatio: 1, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, overflow: "hidden", backgroundColor: colors.card, alignItems: "center", justifyContent: "flex-end" },
+  photo: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, width: "100%", height: "100%" },
+  photoEmpty: { flex: 1, alignItems: "center", justifyContent: "center", alignSelf: "stretch" },
+  photoLabel: { position: "absolute", bottom: 0, width: "100%", textAlign: "center", color: "#fff", fontSize: 10, backgroundColor: "rgba(0,0,0,0.6)", paddingVertical: 3, fontWeight: "700", letterSpacing: 0.5 },
+
+  checkRow: { flexDirection: "row", alignItems: "center", gap: 10, padding: 10, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, backgroundColor: colors.card, marginTop: 6 },
+  checkbox: { width: 22, height: 22, borderRadius: 4, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.card, alignItems: "center", justifyContent: "center" },
+  checkboxOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  checkText: { color: colors.text, fontSize: 13, flex: 1 },
+
+  reconRow: { flexDirection: "row", gap: 6, alignItems: "center", marginBottom: 6 },
+  reconRemove: { width: 30, height: 30, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.danger + "55", backgroundColor: colors.danger + "12", borderRadius: radius.sm },
+  reconAdd: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, padding: 10, borderWidth: 1, borderStyle: "dashed", borderColor: colors.border, borderRadius: radius.sm, marginTop: 4 },
+  reconAddText: { color: colors.text, fontSize: 12, fontWeight: "800", letterSpacing: 1 },
+  reconTotal: { color: colors.text, fontSize: 13, fontWeight: "800", marginTop: 6, textAlign: "right" },
+
+  error: { color: colors.danger, fontSize: 13, marginTop: spacing.sm, textAlign: "center" },
+  submitBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: spacing.lg, paddingVertical: 14, backgroundColor: colors.primary, borderRadius: radius.md },
+  submitBtnDisabled: { opacity: 0.6 },
   submitBtnText: { color: "#000", fontWeight: "800", fontSize: 15, letterSpacing: 1.5, textTransform: "uppercase" },
-  disabledBtn: { opacity: 0.6 },
 
-  // Billing confirmation modal
-  billBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.85)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: spacing.lg,
-  },
-  billCard: {
-    width: "100%",
-    maxWidth: 440,
-    backgroundColor: colors.card,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.neon + "88",
-    overflow: "hidden",
-  },
-  billHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    padding: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.paper,
-  },
-  billTitle: { color: colors.text, fontSize: 16, fontWeight: "800", letterSpacing: 1, textTransform: "uppercase" },
-  billBody: { padding: spacing.md },
-  billLine: { color: colors.text, fontSize: 14, lineHeight: 20, marginBottom: spacing.md, textAlign: "center" },
-  billFeeBox: {
-    alignItems: "center",
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.neon + "55",
-    borderRadius: radius.md,
-    backgroundColor: colors.neon + "10",
-    marginBottom: spacing.md,
-  },
-  billFeeAmount: { color: colors.neon, fontSize: 34, fontWeight: "800", letterSpacing: 1 },
-  billFeeCaption: { color: colors.textSecondary, fontSize: 12, marginTop: 4, letterSpacing: 0.5 },
-  billNote: { color: colors.text, fontSize: 13, lineHeight: 20, textAlign: "center", marginBottom: spacing.md },
-  billStrong: { color: colors.neon, fontWeight: "800" },
-  billCheckRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    backgroundColor: colors.paper,
-  },
-  billCheckbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 4,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  billCheckboxChecked: { backgroundColor: colors.neon, borderColor: colors.neon },
-  billCheckLabel: { color: colors.text, fontSize: 13, flex: 1, lineHeight: 18 },
-  billFooter: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    padding: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    backgroundColor: colors.paper,
-  },
-  billCancelBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: "center",
-    backgroundColor: colors.card,
-  },
-  billCancelText: { color: colors.textSecondary, fontWeight: "700", fontSize: 13 },
-  billSubmitBtn: {
-    flex: 2,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 12,
-    borderRadius: radius.md,
-    backgroundColor: colors.primary,
-  },
-  billSubmitText: { color: "#000", fontWeight: "800", fontSize: 14, letterSpacing: 1, textTransform: "uppercase" },
+  billBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", justifyContent: "center", alignItems: "center", padding: spacing.lg },
+  billCard: { width: "100%", maxWidth: 440, backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.borderLight, overflow: "hidden" },
+  billHeader: { flexDirection: "row", alignItems: "center", gap: 10, padding: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.paper },
+  billTitle: { color: colors.text, fontSize: 15, fontWeight: "800", letterSpacing: 2 },
+  billFeeBox: { alignItems: "center", padding: spacing.md, borderWidth: 1, borderColor: colors.borderLight, borderRadius: radius.md, backgroundColor: colors.paper, marginBottom: spacing.md },
+  billFeeAmount: { color: colors.text, fontSize: 32, fontWeight: "800", letterSpacing: 1 },
+  billFeeCaption: { color: colors.textSecondary, fontSize: 11, marginTop: 4, letterSpacing: 0.5 },
+  billNote: { color: colors.text, fontSize: 12, textAlign: "center", marginBottom: spacing.md },
+  billCheckRow: { flexDirection: "row", alignItems: "center", gap: 10, padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, backgroundColor: colors.paper },
+  billFooter: { flexDirection: "row", gap: spacing.sm, padding: spacing.md, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.paper },
+  billCancel: { flex: 1, paddingVertical: 12, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, alignItems: "center", backgroundColor: colors.card },
+  billCancelText: { color: colors.textSecondary, fontWeight: "700" },
+  billOk: { flex: 2, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12, borderRadius: radius.md, backgroundColor: colors.primary },
+  billOkText: { color: "#000", fontWeight: "800", letterSpacing: 1, textTransform: "uppercase" },
 });
