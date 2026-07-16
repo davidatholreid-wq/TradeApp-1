@@ -69,80 +69,89 @@ export default function Dealers() {
     }, [load, showArchived])
   );
 
+  const showError = (msg: string) => {
+    if (Platform.OS === "web" && typeof (globalThis as any).alert === "function") {
+      (globalThis as any).alert(msg);
+      return;
+    }
+    Alert.alert("Error", msg);
+  };
+
+  // Alert.alert doesn't render on react-native-web, so on web we fall back to
+  // window.confirm which produces a native browser dialog. Same signature as
+  // Alert.alert with a destructive/OK-style callback.
+  const confirmAction = (
+    title: string,
+    message: string,
+    okLabel: string,
+    onOk: () => void | Promise<void>
+  ) => {
+    if (Platform.OS === "web" && typeof (globalThis as any).confirm === "function") {
+      const ok = (globalThis as any).confirm(`${title}\n\n${message}`);
+      if (ok) onOk();
+      return;
+    }
+    Alert.alert(title, message, [
+      { text: "Cancel", style: "cancel" },
+      { text: okLabel, style: "destructive", onPress: () => onOk() },
+    ]);
+  };
+
   const removeDealer = (dealer: Dealer) => {
     const n = dealer.submission_count || 0;
     if (n > 0) {
-      // Has submissions → archive to preserve billing history.
-      Alert.alert(
+      confirmAction(
         "Archive dealer",
         `${dealer.dealer_info.first_name} ${dealer.dealer_info.last_name} has ${n} submission${n === 1 ? "" : "s"}. They'll be archived so all data and billing history are preserved. They will no longer appear in the active dealers list and won't be able to log in. Proceed?`,
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Archive",
-            style: "destructive",
-            onPress: async () => {
-              setBusyId(dealer.id);
-              try {
-                await apiFetch(`/api/admin/dealers/${dealer.id}/archive`, { method: "POST" });
-                await load(showArchived);
-              } catch (e: any) {
-                Alert.alert("Error", e.message || "Failed to archive");
-              } finally {
-                setBusyId(null);
-              }
-            },
-          },
-        ]
+        "Archive",
+        async () => {
+          setBusyId(dealer.id);
+          try {
+            await apiFetch(`/api/admin/dealers/${dealer.id}/archive`, { method: "POST" });
+            await load(showArchived);
+          } catch (e: any) {
+            showError(e.message || "Failed to archive");
+          } finally {
+            setBusyId(null);
+          }
+        }
       );
       return;
     }
-    // Zero submissions → safe hard-delete.
-    Alert.alert(
+    confirmAction(
       "Remove dealer",
       `Permanently remove ${dealer.dealer_info.first_name} ${dealer.dealer_info.last_name}? This dealer has no submissions so nothing is lost.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Remove",
-          style: "destructive",
-          onPress: async () => {
-            setBusyId(dealer.id);
-            try {
-              await apiFetch(`/api/admin/dealers/${dealer.id}`, { method: "DELETE" });
-              setDealers((prev) => prev.filter((d) => d.id !== dealer.id));
-            } catch (e: any) {
-              Alert.alert("Error", e.message || "Failed to remove");
-            } finally {
-              setBusyId(null);
-            }
-          },
-        },
-      ]
+      "Remove",
+      async () => {
+        setBusyId(dealer.id);
+        try {
+          await apiFetch(`/api/admin/dealers/${dealer.id}`, { method: "DELETE" });
+          setDealers((prev) => prev.filter((d) => d.id !== dealer.id));
+        } catch (e: any) {
+          showError(e.message || "Failed to remove");
+        } finally {
+          setBusyId(null);
+        }
+      }
     );
   };
 
   const restoreDealer = (dealer: Dealer) => {
-    Alert.alert(
+    confirmAction(
       "Restore dealer",
       `Restore ${dealer.dealer_info.first_name} ${dealer.dealer_info.last_name} to the active dealer list?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Restore",
-          onPress: async () => {
-            setBusyId(dealer.id);
-            try {
-              await apiFetch(`/api/admin/dealers/${dealer.id}/restore`, { method: "POST" });
-              await load(showArchived);
-            } catch (e: any) {
-              Alert.alert("Error", e.message || "Failed to restore");
-            } finally {
-              setBusyId(null);
-            }
-          },
-        },
-      ]
+      "Restore",
+      async () => {
+        setBusyId(dealer.id);
+        try {
+          await apiFetch(`/api/admin/dealers/${dealer.id}/restore`, { method: "POST" });
+          await load(showArchived);
+        } catch (e: any) {
+          showError(e.message || "Failed to restore");
+        } finally {
+          setBusyId(null);
+        }
+      }
     );
   };
 
@@ -155,7 +164,7 @@ export default function Dealers() {
       });
       setDealers((prev) => prev.map((d) => (d.id === dealer.id ? { ...d, active: next } : d)));
     } catch (e: any) {
-      Alert.alert("Error", e.message || "Could not update status");
+      showError(e.message || "Could not update status");
     } finally {
       setSavingActiveId(null);
     }
@@ -166,7 +175,7 @@ export default function Dealers() {
     // We'll just call the API with a generated password if no prompt is available.
     const doReset = async (pw: string) => {
       if (!pw || pw.length < 6) {
-        Alert.alert("Invalid", "Password must be at least 6 characters");
+        showError("Password must be at least 6 characters");
         return;
       }
       setResettingId(dealer.id);
@@ -175,12 +184,14 @@ export default function Dealers() {
           method: "POST",
           body: JSON.stringify({ new_password: pw }),
         });
-        Alert.alert(
-          "Password reset",
-          `New password for ${dealer.email}:\n\n${pw}\n\nShare this securely with the dealer.`
-        );
+        const msg = `New password for ${dealer.email}:\n\n${pw}\n\nShare this securely with the dealer.`;
+        if (Platform.OS === "web" && typeof (globalThis as any).alert === "function") {
+          (globalThis as any).alert(msg);
+        } else {
+          Alert.alert("Password reset", msg);
+        }
       } catch (e: any) {
-        Alert.alert("Error", e.message || "Could not reset password");
+        showError(e.message || "Could not reset password");
       } finally {
         setResettingId(null);
       }

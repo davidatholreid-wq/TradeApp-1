@@ -1,0 +1,44 @@
+{
+  "summary": "RETEST of Alert.alert-on-web fix in /app/frontend/app/(app)/dealers.tsx — ALL SCENARIOS PASS. The new confirmAction/showError helpers correctly branch on Platform.OS === 'web' to call window.confirm / window.prompt / window.alert, so the archive/remove/restore/reset-pw flows are now fully usable from the web preview (both narrow 800x900 mobile-tabs admin and 390x844 native-mobile viewports). Verified end-to-end: (1) At 800x900 login as admin@fourbuy.co.za redirects to root and mobile Tabs render with Dealers tab visible in bottom bar. (2) ARCHIVE (minitest, 3 subs): click remove-dealer-{id} → window.confirm captured with exact text 'Archive dealer\\n\\nTest Dealer has 3 submissions. They'll be archived so all data and billing history are preserved…' → accept → row disappears from default list. Toggling dealers-toggle-archived ON shows the row with ARCHIVED grey pill, dashed border, 'Archived 7/16/2026' meta, and ONLY dealer-restore-{id} button (dealer-edit-{id} / dealer-reset-pw-{id} / dealer-active-toggle-{id} all correctly hidden). (3) RESTORE from web: click dealer-restore-{id} → window.confirm captured with 'Restore dealer\\n\\nRestore Test Dealer to the active dealer list?' → accept → dealer moves back to default list with full action buttons restored. (4) HARD-DELETE (uitest_9e9ee3, 0 subs): click remove-dealer-{id} → window.confirm captured with 'Remove dealer\\n\\nPermanently remove UI Test? This dealer has no submissions so nothing is lost.' → accept → dealer gone from BOTH default AND include_archived lists (correctly hard-deleted, not archived). (5) SUSPEND: flipping dealer-active-toggle-{id} produces 0 dialogs (correctly no confirmation needed) and card text flips ACTIVE→SUSPENDED then back to ACTIVE after second toggle. (6) PASSWORD RESET: click dealer-reset-pw-{id} → window.prompt captured 'Enter a new password for uitest_3e71af@example.com (min 6 chars):' → enter NewPw12345 → window.alert captured 'New password for uitest_3e71af@example.com:\\n\\nNewPw12345\\n\\nShare this securely with the dealer.' — both dialogs fire on web branch. (7) EDIT: click dealer-edit-{id} → modal opens, fill edit-phone with 0999888777, click edit-dealer-save → modal closes, card refreshes with new phone visible. (8) NATIVE 390x844: repeated archive → restore of minitest — both window.confirm dialogs fire ('Archive dealer' + '3 submissions', 'Restore dealer') and dealer round-trips correctly. Test cleanup: minitest ended run RESTORED (active=true, archived_at=null). uitest_9e9ee3 was hard-deleted as part of the test — the other uitest_3e71af dealer had its phone changed to 0999888777 and password changed to NewPw12345 during testing. Zero regression: cyan luxury theme intact in both viewports, root URL after login is /, tab bar renders correctly at 800x900. React-native-web deprecation warnings noted (shadow* and pointerEvents) but they are cosmetic and not blockers.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "react-native-web deprecation warnings", "issue": "Console shows repeated warnings: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' and 'props.pointerEvents is deprecated. Use style.pointerEvents'. These are non-blocking but should be cleaned up in a future pass to keep the console clean. Reference: emitted from react-native-web internals but likely triggered by StyleSheet.create() shadow props somewhere in src/theme or component styles."}
+    ]
+  },
+  "test_report_links": [
+    "/app/test_reports/pytest/archive_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL — Migrate any remaining `shadow*` style props to `boxShadow` and any JSX `pointerEvents` prop to `style.pointerEvents` to silence the react-native-web deprecation warnings observed during this run. Non-blocking."
+  ],
+  "critical_code_review_comments": [
+    "dealers.tsx:83-98 confirmAction helper is correctly gated behind Platform.OS === 'web' with a defensive `typeof globalThis.confirm === 'function'` check — same defensive pattern used at lines 73-77 for showError and 188-192 for the password-reset alert. Clean, consistent.",
+    "dealers.tsx:100-137 removeDealer branches on submission_count so the confirm text is either 'Archive dealer' + '{n} submission(s)' or 'Remove dealer' + 'no submissions' — matches spec exactly; verified both branches trigger the correct dialog text in the browser.",
+    "dealers.tsx:139-156 restoreDealer confirm text 'Restore dealer' + 'Restore <name> to the active dealer list?' — verified.",
+    "dealers.tsx:158-171 toggleActive intentionally has NO confirm dialog and no dialogs were captured during suspend/reactivate — correct per spec (suspend needs no confirm).",
+    "dealers.tsx:173-230 promptResetPassword correctly uses window.prompt on web then window.alert to show the reset password; falls back to Alert.prompt/Alert.alert on native. Both dialogs fired during testing.",
+    "dealers.tsx trash-vs-archive icon at line 365 correctly renders `archive-outline` when submission_count>0 and `trash-outline` when submission_count===0 — confirmed via the fact that the corresponding confirm dialog text differed between minitest and uitest.",
+    "dealers.tsx uses `Platform.OS === 'web'` (not `Platform.select`) which is fine for the branching used here."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A this iteration (frontend-only retest)", "frontend": "100% (8/8 scenarios PASS)"},
+  "seed_data_creation": "No new seed data created. Reused existing uitest_9e9ee3@example.com (0 subs, hard-deleted during test — no longer exists), uitest_3e71af@example.com (0 subs, phone changed to 0999888777 and password changed to NewPw12345 during test), and minitest@example.com (3 subs, archived → restored twice, ended run active + not archived).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Alert.alert-on-web bug fix is verified working. If a future iteration needs to re-verify: log in as admin@fourbuy.co.za/admin123 at 800x900 viewport, navigate to /dealers, register a `page.on('dialog', d => d.accept())` handler BEFORE clicking, then click remove-dealer-{minitest_id} and expect a `confirm` dialog with 'Archive dealer' + '3 submission'. Note: uitest_3e71af@example.com password is now `NewPw12345` (was reset during this run). uitest_9e9ee3@example.com was hard-deleted so is no longer available for testing — register a new zero-sub dealer via `/api/auth/register` (payload requires `dealer_info` and `company_info` sub-objects, not flat fields — see backend/models for schema). Screenshots: /tmp/dealers_page_800.png (800x900 default list), /tmp/dealers_final_390.png (390x844 after full round-trip).",
+  "test_scenarios_executed": [
+    {"id": 1, "name": "Admin login at 800x900 lands on mobile tabs layout with Dealers tab visible", "result": "PASS"},
+    {"id": 2, "name": "Archive minitest (3 subs) — window.confirm shows 'Archive dealer' + '3 submissions' text; accept → row disappears from default list; toggle archived ON shows ARCHIVED pill + Archived date + only Restore button (Edit/PW/toggle hidden)", "result": "PASS"},
+    {"id": 3, "name": "Restore minitest from web — window.confirm shows 'Restore dealer' text; accept → dealer back in default list with all normal buttons", "result": "PASS"},
+    {"id": 4, "name": "Hard-delete uitest_9e9ee3 (0 subs) — window.confirm shows 'Remove dealer' + 'no submissions'; accept → dealer gone from BOTH default AND include_archived lists", "result": "PASS"},
+    {"id": 5, "name": "Suspend toggle — 0 dialogs on click, card flips ACTIVE→SUSPENDED and back", "result": "PASS"},
+    {"id": 6, "name": "Password reset — window.prompt then window.alert both fire with correct copy on web", "result": "PASS"},
+    {"id": 7, "name": "Edit dealer modal — opens, save persists new phone value on card", "result": "PASS"},
+    {"id": 8, "name": "390x844 viewport archive→restore round-trip via window.confirm — both dialogs fire and dealer returns to default list", "result": "PASS"}
+  ],
+  "rca_of_issue": "N/A — this iteration verified a fix rather than reproducing a bug. The previous iteration_9 bug (Alert.alert silent no-op on react-native-web) is fully resolved by the two helpers `confirmAction` and `showError` in dealers.tsx (lines 72-98) which branch on Platform.OS === 'web' and use window.confirm / window.alert / window.prompt directly. All 8 planned test scenarios pass on both viewports (800x900 mobile-tabs admin, 390x844 native-mobile)."
+}
