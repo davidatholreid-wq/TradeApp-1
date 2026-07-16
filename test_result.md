@@ -362,14 +362,14 @@ agent_communication:
       redesigned profile.tsx banner.
   - agent: "testing"
     message: |
-      Iteration 13 — Submit-Vehicle UX overhaul verified. Backend 21/21 pass
-      (new fields, coercion, legacy windscreen values still accepted). Frontend
-      6/6 flows pass on mobile — ratings default null, colour-coded dots
-      (RED/YELLOW/GREEN per spec), windscreen shows exactly Perfect/Chip Repairs/
-      Needs Replacement, MonthYearPicker with July+2025 → "July 2025" + TBC
-      fallback works, Paint pills and Accident multi-check work end-to-end and
-      surface on admin detail views (Damage Types + Paint Quality rows).
-      Stale legacy test file /app/backend/tests/test_billing_dealers.py has
-      pre-existing failures unrelated to this iteration — non-blocking.
-      Report: /app/test_reports/iteration_13.json.
+      Iteration 14 — Four-pillar condition overhaul verified end-to-end.
+      Backend 26/26 pass (new required pillars, legacy fields optional,
+      `condition` alias = round(avg), 422 on bogus values, 40/40 companion
+      regressions). Frontend mobile: 4 rating rows in the exact spec order
+      with color-coded dots. E2E: FB-000041 posted with 8/5/9/3 → admin
+      hero reads 6.3 / 10 with MECH/COSM/INT/HIST pills on both mobile and
+      desktop. Legacy submissions (FB-000031) still render with EXT/INT/
+      TYRES pills — regression path intact. Housekeeping: /app/backend/
+      tests/test_phase3.py has stale fixtures; endpoints themselves are
+      healthy. Report: /app/test_reports/iteration_14.json.
 
