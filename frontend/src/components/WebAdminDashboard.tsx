@@ -40,6 +40,7 @@ type Submission = {
   created_at: string;
   factory_warranty?: boolean;
   accident_damage?: boolean;
+  front_photo?: string | null;
 };
 
 type SubmissionFull = Submission & {
@@ -461,39 +462,51 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                     style={[styles.row, active && styles.rowActive]}
                     onPress={() => setSelectedId(s.id)}
                   >
-                    <View style={styles.rowHeader}>
-                      <Text style={styles.rowRef}>{s.reference ?? "—"}</Text>
-                      <View
-                        style={[
-                          styles.rowBadge,
-                          {
-                            backgroundColor:
-                              s.status === "priced" ? colors.success + "22" : colors.warning + "22",
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.rowBadgeText,
-                            { color: s.status === "priced" ? colors.success : colors.warning },
-                          ]}
-                        >
-                          {s.status.toUpperCase()}
+                    <View style={styles.rowBody}>
+                      {/* Front photo thumbnail on the left for quick visual identification. */}
+                      <View style={styles.rowThumb}>
+                        {s.front_photo ? (
+                          <Image source={{ uri: s.front_photo }} style={styles.rowThumbImg} resizeMode="cover" />
+                        ) : (
+                          <Ionicons name="car-outline" size={22} color={colors.textDisabled} />
+                        )}
+                      </View>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <View style={styles.rowHeader}>
+                          <Text style={styles.rowRef}>{s.reference ?? "—"}</Text>
+                          <View
+                            style={[
+                              styles.rowBadge,
+                              {
+                                backgroundColor:
+                                  s.status === "priced" ? colors.success + "22" : colors.warning + "22",
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.rowBadgeText,
+                                { color: s.status === "priced" ? colors.success : colors.warning },
+                              ]}
+                            >
+                              {s.status.toUpperCase()}
+                            </Text>
+                          </View>
+                        </View>
+                        <Text style={styles.rowTitle} numberOfLines={1}>
+                          {s.year} {s.make_name} {s.model_name}
                         </Text>
+                        <Text style={styles.rowSub} numberOfLines={1}>
+                          {s.derivative_name} · {s.mileage.toLocaleString()} km · {s.colour}
+                        </Text>
+                        <Text style={styles.rowDealer} numberOfLines={1}>
+                          {s.dealer_name} — {s.company_name}
+                        </Text>
+                        {s.price !== null && s.price !== undefined ? (
+                          <Text style={styles.rowPrice}>R {s.price.toLocaleString()}</Text>
+                        ) : null}
                       </View>
                     </View>
-                    <Text style={styles.rowTitle} numberOfLines={1}>
-                      {s.year} {s.make_name} {s.model_name}
-                    </Text>
-                    <Text style={styles.rowSub} numberOfLines={1}>
-                      {s.derivative_name} · {s.mileage.toLocaleString()} km · {s.colour}
-                    </Text>
-                    <Text style={styles.rowDealer} numberOfLines={1}>
-                      {s.dealer_name} — {s.company_name}
-                    </Text>
-                    {s.price !== null && s.price !== undefined ? (
-                      <Text style={styles.rowPrice}>R {s.price.toLocaleString()}</Text>
-                    ) : null}
                   </TouchableOpacity>
                 );
               })}
@@ -1104,6 +1117,19 @@ const styles = StyleSheet.create({
   rowActive: { backgroundColor: colors.card, borderLeftWidth: 3, borderLeftColor: colors.neon },
   rowHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   rowRef: { color: "#fff", fontSize: 15, fontWeight: "800", fontFamily: fonts.mono, letterSpacing: 0.5 },
+  rowBody: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  rowThumb: {
+    width: 76,
+    height: 58,
+    borderRadius: radius.sm,
+    overflow: "hidden",
+    backgroundColor: colors.paper,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  rowThumbImg: { width: "100%", height: "100%" },
   rowBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm },
   rowBadgeText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },
   rowTitle: { color: colors.text, fontSize: 15, fontWeight: "700", marginTop: 8, letterSpacing: 0.1 },

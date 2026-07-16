@@ -7,6 +7,7 @@ import {
   RefreshControl,
   TouchableOpacity,
   ActivityIndicator,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
@@ -33,6 +34,7 @@ type Submission = {
   price: number | null;
   priced_at?: string | null;
   created_at: string;
+  front_photo?: string | null;
 };
 
 type BucketCounts = { incoming: number; priced: number; archived: number };
@@ -99,6 +101,17 @@ export default function DashboardScreen() {
       onPress={() => router.push(`/(app)/vehicle/${item.id}` as any)}
     >
       <View style={styles.cardTop}>
+        {/* Front photo thumbnail (or placeholder if missing) — helps the
+            dealer visually identify their submissions at a glance. */}
+        <View style={styles.thumbWrap}>
+          {item.front_photo ? (
+            <Image source={{ uri: item.front_photo }} style={styles.thumb} resizeMode="cover" />
+          ) : (
+            <View style={styles.thumbPlaceholder}>
+              <Ionicons name="car-outline" size={22} color={colors.textDisabled} />
+            </View>
+          )}
+        </View>
         <View style={{ flex: 1 }}>
           {item.reference ? (
             <Text style={styles.cardRef}>{item.reference}</Text>
@@ -323,7 +336,18 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.sm,
   },
-  cardTop: { flexDirection: "row", alignItems: "flex-start", gap: spacing.sm },
+  cardTop: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  thumbWrap: {
+    width: 68,
+    height: 52,
+    borderRadius: radius.sm,
+    overflow: "hidden",
+    backgroundColor: colors.paper,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  thumb: { width: "100%", height: "100%" },
+  thumbPlaceholder: { flex: 1, alignItems: "center", justifyContent: "center" },
   cardRef: { color: "#fff", fontSize: 14, fontWeight: "800", letterSpacing: 0.6, fontFamily: fonts.mono, marginBottom: 6 },
   cardTitle: { color: colors.text, fontSize: 17, fontWeight: "700", letterSpacing: 0.1 },
   cardSubtitle: { color: colors.textSecondary, fontSize: 14, marginTop: 3, letterSpacing: 0.1 },

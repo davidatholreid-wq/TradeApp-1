@@ -587,9 +587,11 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
 
 @api_router.get("/submissions/my")
 async def get_my_submissions(current: dict = Depends(get_current_user)):
+    # Fetch full docs so we can pluck just the front photo for the list card,
+    # then drop the rest of the base64 payload to keep the response small.
     subs = await db.submissions.find(
         {"dealer_id": current["id"]},
-        {"_id": 0, "photos": 0},
+        {"_id": 0},
     ).sort("created_at", -1).to_list(1000)
     # Hide archived submissions from the dealer mobile app (they still exist in
     # the DB and remain visible in the desktop admin archive).
@@ -597,6 +599,12 @@ async def get_my_submissions(current: dict = Depends(get_current_user)):
     for s in subs:
         bucket = compute_bucket(s)
         s["bucket"] = bucket
+        photos = s.pop("photos", {}) or {}
+        # Only expose the front photo if it looks like a real image. Sub-500
+        # byte payloads are almost certainly 1x1 placeholder pixels that
+        # would render as an ugly blank square on the mobile card.
+        front = photos.get("front") or None
+        s["front_photo"] = front if front and len(front) > 500 else None
         if bucket != "archived":
             visible.append(s)
     return {"submissions": visible}
@@ -626,12 +634,15 @@ async def admin_list_submissions(
     Query param `bucket` (default 'all'): filter the returned list to a single
     silo. Counts always cover the full dataset so the UI can render badges.
     """
-    subs = await db.submissions.find({}, {"_id": 0, "photos": 0}).sort("created_at", -1).to_list(4000)
+    subs = await db.submissions.find({}, {"_id": 0}).sort("created_at", -1).to_list(4000)
     counts = {"incoming": 0, "priced": 0, "archived": 0}
     for s in subs:
         b = compute_bucket(s)
         s["bucket"] = b
         s["billable"] = is_billable(s)
+        photos = s.pop("photos", {}) or {}
+        front = photos.get("front") or None
+        s["front_photo"] = front if front and len(front) > 500 else None
         counts[b] += 1
     if bucket and bucket != "all":
         subs = [s for s in subs if s["bucket"] == bucket]

@@ -337,15 +337,36 @@ frontend:
           new submissions and EXT / INT / TYRES for legacy. Condition
           DetailRow list mirrors the same conditional rendering.
 
+  - task: "Front photo thumbnail on submissions list (dealer + admin)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py, /app/frontend/app/(app)/index.tsx, /app/frontend/src/components/WebAdminDashboard.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          List endpoints now surface the front photo so dealer and admin
+          can visually identify each car in the list.
+          Backend: /api/submissions/my and /api/admin/submissions strip the
+          bulky full photos object and expose a single `front_photo` field
+          if len > 500 bytes (guards against 1x1 seeded placeholders).
+          Frontend: dealer dashboard card gains a 68x52 thumb on the left
+          (Image with car-outline fallback). Web cockpit list row gains a
+          76x58 thumb next to the reference/title. Both preserve monochrome
+          styling and existing testIDs so downstream tests keep working.
+
 metadata:
   created_by: "main_agent"
-  version: "1.4"
-  test_sequence: 14
+  version: "1.5"
+  test_sequence: 15
   run_ui: true
 
 test_plan:
   current_focus:
-    - "Four-pillar condition rating (Mechanical / Cosmetic / Interior / History)"
+    - "Front photo thumbnail on submissions list (dealer + admin)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
