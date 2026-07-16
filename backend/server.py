@@ -46,8 +46,36 @@ _push_client = httpx.AsyncClient(
 
 
 # ============ Helpers ============
+ARCHIVE_AFTER_DAYS = 14
+
+
 def now_utc() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def compute_bucket(sub: dict) -> str:
+    """Return 'incoming', 'priced' or 'archived' based on status + priced_at age.
+
+    - status == 'pending'  → 'incoming'
+    - status == 'priced' and priced_at within ARCHIVE_AFTER_DAYS → 'priced'
+    - status == 'priced' and priced_at older than ARCHIVE_AFTER_DAYS → 'archived'
+    """
+    status = sub.get("status") or "pending"
+    if status != "priced":
+        return "incoming"
+    priced_at_raw = sub.get("priced_at")
+    if not priced_at_raw:
+        return "priced"
+    try:
+        priced_at = datetime.fromisoformat(priced_at_raw)
+        if priced_at.tzinfo is None:
+            priced_at = priced_at.replace(tzinfo=timezone.utc)
+    except Exception:
+        return "priced"
+    age = datetime.now(timezone.utc) - priced_at
+    if age > timedelta(days=ARCHIVE_AFTER_DAYS):
+        return "archived"
+    return "priced"
 
 
 def hash_password(pw: str) -> str:
@@ -313,7 +341,15 @@ async def get_my_submissions(current: dict = Depends(get_current_user)):
         {"dealer_id": current["id"]},
         {"_id": 0, "photos": 0},
     ).sort("created_at", -1).to_list(1000)
-    return {"submissions": subs}
+    # Hide archived submissions from the dealer mobile app (they still exist in
+    # the DB and remain visible in the desktop admin archive).
+    visible = []
+    for s in subs:
+        bucket = compute_bucket(s)
+        s["bucket"] = bucket
+        if bucket != "archived":
+            visible.append(s)
+    return {"submissions": visible}
 
 
 @api_router.get("/submissions/{sub_id}")
@@ -323,13 +359,32 @@ async def get_submission(sub_id: str, current: dict = Depends(get_current_user))
         raise HTTPException(404, "Submission not found")
     if current["role"] != "admin" and sub["dealer_id"] != current["id"]:
         raise HTTPException(403, "Not authorized")
+    # Prevent dealers from opening an archived submission from a stale link.
+    if current["role"] != "admin" and compute_bucket(sub) == "archived":
+        raise HTTPException(404, "Submission not found")
+    sub["bucket"] = compute_bucket(sub)
     return {"submission": sub}
 
 
 @api_router.get("/admin/submissions")
-async def admin_list_submissions(current: dict = Depends(require_admin)):
-    subs = await db.submissions.find({}, {"_id": 0, "photos": 0}).sort("created_at", -1).to_list(2000)
-    return {"submissions": subs}
+async def admin_list_submissions(
+    bucket: Optional[Literal["incoming", "priced", "archived", "all"]] = "all",
+    current: dict = Depends(require_admin),
+):
+    """List all submissions with a `bucket` field and counts per bucket.
+
+    Query param `bucket` (default 'all'): filter the returned list to a single
+    silo. Counts always cover the full dataset so the UI can render badges.
+    """
+    subs = await db.submissions.find({}, {"_id": 0, "photos": 0}).sort("created_at", -1).to_list(4000)
+    counts = {"incoming": 0, "priced": 0, "archived": 0}
+    for s in subs:
+        b = compute_bucket(s)
+        s["bucket"] = b
+        counts[b] += 1
+    if bucket and bucket != "all":
+        subs = [s for s in subs if s["bucket"] == bucket]
+    return {"submissions": subs, "counts": counts, "archive_after_days": ARCHIVE_AFTER_DAYS}
 
 
 @api_router.post("/admin/submissions/{sub_id}/price")

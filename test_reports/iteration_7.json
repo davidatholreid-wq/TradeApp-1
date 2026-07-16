@@ -1,0 +1,57 @@
+{
+  "summary": "Silo/Bucket tabs + 14-day auto-archive feature fully verified end-to-end. Backend: 9/9 pytest cases pass covering compute_bucket routing, GET /api/admin/submissions bucket filter (incoming/priced/archived/all), counts always reflecting the full dataset, archive_after_days=14 constant, `bucket` field on every submission, dealer /submissions/my hiding archived items, and dealer direct-GET on archived Hilux (bf712655-d666-431a-bea8-0e77eb5b9e81) returning 404 while admin gets 200 with bucket=='archived'. Frontend mobile (390x844): silo-incoming/silo-priced tabs render with counts INCOMING 2 / PRICED 1, active silo has cyan border rgb(0,229,255) + tint bg rgba(0,229,255,0.07), header shows '3 active · 1 archived', tapping silo-priced filters list to only PRICED (Mercedes-Benz GLE FB-000003), tapping back to silo-incoming restores the 2 PENDING cards (BMW 3 Series FB-000002 + Toyota Fortuner FB-000001). Desktop (1440x900): stat pills confirmed INCOMING amber rgb(245,166,35) / PRICED cyan rgb(0,229,255) / ARCHIVED grey rgb(142,142,147); chip row is 3-way with numeric badges, incoming active by default (cyan bg+border), clicking admin-filter-archived shows only the archived Toyota Hilux FB-000002 (R 285,000), clicking the row opens the detail pane, admin-filter-priced and admin-filter-incoming switch correctly, search 'BMW' within incoming still filters. Regression: refresh at '/' as admin lands directly in cockpit (no blue-spinner). No blocking issues found. Deprecated console warnings noted (expo-notifications on web, shadow* style props) — non-blocking, already known from iteration 6.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "expo-notifications (web)", "issue": "Dev warning on every route: '[expo-notifications] Listening to push token changes is not yet fully supported on web.' Non-blocking, already reported in iteration 6."},
+      {"component": "shadow* style props", "issue": "React Native Web deprecation: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Non-blocking, already reported in iteration 6."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_silo_buckets.py",
+    "/app/test_reports/pytest/silo_bucket_results.xml"
+  ],
+  "action_items": [
+    "No fixes needed for silo/bucket feature — backend and both frontend surfaces (mobile + desktop) all verified.",
+    "OPTIONAL cleanup (pre-existing, not caused by this feature): silence/migrate expo-notifications web warning and shadow*→boxShadow style props."
+  ],
+  "critical_code_review_comments": [
+    "backend/server.py:56-78 compute_bucket handles missing/malformed priced_at gracefully (falls back to 'priced' rather than crashing). Timezone-naive priced_at values are re-tagged as UTC before comparison — correct.",
+    "backend/server.py:379-387 counts are computed on the full dataset BEFORE the bucket filter is applied — matches spec (badges remain stable regardless of active silo).",
+    "backend/server.py:346-352 dealer /submissions/my correctly attaches bucket field then filters archived — dealer never sees archived items in mobile list.",
+    "backend/server.py:362-364 dealer direct GET on archived returns 404 (not 403) — matches spec and prevents info leak about existence.",
+    "frontend index.tsx:187-207 silo tabs only render 2 (incoming/priced) on mobile which matches spec; archived count is only exposed via the header 'X active · Y archived' summary.",
+    "WebAdminDashboard defaults to bucket='incoming' and preserves search within the active bucket (verified by BMW search inside incoming)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (9/9 pytest)", "frontend": "100% (mobile + desktop scenarios pass)"},
+  "seed_data_creation": "None — used already-seeded FB-000001 Fortuner, FB-000002 BMW 3 Series (incoming), FB-000003 Mercedes-Benz GLE (priced), FB-000002 Toyota Hilux id=bf712655-d666-431a-bea8-0e77eb5b9e81 (archived, priced_at backdated 20 days).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Silo feature confirmed working. Backend regression tests live at /app/backend/tests/test_silo_buckets.py — re-run any time with `pytest backend/tests/test_silo_buckets.py -v`. Cyan brand color rgb(0,229,255), amber pill rgb(245,166,35), grey pill rgb(142,142,147). Screenshots saved at /tmp/mobile_incoming.png, /tmp/mobile_priced.png, /tmp/desktop_incoming.png, /tmp/desktop_archived.png. Test credentials: admin@fourbuy.co.za/admin123, minitest@example.com/Mini1234!. Archived Hilux id is stable: bf712655-d666-431a-bea8-0e77eb5b9e81.",
+  "test_scenarios_executed": [
+    {"id": 1, "name": "Admin login returns JWT", "result": "PASS"},
+    {"id": 2, "name": "GET /admin/submissions (default all) → counts+archive_after_days+bucket on every sub", "result": "PASS"},
+    {"id": 3, "name": "bucket=incoming filters + counts still full-dataset", "result": "PASS (counts match ?bucket=all)"},
+    {"id": 4, "name": "bucket=priced filters", "result": "PASS"},
+    {"id": 5, "name": "bucket=archived filters and contains Hilux id", "result": "PASS"},
+    {"id": 6, "name": "bucket=all returns all rows (sum of counts)", "result": "PASS"},
+    {"id": 7, "name": "Counts equal actual per-row bucket tally", "result": "PASS"},
+    {"id": 8, "name": "Dealer /submissions/my excludes archived Hilux", "result": "PASS"},
+    {"id": 9, "name": "Dealer GET /submissions/{hilux_id} → 404", "result": "PASS"},
+    {"id": 10, "name": "Admin GET /submissions/{hilux_id} → 200 with bucket=='archived'", "result": "PASS"},
+    {"id": 11, "name": "Mobile admin: silo-incoming/silo-priced render with counts (2)(1) and cyan active state", "result": "PASS"},
+    {"id": 12, "name": "Mobile admin: header '3 active · 1 archived'", "result": "PASS"},
+    {"id": 13, "name": "Mobile admin: tap silo-priced filters to Mercedes-Benz GLE only", "result": "PASS"},
+    {"id": 14, "name": "Mobile admin: tap silo-incoming filters back to 2 PENDING cards", "result": "PASS"},
+    {"id": 15, "name": "Desktop admin: stat pills INCOMING amber / PRICED cyan / ARCHIVED grey", "result": "PASS (rgb(245,166,35)/(0,229,255)/(142,142,147))"},
+    {"id": 16, "name": "Desktop admin: 3-way chip row with count badges, incoming active by default", "result": "PASS"},
+    {"id": 17, "name": "Desktop admin: admin-filter-archived shows only Toyota Hilux, detail pane opens", "result": "PASS (Hilux + R 285,000 rendered)"},
+    {"id": 18, "name": "Desktop admin: admin-filter-priced / admin-filter-incoming switch correctly", "result": "PASS (1 row / 2 rows)"},
+    {"id": 19, "name": "Desktop admin: search 'BMW' works within incoming bucket", "result": "PASS"},
+    {"id": 20, "name": "Regression: refresh at '/' as admin stays logged in (no blue-spinner)", "result": "PASS"}
+  ]
+}

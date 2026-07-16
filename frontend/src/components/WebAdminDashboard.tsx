@@ -28,7 +28,9 @@ type Submission = {
   colour: string;
   condition: number;
   status: "pending" | "priced";
+  bucket?: "incoming" | "priced" | "archived";
   price: number | null;
+  priced_at?: string | null;
   created_at: string;
   factory_warranty?: boolean;
   accident_damage?: boolean;
@@ -55,15 +57,16 @@ type SubmissionFull = Submission & {
   } | null;
 };
 
-type Filter = "all" | "pending" | "priced";
+type Bucket = "incoming" | "priced" | "archived";
 
 export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }) {
   const { width } = useWindowDimensions();
   const [subs, setSubs] = useState<Submission[]>([]);
+  const [counts, setCounts] = useState<Record<Bucket, number>>({ incoming: 0, priced: 0, archived: 0 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<SubmissionFull | null>(null);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<Filter>("all");
+  const [bucket, setBucket] = useState<Bucket>("incoming");
   const [search, setSearch] = useState("");
   const [priceInput, setPriceInput] = useState("");
   const [notesInput, setNotesInput] = useState("");
@@ -74,7 +77,18 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
   const loadList = useCallback(async () => {
     try {
       const data = await apiFetch("/api/admin/submissions");
-      setSubs(data.submissions || []);
+      const items: Submission[] = data.submissions || [];
+      setSubs(items);
+      if (data.counts) {
+        setCounts(data.counts);
+      } else {
+        const c: Record<Bucket, number> = { incoming: 0, priced: 0, archived: 0 };
+        items.forEach((s) => {
+          const b = (s.bucket || (s.status === "priced" ? "priced" : "incoming")) as Bucket;
+          c[b] = (c[b] || 0) + 1;
+        });
+        setCounts(c);
+      }
     } catch (e) {
       console.log(e);
     } finally {
@@ -106,7 +120,8 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
   }, [loadSelected]);
 
   const filtered = subs.filter((s) => {
-    if (filter !== "all" && s.status !== filter) return false;
+    const b = (s.bucket || (s.status === "priced" ? "priced" : "incoming")) as Bucket;
+    if (b !== bucket) return false;
     if (search) {
       const q = search.toLowerCase();
       const hay = `${s.reference ?? ""} ${s.make_name} ${s.model_name} ${s.derivative_name} ${
@@ -219,8 +234,9 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
     URL.revokeObjectURL(url);
   };
 
-  const pendingCount = subs.filter((s) => s.status === "pending").length;
-  const pricedCount = subs.filter((s) => s.status === "priced").length;
+  const pendingCount = counts.incoming;
+  const pricedCount = counts.priced;
+  const archivedCount = counts.archived;
 
   return (
     <View style={styles.root}>
@@ -237,12 +253,16 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
         </View>
         <View style={styles.topbarRight}>
           <View style={styles.statPill}>
-            <Text style={styles.statPillLabel}>PENDING</Text>
+            <Text style={styles.statPillLabel}>INCOMING</Text>
             <Text style={[styles.statPillValue, { color: colors.warning }]}>{pendingCount}</Text>
           </View>
           <View style={styles.statPill}>
             <Text style={styles.statPillLabel}>PRICED</Text>
             <Text style={[styles.statPillValue, { color: colors.success }]}>{pricedCount}</Text>
+          </View>
+          <View style={styles.statPill}>
+            <Text style={styles.statPillLabel}>ARCHIVED</Text>
+            <Text style={[styles.statPillValue, { color: colors.textSecondary }]}>{archivedCount}</Text>
           </View>
           <TouchableOpacity testID="admin-export-csv" style={styles.iconBtn} onPress={exportCsv}>
             <Ionicons name="download-outline" size={18} color={colors.text} />
@@ -271,18 +291,25 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
             </View>
           </View>
           <View style={styles.chipsRow}>
-            {(["all", "pending", "priced"] as Filter[]).map((f) => {
-              const active = filter === f;
+            {(["incoming", "priced", "archived"] as Bucket[]).map((b) => {
+              const active = bucket === b;
+              const label = b === "incoming" ? "Incoming" : b === "priced" ? "Priced" : "Archived";
+              const n = counts[b] || 0;
               return (
                 <TouchableOpacity
-                  key={f}
-                  testID={`admin-filter-${f}`}
+                  key={b}
+                  testID={`admin-filter-${b}`}
                   style={[styles.chip, active && styles.chipActive]}
-                  onPress={() => setFilter(f)}
+                  onPress={() => setBucket(b)}
                 >
                   <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                    {f.toUpperCase()}
+                    {label.toUpperCase()}
                   </Text>
+                  <View style={[styles.chipBadge, active && styles.chipBadgeActive]}>
+                    <Text style={[styles.chipBadgeText, active && styles.chipBadgeTextActive]}>
+                      {n}
+                    </Text>
+                  </View>
                 </TouchableOpacity>
               );
             })}
@@ -291,7 +318,13 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
           {loading ? (
             <ActivityIndicator style={{ marginTop: 40 }} color={colors.primary} />
           ) : filtered.length === 0 ? (
-            <Text style={styles.emptyList}>No submissions match this filter</Text>
+            <Text style={styles.emptyList}>
+              {bucket === "archived"
+                ? "Archive is empty — vehicles priced over 14 days ago will land here"
+                : bucket === "priced"
+                ? "Nothing priced in the last 14 days"
+                : "No incoming submissions"}
+            </Text>
           ) : (
             <ScrollView>
               {filtered.map((s) => {
@@ -692,6 +725,9 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
     paddingHorizontal: spacing.md,
     paddingVertical: 6,
     borderWidth: 1,
@@ -702,6 +738,17 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { color: colors.textSecondary, fontSize: 11, fontWeight: "700", letterSpacing: 1 },
   chipTextActive: { color: "#000", fontWeight: "800" },
+  chipBadge: {
+    minWidth: 22,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: radius.pill,
+    backgroundColor: colors.border,
+    alignItems: "center",
+  },
+  chipBadgeActive: { backgroundColor: "#000" },
+  chipBadgeText: { color: colors.text, fontSize: 10, fontWeight: "800" },
+  chipBadgeTextActive: { color: colors.neon },
   emptyList: { color: colors.textSecondary, textAlign: "center", marginTop: 40 },
   row: {
     padding: spacing.md,

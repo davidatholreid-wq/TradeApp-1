@@ -29,15 +29,21 @@ type Submission = {
   condition: number;
   colour: string;
   status: "pending" | "priced";
+  bucket?: "incoming" | "priced" | "archived";
   price: number | null;
+  priced_at?: string | null;
   created_at: string;
 };
+
+type BucketCounts = { incoming: number; priced: number; archived: number };
 
 export default function DashboardScreen() {
   const { user } = useAuth();
   const router = useRouter();
   const tabBarHeight = useBottomTabBarHeight();
   const [items, setItems] = useState<Submission[]>([]);
+  const [counts, setCounts] = useState<BucketCounts>({ incoming: 0, priced: 0, archived: 0 });
+  const [bucket, setBucket] = useState<"incoming" | "priced">("incoming");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const isAdmin = user?.role === "admin";
@@ -46,7 +52,21 @@ export default function DashboardScreen() {
     try {
       const path = isAdmin ? "/api/admin/submissions" : "/api/submissions/my";
       const data = await apiFetch(path);
-      setItems(data.submissions || []);
+      const subs: Submission[] = data.submissions || [];
+      setItems(subs);
+      if (isAdmin) {
+        if (data.counts) {
+          setCounts(data.counts);
+        } else {
+          // Fallback: derive counts client-side.
+          const c: BucketCounts = { incoming: 0, priced: 0, archived: 0 };
+          subs.forEach((s) => {
+            const b = s.bucket || (s.status === "priced" ? "priced" : "incoming");
+            c[b] = (c[b] || 0) + 1;
+          });
+          setCounts(c);
+        }
+      }
     } catch (e) {
       console.log("load error", e);
     } finally {
@@ -65,6 +85,12 @@ export default function DashboardScreen() {
     setRefreshing(true);
     load();
   };
+
+  // Filter items by the current silo (admin only). Non-admin sees all their
+  // (non-archived) items which are already filtered server-side.
+  const visibleItems = isAdmin
+    ? items.filter((s) => (s.bucket || (s.status === "priced" ? "priced" : "incoming")) === bucket)
+    : items;
 
   const renderItem = ({ item }: { item: Submission }) => (
     <TouchableOpacity
@@ -140,7 +166,9 @@ export default function DashboardScreen() {
         <View>
           <Text style={styles.greeting}>{isAdmin ? "Fourbuy Admin" : "My Submissions"}</Text>
           <Text style={styles.subGreeting}>
-            {items.length} {items.length === 1 ? "vehicle" : "vehicles"}
+            {isAdmin
+              ? `${counts.incoming + counts.priced} active · ${counts.archived} archived`
+              : `${items.length} ${items.length === 1 ? "vehicle" : "vehicles"}`}
           </Text>
         </View>
         {!isAdmin ? (
@@ -155,16 +183,50 @@ export default function DashboardScreen() {
         ) : null}
       </View>
 
+      {isAdmin ? (
+        <View style={styles.silosRow}>
+          {(["incoming", "priced"] as const).map((b) => {
+            const active = bucket === b;
+            const label = b === "incoming" ? "Incoming" : "Priced";
+            const n = counts[b] || 0;
+            return (
+              <TouchableOpacity
+                key={b}
+                testID={`silo-${b}`}
+                onPress={() => setBucket(b)}
+                style={[styles.silo, active && styles.siloActive]}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.siloLabel, active && styles.siloLabelActive]}>{label}</Text>
+                <View style={[styles.siloBadge, active && styles.siloBadgeActive]}>
+                  <Text style={[styles.siloBadgeText, active && styles.siloBadgeTextActive]}>{n}</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      ) : null}
+
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator color={colors.primary} />
         </View>
-      ) : items.length === 0 ? (
+      ) : visibleItems.length === 0 ? (
         <View style={styles.center}>
           <Ionicons name="car-outline" size={64} color={colors.textDisabled} />
-          <Text style={styles.emptyTitle}>No submissions yet</Text>
+          <Text style={styles.emptyTitle}>
+            {isAdmin
+              ? bucket === "incoming"
+                ? "No incoming submissions"
+                : "Nothing priced in the last 14 days"
+              : "No submissions yet"}
+          </Text>
           <Text style={styles.emptyText}>
-            {isAdmin ? "Dealer submissions will appear here" : "Submit your first vehicle for pricing"}
+            {isAdmin
+              ? bucket === "incoming"
+                ? "New dealer submissions will appear here"
+                : "Priced vehicles appear here for 14 days then move to Archive on desktop"
+              : "Submit your first vehicle for pricing"}
           </Text>
           {!isAdmin ? (
             <TouchableOpacity
@@ -178,7 +240,7 @@ export default function DashboardScreen() {
         </View>
       ) : (
         <FlatList
-          data={items}
+          data={visibleItems}
           keyExtractor={(i) => i.id}
           renderItem={renderItem}
           contentContainerStyle={[styles.list, { paddingBottom: tabBarHeight + spacing.md }]}
@@ -213,6 +275,45 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   newBtnText: { color: "#000", fontWeight: "800", letterSpacing: 0.5 },
+
+  silosRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+    backgroundColor: colors.bg,
+  },
+  silo: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  siloActive: {
+    borderColor: colors.neon,
+    backgroundColor: colors.neon + "12",
+  },
+  siloLabel: { color: colors.textSecondary, fontSize: 13, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase" },
+  siloLabelActive: { color: colors.text },
+  siloBadge: {
+    minWidth: 24,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+    backgroundColor: colors.border,
+    alignItems: "center",
+  },
+  siloBadgeActive: { backgroundColor: colors.neon },
+  siloBadgeText: { color: colors.text, fontSize: 11, fontWeight: "800" },
+  siloBadgeTextActive: { color: "#000" },
   list: { padding: spacing.md, paddingBottom: spacing.xl },
   card: {
     backgroundColor: colors.card,
