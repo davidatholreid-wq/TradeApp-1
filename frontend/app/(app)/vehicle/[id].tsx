@@ -324,7 +324,7 @@ export default function VehicleDetail() {
           <DetailRow label="Tyres" value={sub.tyre_condition ? `${sub.tyre_condition} / 10` : "—"} />
           <DetailRow label="Windscreen" value={sub.windscreen_condition ?? "—"} />
           <DetailRow
-            label="Accident Damage"
+            label="Previous Accident Damage"
             value={sub.accident_damage ? "Yes" : "None"}
             valueColor={sub.accident_damage ? colors.danger : colors.text}
           />
@@ -342,7 +342,7 @@ export default function VehicleDetail() {
             last={!(sub.paint_evidence && sub.paint_quality)}
           />
           {sub.paint_evidence && sub.paint_quality ? (
-            <DetailRow label="Paint Quality" value={sub.paint_quality} last />
+            <DetailRow label="Paint Repair Quality" value={sub.paint_quality} last />
           ) : null}
         </View>
 

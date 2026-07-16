@@ -553,7 +553,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 <DetailRow label="Tyres" value={selected.tyre_condition ? `${selected.tyre_condition} / 10` : "—"} />
                 <DetailRow label="Windscreen" value={selected.windscreen_condition ?? "—"} />
                 <DetailRow
-                  label="Accident Damage"
+                  label="Previous Accident Damage"
                   value={selected.accident_damage ? "Yes" : "None"}
                   color={selected.accident_damage ? colors.danger : colors.text}
                 />
@@ -571,7 +571,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                   last={!(selected.paint_evidence && selected.paint_quality)}
                 />
                 {selected.paint_evidence && selected.paint_quality ? (
-                  <DetailRow label="Paint Quality" value={selected.paint_quality} last />
+                  <DetailRow label="Paint Repair Quality" value={selected.paint_quality} last />
                 ) : null}
               </View>
 

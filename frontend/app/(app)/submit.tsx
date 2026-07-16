@@ -219,7 +219,7 @@ export default function SubmitVehicle() {
     if (!windscreen) return "Please choose the windscreen condition.";
     if (!serviceHistory) return "Please choose the service history.";
     if (paintEvidence && !paintQuality) return "Choose the paintwork quality (Excellent, Fair or Poor).";
-    if (accidentDamage && accidentTypes.length === 0) return "Select at least one type of accident damage.";
+    if (accidentDamage && accidentTypes.length === 0) return "Select at least one type of previous accident damage.";
     return null;
   };
 
@@ -459,7 +459,7 @@ export default function SubmitVehicle() {
           </TouchableOpacity>
           {paintEvidence ? (
             <View style={styles.subPanel}>
-              <Text style={styles.subPanelLabel}>Paintwork quality</Text>
+              <Text style={styles.subPanelLabel}>Paint repair quality</Text>
               <View style={styles.pillRow}>
                 {PAINT_QUALITY_OPTIONS.map((q) => {
                   const active = paintQuality === q;
@@ -490,7 +490,7 @@ export default function SubmitVehicle() {
             testID="toggle-accident"
           >
             <View style={[styles.checkbox, accidentDamage && styles.checkboxOn]}>{accidentDamage ? <Ionicons name="checkmark" size={14} color="#000" /> : null}</View>
-            <Text style={styles.checkText}>Evidence of accident damage</Text>
+            <Text style={styles.checkText}>Evidence of previous accident damage</Text>
           </TouchableOpacity>
           {accidentDamage ? (
             <View style={styles.subPanel}>
