@@ -1,0 +1,45 @@
+{
+  "summary": "Frontend-only verification of the VIN overflow fix in the 'Decoded from disc' card on the Submit screen. Tested at BOTH 320x700 (smallest common) and 390x844 (iPhone 12/13/14) viewports with the real MINI license-disc string and a synthesized worst-case all-wide 17-char VIN. All full-width fields (VIN, Engine No, Description, Expires, Disc No) render on their own full-width rows within the card border. VIN's mono value renders at fontSize 12px and fits precisely inside the card (VIN right edge = card right edge at both viewports, no scrollWidth > clientWidth overflow). 2-column fields (Licence No/Register No, Make/Model) pair correctly. Colour auto-fill, clear button, root-refresh regression, luxury black+cyan theme (rgb(0,229,255) verified on SIGN IN button and FB-ref IDs), and admin submissions list all still work.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "expo-notifications (web)", "issue": "Dev warning on every route: '[expo-notifications] Listening to push token changes is not yet fully supported on web.' Not blocking on web preview but noisy in console."},
+      {"component": "pointerEvents prop", "issue": "React Native Web deprecation warning: 'props.pointerEvents is deprecated. Use style.pointerEvents' — likely from a dep or JSX prop. Non-blocking, migrate to style.pointerEvents."},
+      {"component": "shadow* style props", "issue": "React Native Web deprecation warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Non-blocking, migrate style keys."}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "OPTIONAL: silence/migrate the three console deprecation warnings (expo-notifications on web, props.pointerEvents, shadow* style props). Not blocking.",
+    "NONE for the VIN overflow bug — fix is confirmed working at 320x700 and 390x844 with both real and worst-case VIN strings."
+  ],
+  "critical_code_review_comments": [
+    "DiskField `full` variant correctly applies flexBasis:100% + minWidth:100% + width:100% — this triple-override forces the item onto its own row even against the parent flexWrap+flexGrow+minWidth:45% grid. Verified visually and via getBoundingClientRect().",
+    "diskFieldValueMono at fontSize:12, letterSpacing:0, weight:600 with monospace family renders 17-char VIN 'WMW72DH0602R05896' at exactly 216px width inside a 216px content area at 320x700 — pixel-perfect fit.",
+    "numberOfLines={1} + adjustsFontSizeToFit + minimumFontScale=0.6 + ellipsizeMode='middle' provide defensive fallback for extra-wide values — verified with synthesized worst-case VIN 'WMWMMWDDHHHRR8596' (all wide uppercase chars, still 17); still rendered without overflow at fontSize=12px.",
+    "Card border and inner content boundaries are aligned — VIN row R=268 vs card R=268 at 320px, VIN R=338 vs card R=338 at 390px. Zero horizontal spillover."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100% (all scenarios pass)"},
+  "seed_data_creation": "None — used localStorage.setItem('app.scan.buffer', JSON.stringify(RAW)) with the exact MINI disc string from the review request AND a synthesized worst-case 17-char wide VIN 'WMWMMWDDHHHRR8596'. Admin regression used already-seeded FB-000002 and FB-000003.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "VIN overflow fix in DiskField (submit.tsx L572-605 + diskFieldValueMono style L760-765) is verified. Any future changes to grid math (styles.diskGrid, styles.diskField.minWidth/flexGrow) must be re-tested at 320x700 to ensure the full-width override still wins. Both viewport screenshots saved at /tmp/normal_320_recheck.png, /tmp/worst_320.png, /tmp/worst_390.png. Login as dealer minitest@example.com / Mini1234! and admin admin@fourbuy.co.za / admin123. Cyan theme color = rgb(0,229,255).",
+  "rca_of_issue": "Verified fix (no bug remaining). Original overflow: DiskField with `full` only applied width:100%, which does NOT override flexBasis when parent uses flexWrap + flexGrow:1 + minWidth:45% — the item stayed in a ~45% wide grid cell and the 17-char monospace VIN overflowed. New fix applies flexBasis:100% + minWidth:100% + width:100% to break the row, plus reduced mono font to 12px with letterSpacing:0 and adjustsFontSizeToFit fallback. Confirmed via getBoundingClientRect() at 320x700 and 390x844.",
+  "test_scenarios_executed": [
+    {"id": 1, "name": "VIN fits at 390x844", "result": "PASS - R=338 == card R=338, sw=cw=286"},
+    {"id": 2, "name": "VIN fits at 320x700", "result": "PASS - R=268 == card R=268, sw=cw=216"},
+    {"id": 3, "name": "Engine No / Expires / Description / Disc No fit as full rows both viewports", "result": "PASS"},
+    {"id": 4, "name": "Licence No + Register No render as 2-col grid", "result": "PASS at both viewports"},
+    {"id": 5, "name": "Make + Model render as 2-col grid", "result": "PASS at both viewports"},
+    {"id": 6, "name": "Colour auto-fills WHITE", "result": "PASS at both viewports"},
+    {"id": 7, "name": "Worst-case wide 17-char VIN 'WMWMMWDDHHHRR8596' fits", "result": "PASS at both viewports (fontSize stays at 12px, no ellipsis needed)"},
+    {"id": 8, "name": "Clear button (testID clear-license-disk) removes decoded card", "result": "PASS"},
+    {"id": 9, "name": "Refresh at / while logged-in stays in app (no blue-spinner regression)", "result": "PASS - no login form after reload"},
+    {"id": 10, "name": "Luxury black+cyan theme intact", "result": "PASS - SIGN IN bg rgb(0,229,255), FB-ref color rgb(0,229,255), PRICED badges cyan"},
+    {"id": 11, "name": "Admin login -> Submissions list renders cards", "result": "PASS - FB-000003 (Mercedes GLE 63 S) and FB-000002 (Toyota Hilux) cards visible with cyan reference IDs and cyan prices"}
+  ]
+}

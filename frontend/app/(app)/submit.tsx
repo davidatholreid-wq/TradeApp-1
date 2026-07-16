@@ -581,14 +581,22 @@ function DiskField({
   full?: boolean;
 }) {
   return (
-    <View style={[styles.diskField, full && { width: "100%" }]}>
+    <View
+      style={[
+        styles.diskField,
+        full && { flexBasis: "100%", minWidth: "100%", width: "100%" },
+      ]}
+    >
       <Text style={styles.diskFieldLabel}>{label.toUpperCase()}</Text>
       <Text
         style={[
           styles.diskFieldValue,
-          mono && { fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 13 },
+          mono && styles.diskFieldValueMono,
         ]}
-        numberOfLines={2}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.6}
+        ellipsizeMode="middle"
       >
         {value}
       </Text>
@@ -748,6 +756,12 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 14,
     fontWeight: "700",
+  },
+  diskFieldValueMono: {
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    fontSize: 12,
+    letterSpacing: 0,
+    fontWeight: "600",
   },
   diskHint: {
     color: colors.textDisabled,
