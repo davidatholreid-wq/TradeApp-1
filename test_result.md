@@ -292,12 +292,11 @@ agent_communication:
       redesigned profile.tsx banner.
   - agent: "testing"
     message: |
-      All 6 tasks PASS. 22/22 backend pytest cases + 5/5 frontend flows verified on
-      mobile 390x844 and desktop 1440x900. Hero rating renders correctly (8.0/10 on
-      seeded FB-000016), all new sections present, PhotoCarousel opens/closes/swipes/
-      shows dots + chevrons on desktop. Dealer photo modal upload works; dealer profile
-      shows read-only WhatsApp-Business banner. Monochrome preserved — only theme
-      danger red used on destructive actions and Yes flags. No blocking bugs.
-      Seed data left: FB-000016 (BMW 3 Series 2021) owned by seed_photo_488f91@example.com
-      / Seed1234!. Test files under /app/backend/tests/ and /app/test_reports/iteration_11.json.
+      Iteration 12 regression: all focus tasks PASS. Cockpit shows Dealers tab and
+      renders the DealersScreen inline without hook crashes. Vertical DetailRow list
+      renders in the exact spec order on both mobile and desktop. Typography softened
+      as expected. Backend dealer-photos suite still 22/22 green. Note: legacy seeds
+      FB-000001/FB-000002 predate the new schema fields (fuel/transmission/exterior
+      etc.) so those rows show em-dash — not a code regression. React-native-web
+      shadow* deprecation warnings still present but harmless.
 

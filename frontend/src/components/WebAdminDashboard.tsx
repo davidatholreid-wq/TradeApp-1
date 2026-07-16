@@ -1029,7 +1029,7 @@ const styles = StyleSheet.create({
   },
   rowActive: { backgroundColor: colors.card, borderLeftWidth: 3, borderLeftColor: colors.neon },
   rowHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  rowRef: { color: "#fff", fontSize: 13, fontWeight: "800", fontFamily: fonts.mono, letterSpacing: 0.5 },
+  rowRef: { color: "#fff", fontSize: 15, fontWeight: "800", fontFamily: fonts.mono, letterSpacing: 0.5 },
   rowBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm },
   rowBadgeText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },
   rowTitle: { color: colors.text, fontSize: 15, fontWeight: "700", marginTop: 8, letterSpacing: 0.1 },
