@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -23,6 +23,9 @@ import { apiFetch } from "@/src/api";
 import { useAuth } from "@/src/context/AuthContext";
 import { buildWhatsappUrl, buildDealerMessage } from "@/src/utils/whatsapp";
 import { decodeLicenseDisk } from "@/src/utils/licenseDisk";
+import PhotoCarousel, { CarouselPhoto } from "@/src/components/PhotoCarousel";
+
+type ReconItem = { label: string; amount_zar: number };
 
 type Submission = {
   id: string;
@@ -36,12 +39,28 @@ type Submission = {
   make_name: string;
   model_name: string;
   derivative_name: string;
+  fuel_type?: string;
+  year_of_production?: number;
+  transmission?: string;
+  year_registered?: number;
   mileage: number;
   year: number;
-  factory_warranty: boolean;
+  factory_warranty?: boolean;
   condition: number;
+  exterior_condition?: number;
+  interior_condition?: number;
+  tyre_condition?: number;
+  windscreen_condition?: string;
+  service_history?: string;
+  last_service_date?: string;
+  last_service_mileage?: number | null;
+  paint_evidence?: boolean;
   accident_damage: boolean;
+  reconditioning_items?: ReconItem[];
+  reconditioning_total_zar?: number;
   colour: string;
+  vin?: string;
+  engine_number?: string;
   license_disk_data?: string;
   photos: Record<string, string>;
   status: "pending" | "priced";
@@ -70,13 +89,20 @@ type MarketAnalysisPayload = {
   model: string;
 };
 
-const PHOTO_LABELS: Record<string, string> = {
-  front: "Front",
-  side_right: "Right Side",
-  rear: "Rear",
-  side_left: "Left Side",
-  interior: "Interior",
-};
+// Photo slot ordering matches the submit flow: front, driver_side,
+// passenger_side, rear, interior. Old submissions used side_right/side_left —
+// we fall back to those keys when the newer ones are missing.
+const PHOTO_ORDER: { key: string; fallback?: string; label: string }[] = [
+  { key: "front", label: "Front" },
+  { key: "driver_side", fallback: "side_right", label: "Driver's Side" },
+  { key: "passenger_side", fallback: "side_left", label: "Passenger Side" },
+  { key: "rear", label: "Rear" },
+  { key: "interior", label: "Interior" },
+];
+
+function resolvePhoto(photos: Record<string, string>, key: string, fallback?: string) {
+  return photos?.[key] || (fallback ? photos?.[fallback] : "") || "";
+}
 
 export default function VehicleDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -90,7 +116,7 @@ export default function VehicleDetail() {
   const [priceInput, setPriceInput] = useState("");
   const [notesInput, setNotesInput] = useState("");
   const [submittingPrice, setSubmittingPrice] = useState(false);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [carouselIdx, setCarouselIdx] = useState<number | null>(null);
   const [analysing, setAnalysing] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -107,6 +133,23 @@ export default function VehicleDetail() {
       }
     })();
   }, [id, router]);
+
+  const carouselPhotos: CarouselPhoto[] = useMemo(() => {
+    if (!sub) return [];
+    return PHOTO_ORDER.map((p) => ({
+      uri: resolvePhoto(sub.photos || {}, p.key, p.fallback),
+      label: p.label,
+    })).filter((p) => !!p.uri);
+  }, [sub]);
+
+  const averageRating = useMemo(() => {
+    if (!sub) return null;
+    const arr = [sub.exterior_condition, sub.interior_condition, sub.tyre_condition].filter(
+      (x): x is number => typeof x === "number" && x > 0
+    );
+    if (arr.length === 0) return null;
+    return arr.reduce((a, b) => a + b, 0) / arr.length;
+  }, [sub]);
 
   const handleOfferPrice = async () => {
     const price = parseFloat(priceInput.replace(/[^0-9.]/g, ""));
@@ -179,9 +222,6 @@ export default function VehicleDetail() {
     );
   }
 
-  const conditionColor =
-    sub.condition <= 3 ? colors.danger : sub.condition <= 7 ? colors.warning : colors.success;
-
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.header}>
@@ -205,6 +245,25 @@ export default function VehicleDetail() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
+        {/* Hero: average condition rating */}
+        {averageRating !== null ? (
+          <View style={styles.heroBox} testID="avg-rating-hero">
+            <Text style={styles.heroLabel}>OVERALL CONDITION</Text>
+            <View style={styles.heroRow}>
+              <Text style={styles.heroValue}>{averageRating.toFixed(1)}</Text>
+              <Text style={styles.heroOutOf}>/ 10</Text>
+            </View>
+            <View style={styles.heroBar}>
+              <View style={[styles.heroBarFill, { width: `${(averageRating / 10) * 100}%` }]} />
+            </View>
+            <View style={styles.heroBreakdown}>
+              <HeroPill label="EXT" value={sub.exterior_condition} />
+              <HeroPill label="INT" value={sub.interior_condition} />
+              <HeroPill label="TYRES" value={sub.tyre_condition} />
+            </View>
+          </View>
+        ) : null}
+
         {/* Status banner */}
         {sub.status === "priced" ? (
           <View style={styles.priceBanner} testID="price-banner">
@@ -213,12 +272,12 @@ export default function VehicleDetail() {
               <Text style={styles.priceValue}>R {sub.price?.toLocaleString()}</Text>
               {sub.price_notes ? <Text style={styles.priceNotes}>{sub.price_notes}</Text> : null}
             </View>
-            <Ionicons name="checkmark-circle" size={40} color={colors.success} />
+            <Ionicons name="checkmark-circle" size={40} color={colors.text} />
           </View>
         ) : (
           <View style={styles.pendingBanner}>
-            <Ionicons name="time-outline" size={20} color={colors.warning} />
-            <Text style={styles.pendingText}>Awaiting price offer</Text>
+            <Ionicons name="time-outline" size={20} color={colors.textSecondary} />
+            <Text style={styles.pendingText}>AWAITING PRICE OFFER</Text>
           </View>
         )}
 
@@ -231,70 +290,127 @@ export default function VehicleDetail() {
 
         {/* Specs grid */}
         <View style={styles.grid}>
-          <View style={styles.gridItem}>
-            <Ionicons name="calendar-outline" size={16} color={colors.primary} />
-            <Text style={styles.gridLabel}>Year</Text>
-            <Text style={styles.gridValue}>{sub.year}</Text>
+          <SpecTile icon="calendar-outline" label="Year Registered" value={String(sub.year_registered ?? sub.year)} />
+          <SpecTile icon="construct-outline" label="Year of Production" value={String(sub.year_of_production ?? sub.year)} />
+          <SpecTile icon="speedometer-outline" label="Mileage" value={`${sub.mileage.toLocaleString()} km`} />
+          <SpecTile icon="water-outline" label="Fuel" value={sub.fuel_type ?? "—"} />
+          <SpecTile icon="cog-outline" label="Transmission" value={sub.transmission ?? "—"} />
+          <SpecTile icon="color-palette-outline" label="Colour" value={sub.colour} />
+        </View>
+
+        {/* Condition breakdown */}
+        <Text style={styles.sectionTitle}>Condition</Text>
+        <View style={styles.grid}>
+          <SpecTile icon="car-sport-outline" label="Exterior" value={sub.exterior_condition ? `${sub.exterior_condition}/10` : "—"} />
+          <SpecTile icon="cube-outline" label="Interior" value={sub.interior_condition ? `${sub.interior_condition}/10` : "—"} />
+          <SpecTile icon="ellipse-outline" label="Tyres" value={sub.tyre_condition ? `${sub.tyre_condition}/10` : "—"} />
+          <SpecTile icon="scan-outline" label="Windscreen" value={sub.windscreen_condition ?? "—"} />
+          <SpecTile
+            icon={sub.accident_damage ? "warning" : "checkmark-circle-outline"}
+            label="Accident Damage"
+            value={sub.accident_damage ? "Yes" : "None"}
+            valueColor={sub.accident_damage ? colors.danger : colors.text}
+          />
+          <SpecTile
+            icon={sub.paint_evidence ? "brush" : "brush-outline"}
+            label="Paint Evidence"
+            value={sub.paint_evidence ? "Yes" : "No"}
+            valueColor={sub.paint_evidence ? colors.danger : colors.text}
+          />
+        </View>
+
+        {/* Service history */}
+        {sub.service_history ? (
+          <>
+            <Text style={styles.sectionTitle}>Service History</Text>
+            <View style={styles.infoCard}>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>HISTORY</Text>
+                <Text style={styles.infoValue}>{sub.service_history}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>LAST SERVICE</Text>
+                <Text style={styles.infoValue}>{sub.last_service_date && sub.last_service_date !== "TBC" ? sub.last_service_date : "TBC"}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>SERVICE MILEAGE</Text>
+                <Text style={styles.infoValue}>
+                  {sub.last_service_mileage ? `${sub.last_service_mileage.toLocaleString()} km` : "TBC"}
+                </Text>
+              </View>
+            </View>
+          </>
+        ) : null}
+
+        {/* Reconditioning */}
+        {sub.reconditioning_items && sub.reconditioning_items.length > 0 ? (
+          <>
+            <Text style={styles.sectionTitle}>Reconditioning Estimate</Text>
+            <View style={styles.infoCard}>
+              {sub.reconditioning_items.map((r, i) => (
+                <View key={i} style={styles.reconRow}>
+                  <Text style={styles.reconLabel}>{r.label}</Text>
+                  <Text style={styles.reconAmount}>R {r.amount_zar.toLocaleString()}</Text>
+                </View>
+              ))}
+              <View style={styles.reconTotalRow}>
+                <Text style={styles.reconTotalLabel}>TOTAL</Text>
+                <Text style={styles.reconTotalValue}>
+                  R {(sub.reconditioning_total_zar ?? sub.reconditioning_items.reduce((s, x) => s + (x.amount_zar || 0), 0)).toLocaleString()}
+                </Text>
+              </View>
+            </View>
+          </>
+        ) : null}
+
+        {/* Identity */}
+        <Text style={styles.sectionTitle}>Identity</Text>
+        <View style={styles.infoCard}>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>VIN</Text>
+            <Text style={styles.infoValueMono} numberOfLines={1}>{sub.vin || "TBC"}</Text>
           </View>
-          <View style={styles.gridItem}>
-            <Ionicons name="speedometer-outline" size={16} color={colors.primary} />
-            <Text style={styles.gridLabel}>Mileage</Text>
-            <Text style={styles.gridValue}>{sub.mileage.toLocaleString()} km</Text>
-          </View>
-          <View style={styles.gridItem}>
-            <Ionicons name="color-palette-outline" size={16} color={colors.primary} />
-            <Text style={styles.gridLabel}>Colour</Text>
-            <Text style={styles.gridValue}>{sub.colour}</Text>
-          </View>
-          <View style={styles.gridItem}>
-            <Ionicons name="star" size={16} color={conditionColor} />
-            <Text style={styles.gridLabel}>Condition</Text>
-            <Text style={[styles.gridValue, { color: conditionColor }]}>{sub.condition}/10</Text>
-          </View>
-          <View style={styles.gridItem}>
-            <Ionicons
-              name={sub.factory_warranty ? "shield-checkmark" : "shield-outline"}
-              size={16}
-              color={sub.factory_warranty ? colors.success : colors.textSecondary}
-            />
-            <Text style={styles.gridLabel}>Warranty</Text>
-            <Text style={styles.gridValue}>{sub.factory_warranty ? "Yes" : "No"}</Text>
-          </View>
-          <View style={styles.gridItem}>
-            <Ionicons
-              name={sub.accident_damage ? "warning" : "checkmark-circle-outline"}
-              size={16}
-              color={sub.accident_damage ? colors.danger : colors.success}
-            />
-            <Text style={styles.gridLabel}>Damage</Text>
-            <Text style={[styles.gridValue, { color: sub.accident_damage ? colors.danger : colors.text }]}>
-              {sub.accident_damage ? "Yes" : "None"}
-            </Text>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>ENGINE NO</Text>
+            <Text style={styles.infoValueMono} numberOfLines={1}>{sub.engine_number || "TBC"}</Text>
           </View>
         </View>
 
         {/* Photos */}
         <Text style={styles.sectionTitle}>Photos</Text>
         <View style={styles.photoGrid}>
-          {["front", "side_right", "rear", "side_left", "interior"].map((slot) => (
-            <TouchableOpacity
-              key={slot}
-              testID={`detail-photo-${slot}`}
-              style={styles.photoSlot}
-              onPress={() => sub.photos[slot] && setPhotoPreview(sub.photos[slot])}
-            >
-              {sub.photos[slot] ? (
-                <>
-                  <Image source={{ uri: sub.photos[slot] }} style={styles.photoImg} />
-                  <View style={styles.photoOverlay}>
-                    <Text style={styles.photoLabel}>{PHOTO_LABELS[slot]}</Text>
-                  </View>
-                </>
-              ) : (
-                <Text style={styles.photoLabel}>{PHOTO_LABELS[slot]}</Text>
-              )}
-            </TouchableOpacity>
-          ))}
+          {PHOTO_ORDER.map((p, i) => {
+            const uri = resolvePhoto(sub.photos || {}, p.key, p.fallback);
+            return (
+              <TouchableOpacity
+                key={p.key}
+                testID={`detail-photo-${p.key}`}
+                style={styles.photoSlot}
+                onPress={() => {
+                  if (!uri) return;
+                  // Find the actual index in the filtered carouselPhotos list.
+                  const idx = carouselPhotos.findIndex((c) => c.uri === uri);
+                  if (idx >= 0) setCarouselIdx(idx);
+                }}
+                activeOpacity={uri ? 0.7 : 1}
+              >
+                {uri ? (
+                  <>
+                    <Image source={{ uri }} style={styles.photoImg} />
+                    <View style={styles.photoOverlay}>
+                      <Text style={styles.photoLabel}>{p.label.toUpperCase()}</Text>
+                      <Ionicons name="expand-outline" size={14} color="#fff" />
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="image-outline" size={20} color={colors.textDisabled} />
+                    <Text style={styles.photoLabelDim}>{p.label.toUpperCase()}</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {/* AI Market Analysis */}
@@ -338,7 +454,7 @@ export default function VehicleDetail() {
                 </View>
                 <View style={[styles.rangeCol, styles.rangeColMid]}>
                   <Text style={styles.rangeLabel}>TYPICAL</Text>
-                  <Text style={[styles.rangeValue, { color: colors.accent }]}>
+                  <Text style={styles.rangeValue}>
                     R {sub.market_analysis.analysis.estimated_market_range_zar.typical.toLocaleString()}
                   </Text>
                 </View>
@@ -570,13 +686,45 @@ export default function VehicleDetail() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Photo preview */}
-      <Modal visible={!!photoPreview} transparent onRequestClose={() => setPhotoPreview(null)}>
-        <Pressable style={styles.photoPreviewOverlay} onPress={() => setPhotoPreview(null)}>
-          {photoPreview ? <Image source={{ uri: photoPreview }} style={styles.photoPreviewImg} /> : null}
-        </Pressable>
-      </Modal>
+      {/* Fullscreen photo carousel */}
+      <PhotoCarousel
+        photos={carouselPhotos}
+        initialIndex={carouselIdx ?? 0}
+        visible={carouselIdx !== null}
+        onClose={() => setCarouselIdx(null)}
+      />
     </SafeAreaView>
+  );
+}
+
+function SpecTile({
+  icon,
+  label,
+  value,
+  valueColor,
+}: {
+  icon: any;
+  label: string;
+  value: string;
+  valueColor?: string;
+}) {
+  return (
+    <View style={styles.gridItem}>
+      <Ionicons name={icon} size={16} color={colors.textSecondary} />
+      <Text style={styles.gridLabel}>{label.toUpperCase()}</Text>
+      <Text style={[styles.gridValue, valueColor ? { color: valueColor } : null]} numberOfLines={2}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+function HeroPill({ label, value }: { label: string; value?: number }) {
+  return (
+    <View style={styles.heroPill}>
+      <Text style={styles.heroPillLabel}>{label}</Text>
+      <Text style={styles.heroPillValue}>{value ? `${value}/10` : "—"}</Text>
+    </View>
   );
 }
 
@@ -597,19 +745,81 @@ const styles = StyleSheet.create({
   backBtn: { padding: 4 },
   headerTitle: { color: colors.text, fontSize: 17, fontWeight: "800", fontFamily: fonts.heading, flex: 1, textAlign: "center", letterSpacing: 2, textTransform: "uppercase" },
   scroll: { padding: spacing.lg, paddingBottom: 120 },
+
+  // Hero average rating
+  heroBox: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    alignItems: "center",
+  },
+  heroLabel: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 2.5,
+    marginBottom: spacing.sm,
+  },
+  heroRow: { flexDirection: "row", alignItems: "baseline" },
+  heroValue: {
+    color: colors.text,
+    fontSize: 64,
+    fontWeight: "900",
+    fontFamily: fonts.mono,
+    letterSpacing: -1,
+    lineHeight: 68,
+  },
+  heroOutOf: {
+    color: colors.textSecondary,
+    fontSize: 20,
+    fontWeight: "700",
+    fontFamily: fonts.mono,
+    marginLeft: 4,
+  },
+  heroBar: {
+    height: 6,
+    backgroundColor: colors.border,
+    borderRadius: 3,
+    marginTop: spacing.md,
+    width: "100%",
+    overflow: "hidden",
+  },
+  heroBarFill: { height: "100%", backgroundColor: "#fff" },
+  heroBreakdown: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    width: "100%",
+    justifyContent: "space-between",
+  },
+  heroPill: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    backgroundColor: colors.paper,
+  },
+  heroPillLabel: { color: colors.textSecondary, fontSize: 10, fontWeight: "800", letterSpacing: 1 },
+  heroPillValue: { color: colors.text, fontSize: 13, fontWeight: "800", fontFamily: fonts.mono, marginTop: 2 },
+
   priceBanner: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     padding: spacing.md,
     borderRadius: radius.md,
-    backgroundColor: colors.success + "22",
+    backgroundColor: colors.card,
     borderWidth: 1,
-    borderColor: colors.success,
+    borderColor: colors.borderLight,
     marginBottom: spacing.lg,
   },
-  priceLabel: { color: colors.success, fontSize: 11, fontWeight: "800", letterSpacing: 1 },
-  priceValue: { color: colors.text, fontSize: 28, fontWeight: "800", fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", marginTop: 4 },
+  priceLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 1.5 },
+  priceValue: { color: colors.text, fontSize: 28, fontWeight: "800", fontFamily: fonts.mono, marginTop: 4 },
   priceNotes: { color: colors.textSecondary, fontSize: 13, marginTop: 4 },
   pendingBanner: {
     flexDirection: "row",
@@ -617,16 +827,18 @@ const styles = StyleSheet.create({
     gap: 8,
     padding: spacing.md,
     borderRadius: radius.md,
-    backgroundColor: colors.warning + "22",
+    backgroundColor: colors.card,
     borderWidth: 1,
-    borderColor: colors.warning + "55",
+    borderColor: colors.border,
     marginBottom: spacing.lg,
   },
-  pendingText: { color: colors.warning, fontWeight: "600" },
+  pendingText: { color: colors.textSecondary, fontWeight: "800", letterSpacing: 1.5, fontSize: 12 },
+
   titleBox: { marginBottom: spacing.md },
   brand: { color: colors.textSecondary, fontSize: 13, fontWeight: "600", textTransform: "uppercase", letterSpacing: 1 },
   model: { color: colors.text, fontSize: 24, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 1.5, textTransform: "uppercase" },
   derivative: { color: colors.textSecondary, fontSize: 15, marginTop: 2 },
+
   grid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   gridItem: {
     width: "31%",
@@ -637,17 +849,47 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     gap: 4,
   },
-  gridLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: "500" },
-  gridValue: { color: colors.text, fontSize: 14, fontWeight: "700" },
+  gridLabel: { color: colors.textSecondary, fontSize: 10, fontWeight: "700", letterSpacing: 1 },
+  gridValue: { color: colors.text, fontSize: 13, fontWeight: "700" },
+
   sectionTitle: {
     color: colors.textSecondary,
     fontSize: 12,
     fontWeight: "800",
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 1.5,
     marginTop: spacing.lg,
     marginBottom: spacing.sm,
   },
+
+  infoCard: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: 6,
+  },
+  infoRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: spacing.md,
+  },
+  infoLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: "700", letterSpacing: 1, minWidth: 110 },
+  infoValue: { color: colors.text, fontSize: 13, fontWeight: "700", flex: 1, textAlign: "right" },
+  infoValueMono: { color: colors.text, fontSize: 12, fontWeight: "700", flex: 1, textAlign: "right", fontFamily: fonts.mono },
+
+  reconRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colors.border },
+  reconLabel: { color: colors.text, fontSize: 13, flex: 1 },
+  reconAmount: { color: colors.text, fontSize: 13, fontWeight: "800", fontFamily: fonts.mono },
+  reconTotalRow: { flexDirection: "row", justifyContent: "space-between", paddingTop: spacing.sm, marginTop: 4 },
+  reconTotalLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 1.5 },
+  reconTotalValue: { color: "#fff", fontSize: 16, fontWeight: "800", fontFamily: fonts.mono },
+
   photoGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   photoSlot: {
     width: "48%",
@@ -667,16 +909,20 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     padding: 6,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     backgroundColor: "rgba(0,0,0,0.7)",
   },
-  photoLabel: { color: "#fff", fontSize: 12, fontWeight: "600" },
+  photoLabel: { color: "#fff", fontSize: 11, fontWeight: "800", letterSpacing: 1 },
+  photoLabelDim: { color: colors.textDisabled, fontSize: 11, fontWeight: "700", letterSpacing: 1, marginTop: 4 },
+
   diskBox: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
-  diskText: { color: colors.text, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 12 },
+  diskText: { color: colors.text, fontFamily: fonts.mono, fontSize: 12 },
   diskDecodedBox: {
     backgroundColor: colors.card,
     borderWidth: 1,
-    borderColor: colors.primary + "55",
+    borderColor: colors.borderLight,
     borderRadius: radius.md,
     padding: spacing.md,
     gap: 6,
@@ -692,19 +938,20 @@ const styles = StyleSheet.create({
   },
   diskDecodedLabel: {
     color: colors.textSecondary,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700",
-    letterSpacing: 0.5,
+    letterSpacing: 1,
     textTransform: "uppercase",
     minWidth: 100,
   },
   diskDecodedValue: {
     color: colors.text,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700",
     flex: 1,
     textAlign: "right",
   },
+
   analysisHeader: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", marginTop: spacing.lg, marginBottom: spacing.sm },
   analysisTs: { color: colors.textDisabled, fontSize: 11, marginTop: 2 },
   analysisBtn: {
@@ -715,12 +962,12 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: colors.primary,
-    backgroundColor: colors.primary + "18",
+    borderColor: colors.borderLight,
+    backgroundColor: colors.card,
     minWidth: 90,
     justifyContent: "center",
   },
-  analysisBtnText: { color: colors.primary, fontWeight: "700", fontSize: 12, letterSpacing: 0.5 },
+  analysisBtnText: { color: colors.text, fontWeight: "800", fontSize: 11, letterSpacing: 1 },
   analysisCard: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
   rangeBox: {
     flexDirection: "row",
@@ -731,13 +978,13 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   rangeCol: { flex: 1, padding: spacing.sm, alignItems: "center" },
-  rangeColMid: { backgroundColor: colors.accent + "18", borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border },
+  rangeColMid: { backgroundColor: colors.paper, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border },
   rangeLabel: { color: colors.textSecondary, fontSize: 10, letterSpacing: 1, fontWeight: "700", marginBottom: 4 },
-  rangeValue: { color: colors.text, fontSize: 13, fontWeight: "700", fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
+  rangeValue: { color: colors.text, fontSize: 13, fontWeight: "700", fontFamily: fonts.mono },
   tradeRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md },
   tradeCol: { flex: 1, padding: spacing.sm, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm },
   tradeLabel: { color: colors.textSecondary, fontSize: 10, letterSpacing: 1, fontWeight: "700", marginBottom: 4 },
-  tradeValue: { color: colors.success, fontSize: 15, fontWeight: "700", fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
+  tradeValue: { color: colors.text, fontSize: 15, fontWeight: "700", fontFamily: fonts.mono },
   summary: { color: colors.text, fontSize: 13, lineHeight: 19, marginBottom: spacing.sm },
   factorsBox: { marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, gap: 6 },
   factorsTitle: { color: colors.textSecondary, fontSize: 10, letterSpacing: 1, fontWeight: "700", marginBottom: 4 },
@@ -753,9 +1000,10 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderStyle: "dashed",
     borderRadius: radius.md,
-    backgroundColor: colors.card + "88",
+    backgroundColor: colors.card,
   },
   analysisEmptyText: { color: colors.textSecondary, fontSize: 12, flex: 1, lineHeight: 17 },
+
   dealerBox: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
   dealerName: { color: colors.text, fontSize: 15, fontWeight: "700" },
   dealerCompany: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
@@ -774,6 +1022,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#25D36618",
   },
   whatsappBtnText: { color: "#25D366", fontWeight: "700", fontSize: 14, letterSpacing: 0.5 },
+
   footer: {
     position: "absolute",
     left: 0,
@@ -817,7 +1066,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 20,
     fontWeight: "700",
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    fontFamily: fonts.mono,
   },
   confirmBtn: {
     marginTop: spacing.md,
@@ -827,6 +1076,4 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   confirmBtnText: { color: "#000", fontWeight: "800", fontSize: 15, letterSpacing: 1.5, textTransform: "uppercase" },
-  photoPreviewOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.95)", alignItems: "center", justifyContent: "center" },
-  photoPreviewImg: { width: "100%", height: "80%", resizeMode: "contain" },
 });

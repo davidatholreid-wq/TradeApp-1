@@ -12,6 +12,8 @@ export type User = {
   agreement_accepted_at?: string | null;
   dealer_info?: { first_name: string; last_name: string; phone: string };
   company_info?: { company_name: string; company_address: string };
+  profile_pic?: string | null;
+  cover_photo?: string | null;
 };
 
 type AuthContextType = {

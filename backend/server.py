@@ -277,6 +277,11 @@ class DealerActiveToggle(BaseModel):
     active: bool
 
 
+class DealerPhotoUpload(BaseModel):
+    profile_pic: Optional[str] = None   # base64 data URL, empty string clears
+    cover_photo: Optional[str] = None   # base64 data URL, empty string clears
+
+
 # ============ Auth routes ============
 @api_router.post("/auth/register")
 async def register(payload: RegisterRequest):
@@ -339,6 +344,8 @@ async def login(payload: LoginRequest):
             "agreement_accepted_at": user.get("agreement_accepted_at"),
             "dealer_info": user.get("dealer_info"),
             "company_info": user.get("company_info"),
+            "profile_pic": user.get("profile_pic"),
+            "cover_photo": user.get("cover_photo"),
         },
     }
 
@@ -795,6 +802,40 @@ async def admin_toggle_dealer_active(
         raise HTTPException(404, "Dealer not found")
     await db.users.update_one({"id": dealer_id}, {"$set": {"active": bool(payload.active)}})
     return {"active": bool(payload.active)}
+
+
+@api_router.post("/admin/dealers/{dealer_id}/photos")
+async def admin_upload_dealer_photos(
+    dealer_id: str,
+    payload: DealerPhotoUpload,
+    current: dict = Depends(require_admin),
+):
+    """Admin uploads/updates a dealer's profile picture and/or cover photo.
+
+    Photos are base64 data-URLs (data:image/jpeg;base64,...). Pass an empty
+    string ("") to clear a photo. Omitted fields are left unchanged.
+    """
+    user = await db.users.find_one({"id": dealer_id})
+    if not user or user.get("role") != "dealer":
+        raise HTTPException(404, "Dealer not found")
+    updates: dict = {}
+    if payload.profile_pic is not None:
+        updates["profile_pic"] = payload.profile_pic or None
+    if payload.cover_photo is not None:
+        updates["cover_photo"] = payload.cover_photo or None
+    if not updates:
+        raise HTTPException(400, "Provide profile_pic and/or cover_photo")
+    await db.users.update_one({"id": dealer_id}, {"$set": updates})
+    fresh = await db.users.find_one({"id": dealer_id}, {"_id": 0, "password_hash": 0})
+    return {"dealer": fresh}
+
+
+@api_router.get("/admin/dealers/{dealer_id}")
+async def admin_get_dealer(dealer_id: str, current: dict = Depends(require_admin)):
+    user = await db.users.find_one({"id": dealer_id}, {"_id": 0, "password_hash": 0})
+    if not user or user.get("role") != "dealer":
+        raise HTTPException(404, "Dealer not found")
+    return {"dealer": user}
 
 
 @api_router.delete("/admin/dealers/{dealer_id}")

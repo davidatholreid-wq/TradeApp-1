@@ -1,8 +1,8 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useAuth } from "@/src/context/AuthContext";
-import { colors, spacing, radius, BRAND } from "@/src/theme";
+import { colors, spacing, radius, fonts, BRAND } from "@/src/theme";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
@@ -25,14 +25,32 @@ export default function Profile() {
         <Text style={styles.brandTag}>{BRAND.name}</Text>
       </View>
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.md }]}>
-        <View style={styles.avatarBox}>
-          <View style={styles.avatar}>
-            <Ionicons
-              name={user.role === "admin" ? "shield-checkmark" : "person"}
-              size={40}
-              color={colors.primary}
-            />
+        {/* WhatsApp Business-style banner: cover photo + overlaid profile pic */}
+        <View style={styles.banner}>
+          {user.cover_photo ? (
+            <Image source={{ uri: user.cover_photo }} style={styles.coverImg} resizeMode="cover" />
+          ) : (
+            <View style={styles.coverPlaceholder}>
+              <Ionicons name="business-outline" size={36} color={colors.textDisabled} />
+              <Text style={styles.placeholderText}>NO COVER PHOTO</Text>
+            </View>
+          )}
+          <View style={styles.avatarWrap}>
+            {user.profile_pic ? (
+              <Image source={{ uri: user.profile_pic }} style={styles.avatarImg} testID="profile-avatar-img" />
+            ) : (
+              <View style={styles.avatar}>
+                <Ionicons
+                  name={user.role === "admin" ? "shield-checkmark" : "person"}
+                  size={44}
+                  color={colors.primary}
+                />
+              </View>
+            )}
           </View>
+        </View>
+
+        <View style={styles.identity}>
           <Text style={styles.name} testID="profile-name">
             {user.dealer_info?.first_name} {user.dealer_info?.last_name}
           </Text>
@@ -62,6 +80,16 @@ export default function Profile() {
           </View>
         ) : null}
 
+        {user.role === "dealer" && !user.profile_pic && !user.cover_photo ? (
+          <View style={styles.hintBox}>
+            <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
+            <Text style={styles.hintText}>
+              Your profile picture and cover photo are managed by Fourbuy. Contact us to update
+              your dealership branding.
+            </Text>
+          </View>
+        ) : null}
+
         <TouchableOpacity
           testID="logout-button"
           style={styles.logoutBtn}
@@ -85,30 +113,68 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   headerTitle: { color: colors.text, fontSize: 22, fontWeight: "800", letterSpacing: 2, textTransform: "uppercase" },
-  scroll: { padding: spacing.lg },
-  avatarBox: { alignItems: "center", marginBottom: spacing.xl },
-  avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+  brandTag: { color: colors.textSecondary, fontSize: 11, marginTop: 4, letterSpacing: 2 },
+  scroll: { padding: 0 },
+
+  banner: {
+    height: 160,
     backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    marginBottom: 60,
+    position: "relative",
+  },
+  coverImg: { width: "100%", height: "100%" },
+  coverPlaceholder: { flex: 1, alignItems: "center", justifyContent: "center", gap: 6 },
+  placeholderText: { color: colors.textDisabled, fontSize: 10, fontWeight: "800", letterSpacing: 2 },
+
+  avatarWrap: {
+    position: "absolute",
+    bottom: -50,
+    left: spacing.lg,
+    padding: 4,
+    backgroundColor: colors.bg,
+    borderRadius: 60,
+  },
+  avatarImg: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 2,
+    borderColor: colors.borderLight,
+  },
+  avatar: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: colors.card,
+    borderWidth: 2,
+    borderColor: colors.borderLight,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: spacing.md,
   },
-  name: { color: colors.text, fontSize: 20, fontWeight: "700" },
-  email: { color: colors.textSecondary, fontSize: 14, marginTop: 2 },
+
+  identity: {
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+    marginTop: spacing.sm,
+  },
+  name: { color: colors.text, fontSize: 22, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 1 },
+  email: { color: colors.textSecondary, fontSize: 14, marginTop: 4 },
   roleBadge: {
     marginTop: spacing.sm,
+    alignSelf: "flex-start",
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: radius.sm,
-    backgroundColor: colors.primary + "22",
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    backgroundColor: colors.card,
   },
-  roleText: { color: colors.primary, fontSize: 11, fontWeight: "800", letterSpacing: 1 },
+  roleText: { color: colors.text, fontSize: 11, fontWeight: "800", letterSpacing: 1.5 },
+
   section: {
+    marginHorizontal: spacing.lg,
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.border,
@@ -121,7 +187,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "800",
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 1.5,
     marginBottom: spacing.sm,
   },
   row: {
@@ -133,7 +199,24 @@ const styles = StyleSheet.create({
   },
   rowLabel: { color: colors.textSecondary, fontSize: 13 },
   rowValue: { color: colors.text, fontSize: 14, flex: 1, textAlign: "right" },
+
+  hintBox: {
+    marginHorizontal: spacing.lg,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderStyle: "dashed",
+    borderRadius: radius.md,
+    backgroundColor: colors.card,
+    marginBottom: spacing.md,
+  },
+  hintText: { color: colors.textSecondary, fontSize: 12, flex: 1, lineHeight: 17 },
+
   logoutBtn: {
+    marginHorizontal: spacing.lg,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",

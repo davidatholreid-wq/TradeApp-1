@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -15,6 +15,9 @@ import { colors, spacing, radius, fonts, BRAND } from "@/src/theme";
 import { apiFetch } from "@/src/api";
 import { buildWhatsappUrl, buildDealerMessage } from "@/src/utils/whatsapp";
 import BillingScreen from "@/app/(app)/billing";
+import PhotoCarousel, { CarouselPhoto } from "@/src/components/PhotoCarousel";
+
+type ReconItem = { label: string; amount_zar: number };
 
 type Submission = {
   id: string;
@@ -44,6 +47,22 @@ type SubmissionFull = Submission & {
   dealer_first_name?: string;
   license_disk_data?: string;
   price_notes?: string | null;
+  fuel_type?: string;
+  year_of_production?: number;
+  transmission?: string;
+  year_registered?: number;
+  exterior_condition?: number;
+  interior_condition?: number;
+  tyre_condition?: number;
+  windscreen_condition?: string;
+  service_history?: string;
+  last_service_date?: string;
+  last_service_mileage?: number | null;
+  paint_evidence?: boolean;
+  reconditioning_items?: ReconItem[];
+  reconditioning_total_zar?: number;
+  vin?: string;
+  engine_number?: string;
   market_analysis?: {
     analysis: {
       estimated_market_range_zar?: { low: number; high: number; typical: number };
@@ -57,6 +76,19 @@ type SubmissionFull = Submission & {
     generated_at: string;
   } | null;
 };
+
+const PHOTO_ORDER: { key: string; fallback?: string; label: string }[] = [
+  { key: "front", label: "Front" },
+  { key: "driver_side", fallback: "side_right", label: "Driver's Side" },
+  { key: "passenger_side", fallback: "side_left", label: "Passenger Side" },
+  { key: "rear", label: "Rear" },
+  { key: "interior", label: "Interior" },
+];
+
+function resolvePhoto(photos: Record<string, string> | undefined, key: string, fallback?: string) {
+  if (!photos) return "";
+  return photos[key] || (fallback ? photos[fallback] : "") || "";
+}
 
 type Bucket = "incoming" | "priced" | "archived";
 type CockpitView = "submissions" | "billing";
@@ -76,6 +108,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
   const [priceSubmitting, setPriceSubmitting] = useState(false);
   const [analysing, setAnalysing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [carouselIdx, setCarouselIdx] = useState<number | null>(null);
 
   const loadList = useCallback(async () => {
     try {
@@ -121,6 +154,25 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
   useEffect(() => {
     loadSelected();
   }, [loadSelected]);
+
+  const carouselPhotos: CarouselPhoto[] = useMemo(() => {
+    if (!selected) return [];
+    return PHOTO_ORDER.map((p) => ({
+      uri: resolvePhoto(selected.photos, p.key, p.fallback),
+      label: p.label,
+    })).filter((p) => !!p.uri);
+  }, [selected]);
+
+  const averageRating = useMemo(() => {
+    if (!selected) return null;
+    const arr = [
+      selected.exterior_condition,
+      selected.interior_condition,
+      selected.tyre_condition,
+    ].filter((x): x is number => typeof x === "number" && x > 0);
+    if (arr.length === 0) return null;
+    return arr.reduce((a, b) => a + b, 0) / arr.length;
+  }, [selected]);
 
   const filtered = subs.filter((s) => {
     const b = (s.bucket || (s.status === "priced" ? "priced" : "incoming")) as Bucket;
@@ -441,43 +493,155 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 </TouchableOpacity>
               </View>
 
+              {/* Hero: Average Condition Rating */}
+              {averageRating !== null ? (
+                <View style={styles.heroBox} testID="admin-avg-rating-hero">
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.heroLabel}>OVERALL CONDITION</Text>
+                    <View style={styles.heroRow}>
+                      <Text style={styles.heroValue}>{averageRating.toFixed(1)}</Text>
+                      <Text style={styles.heroOutOf}>/ 10</Text>
+                    </View>
+                    <View style={styles.heroBar}>
+                      <View style={[styles.heroBarFill, { width: `${(averageRating / 10) * 100}%` }]} />
+                    </View>
+                  </View>
+                  <View style={styles.heroBreakdown}>
+                    <HeroPill label="EXT" value={selected.exterior_condition} />
+                    <HeroPill label="INT" value={selected.interior_condition} />
+                    <HeroPill label="TYRES" value={selected.tyre_condition} />
+                  </View>
+                </View>
+              ) : null}
+
               {/* Specs */}
+              <Text style={styles.groupTitle}>VEHICLE SPECS</Text>
               <View style={styles.specsGrid}>
+                <SpecCell label="Year Reg" value={String(selected.year_registered ?? selected.year)} />
+                <SpecCell label="Year of Prod" value={String(selected.year_of_production ?? selected.year)} />
                 <SpecCell label="Mileage" value={`${selected.mileage.toLocaleString()} km`} />
+                <SpecCell label="Fuel" value={selected.fuel_type ?? "—"} />
+                <SpecCell label="Transmission" value={selected.transmission ?? "—"} />
                 <SpecCell label="Colour" value={selected.colour} />
-                <SpecCell label="Condition" value={`${selected.condition}/10`} />
-                <SpecCell
-                  label="Warranty"
-                  value={selected.factory_warranty ? "Yes" : "No"}
-                  color={selected.factory_warranty ? colors.success : colors.textSecondary}
-                />
+              </View>
+
+              {/* Condition detail */}
+              <Text style={styles.groupTitle}>CONDITION</Text>
+              <View style={styles.specsGrid}>
+                <SpecCell label="Exterior" value={selected.exterior_condition ? `${selected.exterior_condition}/10` : "—"} />
+                <SpecCell label="Interior" value={selected.interior_condition ? `${selected.interior_condition}/10` : "—"} />
+                <SpecCell label="Tyres" value={selected.tyre_condition ? `${selected.tyre_condition}/10` : "—"} />
+                <SpecCell label="Windscreen" value={selected.windscreen_condition ?? "—"} />
                 <SpecCell
                   label="Accident"
                   value={selected.accident_damage ? "Yes" : "None"}
-                  color={selected.accident_damage ? colors.danger : colors.success}
+                  color={selected.accident_damage ? colors.danger : colors.text}
                 />
-                <SpecCell label="Year" value={String(selected.year)} />
+                <SpecCell
+                  label="Paint Evidence"
+                  value={selected.paint_evidence ? "Yes" : "No"}
+                  color={selected.paint_evidence ? colors.danger : colors.text}
+                />
+              </View>
+
+              {/* Service history */}
+              {selected.service_history ? (
+                <>
+                  <Text style={styles.groupTitle}>SERVICE HISTORY</Text>
+                  <View style={styles.infoCard}>
+                    <View style={styles.infoRow}>
+                      <Text style={styles.infoLabel}>HISTORY</Text>
+                      <Text style={styles.infoValue}>{selected.service_history}</Text>
+                    </View>
+                    <View style={styles.infoRow}>
+                      <Text style={styles.infoLabel}>LAST SERVICE</Text>
+                      <Text style={styles.infoValue}>
+                        {selected.last_service_date && selected.last_service_date !== "TBC"
+                          ? selected.last_service_date
+                          : "TBC"}
+                      </Text>
+                    </View>
+                    <View style={styles.infoRow}>
+                      <Text style={styles.infoLabel}>SERVICE MILEAGE</Text>
+                      <Text style={styles.infoValue}>
+                        {selected.last_service_mileage
+                          ? `${selected.last_service_mileage.toLocaleString()} km`
+                          : "TBC"}
+                      </Text>
+                    </View>
+                  </View>
+                </>
+              ) : null}
+
+              {/* Reconditioning */}
+              {selected.reconditioning_items && selected.reconditioning_items.length > 0 ? (
+                <>
+                  <Text style={styles.groupTitle}>RECONDITIONING ESTIMATE</Text>
+                  <View style={styles.infoCard}>
+                    {selected.reconditioning_items.map((r, i) => (
+                      <View key={i} style={styles.infoRow}>
+                        <Text style={styles.infoValue}>{r.label}</Text>
+                        <Text style={styles.reconAmount}>R {r.amount_zar.toLocaleString()}</Text>
+                      </View>
+                    ))}
+                    <View style={styles.reconTotalRow}>
+                      <Text style={styles.infoLabel}>TOTAL</Text>
+                      <Text style={styles.reconTotal}>
+                        R{" "}
+                        {(selected.reconditioning_total_zar ??
+                          selected.reconditioning_items.reduce(
+                            (s, x) => s + (x.amount_zar || 0),
+                            0
+                          )
+                        ).toLocaleString()}
+                      </Text>
+                    </View>
+                  </View>
+                </>
+              ) : null}
+
+              {/* Identity */}
+              <Text style={styles.groupTitle}>IDENTITY</Text>
+              <View style={styles.infoCard}>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>VIN</Text>
+                  <Text style={styles.monoValue} numberOfLines={1}>{selected.vin || "TBC"}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>ENGINE NO</Text>
+                  <Text style={styles.monoValue} numberOfLines={1}>{selected.engine_number || "TBC"}</Text>
+                </View>
               </View>
 
               {/* Photos */}
-              {selected.photos ? (
-                <View style={styles.photoRow}>
-                  {["front", "side_right", "rear", "side_left", "interior"].map((slot) =>
-                    selected.photos?.[slot] ? (
-                      <Image
-                        key={slot}
-                        source={{ uri: selected.photos[slot] }}
-                        style={styles.photo}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <View key={slot} style={[styles.photo, styles.photoPlaceholder]}>
-                        <Ionicons name="image-outline" size={20} color={colors.textDisabled} />
+              <Text style={styles.groupTitle}>PHOTOS · TAP TO EXPAND</Text>
+              <View style={styles.photoRow}>
+                {PHOTO_ORDER.map((p) => {
+                  const uri = resolvePhoto(selected.photos, p.key, p.fallback);
+                  return uri ? (
+                    <TouchableOpacity
+                      key={p.key}
+                      style={styles.photo}
+                      testID={`admin-photo-${p.key}`}
+                      onPress={() => {
+                        const idx = carouselPhotos.findIndex((c) => c.uri === uri);
+                        if (idx >= 0) setCarouselIdx(idx);
+                      }}
+                    >
+                      <Image source={{ uri }} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
+                      <View style={styles.photoBadge}>
+                        <Text style={styles.photoBadgeText}>{p.label.toUpperCase()}</Text>
+                        <Ionicons name="expand-outline" size={12} color="#fff" />
                       </View>
-                    )
-                  )}
-                </View>
-              ) : null}
+                    </TouchableOpacity>
+                  ) : (
+                    <View key={p.key} style={[styles.photo, styles.photoPlaceholder]}>
+                      <Ionicons name="image-outline" size={20} color={colors.textDisabled} />
+                      <Text style={styles.photoLabelDim}>{p.label.toUpperCase()}</Text>
+                    </View>
+                  );
+                })}
+              </View>
 
               {/* Dealer */}
               <View style={styles.dealerBox}>
@@ -670,6 +834,21 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
         </View>
       </View>
       )}
+      <PhotoCarousel
+        photos={carouselPhotos}
+        initialIndex={carouselIdx ?? 0}
+        visible={carouselIdx !== null}
+        onClose={() => setCarouselIdx(null)}
+      />
+    </View>
+  );
+}
+
+function HeroPill({ label, value }: { label: string; value?: number }) {
+  return (
+    <View style={styles.heroPill}>
+      <Text style={styles.heroPillLabel}>{label}</Text>
+      <Text style={styles.heroPillValue}>{value ? `${value}/10` : "—"}</Text>
     </View>
   );
 }
@@ -862,17 +1041,115 @@ const styles = StyleSheet.create({
   specLabel: { color: colors.textSecondary, fontSize: 10, letterSpacing: 1, fontWeight: "700", marginBottom: 4 },
   specValue: { color: colors.text, fontSize: 15, fontWeight: "700" },
 
-  photoRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
+  photoRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm, flexWrap: "wrap" },
   photo: {
-    flex: 1,
+    width: 180,
     aspectRatio: 4 / 3,
     borderRadius: radius.sm,
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.border,
     overflow: "hidden",
+    position: "relative",
   },
-  photoPlaceholder: { alignItems: "center", justifyContent: "center" },
+  photoPlaceholder: { alignItems: "center", justifyContent: "center", gap: 4 },
+  photoBadge: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    padding: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(0,0,0,0.72)",
+  },
+  photoBadgeText: { color: "#fff", fontSize: 10, fontWeight: "800", letterSpacing: 1 },
+  photoLabelDim: { color: colors.textDisabled, fontSize: 10, fontWeight: "700", letterSpacing: 1 },
+
+  // Hero rating
+  heroBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    borderRadius: radius.md,
+    backgroundColor: colors.card,
+    marginBottom: spacing.md,
+  },
+  heroLabel: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 2.5,
+    marginBottom: spacing.sm,
+  },
+  heroRow: { flexDirection: "row", alignItems: "baseline" },
+  heroValue: {
+    color: colors.text,
+    fontSize: 72,
+    fontWeight: "900",
+    fontFamily: fonts.mono,
+    lineHeight: 78,
+    letterSpacing: -2,
+  },
+  heroOutOf: { color: colors.textSecondary, fontSize: 22, fontWeight: "700", fontFamily: fonts.mono, marginLeft: 6 },
+  heroBar: {
+    height: 6,
+    backgroundColor: colors.border,
+    borderRadius: 3,
+    marginTop: spacing.sm,
+    overflow: "hidden",
+  },
+  heroBarFill: { height: "100%", backgroundColor: "#fff" },
+  heroBreakdown: { flexDirection: "column", gap: spacing.sm, minWidth: 130 },
+  heroPill: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    backgroundColor: colors.paper,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+  },
+  heroPillLabel: { color: colors.textSecondary, fontSize: 10, fontWeight: "800", letterSpacing: 1.5 },
+  heroPillValue: { color: colors.text, fontSize: 13, fontWeight: "800", fontFamily: fonts.mono },
+
+  groupTitle: { color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 2, marginTop: spacing.md, marginBottom: spacing.xs },
+
+  infoCard: {
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.card,
+    gap: 4,
+  },
+  infoRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: spacing.md,
+  },
+  infoLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: "700", letterSpacing: 1, minWidth: 130 },
+  infoValue: { color: colors.text, fontSize: 13, fontWeight: "700", flex: 1, textAlign: "right" },
+  monoValue: { color: colors.text, fontSize: 12, fontFamily: fonts.mono, fontWeight: "700", flex: 1, textAlign: "right" },
+  reconAmount: { color: colors.text, fontFamily: fonts.mono, fontWeight: "800", fontSize: 13 },
+  reconTotalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 10,
+    paddingTop: 14,
+  },
+  reconTotal: { color: "#fff", fontFamily: fonts.mono, fontWeight: "800", fontSize: 18 },
 
   dealerBox: {
     marginTop: spacing.md,

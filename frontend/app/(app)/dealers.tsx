@@ -13,6 +13,7 @@ import {
   TextInput,
   Switch,
   Platform,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
@@ -20,6 +21,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { colors, spacing, radius, fonts } from "@/src/theme";
 import { apiFetch } from "@/src/api";
+import DealerPhotosModal from "@/src/components/DealerPhotosModal";
 
 type Dealer = {
   id: string;
@@ -32,6 +34,8 @@ type Dealer = {
   submission_count: number;
   billable_count?: number;
   billable_total_zar?: number;
+  profile_pic?: string | null;
+  cover_photo?: string | null;
   created_at: string;
 };
 
@@ -41,6 +45,7 @@ export default function Dealers() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [editing, setEditing] = useState<Dealer | null>(null);
+  const [photoTarget, setPhotoTarget] = useState<Dealer | null>(null);
   const [savingActiveId, setSavingActiveId] = useState<string | null>(null);
   const [resettingId, setResettingId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -241,7 +246,11 @@ export default function Dealers() {
       <View style={[styles.card, isArchived && styles.cardArchived]} testID={`dealer-card-${item.id}`}>
         <View style={styles.cardTop}>
           <View style={[styles.avatar, { borderColor: statusColor + "55" }]}>
-            <Ionicons name="person" size={22} color={statusColor} />
+            {item.profile_pic ? (
+              <Image source={{ uri: item.profile_pic }} style={styles.avatarImg} />
+            ) : (
+              <Ionicons name="person" size={22} color={statusColor} />
+            )}
           </View>
           <View style={{ flex: 1 }}>
             <View style={styles.nameRow}>
@@ -336,6 +345,18 @@ export default function Dealers() {
               >
                 <Ionicons name="create-outline" size={16} color={colors.text} />
                 <Text style={styles.actionBtnText}>Edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID={`dealer-photos-${item.id}`}
+                style={styles.actionBtn}
+                onPress={() => setPhotoTarget(item)}
+              >
+                <Ionicons
+                  name={item.profile_pic || item.cover_photo ? "images" : "images-outline"}
+                  size={16}
+                  color={colors.text}
+                />
+                <Text style={styles.actionBtnText}>Photos</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 testID={`dealer-reset-pw-${item.id}`}
@@ -449,6 +470,30 @@ export default function Dealers() {
         onSaved={(fresh) => {
           setDealers((prev) => prev.map((d) => (d.id === fresh.id ? { ...d, ...fresh } : d)));
           setEditing(null);
+        }}
+      />
+
+      <DealerPhotosModal
+        dealer={
+          photoTarget
+            ? {
+                id: photoTarget.id,
+                name: `${photoTarget.dealer_info.first_name} ${photoTarget.dealer_info.last_name}`,
+                profile_pic: photoTarget.profile_pic,
+                cover_photo: photoTarget.cover_photo,
+              }
+            : null
+        }
+        onClose={() => setPhotoTarget(null)}
+        onSaved={(fresh) => {
+          setDealers((prev) =>
+            prev.map((d) =>
+              d.id === fresh.id
+                ? { ...d, profile_pic: fresh.profile_pic, cover_photo: fresh.cover_photo }
+                : d
+            )
+          );
+          setPhotoTarget(null);
         }}
       />
     </SafeAreaView>
@@ -631,7 +676,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
     borderColor: colors.border,
+    overflow: "hidden",
   },
+  avatarImg: { width: "100%", height: "100%" },
   nameRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   name: { color: colors.text, fontSize: 16, fontWeight: "700" },
   suspendPill: {
