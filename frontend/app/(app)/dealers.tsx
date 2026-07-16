@@ -25,6 +25,7 @@ type Dealer = {
   id: string;
   email: string;
   active?: boolean;
+  archived_at?: string | null;
   agreement_accepted_at?: string | null;
   dealer_info: { first_name: string; last_name: string; phone: string };
   company_info: { company_name: string; company_address: string };
@@ -42,40 +43,102 @@ export default function Dealers() {
   const [editing, setEditing] = useState<Dealer | null>(null);
   const [savingActiveId, setSavingActiveId] = useState<string | null>(null);
   const [resettingId, setResettingId] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      const data = await apiFetch("/api/admin/dealers");
-      setDealers(data.dealers || []);
-    } catch (e) {
-      console.log(e);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  const load = useCallback(
+    async (withArchived: boolean) => {
+      try {
+        const data = await apiFetch(
+          `/api/admin/dealers${withArchived ? "?include_archived=true" : ""}`
+        );
+        setDealers(data.dealers || []);
+      } catch (e) {
+        console.log(e);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    []
+  );
 
   useFocusEffect(
     useCallback(() => {
-      load();
-    }, [load])
+      load(showArchived);
+    }, [load, showArchived])
   );
 
-  const confirmDelete = (dealer: Dealer) => {
+  const removeDealer = (dealer: Dealer) => {
+    const n = dealer.submission_count || 0;
+    if (n > 0) {
+      // Has submissions → archive to preserve billing history.
+      Alert.alert(
+        "Archive dealer",
+        `${dealer.dealer_info.first_name} ${dealer.dealer_info.last_name} has ${n} submission${n === 1 ? "" : "s"}. They'll be archived so all data and billing history are preserved. They will no longer appear in the active dealers list and won't be able to log in. Proceed?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Archive",
+            style: "destructive",
+            onPress: async () => {
+              setBusyId(dealer.id);
+              try {
+                await apiFetch(`/api/admin/dealers/${dealer.id}/archive`, { method: "POST" });
+                await load(showArchived);
+              } catch (e: any) {
+                Alert.alert("Error", e.message || "Failed to archive");
+              } finally {
+                setBusyId(null);
+              }
+            },
+          },
+        ]
+      );
+      return;
+    }
+    // Zero submissions → safe hard-delete.
     Alert.alert(
-      "Remove Dealer",
-      `Remove ${dealer.dealer_info.first_name} ${dealer.dealer_info.last_name} and ALL their submissions? This cannot be undone.`,
+      "Remove dealer",
+      `Permanently remove ${dealer.dealer_info.first_name} ${dealer.dealer_info.last_name}? This dealer has no submissions so nothing is lost.`,
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Remove",
           style: "destructive",
           onPress: async () => {
+            setBusyId(dealer.id);
             try {
               await apiFetch(`/api/admin/dealers/${dealer.id}`, { method: "DELETE" });
               setDealers((prev) => prev.filter((d) => d.id !== dealer.id));
             } catch (e: any) {
               Alert.alert("Error", e.message || "Failed to remove");
+            } finally {
+              setBusyId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const restoreDealer = (dealer: Dealer) => {
+    Alert.alert(
+      "Restore dealer",
+      `Restore ${dealer.dealer_info.first_name} ${dealer.dealer_info.last_name} to the active dealer list?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Restore",
+          onPress: async () => {
+            setBusyId(dealer.id);
+            try {
+              await apiFetch(`/api/admin/dealers/${dealer.id}/restore`, { method: "POST" });
+              await load(showArchived);
+            } catch (e: any) {
+              Alert.alert("Error", e.message || "Failed to restore");
+            } finally {
+              setBusyId(null);
             }
           },
         },
@@ -156,19 +219,29 @@ export default function Dealers() {
   };
 
   const renderItem = ({ item }: { item: Dealer }) => {
-    const isActive = item.active !== false;
+    const isArchived = !!item.archived_at;
+    const isActive = !isArchived && item.active !== false;
+    const statusColor = isArchived
+      ? colors.textDisabled
+      : isActive
+      ? colors.primary
+      : colors.danger;
     return (
-      <View style={styles.card} testID={`dealer-card-${item.id}`}>
+      <View style={[styles.card, isArchived && styles.cardArchived]} testID={`dealer-card-${item.id}`}>
         <View style={styles.cardTop}>
-          <View style={[styles.avatar, !isActive && { borderColor: colors.danger + "55" }]}>
-            <Ionicons name="person" size={22} color={isActive ? colors.primary : colors.danger} />
+          <View style={[styles.avatar, { borderColor: statusColor + "55" }]}>
+            <Ionicons name="person" size={22} color={statusColor} />
           </View>
           <View style={{ flex: 1 }}>
             <View style={styles.nameRow}>
-              <Text style={styles.name}>
+              <Text style={[styles.name, isArchived && { color: colors.textSecondary }]}>
                 {item.dealer_info.first_name} {item.dealer_info.last_name}
               </Text>
-              {!isActive ? (
+              {isArchived ? (
+                <View style={styles.archivedPill}>
+                  <Text style={styles.archivedPillText}>ARCHIVED</Text>
+                </View>
+              ) : !isActive ? (
                 <View style={styles.suspendPill}>
                   <Text style={styles.suspendPillText}>SUSPENDED</Text>
                 </View>
@@ -201,70 +274,128 @@ export default function Dealers() {
               </Text>
             </View>
           ) : null}
+          {isArchived && item.archived_at ? (
+            <View style={styles.metaItem}>
+              <Ionicons name="archive-outline" size={13} color={colors.textSecondary} />
+              <Text style={styles.metaText}>
+                Archived {new Date(item.archived_at).toLocaleDateString()}
+              </Text>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.actionsRow}>
-          <View style={styles.activeCol}>
-            <Text style={styles.activeLabel}>{isActive ? "ACTIVE" : "SUSPENDED"}</Text>
-            {savingActiveId === item.id ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              <Switch
-                testID={`dealer-active-toggle-${item.id}`}
-                value={isActive}
-                onValueChange={(v) => toggleActive(item, v)}
-                trackColor={{ false: colors.border, true: colors.neon }}
-                thumbColor={isActive ? "#000" : colors.textSecondary}
-              />
-            )}
-          </View>
-          <View style={{ flex: 1 }} />
-          <TouchableOpacity
-            testID={`dealer-edit-${item.id}`}
-            style={styles.actionBtn}
-            onPress={() => setEditing(item)}
-          >
-            <Ionicons name="create-outline" size={16} color={colors.text} />
-            <Text style={styles.actionBtnText}>Edit</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            testID={`dealer-reset-pw-${item.id}`}
-            style={styles.actionBtn}
-            onPress={() => promptResetPassword(item)}
-            disabled={resettingId === item.id}
-          >
-            {resettingId === item.id ? (
-              <ActivityIndicator size="small" color={colors.text} />
-            ) : (
-              <>
-                <Ionicons name="key-outline" size={16} color={colors.text} />
-                <Text style={styles.actionBtnText}>Reset PW</Text>
-              </>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            testID={`remove-dealer-${item.id}`}
-            style={[styles.actionBtn, styles.dangerBtn]}
-            onPress={() => confirmDelete(item)}
-          >
-            <Ionicons name="trash-outline" size={16} color={colors.danger} />
-          </TouchableOpacity>
+          {isArchived ? (
+            <TouchableOpacity
+              testID={`dealer-restore-${item.id}`}
+              style={[styles.actionBtn, styles.restoreBtn]}
+              onPress={() => restoreDealer(item)}
+              disabled={busyId === item.id}
+            >
+              {busyId === item.id ? (
+                <ActivityIndicator size="small" color={colors.neon} />
+              ) : (
+                <>
+                  <Ionicons name="refresh" size={16} color={colors.neon} />
+                  <Text style={[styles.actionBtnText, { color: colors.neon }]}>Restore</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          ) : (
+            <>
+              <View style={styles.activeCol}>
+                <Text style={styles.activeLabel}>{isActive ? "ACTIVE" : "SUSPENDED"}</Text>
+                {savingActiveId === item.id ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Switch
+                    testID={`dealer-active-toggle-${item.id}`}
+                    value={isActive}
+                    onValueChange={(v) => toggleActive(item, v)}
+                    trackColor={{ false: colors.border, true: colors.neon }}
+                    thumbColor={isActive ? "#000" : colors.textSecondary}
+                  />
+                )}
+              </View>
+              <View style={{ flex: 1 }} />
+              <TouchableOpacity
+                testID={`dealer-edit-${item.id}`}
+                style={styles.actionBtn}
+                onPress={() => setEditing(item)}
+              >
+                <Ionicons name="create-outline" size={16} color={colors.text} />
+                <Text style={styles.actionBtnText}>Edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID={`dealer-reset-pw-${item.id}`}
+                style={styles.actionBtn}
+                onPress={() => promptResetPassword(item)}
+                disabled={resettingId === item.id}
+              >
+                {resettingId === item.id ? (
+                  <ActivityIndicator size="small" color={colors.text} />
+                ) : (
+                  <>
+                    <Ionicons name="key-outline" size={16} color={colors.text} />
+                    <Text style={styles.actionBtnText}>Reset PW</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID={`remove-dealer-${item.id}`}
+                style={[styles.actionBtn, styles.dangerBtn]}
+                onPress={() => removeDealer(item)}
+                disabled={busyId === item.id}
+              >
+                {busyId === item.id ? (
+                  <ActivityIndicator size="small" color={colors.danger} />
+                ) : (
+                  <Ionicons
+                    name={item.submission_count > 0 ? "archive-outline" : "trash-outline"}
+                    size={16}
+                    color={colors.danger}
+                  />
+                )}
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       </View>
     );
   };
 
-  const activeCount = dealers.filter((d) => d.active !== false).length;
-  const suspendedCount = dealers.length - activeCount;
+  const activeCount = dealers.filter((d) => !d.archived_at && d.active !== false).length;
+  const suspendedCount = dealers.filter((d) => !d.archived_at && d.active === false).length;
+  const archivedCount = dealers.filter((d) => !!d.archived_at).length;
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Manage Dealers</Text>
         <Text style={styles.headerSub}>
-          {dealers.length} registered · {activeCount} active
+          {dealers.length - archivedCount} registered · {activeCount} active
           {suspendedCount > 0 ? ` · ${suspendedCount} suspended` : ""}
+          {showArchived && archivedCount > 0 ? ` · ${archivedCount} archived` : ""}
         </Text>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            testID="dealers-toggle-archived"
+            onPress={() => {
+              setLoading(true);
+              setShowArchived((v) => !v);
+            }}
+            style={[styles.archTgl, showArchived && styles.archTglActive]}
+          >
+            <Ionicons
+              name={showArchived ? "eye" : "eye-off"}
+              size={14}
+              color={showArchived ? "#000" : colors.textSecondary}
+            />
+            <Text style={[styles.archTglText, showArchived && styles.archTglTextActive]}>
+              {showArchived ? "Showing archived" : "Show archived"}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
       {loading ? (
         <View style={styles.center}>
@@ -273,8 +404,14 @@ export default function Dealers() {
       ) : dealers.length === 0 ? (
         <View style={styles.center}>
           <Ionicons name="people-outline" size={64} color={colors.textDisabled} />
-          <Text style={styles.emptyTitle}>No dealers yet</Text>
-          <Text style={styles.emptyText}>Dealers will appear here once they register</Text>
+          <Text style={styles.emptyTitle}>
+            {showArchived ? "No archived dealers" : "No dealers yet"}
+          </Text>
+          <Text style={styles.emptyText}>
+            {showArchived
+              ? "Nothing archived. All your dealers are active."
+              : "Dealers will appear here once they register"}
+          </Text>
         </View>
       ) : (
         <FlatList
@@ -287,7 +424,7 @@ export default function Dealers() {
               refreshing={refreshing}
               onRefresh={() => {
                 setRefreshing(true);
-                load();
+                load(showArchived);
               }}
               tintColor={colors.primary}
             />
@@ -448,6 +585,21 @@ const styles = StyleSheet.create({
   },
   headerTitle: { color: colors.text, fontSize: 22, fontWeight: "700", fontFamily: fonts.serif, letterSpacing: 0.3 },
   headerSub: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
+  headerActions: { flexDirection: "row", marginTop: spacing.sm },
+  archTgl: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  archTglActive: { backgroundColor: colors.neon, borderColor: colors.neon },
+  archTglText: { color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 1 },
+  archTglTextActive: { color: "#000" },
   list: { padding: spacing.md, paddingBottom: spacing.xl },
   card: {
     backgroundColor: colors.card,
@@ -457,6 +609,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.sm,
   },
+  cardArchived: { opacity: 0.72, borderStyle: "dashed" },
   cardTop: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   avatar: {
     width: 40,
@@ -479,6 +632,16 @@ const styles = StyleSheet.create({
     borderColor: colors.danger + "55",
   },
   suspendPillText: { color: colors.danger, fontSize: 9, fontWeight: "800", letterSpacing: 1 },
+  archivedPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+    backgroundColor: colors.textDisabled + "22",
+    borderWidth: 1,
+    borderColor: colors.textDisabled + "55",
+  },
+  archivedPillText: { color: colors.textSecondary, fontSize: 9, fontWeight: "800", letterSpacing: 1 },
+  restoreBtn: { borderColor: colors.neon + "55", backgroundColor: colors.neon + "12" },
   company: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
   meta: {
     marginTop: spacing.sm,

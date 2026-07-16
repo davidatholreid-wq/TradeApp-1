@@ -1,0 +1,64 @@
+{
+  "summary": "Archive-instead-of-hard-delete feature verified end-to-end. Backend: 9/9 pytest cases in /app/backend/tests/test_archive_dealers.py PASS — zero-sub DELETE→200 hard_delete:true (removed from both default and include_archived lists); DELETE with submissions→409 with EXACT message 'Dealer has N submission(s). Archive them instead to preserve billing history.' (dealer + all submissions preserved); POST /admin/dealers/{id}/archive→200 with {status:archived, archived_at:iso, submissions_preserved:3}, dealer hidden from default GET /admin/dealers, visible with archived_at!=null when include_archived=true, submissions count unchanged; archived dealer login→403 with 'archived' wording (no 'suspend' word); GET /admin/billing rows expose archived:bool + archived_at, archived row shows archived:true and amount_zar unchanged (historical R100 preserved); POST /restore→200 with {status:restored}, dealer re-appears active=true archived_at=null, login works; restore on non-archived→400; suspend still independent (active=false without archived_at, still visible in default list, login 403 with 'suspend' wording). Frontend mobile 390x844: dealers-toggle-archived button present (eye-off/Show archived when OFF, eye/Showing archived cyan when ON); header stats update to '4 registered · 4 active · 1 archived' when toggle ON with archived dealer present; archived dealer card renders ARCHIVED grey pill, Archived <date> meta, Restore button (dealer-restore-{id}) — Edit/Reset PW/toggle hidden (edit_btns=4 vs cards=5 with 1 archived); Billing screen renders ARCHIVED pill inline next to archived dealer's name; TOTAL DUE R150.00 unchanged after archive. Desktop 1440x900: cockpit-view-billing swaps to BillingScreen and shows ARCHIVED pill next to Test Dealer; cockpit-view-submissions returns to standard cockpit with admin-filter-incoming default and 3-way chips (incoming/priced/archived) present. Regressions verified: cyan theme intact, login+cockpit rendering unchanged.\n\n**CRITICAL UI BUG FOUND** — React Native `Alert.alert` used in dealers.tsx (removeDealer + restoreDealer) does NOT render any confirmation dialog on react-native-web build. Tapping the archive/trash icon and the Restore button produces NO visible modal/window.confirm/inline overlay (verified: 0 dialogs captured, 0 role=dialog nodes, body text never contains 'Archive dealer' or 'Remove dealer' after click). Consequence: on the web preview (which the admin cockpit primarily runs on) admins **cannot** archive, remove, or restore dealers from the UI at all — the confirm callback never fires because there is no dialog to tap 'Archive'/'Remove'/'Restore' on. Backend API works, but the UI is unreachable. On native (Expo Go / real device) Alert.alert works, so the mobile dealer app itself is unaffected — but the desktop admin cockpit is broken for this flow. Recommend replacing Alert.alert with a cross-platform confirm (custom Modal or window.confirm fallback on web) — same pattern already used in dealers.tsx line 165 for password reset (`window.prompt` on web).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "dealers.tsx removeDealer/restoreDealer confirm", "issue": "Alert.alert does not render a confirm dialog on react-native-web. Tapping remove-dealer-{id} or dealer-restore-{id} produces no modal, so admin on web can never confirm and the archive/remove/restore action never fires. Reference: /app/frontend/app/(app)/dealers.tsx:76-97 (Archive), :101-122 (Remove), :126-146 (Restore).", "testID": "remove-dealer-{id}, dealer-restore-{id}", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "react-native Alert on web", "issue": "Alert.alert() on react-native-web is a silent no-op — no dialog, no console log with the prompt for the user. Dealers.tsx already handles this for password reset by falling back to window.prompt (line ~165). Same fallback needed for archive/remove/restore confirms (window.confirm) OR migrate to a cross-platform Modal component. Reference: /app/frontend/app/(app)/dealers.tsx:76,101,126,210."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_archive_dealers.py",
+    "/app/test_reports/pytest/archive_results.xml"
+  ],
+  "action_items": [
+    "HIGH — Replace Alert.alert() in dealers.tsx (removeDealer + restoreDealer) with a cross-platform confirmation. Suggest: on web use window.confirm(...) (matching existing window.prompt pattern used for password reset at line ~165); on native keep Alert.alert. OR migrate all three flows to a custom Modal component with Cancel/Confirm buttons rendered inline. Without this fix, admin cannot archive/remove/restore dealers from the web cockpit.",
+    "Optional: confirm the same Alert.alert-on-web limitation for other flows (Reset PW error handling at line 178, Suspend/Reactivate uses toggle so unaffected)."
+  ],
+  "critical_code_review_comments": [
+    "backend/server.py:699-719 DELETE endpoint correctly counts submissions and returns 409 with the exact spec message; body has hard_delete:true only on successful hard delete.",
+    "backend/server.py:722-734 archive endpoint atomically sets archived_at + active=false and returns submissions_preserved count — no submissions touched.",
+    "backend/server.py:737-749 restore endpoint properly guards against restoring a non-archived dealer with a 400.",
+    "backend/server.py:288-295 login guard correctly distinguishes archived (checked first) from suspended so the messages don't collide.",
+    "backend/server.py:606-624 GET /admin/dealers respects include_archived query param and always exposes archived_at on every row.",
+    "backend/server.py:814-830 GET /admin/billing pipeline unions in archived users so historical rows are not lost; each row exposes archived:bool + archived_at.",
+    "frontend dealers.tsx:53 correctly appends ?include_archived=true when toggle is ON, and re-fetches on toggle change.",
+    "frontend dealers.tsx:367-378 header stats math is right — activeCount excludes archived; suspendedCount excludes archived; archivedCount only shown when toggle is ON.",
+    "frontend dealers.tsx:230-345 archived card branch cleanly hides Edit/PW/toggle and shows a single Restore button — good separation.",
+    "frontend billing.tsx correctly renders ARCHIVED pill when row.archived === true (verified visually)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (9/9 pytest)", "frontend": "80% — UI rendering & data flow all correct; Alert.alert confirm dialogs fail to render on web, blocking the archive/remove/restore action from the cockpit UI"},
+  "seed_data_creation": "Registered 1 throwaway zero-sub dealer via /api/auth/register and hard-deleted them as part of the test. minitest@example.com was archived + restored during tests and is CONFIRMED restored (active=true, archived_at=null, login works) at end of run.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Rerun `pytest backend/tests/test_archive_dealers.py -v` after any fix to the archive endpoints. The fixture auto-restores minitest@example.com before/after. If the Alert.alert issue is fixed via window.confirm, re-run the mobile playbook and check that clicking remove-dealer-{id} on minitest shows a native window.confirm containing 'Archive' + '3 submission(s)', and clicking Cancel keeps them in the list. Screenshots: /tmp/dealers_default.png (default list), /tmp/dealers_archived_visible.png (toggle ON + minitest archived), /tmp/billing_archived_pill.png (mobile billing with ARCHIVED pill), /tmp/desktop_billing_archived.png (desktop cockpit billing with ARCHIVED pill), /tmp/desktop_cockpit.png (desktop cockpit submissions view).",
+  "test_scenarios_executed": [
+    {"id": 1, "name": "Zero-sub DELETE returns 200 + hard_delete:true; dealer gone from default AND include_archived list", "result": "PASS"},
+    {"id": 2, "name": "DELETE dealer with submissions → 409 with EXACT message; dealer + submissions preserved", "result": "PASS"},
+    {"id": 3, "name": "POST /archive → 200 {archived, archived_at, submissions_preserved:3}; hidden from default, visible with include_archived", "result": "PASS"},
+    {"id": 4, "name": "Archived dealer login → 403 with 'archived' wording (no 'suspend')", "result": "PASS"},
+    {"id": 5, "name": "GET /admin/billing rows have archived:bool + archived_at; archived dealer row shows archived:true, amount preserved", "result": "PASS"},
+    {"id": 6, "name": "POST /restore → 200 restored; default list contains dealer again, login works", "result": "PASS"},
+    {"id": 7, "name": "POST /restore on non-archived dealer → 400", "result": "PASS"},
+    {"id": 8, "name": "Suspend still independent: active=false without archived_at, still in default list, login 403 with 'suspend' wording (not 'archived')", "result": "PASS"},
+    {"id": 9, "name": "Cleanup: minitest ends run active + not archived + login works", "result": "PASS"},
+    {"id": 10, "name": "Mobile dealers.tsx: dealers-toggle-archived exists (default OFF, Show archived text)", "result": "PASS"},
+    {"id": 11, "name": "Mobile: toggle ON turns button cyan with 'Showing archived' label and re-fetches", "result": "PASS"},
+    {"id": 12, "name": "Mobile: header stats '4 registered · 4 active · 1 archived' when 1 archived + toggle ON", "result": "PASS"},
+    {"id": 13, "name": "Mobile: archived card shows ARCHIVED pill + Archived <date> meta + Restore button; hides Edit/PW/toggle", "result": "PASS"},
+    {"id": 14, "name": "Mobile: default list HIDES archived dealer", "result": "PASS"},
+    {"id": 15, "name": "Mobile: dealer-restore-{id} testID present exactly once for the archived dealer", "result": "PASS"},
+    {"id": 16, "name": "Mobile billing: ARCHIVED pill next to archived dealer's name; TOTAL DUE R150 unchanged after archive", "result": "PASS"},
+    {"id": 17, "name": "Desktop cockpit-view-billing: BillingScreen renders with ARCHIVED pill next to Test Dealer", "result": "PASS"},
+    {"id": 18, "name": "Desktop cockpit-view-submissions: admin-filter-incoming default + 3 chips (incoming/priced/archived)", "result": "PASS"},
+    {"id": 19, "name": "Tap remove-dealer-{minitest_id} shows Archive confirm dialog with 'Archive dealer' + '3 submission(s)'", "result": "FAIL — Alert.alert does not render on react-native-web; 0 dialogs, 0 role=dialog nodes"},
+    {"id": 20, "name": "Tap remove-dealer-{zero_sub_id} shows Remove confirm dialog with 'no submissions'", "result": "FAIL — same Alert.alert-on-web limitation"},
+    {"id": 21, "name": "Tap dealer-restore-{id} shows Restore confirm dialog", "result": "FAIL — same Alert.alert-on-web limitation"}
+  ],
+  "rca_of_issue": "React Native's Alert.alert on react-native-web is a silent no-op: it does not open a browser confirm(), does not add any DOM node, and (in the current bundle) does not even log to the console. Dealers.tsx relies on Alert.alert for the archive/remove/restore confirms — the actual /archive, /restore, DELETE API calls live in the Alert.alert onPress callback, which never fires because the user never sees a confirm button. Repro: log in as admin on the web preview, go to Dealers, tap the archive/trash icon on any dealer or the Restore button — nothing happens visually and no request is issued. Mitigation (matches existing dealers.tsx pattern at line 165 which already falls back to window.prompt on web for the password reset): wrap Alert.alert with a Platform.OS === 'web' branch that uses window.confirm(message) and awaits the boolean before dispatching the mutation. Alternatively, replace all three flows with a shared ConfirmModal component (works on both platforms)."
+}

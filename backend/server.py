@@ -260,6 +260,7 @@ async def register(payload: RegisterRequest):
         "password_hash": hash_password(payload.password),
         "role": "dealer",
         "active": True,
+        "archived_at": None,
         "agreement_accepted_at": None,
         "dealer_info": payload.dealer_info.dict(),
         "company_info": payload.company_info.dict(),
@@ -284,12 +285,18 @@ async def login(payload: LoginRequest):
     user = await db.users.find_one({"email": payload.email.lower()})
     if not user or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(401, "Invalid email or password")
-    # Suspended dealers cannot log in. Admins are always allowed.
-    if user.get("role") == "dealer" and user.get("active") is False:
-        raise HTTPException(
-            403,
-            "Your account has been suspended. Please contact Fourbuy to settle any outstanding balance.",
-        )
+    # Suspended or archived dealers cannot log in. Admins are always allowed.
+    if user.get("role") == "dealer":
+        if user.get("archived_at"):
+            raise HTTPException(
+                403,
+                "This dealer account has been archived. Please contact Fourbuy.",
+            )
+        if user.get("active") is False:
+            raise HTTPException(
+                403,
+                "Your account has been suspended. Please contact Fourbuy to settle any outstanding balance.",
+            )
     token = sign_token(user["id"], user["email"], user["role"])
     return {
         "token": token,
@@ -298,6 +305,7 @@ async def login(payload: LoginRequest):
             "email": user["email"],
             "role": user["role"],
             "active": user.get("active", True),
+            "archived_at": user.get("archived_at"),
             "agreement_accepted_at": user.get("agreement_accepted_at"),
             "dealer_info": user.get("dealer_info"),
             "company_info": user.get("company_info"),
@@ -596,15 +604,22 @@ async def market_analysis(sub_id: str, current: dict = Depends(get_current_user)
 
 # ============ Admin dealer management ============
 @api_router.get("/admin/dealers")
-async def admin_list_dealers(current: dict = Depends(require_admin)):
+async def admin_list_dealers(
+    include_archived: bool = False,
+    current: dict = Depends(require_admin),
+):
+    query: dict = {"role": "dealer"}
+    if not include_archived:
+        # Hide archived dealers from the default list (they still exist in the DB).
+        query["archived_at"] = None
     dealers = await db.users.find(
-        {"role": "dealer"},
+        query,
         {"_id": 0, "password_hash": 0},
     ).sort("created_at", -1).to_list(2000)
     for d in dealers:
         d["active"] = d.get("active", True)
+        d["archived_at"] = d.get("archived_at")
         d["submission_count"] = await db.submissions.count_documents({"dealer_id": d["id"]})
-        # Total billable priced submissions (all-time).
         subs = await db.submissions.find(
             {"dealer_id": d["id"], "status": "priced"},
             {"_id": 0, "created_at": 1, "priced_at": 1, "status": 1},
@@ -683,14 +698,55 @@ async def admin_toggle_dealer_active(
 
 @api_router.delete("/admin/dealers/{dealer_id}")
 async def admin_delete_dealer(dealer_id: str, current: dict = Depends(require_admin)):
+    """Hard-delete a dealer.
+
+    Only permitted when the dealer has ZERO submissions. If any submissions
+    exist, the API returns 409 and instructs the caller to use the archive
+    endpoint instead — this protects historical billing records.
+    """
     user = await db.users.find_one({"id": dealer_id})
     if not user:
         raise HTTPException(404, "Dealer not found")
     if user["role"] != "dealer":
         raise HTTPException(400, "Can only remove dealer accounts")
+    sub_count = await db.submissions.count_documents({"dealer_id": dealer_id})
+    if sub_count > 0:
+        raise HTTPException(
+            409,
+            f"Dealer has {sub_count} submission(s). Archive them instead to preserve billing history.",
+        )
     await db.users.delete_one({"id": dealer_id})
-    await db.submissions.delete_many({"dealer_id": dealer_id})
-    return {"status": "deleted"}
+    return {"status": "deleted", "hard_delete": True}
+
+
+@api_router.post("/admin/dealers/{dealer_id}/archive")
+async def admin_archive_dealer(dealer_id: str, current: dict = Depends(require_admin)):
+    """Soft-delete a dealer: hide from lists, block login, PRESERVE all data."""
+    user = await db.users.find_one({"id": dealer_id})
+    if not user or user.get("role") != "dealer":
+        raise HTTPException(404, "Dealer not found")
+    ts = now_utc()
+    await db.users.update_one(
+        {"id": dealer_id},
+        {"$set": {"archived_at": ts, "active": False}},
+    )
+    sub_count = await db.submissions.count_documents({"dealer_id": dealer_id})
+    return {"status": "archived", "archived_at": ts, "submissions_preserved": sub_count}
+
+
+@api_router.post("/admin/dealers/{dealer_id}/restore")
+async def admin_restore_dealer(dealer_id: str, current: dict = Depends(require_admin)):
+    """Restore an archived dealer back to the active list."""
+    user = await db.users.find_one({"id": dealer_id})
+    if not user or user.get("role") != "dealer":
+        raise HTTPException(404, "Dealer not found")
+    if not user.get("archived_at"):
+        raise HTTPException(400, "Dealer is not archived")
+    await db.users.update_one(
+        {"id": dealer_id},
+        {"$set": {"archived_at": None, "active": True}},
+    )
+    return {"status": "restored"}
 
 
 # ============ Admin billing report ============
@@ -755,7 +811,7 @@ async def admin_billing(
     dealer_ids = list(by_dealer.keys())
     dealers = await db.users.find(
         {"id": {"$in": dealer_ids}},
-        {"_id": 0, "id": 1, "email": 1, "dealer_info": 1, "company_info": 1, "active": 1},
+        {"_id": 0, "id": 1, "email": 1, "dealer_info": 1, "company_info": 1, "active": 1, "archived_at": 1},
     ).to_list(2000) if dealer_ids else []
     dealers_by_id = {d["id"]: d for d in dealers}
 
@@ -770,6 +826,8 @@ async def admin_billing(
             "dealer_email": d.get("email", ""),
             "company_name": company.get("company_name", ""),
             "active": d.get("active", True),
+            "archived": bool(d.get("archived_at")),
+            "archived_at": d.get("archived_at"),
             "amount_zar": round(row["billable_count"] * BILLING_FEE_ZAR, 2),
         })
     rows.sort(key=lambda r: r["billable_count"], reverse=True)

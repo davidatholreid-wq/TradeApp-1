@@ -31,6 +31,8 @@ type BillingRow = {
   dealer_email: string;
   company_name: string;
   active: boolean;
+  archived?: boolean;
+  archived_at?: string | null;
   priced_count: number;
   billable_count: number;
   amount_zar: number;
@@ -185,7 +187,11 @@ export default function BillingScreen() {
                 <View style={{ flex: 1 }}>
                   <View style={styles.nameLine}>
                     <Text style={styles.dealerName}>{row.dealer_name || "(deleted dealer)"}</Text>
-                    {!row.active ? (
+                    {row.archived ? (
+                      <View style={styles.archivedPill}>
+                        <Text style={styles.archivedPillText}>ARCHIVED</Text>
+                      </View>
+                    ) : !row.active ? (
                       <View style={styles.suspendPill}>
                         <Text style={styles.suspendPillText}>SUSPENDED</Text>
                       </View>
@@ -327,6 +333,15 @@ const styles = StyleSheet.create({
     borderColor: colors.danger + "55",
   },
   suspendPillText: { color: colors.danger, fontSize: 9, fontWeight: "800", letterSpacing: 1 },
+  archivedPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+    backgroundColor: colors.textDisabled + "22",
+    borderWidth: 1,
+    borderColor: colors.textDisabled + "55",
+  },
+  archivedPillText: { color: colors.textSecondary, fontSize: 9, fontWeight: "800", letterSpacing: 1 },
   dealerCompany: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
   dealerEmail: { color: colors.textDisabled, fontSize: 11, marginTop: 1 },
   amountBox: { alignItems: "flex-end" },
