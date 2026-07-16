@@ -173,14 +173,23 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
 
   const averageRating = useMemo(() => {
     if (!selected) return null;
-    const pillars = [
-      selected.mechanical_condition,
-      selected.cosmetic_condition,
-      selected.interior_condition,
-      selected.history_condition,
-    ].filter((x): x is number => typeof x === "number" && x > 0);
-    if (pillars.length > 0) {
-      return pillars.reduce((a, b) => a + b, 0) / pillars.length;
+    // Weighted overall condition: Mechanical 30% · Cosmetic 25% · Interior 25% · History 20%.
+    const m = selected.mechanical_condition;
+    const c = selected.cosmetic_condition;
+    const i = selected.interior_condition;
+    const h = selected.history_condition;
+    if ([m, c, i, h].every((x) => typeof x === "number" && x > 0)) {
+      return (m as number) * 0.3 + (c as number) * 0.25 + (i as number) * 0.25 + (h as number) * 0.2;
+    }
+    const partial: [number, number][] = [
+      [m as number, 0.3],
+      [c as number, 0.25],
+      [i as number, 0.25],
+      [h as number, 0.2],
+    ].filter(([v]) => typeof v === "number" && v > 0) as [number, number][];
+    if (partial.length > 0) {
+      const totalW = partial.reduce((s, [, w]) => s + w, 0);
+      return partial.reduce((s, [v, w]) => s + v * w, 0) / totalW;
     }
     const legacy = [
       selected.exterior_condition,
@@ -540,10 +549,10 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                   <View style={styles.heroBreakdown}>
                     {typeof selected.mechanical_condition === "number" ? (
                       <>
-                        <HeroPill label="MECH" value={selected.mechanical_condition} />
-                        <HeroPill label="COSM" value={selected.cosmetic_condition} />
-                        <HeroPill label="INT" value={selected.interior_condition} />
-                        <HeroPill label="HIST" value={selected.history_condition} />
+                        <HeroPill label="MECH · 30%" value={selected.mechanical_condition} />
+                        <HeroPill label="COSM · 25%" value={selected.cosmetic_condition} />
+                        <HeroPill label="INT · 25%" value={selected.interior_condition} />
+                        <HeroPill label="HIST · 20%" value={selected.history_condition} />
                       </>
                     ) : (
                       <>

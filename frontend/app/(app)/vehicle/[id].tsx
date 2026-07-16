@@ -151,23 +151,31 @@ export default function VehicleDetail() {
 
   const averageRating = useMemo(() => {
     if (!sub) return null;
-    // Prefer the four new pillars; fall back to legacy exterior/interior/tyre
-    // for older submissions that predate the pillar rewrite.
-    const pillars = [
-      sub.mechanical_condition,
-      sub.cosmetic_condition,
-      sub.interior_condition,
-      sub.history_condition,
-    ].filter((x): x is number => typeof x === "number" && x > 0);
-    if (pillars.length === 4) {
-      return pillars.reduce((a, b) => a + b, 0) / pillars.length;
+    // New submissions use the four weighted pillars. Weightings:
+    //   Mechanical 30% · Cosmetic 25% · Interior 25% · History 20%.
+    const m = sub.mechanical_condition;
+    const c = sub.cosmetic_condition;
+    const i = sub.interior_condition;
+    const h = sub.history_condition;
+    if ([m, c, i, h].every((x) => typeof x === "number" && x > 0)) {
+      return (m as number) * 0.3 + (c as number) * 0.25 + (i as number) * 0.25 + (h as number) * 0.2;
     }
+    // Partial pillar data → weighted score over just the pillars we have,
+    // renormalising the weights so they still sum to 1.
+    const partial: [number, number][] = [
+      [m as number, 0.3],
+      [c as number, 0.25],
+      [i as number, 0.25],
+      [h as number, 0.2],
+    ].filter(([v]) => typeof v === "number" && v > 0) as [number, number][];
+    if (partial.length > 0) {
+      const totalW = partial.reduce((s, [, w]) => s + w, 0);
+      return partial.reduce((s, [v, w]) => s + v * w, 0) / totalW;
+    }
+    // Legacy submissions (pre-pillar rewrite) fall back to a simple average.
     const legacy = [sub.exterior_condition, sub.interior_condition, sub.tyre_condition].filter(
       (x): x is number => typeof x === "number" && x > 0
     );
-    if (pillars.length > 0) {
-      return pillars.reduce((a, b) => a + b, 0) / pillars.length;
-    }
     if (legacy.length === 0) return null;
     return legacy.reduce((a, b) => a + b, 0) / legacy.length;
   }, [sub]);
@@ -280,10 +288,10 @@ export default function VehicleDetail() {
             <View style={styles.heroBreakdown}>
               {typeof sub.mechanical_condition === "number" ? (
                 <>
-                  <HeroPill label="MECH" value={sub.mechanical_condition} />
-                  <HeroPill label="COSM" value={sub.cosmetic_condition} />
-                  <HeroPill label="INT" value={sub.interior_condition} />
-                  <HeroPill label="HIST" value={sub.history_condition} />
+                  <HeroPill label="MECH · 30%" value={sub.mechanical_condition} />
+                  <HeroPill label="COSM · 25%" value={sub.cosmetic_condition} />
+                  <HeroPill label="INT · 25%" value={sub.interior_condition} />
+                  <HeroPill label="HIST · 20%" value={sub.history_condition} />
                 </>
               ) : (
                 <>

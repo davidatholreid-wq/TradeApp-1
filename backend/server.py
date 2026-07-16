@@ -537,9 +537,9 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         "engine_number": payload.engine_number or "TBC",
         "colour": payload.colour,
         "license_disk_data": payload.license_disk_data,
-        # Condition — 4 pillars (mechanical, cosmetic, interior, history)
-        # form the overall condition average. exterior/tyre kept for legacy
-        # compatibility with older submissions.
+        # Condition — 4 weighted pillars form the overall condition score:
+        #   Mechanical 30% · Cosmetic 25% · Interior 25% · History 20%.
+        # exterior/tyre kept for legacy compatibility with older submissions.
         "mechanical_condition": payload.mechanical_condition,
         "cosmetic_condition": payload.cosmetic_condition,
         "interior_condition": payload.interior_condition,
@@ -547,15 +547,12 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         "exterior_condition": payload.exterior_condition,
         "tyre_condition": payload.tyre_condition,
         "windscreen_condition": payload.windscreen_condition,
-        # Legacy analytics alias — average of the four pillars, rounded.
+        # Legacy analytics alias — rounded weighted score.
         "condition": round(
-            (
-                payload.mechanical_condition
-                + payload.cosmetic_condition
-                + payload.interior_condition
-                + payload.history_condition
-            )
-            / 4
+            payload.mechanical_condition * 0.30
+            + payload.cosmetic_condition * 0.25
+            + payload.interior_condition * 0.25
+            + payload.history_condition * 0.20
         ),
         # Service history
         "service_history": payload.service_history,

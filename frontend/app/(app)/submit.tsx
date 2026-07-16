@@ -374,7 +374,8 @@ export default function SubmitVehicle() {
 
           <Text style={styles.sectionTitle}>CONDITION</Text>
           <Text style={styles.sectionHint}>
-            Four pillars. The overall condition rating is the average of these.
+            Four pillars — weighted average forms the overall condition score
+            (Mechanical 30% · Cosmetic 25% · Interior 25% · History 20%).
           </Text>
 
           <View style={styles.ratingHeader}>
