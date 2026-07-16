@@ -13,18 +13,18 @@ type Props = {
 };
 
 const HEIGHTS: Record<NonNullable<Props["size"]>, number> = {
-  // Values include a small allowance for the built-in black padding in the
-  // 1:1 source PNG — the visible wordmark ends up roughly 70% of these.
-  xs: 44,
-  sm: 60,
-  md: 84,
-  lg: 120,
-  xl: 180,
+  // Height-driven sizing for the landscape wordmark. Values chosen so the
+  // logo reads comfortably at each callsite without dominating the layout.
+  xs: 22,
+  sm: 30,
+  md: 44,
+  lg: 64,
+  xl: 96,
 };
 
-// The source PNG is 1:1 with black padding around the centred wordmark, so
-// we render it as a square and let resizeMode="contain" handle scaling.
-const ASPECT = 1;
+// The source PNG is landscape 617×215 (aspect ~2.87:1). Height is the input;
+// width is derived so the wordmark never stretches regardless of container.
+const ASPECT = 617 / 215;
 
 // Single source of truth for rendering the Fourbuy wordmark. Keep every logo
 // insertion in the app routed through this component so a future rebrand is

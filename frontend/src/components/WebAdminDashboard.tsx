@@ -1005,7 +1005,7 @@ const styles = StyleSheet.create({
   },
   topbarLeft: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   topbarRight: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  logo: { width: 100, height: 100, marginLeft: -14, marginRight: -14 },
+  logo: { width: 168, height: 58 },
   divider: { width: 1, height: 30, backgroundColor: colors.border },
   topbarSub: {
     color: colors.textSecondary,

@@ -144,7 +144,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     marginBottom: spacing.xs,
   },
-  logo: { width: 200, height: 200, marginBottom: -30, marginTop: -20 },
+  logo: { width: 300, height: 104 },
   subheading: {
     color: colors.textSecondary,
     fontFamily: fonts.heading,
