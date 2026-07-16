@@ -329,11 +329,14 @@ agent_communication:
       redesigned profile.tsx banner.
   - agent: "testing"
     message: |
-      Iteration 12 regression: all focus tasks PASS. Cockpit shows Dealers tab and
-      renders the DealersScreen inline without hook crashes. Vertical DetailRow list
-      renders in the exact spec order on both mobile and desktop. Typography softened
-      as expected. Backend dealer-photos suite still 22/22 green. Note: legacy seeds
-      FB-000001/FB-000002 predate the new schema fields (fuel/transmission/exterior
-      etc.) so those rows show em-dash — not a code regression. React-native-web
-      shadow* deprecation warnings still present but harmless.
+      Iteration 13 — Submit-Vehicle UX overhaul verified. Backend 21/21 pass
+      (new fields, coercion, legacy windscreen values still accepted). Frontend
+      6/6 flows pass on mobile — ratings default null, colour-coded dots
+      (RED/YELLOW/GREEN per spec), windscreen shows exactly Perfect/Chip Repairs/
+      Needs Replacement, MonthYearPicker with July+2025 → "July 2025" + TBC
+      fallback works, Paint pills and Accident multi-check work end-to-end and
+      surface on admin detail views (Damage Types + Paint Quality rows).
+      Stale legacy test file /app/backend/tests/test_billing_dealers.py has
+      pre-existing failures unrelated to this iteration — non-blocking.
+      Report: /app/test_reports/iteration_13.json.
 

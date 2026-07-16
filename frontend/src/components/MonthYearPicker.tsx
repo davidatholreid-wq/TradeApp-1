@@ -101,7 +101,7 @@ export default function MonthYearPicker({
 
           <View style={styles.wheels}>
             {/* Highlight bar behind both wheels */}
-            <View pointerEvents="none" style={styles.selectionBar} />
+            <View style={styles.selectionBar} />
 
             {/* Month wheel */}
             <View style={styles.wheel}>
@@ -254,6 +254,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: colors.borderLight,
     backgroundColor: "rgba(255,255,255,0.03)",
+    pointerEvents: "none",
   },
   item: { height: ITEM_HEIGHT, alignItems: "center", justifyContent: "center" },
   itemText: { fontSize: 18, textAlign: "center" },
