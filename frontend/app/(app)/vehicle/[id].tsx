@@ -24,6 +24,7 @@ import { useAuth } from "@/src/context/AuthContext";
 import { buildWhatsappUrl, buildDealerMessage } from "@/src/utils/whatsapp";
 import { decodeLicenseDisk } from "@/src/utils/licenseDisk";
 import PhotoCarousel, { CarouselPhoto } from "@/src/components/PhotoCarousel";
+import ConditionRatingInfoModal from "@/src/components/ConditionRatingInfoModal";
 
 type ReconItem = { label: string; amount_zar: number };
 
@@ -124,6 +125,7 @@ export default function VehicleDetail() {
   const [notesInput, setNotesInput] = useState("");
   const [submittingPrice, setSubmittingPrice] = useState(false);
   const [carouselIdx, setCarouselIdx] = useState<number | null>(null);
+  const [conditionInfoOpen, setConditionInfoOpen] = useState(false);
   const [analysing, setAnalysing] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -274,36 +276,6 @@ export default function VehicleDetail() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        {/* Hero: average condition rating */}
-        {averageRating !== null ? (
-          <View style={styles.heroBox} testID="avg-rating-hero">
-            <Text style={styles.heroLabel}>OVERALL CONDITION</Text>
-            <View style={styles.heroRow}>
-              <Text style={styles.heroValue}>{averageRating.toFixed(1)}</Text>
-              <Text style={styles.heroOutOf}>/ 10</Text>
-            </View>
-            <View style={styles.heroBar}>
-              <View style={[styles.heroBarFill, { width: `${(averageRating / 10) * 100}%` }]} />
-            </View>
-            <View style={styles.heroBreakdown}>
-              {typeof sub.mechanical_condition === "number" ? (
-                <>
-                  <HeroPill label="MECH · 30%" value={sub.mechanical_condition} />
-                  <HeroPill label="COSM · 25%" value={sub.cosmetic_condition} />
-                  <HeroPill label="INT · 25%" value={sub.interior_condition} />
-                  <HeroPill label="HIST · 20%" value={sub.history_condition} />
-                </>
-              ) : (
-                <>
-                  <HeroPill label="EXT" value={sub.exterior_condition} />
-                  <HeroPill label="INT" value={sub.interior_condition} />
-                  <HeroPill label="TYRES" value={sub.tyre_condition} />
-                </>
-              )}
-            </View>
-          </View>
-        ) : null}
-
         {/* Status banner */}
         {sub.status === "priced" ? (
           <View style={styles.priceBanner} testID="price-banner">
@@ -478,6 +450,49 @@ export default function VehicleDetail() {
             );
           })}
         </View>
+
+        {/* Overall condition hero — moved below Photos per spec.
+            Tap to open the Condition Rating Guide. */}
+        {averageRating !== null ? (
+          <TouchableOpacity
+            testID="avg-rating-hero"
+            style={styles.heroBox}
+            activeOpacity={0.85}
+            onPress={() => setConditionInfoOpen(true)}
+            accessibilityLabel="Tap to view condition rating guide"
+          >
+            <View style={styles.heroTopRow}>
+              <Text style={styles.heroLabel}>OVERALL CONDITION</Text>
+              <View style={styles.heroInfoBtn}>
+                <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
+                <Text style={styles.heroInfoText}>Guide</Text>
+              </View>
+            </View>
+            <View style={styles.heroRow}>
+              <Text style={styles.heroValue}>{averageRating.toFixed(1)}</Text>
+              <Text style={styles.heroOutOf}>/ 10</Text>
+            </View>
+            <View style={styles.heroBar}>
+              <View style={[styles.heroBarFill, { width: `${(averageRating / 10) * 100}%` }]} />
+            </View>
+            <View style={styles.heroBreakdown}>
+              {typeof sub.mechanical_condition === "number" ? (
+                <>
+                  <HeroPill label="MECH" value={sub.mechanical_condition} />
+                  <HeroPill label="COSM" value={sub.cosmetic_condition} />
+                  <HeroPill label="INT" value={sub.interior_condition} />
+                  <HeroPill label="HIST" value={sub.history_condition} />
+                </>
+              ) : (
+                <>
+                  <HeroPill label="EXT" value={sub.exterior_condition} />
+                  <HeroPill label="INT" value={sub.interior_condition} />
+                  <HeroPill label="TYRES" value={sub.tyre_condition} />
+                </>
+              )}
+            </View>
+          </TouchableOpacity>
+        ) : null}
 
         {/* AI Market Analysis */}
         <View style={styles.analysisHeader}>
@@ -759,6 +774,12 @@ export default function VehicleDetail() {
         visible={carouselIdx !== null}
         onClose={() => setCarouselIdx(null)}
       />
+
+      {/* Condition rating breakdown modal */}
+      <ConditionRatingInfoModal
+        visible={conditionInfoOpen}
+        onClose={() => setConditionInfoOpen(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -870,8 +891,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     letterSpacing: 0.6,
+  },
+  heroTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    width: "100%",
     marginBottom: spacing.sm,
   },
+  heroInfoBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  heroInfoText: { color: colors.textSecondary, fontSize: 11, fontWeight: "700", letterSpacing: 0.4 },
   heroRow: { flexDirection: "row", alignItems: "baseline" },
   heroValue: {
     color: colors.text,

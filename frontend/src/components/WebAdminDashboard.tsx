@@ -17,6 +17,7 @@ import { buildWhatsappUrl, buildDealerMessage } from "@/src/utils/whatsapp";
 import BillingScreen from "@/app/(app)/billing";
 import DealersScreen from "@/app/(app)/dealers";
 import PhotoCarousel, { CarouselPhoto } from "@/src/components/PhotoCarousel";
+import ConditionRatingInfoModal from "@/src/components/ConditionRatingInfoModal";
 
 type ReconItem = { label: string; amount_zar: number };
 
@@ -117,6 +118,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
   const [analysing, setAnalysing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [carouselIdx, setCarouselIdx] = useState<number | null>(null);
+  const [conditionInfoOpen, setConditionInfoOpen] = useState(false);
 
   const loadList = useCallback(async () => {
     try {
@@ -533,38 +535,6 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 </TouchableOpacity>
               </View>
 
-              {/* Hero: Average Condition Rating */}
-              {averageRating !== null ? (
-                <View style={styles.heroBox} testID="admin-avg-rating-hero">
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.heroLabel}>OVERALL CONDITION</Text>
-                    <View style={styles.heroRow}>
-                      <Text style={styles.heroValue}>{averageRating.toFixed(1)}</Text>
-                      <Text style={styles.heroOutOf}>/ 10</Text>
-                    </View>
-                    <View style={styles.heroBar}>
-                      <View style={[styles.heroBarFill, { width: `${(averageRating / 10) * 100}%` }]} />
-                    </View>
-                  </View>
-                  <View style={styles.heroBreakdown}>
-                    {typeof selected.mechanical_condition === "number" ? (
-                      <>
-                        <HeroPill label="MECH · 30%" value={selected.mechanical_condition} />
-                        <HeroPill label="COSM · 25%" value={selected.cosmetic_condition} />
-                        <HeroPill label="INT · 25%" value={selected.interior_condition} />
-                        <HeroPill label="HIST · 20%" value={selected.history_condition} />
-                      </>
-                    ) : (
-                      <>
-                        <HeroPill label="EXT" value={selected.exterior_condition} />
-                        <HeroPill label="INT" value={selected.interior_condition} />
-                        <HeroPill label="TYRES" value={selected.tyre_condition} />
-                      </>
-                    )}
-                  </View>
-                </View>
-              ) : null}
-
               {/* Vehicle Details — vertical spec list, easy to scan top-to-bottom */}
               <Text style={styles.groupTitle}>Vehicle Details</Text>
               <View style={styles.detailsList}>
@@ -712,6 +682,49 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                   );
                 })}
               </View>
+
+              {/* Overall condition hero — under Photos, tap to open the guide. */}
+              {averageRating !== null ? (
+                <TouchableOpacity
+                  testID="admin-avg-rating-hero"
+                  activeOpacity={0.9}
+                  onPress={() => setConditionInfoOpen(true)}
+                  style={styles.heroBox}
+                >
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.heroTopRow}>
+                      <Text style={styles.heroLabel}>OVERALL CONDITION</Text>
+                      <View style={styles.heroInfoBtn}>
+                        <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
+                        <Text style={styles.heroInfoText}>Guide</Text>
+                      </View>
+                    </View>
+                    <View style={styles.heroRow}>
+                      <Text style={styles.heroValue}>{averageRating.toFixed(1)}</Text>
+                      <Text style={styles.heroOutOf}>/ 10</Text>
+                    </View>
+                    <View style={styles.heroBar}>
+                      <View style={[styles.heroBarFill, { width: `${(averageRating / 10) * 100}%` }]} />
+                    </View>
+                  </View>
+                  <View style={styles.heroBreakdown}>
+                    {typeof selected.mechanical_condition === "number" ? (
+                      <>
+                        <HeroPill label="MECH" value={selected.mechanical_condition} />
+                        <HeroPill label="COSM" value={selected.cosmetic_condition} />
+                        <HeroPill label="INT" value={selected.interior_condition} />
+                        <HeroPill label="HIST" value={selected.history_condition} />
+                      </>
+                    ) : (
+                      <>
+                        <HeroPill label="EXT" value={selected.exterior_condition} />
+                        <HeroPill label="INT" value={selected.interior_condition} />
+                        <HeroPill label="TYRES" value={selected.tyre_condition} />
+                      </>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              ) : null}
 
               {/* Dealer */}
               <View style={styles.dealerBox}>
@@ -909,6 +922,10 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
         initialIndex={carouselIdx ?? 0}
         visible={carouselIdx !== null}
         onClose={() => setCarouselIdx(null)}
+      />
+      <ConditionRatingInfoModal
+        visible={conditionInfoOpen}
+        onClose={() => setConditionInfoOpen(false)}
       />
     </View>
   );
@@ -1182,8 +1199,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     letterSpacing: 0.6,
+  },
+  heroTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: spacing.sm,
   },
+  heroInfoBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  heroInfoText: { color: colors.textSecondary, fontSize: 11, fontWeight: "700", letterSpacing: 0.4 },
   heroRow: { flexDirection: "row", alignItems: "baseline" },
   heroValue: {
     color: colors.text,
