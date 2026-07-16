@@ -17,12 +17,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { storage } from "@/src/utils/storage";
-import { SCAN_BUFFER_KEY } from "./scan";
+import { SCAN_BUFFER_KEY, SCAN_PARSED_KEY } from "./scan";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { colors, spacing, radius, fonts } from "@/src/theme";
 import { apiFetch } from "@/src/api";
 import OptionPicker, { Option } from "@/src/components/OptionPicker";
+import { decodeLicenseDisk, LicenseDiskInfo } from "@/src/utils/licenseDisk";
 
 type PhotoSlot = "front" | "side_right" | "rear" | "side_left" | "interior";
 const PHOTO_LABELS: Record<PhotoSlot, string> = {
@@ -48,6 +49,7 @@ export default function SubmitVehicle() {
   const [accidentDamage, setAccidentDamage] = useState(false);
   const [colour, setColour] = useState("");
   const [licenseDisk, setLicenseDisk] = useState<string | null>(null);
+  const [licenseDiskInfo, setLicenseDiskInfo] = useState<LicenseDiskInfo | null>(null);
   const [photos, setPhotos] = useState<Record<PhotoSlot, string | null>>({
     front: null,
     side_right: null,
@@ -64,16 +66,50 @@ export default function SubmitVehicle() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Try to auto-match a scanned Make against the DB and, if unique, preload it.
+  const autoMatchMake = useCallback(async (rawMakeName: string) => {
+    if (!rawMakeName) return;
+    try {
+      const data = await apiFetch("/api/vehicles/makes");
+      const items: Option[] = data.makes || [];
+      const needle = rawMakeName.toUpperCase().trim();
+      // Exact match first, then startsWith, then contains.
+      const match =
+        items.find((m) => m.name.toUpperCase() === needle) ||
+        items.find((m) => m.name.toUpperCase().startsWith(needle)) ||
+        items.find((m) => m.name.toUpperCase().includes(needle));
+      if (match) setMake(match);
+    } catch {
+      /* best-effort */
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       (async () => {
         const buf = await storage.getItem<string>(SCAN_BUFFER_KEY, "");
         if (buf) {
           setLicenseDisk(buf);
+          const parsedStr = await storage.getItem<string>(SCAN_PARSED_KEY, "");
+          let parsed: LicenseDiskInfo | null = null;
+          if (parsedStr) {
+            try {
+              parsed = JSON.parse(parsedStr) as LicenseDiskInfo;
+            } catch {
+              parsed = decodeLicenseDisk(buf);
+            }
+          } else {
+            parsed = decodeLicenseDisk(buf);
+          }
+          setLicenseDiskInfo(parsed);
+          // Auto-fill known form fields (non-destructive: only fills when empty).
+          if (parsed?.colour) setColour((prev) => prev || parsed!.colour!);
+          if (parsed?.make) autoMatchMake(parsed.make);
           await storage.removeItem(SCAN_BUFFER_KEY);
+          await storage.removeItem(SCAN_PARSED_KEY);
         }
       })();
-    }, [])
+    }, [autoMatchMake])
   );
 
   const openMakePicker = useCallback(async () => {
@@ -376,15 +412,67 @@ export default function SubmitVehicle() {
           >
             <Ionicons name="barcode-outline" size={24} color={colors.primary} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.scanBtnText}>{licenseDisk ? "Scanned" : "Scan license disk barcode"}</Text>
+              <Text style={styles.scanBtnText}>
+                {licenseDisk ? (licenseDiskInfo?.vin ? "Decoded" : "Scanned") : "Scan license disk barcode"}
+              </Text>
               {licenseDisk ? (
                 <Text style={styles.scanBtnHint} numberOfLines={1}>
-                  {licenseDisk.substring(0, 40)}...
+                  Tap to re-scan
                 </Text>
               ) : null}
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
           </TouchableOpacity>
+
+          {licenseDiskInfo && (licenseDiskInfo.vin || licenseDiskInfo.make || licenseDiskInfo.licenceNo) ? (
+            <View style={styles.diskCard} testID="license-disk-decoded-card">
+              <View style={styles.diskCardHeader}>
+                <Ionicons name="shield-checkmark" size={16} color={colors.primary} />
+                <Text style={styles.diskCardTitle}>Decoded from disc</Text>
+                <TouchableOpacity
+                  testID="clear-license-disk"
+                  onPress={() => {
+                    setLicenseDisk(null);
+                    setLicenseDiskInfo(null);
+                  }}
+                  style={styles.diskClearBtn}
+                >
+                  <Ionicons name="close" size={14} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+              <View style={styles.diskGrid}>
+                {licenseDiskInfo.licenceNo ? (
+                  <DiskField label="Licence No" value={licenseDiskInfo.licenceNo} />
+                ) : null}
+                {licenseDiskInfo.vehicleRegisterNo ? (
+                  <DiskField label="Register No" value={licenseDiskInfo.vehicleRegisterNo} />
+                ) : null}
+                {licenseDiskInfo.make ? <DiskField label="Make" value={licenseDiskInfo.make} /> : null}
+                {licenseDiskInfo.model ? <DiskField label="Model" value={licenseDiskInfo.model} /> : null}
+                {licenseDiskInfo.colour ? (
+                  <DiskField label="Colour" value={licenseDiskInfo.colour} />
+                ) : null}
+                {licenseDiskInfo.vin ? (
+                  <DiskField label="VIN" value={licenseDiskInfo.vin} mono full />
+                ) : null}
+                {licenseDiskInfo.engineNo ? (
+                  <DiskField label="Engine No" value={licenseDiskInfo.engineNo} mono />
+                ) : null}
+                {licenseDiskInfo.vehicleDescription ? (
+                  <DiskField label="Description" value={licenseDiskInfo.vehicleDescription} full />
+                ) : null}
+                {licenseDiskInfo.expiryDate ? (
+                  <DiskField label="Expires" value={licenseDiskInfo.expiryDate} mono />
+                ) : null}
+                {licenseDiskInfo.licenceDiscNo ? (
+                  <DiskField label="Disc No" value={licenseDiskInfo.licenceDiscNo} mono full />
+                ) : null}
+              </View>
+              <Text style={styles.diskHint}>
+                Values auto-filled where possible — please verify against the disc before submitting.
+              </Text>
+            </View>
+          ) : null}
 
           {/* Photos */}
           <Text style={styles.sectionTitle}>Photos (5 required)</Text>
@@ -478,6 +566,33 @@ export default function SubmitVehicle() {
         testID="derivative-picker"
       />
     </SafeAreaView>
+  );
+}
+
+function DiskField({
+  label,
+  value,
+  mono,
+  full,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  full?: boolean;
+}) {
+  return (
+    <View style={[styles.diskField, full && { width: "100%" }]}>
+      <Text style={styles.diskFieldLabel}>{label.toUpperCase()}</Text>
+      <Text
+        style={[
+          styles.diskFieldValue,
+          mono && { fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 13 },
+        ]}
+        numberOfLines={2}
+      >
+        {value}
+      </Text>
+    </View>
   );
 }
 
@@ -577,6 +692,69 @@ const styles = StyleSheet.create({
   },
   scanBtnText: { color: colors.text, fontSize: 15, fontWeight: "600" },
   scanBtnHint: { color: colors.textSecondary, fontSize: 12, marginTop: 2, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
+
+  diskCard: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.primary + "55",
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  diskCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: spacing.sm,
+  },
+  diskCardTitle: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+  diskClearBtn: {
+    padding: 4,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  diskGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  diskField: {
+    minWidth: "45%",
+    flexGrow: 1,
+    flexShrink: 1,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    backgroundColor: colors.paper,
+  },
+  diskFieldLabel: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  diskFieldValue: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  diskHint: {
+    color: colors.textDisabled,
+    fontSize: 11,
+    fontStyle: "italic",
+    marginTop: 4,
+  },
   photoGrid: {
     flexDirection: "row",
     flexWrap: "wrap",

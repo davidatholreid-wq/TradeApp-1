@@ -22,6 +22,7 @@ import { colors, spacing, radius, fonts } from "@/src/theme";
 import { apiFetch } from "@/src/api";
 import { useAuth } from "@/src/context/AuthContext";
 import { buildWhatsappUrl, buildDealerMessage } from "@/src/utils/whatsapp";
+import { decodeLicenseDisk } from "@/src/utils/licenseDisk";
 
 type Submission = {
   id: string;
@@ -413,9 +414,49 @@ export default function VehicleDetail() {
         {sub.license_disk_data ? (
           <>
             <Text style={styles.sectionTitle}>License Disk Data</Text>
-            <View style={styles.diskBox}>
-              <Text style={styles.diskText}>{sub.license_disk_data}</Text>
-            </View>
+            {(() => {
+              const info = decodeLicenseDisk(sub.license_disk_data!);
+              const hasFields =
+                info.vin ||
+                info.make ||
+                info.model ||
+                info.licenceNo ||
+                info.vehicleRegisterNo ||
+                info.engineNo ||
+                info.expiryDate ||
+                info.licenceDiscNo;
+              if (!hasFields) {
+                return (
+                  <View style={styles.diskBox}>
+                    <Text style={styles.diskText}>{sub.license_disk_data}</Text>
+                  </View>
+                );
+              }
+              const rows: Array<[string, string | undefined]> = [
+                ["Licence No", info.licenceNo],
+                ["Register No", info.vehicleRegisterNo],
+                ["Make", info.make],
+                ["Model", info.model],
+                ["Colour", info.colour],
+                ["Description", info.vehicleDescription],
+                ["VIN", info.vin],
+                ["Engine No", info.engineNo],
+                ["Expires", info.expiryDate],
+                ["Disc No", info.licenceDiscNo],
+              ];
+              return (
+                <View style={styles.diskDecodedBox}>
+                  {rows
+                    .filter(([, v]) => !!v)
+                    .map(([label, value]) => (
+                      <View key={label} style={styles.diskDecodedRow}>
+                        <Text style={styles.diskDecodedLabel}>{label}</Text>
+                        <Text style={styles.diskDecodedValue}>{value}</Text>
+                      </View>
+                    ))}
+                </View>
+              );
+            })()}
           </>
         ) : null}
 
@@ -632,6 +673,38 @@ const styles = StyleSheet.create({
   photoLabel: { color: "#fff", fontSize: 12, fontWeight: "600" },
   diskBox: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
   diskText: { color: colors.text, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 12 },
+  diskDecodedBox: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.primary + "55",
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: 6,
+  },
+  diskDecodedRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: spacing.md,
+  },
+  diskDecodedLabel: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    minWidth: 100,
+  },
+  diskDecodedValue: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "700",
+    flex: 1,
+    textAlign: "right",
+  },
   analysisHeader: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", marginTop: spacing.lg, marginBottom: spacing.sm },
   analysisTs: { color: colors.textDisabled, fontSize: 11, marginTop: 2 },
   analysisBtn: {

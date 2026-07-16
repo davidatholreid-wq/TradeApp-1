@@ -6,8 +6,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { colors, spacing, radius } from "@/src/theme";
 import { storage } from "@/src/utils/storage";
+import { decodeLicenseDisk, summariseLicenseDisk } from "@/src/utils/licenseDisk";
 
 export const SCAN_BUFFER_KEY = "app.scan.buffer";
+export const SCAN_PARSED_KEY = "app.scan.parsed";
 
 export default function ScanScreen() {
   const router = useRouter();
@@ -24,6 +26,15 @@ export default function ScanScreen() {
     if (scanned) return;
     setScanned(data);
     await storage.setItem(SCAN_BUFFER_KEY, data);
+    try {
+      const parsed = decodeLicenseDisk(data);
+      // storage.setItem is JSON-serialised so we stringify the object manually
+      // — storage supports string/number/bool/null; we serialise to string.
+      await storage.setItem(SCAN_PARSED_KEY, JSON.stringify(parsed));
+      console.log("License disk parsed:", summariseLicenseDisk(parsed));
+    } catch (e) {
+      console.log("decodeLicenseDisk failed", e);
+    }
     setTimeout(() => router.back(), 600);
   };
 

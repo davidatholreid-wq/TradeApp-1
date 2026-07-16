@@ -1,0 +1,45 @@
+{
+  "summary": "Frontend-only verification of the new SA License Disc PDF417 decoder + auto-fill + admin decoded grid. Executed 8 scenarios on the deployed Expo web preview at 390x844 (mobile) and confirmed all core behaviour works. Decoded card renders every expected field, colour auto-fills, clear button restores initial state, /(app)/scan opens without crash, non-license input degrades gracefully, admin vehicle detail shows the decoded KV grid (not the raw pipe blob). Login/logout regression and root-refresh redirect also still work. Auto-match of MINI did not select a make — that is expected because MINI is not in the seeded /api/vehicles/makes list (only 12 makes seeded).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "OPTIONAL: seed 'MINI' (and other common SA makes: Land Rover, Volvo, Porsche, Lexus, GWM, Haval, Chery, Mahindra, Isuzu, Mitsubishi) in the DB so the Make auto-match on scan actually fires for real dealer scans. Currently only 12 makes are seeded so the auto-match will silently miss many valid discs.",
+    "OPTIONAL: DiskField grid currently uses only DECODED FROM DISC card header + a testID on the outer view. If future tests want to assert individual field values, add testIDs like license-disk-field-{vin|make|model|...} on each DiskField Text — the innerText assertion works today but per-field testIDs would be more robust.",
+    "MINOR: the console shows two dev warnings on every route load — '[expo-notifications] Listening to push token changes is not yet fully supported on web.' and 'props.pointerEvents is deprecated. Use style.pointerEvents'. Not blocking, but the pointerEvents one is inside your own JSX (or a dep) and should be migrated to style.pointerEvents."
+  ],
+  "critical_code_review_comments": [
+    "decodeLicenseDisk is well-defended: guards on non-string input, URL-decode fallback, best-effort regex anchors, every field optional. Nothing crashes on non-disc strings (verified with 'random text no barcode' → no decoded card, no exception).",
+    "storage.setItem stores JSON.stringify(value). The test seeding pattern in the review request (localStorage.setItem('app.scan.buffer', JSON.stringify(RAW))) matches this correctly — verified end-to-end.",
+    "submit.tsx auto-fills colour only when it's empty (non-destructive) — correct behaviour on re-scan.",
+    "vehicle/[id].tsx correctly falls back to raw disk_text when decode returns zero fields (hasFields === false). Both branches tested."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (skipped per request)",
+    "frontend": "100% (8/8 scenarios pass)"
+  },
+  "seed_data_creation": "None — used existing seeded submissions FB-000002 and FB-000003 (both have license_disk_data). FB-000003 has a real-looking pipe-delimited disc string and decodes cleanly to Toyota Land Cruiser 200 with plate JC29JSGP, VIN JTMHV05J204279840, disc no 4062006H7M4L, expiry 2027-06-30.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Login as dealer minitest@example.com / Mini1234! and admin admin@fourbuy.co.za / admin123. To simulate a scan on web: window.localStorage.setItem('app.scan.buffer', JSON.stringify(RAW_STRING)) then navigate to /submit — useFocusEffect picks it up. AsyncStorage on web is backed by localStorage without a key prefix. Sample disc string that decodes cleanly: %01%##%01%4025013HXOXC%KD09MBGP%CVL391X%Hatch back%MINI%COOPER S%WHITE%WMW72DH0602R05896%F273K801%2026-06-30%. Existing submission with real disc data: vehicle id e4bcadc9-09a2-472f-a854-8173b9bddbe4 (FB-000003).",
+  "rca_of_issue": "N/A — no bugs found.",
+  "test_scenarios_executed": [
+    {"id": 1, "name": "Decoded card renders with all 10 expected fields", "result": "PASS"},
+    {"id": 2, "name": "Colour form input pre-populated with WHITE", "result": "PASS"},
+    {"id": 3, "name": "clear-license-disk removes card + reverts scan button label", "result": "PASS"},
+    {"id": 4, "name": "Re-scan opens /(app)/scan and shows camera UI without crash", "result": "PASS"},
+    {"id": 5, "name": "Non-license string → button says 'Scanned', no decoded card", "result": "PASS"},
+    {"id": 6, "name": "Submit screen renders without JS error with decoded data", "result": "PASS"},
+    {"id": 7, "name": "Admin vehicle detail shows decoded KV grid (not raw pipe blob)", "result": "PASS - FB-000003 shows Licence No JC29JSGP, Register No HLC124L, Make TOYOTA, Model LAND CRUISER 200, Description Station wagon / Stasiewa, VIN JTMHV05J204279840, Engine No 1VD0481450, Expires 2027-06-30, Disc No 4062006H7M4L"},
+    {"id": 8, "name": "Regression: refresh at / stays in app, tab bar padding OK, logout works", "result": "PASS"}
+  ]
+}
