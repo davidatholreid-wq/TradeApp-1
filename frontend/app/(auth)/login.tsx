@@ -57,13 +57,12 @@ export default function Login() {
             {/* Fourbuy Logo */}
             <View style={styles.logoBox}>
               <Image
-                source={{ uri: BRAND.logoUrl }}
+                source={BRAND.logo}
                 style={styles.logo}
                 resizeMode="contain"
-                accessibilityLabel="Fourbuy logo"
+                accessibilityLabel="Fourbuy Car Buying Co."
               />
             </View>
-            <Text style={styles.subheading}>Car Buying Co.</Text>
 
             <View style={styles.divider} />
 
@@ -145,7 +144,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     marginBottom: spacing.xs,
   },
-  logo: { width: 240, height: 72 },
+  logo: { width: 200, height: 200, marginBottom: -30, marginTop: -20 },
   subheading: {
     color: colors.textSecondary,
     fontFamily: fonts.heading,

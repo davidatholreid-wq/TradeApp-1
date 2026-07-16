@@ -328,9 +328,10 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
       <View style={styles.topbar}>
         <View style={styles.topbarLeft}>
           <Image
-            source={{ uri: BRAND.logoUrl }}
+            source={BRAND.logo}
             style={styles.logo}
             resizeMode="contain"
+            accessibilityLabel="Fourbuy Car Buying Co."
           />
           <View style={styles.divider} />
           <Text style={styles.topbarSub}>ADMIN COCKPIT</Text>
@@ -1004,7 +1005,7 @@ const styles = StyleSheet.create({
   },
   topbarLeft: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   topbarRight: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  logo: { width: 140, height: 44 },
+  logo: { width: 100, height: 100, marginLeft: -14, marginRight: -14 },
   divider: { width: 1, height: 30, backgroundColor: colors.border },
   topbarSub: {
     color: colors.textSecondary,

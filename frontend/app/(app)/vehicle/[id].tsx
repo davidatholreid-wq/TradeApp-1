@@ -25,6 +25,7 @@ import { buildWhatsappUrl, buildDealerMessage } from "@/src/utils/whatsapp";
 import { decodeLicenseDisk } from "@/src/utils/licenseDisk";
 import PhotoCarousel, { CarouselPhoto } from "@/src/components/PhotoCarousel";
 import ConditionRatingInfoModal from "@/src/components/ConditionRatingInfoModal";
+import BrandLogo from "@/src/components/BrandLogo";
 
 type ReconItem = { label: string; amount_zar: number };
 
@@ -271,7 +272,7 @@ export default function VehicleDetail() {
             )}
           </TouchableOpacity>
         ) : (
-          <View style={{ width: 32 }} />
+          <BrandLogo size="xs" />
         )}
       </View>
 

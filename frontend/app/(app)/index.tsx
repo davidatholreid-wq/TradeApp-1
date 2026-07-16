@@ -16,6 +16,7 @@ import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { colors, spacing, radius, fonts } from "@/src/theme";
 import { useAuth } from "@/src/context/AuthContext";
 import { apiFetch } from "@/src/api";
+import BrandLogo from "@/src/components/BrandLogo";
 
 type Submission = {
   id: string;
@@ -175,8 +176,12 @@ export default function DashboardScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
+      {/* Slim brand strip so the logo is always visible above the header. */}
+      <View style={styles.brandStrip}>
+        <BrandLogo size="sm" />
+      </View>
       <View style={styles.header}>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.greeting}>{isAdmin ? "Fourbuy Admin" : "My Submissions"}</Text>
           <Text style={styles.subGreeting}>
             {isAdmin
@@ -266,6 +271,13 @@ export default function DashboardScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
+  brandStrip: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: 4,
+    backgroundColor: colors.bg,
+    alignItems: "flex-start",
+  },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",

@@ -22,6 +22,7 @@ import { BottomTabBarHeightContext } from "@react-navigation/bottom-tabs";
 import { colors, spacing, radius, fonts } from "@/src/theme";
 import { apiFetch } from "@/src/api";
 import DealerPhotosModal from "@/src/components/DealerPhotosModal";
+import BrandLogo from "@/src/components/BrandLogo";
 
 type Dealer = {
   id: string;
@@ -405,12 +406,17 @@ export default function Dealers() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Manage Dealers</Text>
-        <Text style={styles.headerSub}>
-          {dealers.length - archivedCount} registered · {activeCount} active
-          {suspendedCount > 0 ? ` · ${suspendedCount} suspended` : ""}
-          {showArchived && archivedCount > 0 ? ` · ${archivedCount} archived` : ""}
-        </Text>
+        <View style={styles.headerRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>Manage Dealers</Text>
+            <Text style={styles.headerSub}>
+              {dealers.length - archivedCount} registered · {activeCount} active
+              {suspendedCount > 0 ? ` · ${suspendedCount} suspended` : ""}
+              {showArchived && archivedCount > 0 ? ` · ${archivedCount} archived` : ""}
+            </Text>
+          </View>
+          <BrandLogo size="sm" />
+        </View>
         <View style={styles.headerActions}>
           <TouchableOpacity
             testID="dealers-toggle-archived"
@@ -641,8 +647,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  headerTitle: { color: colors.text, fontSize: 22, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 2, textTransform: "uppercase" },
-  headerSub: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
+  headerTitle: { color: colors.text, fontSize: 22, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 0.3 },
+  headerRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  headerSub: { color: colors.textSecondary, fontSize: 13, marginTop: 4, letterSpacing: 0.1 },
   headerActions: { flexDirection: "row", marginTop: spacing.sm },
   archTgl: {
     flexDirection: "row",

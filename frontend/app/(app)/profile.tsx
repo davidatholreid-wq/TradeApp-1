@@ -3,6 +3,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useAuth } from "@/src/context/AuthContext";
 import { colors, spacing, radius, fonts, BRAND } from "@/src/theme";
+import BrandLogo from "@/src/components/BrandLogo";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
@@ -21,8 +22,11 @@ export default function Profile() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Profile</Text>
-        <Text style={styles.brandTag}>{BRAND.name}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Profile</Text>
+          <Text style={styles.brandTag}>{BRAND.name}</Text>
+        </View>
+        <BrandLogo size="sm" />
       </View>
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.md }]}>
         {/* WhatsApp Business-style banner: cover photo + overlaid profile pic */}
@@ -106,6 +110,9 @@ export default function Profile() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     backgroundColor: colors.paper,

@@ -24,6 +24,7 @@ import { colors, spacing, radius, fonts } from "@/src/theme";
 import { apiFetch } from "@/src/api";
 import WheelPicker from "@/src/components/WheelPicker";
 import MonthYearPicker, { formatIsoMonthYear } from "@/src/components/MonthYearPicker";
+import BrandLogo from "@/src/components/BrandLogo";
 import { decodeLicenseDisk, LicenseDiskInfo } from "@/src/utils/licenseDisk";
 
 type PhotoKey = "front" | "driver_side" | "passenger_side" | "rear" | "interior";
@@ -335,7 +336,7 @@ export default function SubmitVehicle() {
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()}><Ionicons name="chevron-back" size={22} color={colors.text} /></TouchableOpacity>
           <Text style={styles.headerTitle}>SUBMIT VEHICLE</Text>
-          <View style={{ width: 22 }} />
+          <BrandLogo size="xs" />
         </View>
 
         <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + 40 }]} keyboardShouldPersistTaps="handled">
@@ -613,7 +614,7 @@ export default function SubmitVehicle() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.md, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.paper },
-  headerTitle: { color: colors.text, fontSize: 17, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 2, textTransform: "uppercase" },
+  headerTitle: { color: colors.text, fontSize: 17, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 0.3 },
   scroll: { padding: spacing.md, gap: spacing.sm },
   sectionTitle: { color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 2, marginTop: spacing.md, marginBottom: 4, textTransform: "uppercase" },
   sectionHint: { color: colors.textSecondary, fontSize: 12, marginBottom: spacing.sm, fontStyle: "italic" },

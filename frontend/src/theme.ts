@@ -95,5 +95,10 @@ export const BRAND = {
   name: "Fourbuy Car Buying Co.",
   short: "Fourbuy",
   tagline: "Quality Used Cars at Wholesale Prices",
+  // Local bundled logo — dark background monochrome (white text + car icon).
+  // Use require() so the packager statically resolves the asset.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  logo: require("../assets/images/logo-fourbuy.png"),
+  // Legacy remote URL kept for the login background fallback only.
   logoUrl: "https://fourbuy.b-cdn.net/wp-content/uploads/logo.webp",
 };
