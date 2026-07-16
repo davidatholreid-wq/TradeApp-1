@@ -701,7 +701,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   backBtn: { padding: 4 },
-  headerTitle: { color: colors.text, fontSize: 17, fontWeight: "700", fontFamily: fonts.serif, letterSpacing: 0.3 },
+  headerTitle: { color: colors.text, fontSize: 17, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 2, textTransform: "uppercase" },
   scroll: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
   sectionTitle: {
     color: colors.textSecondary,

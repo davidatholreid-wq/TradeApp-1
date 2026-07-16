@@ -595,7 +595,7 @@ const styles = StyleSheet.create({
   },
   deleteBtn: { padding: 4 },
   backBtn: { padding: 4 },
-  headerTitle: { color: colors.text, fontSize: 17, fontWeight: "700", fontFamily: fonts.serif, flex: 1, textAlign: "center" },
+  headerTitle: { color: colors.text, fontSize: 17, fontWeight: "800", fontFamily: fonts.heading, flex: 1, textAlign: "center", letterSpacing: 2, textTransform: "uppercase" },
   scroll: { padding: spacing.lg, paddingBottom: 120 },
   priceBanner: {
     flexDirection: "row",
@@ -625,7 +625,7 @@ const styles = StyleSheet.create({
   pendingText: { color: colors.warning, fontWeight: "600" },
   titleBox: { marginBottom: spacing.md },
   brand: { color: colors.textSecondary, fontSize: 13, fontWeight: "600", textTransform: "uppercase", letterSpacing: 1 },
-  model: { color: colors.text, fontSize: 26, fontWeight: "700", fontFamily: fonts.serif, letterSpacing: 0.3 },
+  model: { color: colors.text, fontSize: 24, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 1.5, textTransform: "uppercase" },
   derivative: { color: colors.textSecondary, fontSize: 15, marginTop: 2 },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   gridItem: {
@@ -805,7 +805,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
-  modalTitle: { color: colors.text, fontSize: 22, fontWeight: "700", fontFamily: fonts.serif, letterSpacing: 0.3 },
+  modalTitle: { color: colors.text, fontSize: 20, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 2, textTransform: "uppercase" },
   modalHint: { color: colors.textSecondary, fontSize: 13, marginBottom: spacing.sm },
   label: { color: colors.textSecondary, fontSize: 13, marginTop: spacing.sm },
   priceInput: {

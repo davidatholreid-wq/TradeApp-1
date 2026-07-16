@@ -84,7 +84,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  headerTitle: { color: colors.text, fontSize: 22, fontWeight: "800" },
+  headerTitle: { color: colors.text, fontSize: 22, fontWeight: "800", letterSpacing: 2, textTransform: "uppercase" },
   scroll: { padding: spacing.lg },
   avatarBox: { alignItems: "center", marginBottom: spacing.xl },
   avatar: {

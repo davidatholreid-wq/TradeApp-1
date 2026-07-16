@@ -701,10 +701,11 @@ const styles = StyleSheet.create({
   divider: { width: 1, height: 30, backgroundColor: colors.border },
   topbarSub: {
     color: colors.textSecondary,
-    fontFamily: fonts.serif,
+    fontFamily: fonts.heading,
     letterSpacing: 3,
     fontSize: 13,
     textTransform: "uppercase",
+    fontWeight: "700",
   },
   viewSwitch: {
     flexDirection: "row",
@@ -833,7 +834,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   detailRef: { color: colors.neon, fontFamily: fonts.mono, fontSize: 13, fontWeight: "800", letterSpacing: 1.5 },
-  detailTitle: { color: colors.text, fontSize: 28, fontWeight: "700", fontFamily: fonts.serif, marginTop: 4 },
+  detailTitle: { color: colors.text, fontSize: 26, fontWeight: "800", fontFamily: fonts.heading, marginTop: 4, letterSpacing: 1.5, textTransform: "uppercase" },
   detailSub: { color: colors.textSecondary, fontSize: 14, marginTop: 2 },
   deleteBtn: {
     flexDirection: "row",

@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
   title: { color: colors.text, fontSize: 16, fontWeight: "800", letterSpacing: 1, textTransform: "uppercase" },
   body: { paddingHorizontal: spacing.md, paddingTop: spacing.md },
   paragraph: { color: colors.text, fontSize: 14, lineHeight: 21, marginBottom: spacing.md },
-  brand: { color: colors.neon, fontWeight: "800", fontFamily: fonts.serif },
+  brand: { color: colors.text, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 1.5, textTransform: "uppercase" },
   termsBox: {
     borderWidth: 1,
     borderColor: colors.border,

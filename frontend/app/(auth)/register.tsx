@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
   backBtn: { padding: spacing.xs, marginRight: spacing.sm },
   headerTitle: { color: colors.text, fontSize: 17, fontWeight: "700" },
   scroll: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
-  title: { color: colors.text, fontSize: 26, fontWeight: "700", fontFamily: fonts.serif, marginBottom: 4 },
+  title: { color: colors.text, fontSize: 22, fontWeight: "800", fontFamily: fonts.heading, marginBottom: 4, letterSpacing: 2, textTransform: "uppercase" },
   subtitle: { color: colors.textSecondary, fontSize: 14, marginBottom: spacing.lg },
   sectionTitle: {
     color: colors.textSecondary,

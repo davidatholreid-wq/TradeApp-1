@@ -1,6 +1,7 @@
 // Design tokens for Fourbuy Car Buying Co.
-// Luxury monochrome theme: true black + white + grey with fluorescent cyan
-// accents for high-value borders and CTAs.
+// Monochrome luxury: pure black, white and grey — no colour accents.
+// Headings use the same system font as the body, uppercase with wide letter
+// spacing for a clean editorial feel.
 import { Platform } from "react-native";
 
 export const colors = {
@@ -14,23 +15,21 @@ export const colors = {
   border: "#222222",
   borderLight: "#2C2C2C",
 
-  // Fluorescent electric cyan — signature luxury accent
-  primary: "#00E5FF",
-  primaryDark: "#00B8D4",
-  neon: "#00E5FF",   // alias for glow borders
-  glow: "#00E5FF",   // alias for shadowColor
-
-  // Secondary accent kept monochrome (white)
+  // Primary/accent — pure white (was fluorescent cyan)
+  primary: "#FFFFFF",
+  primaryDark: "#D9D9D9",
+  neon: "#FFFFFF",   // alias — used for "highlighted" borders (now just white)
+  glow: "#FFFFFF",   // alias — for shadowColor (now just white)
   accent: "#FFFFFF",
 
-  // Functional colors — kept subtly desaturated to preserve the luxury feel
-  warning: "#F5A623",
-  success: "#00E5FF", // priced / positive → fluorescent cyan for palette consistency
-  danger: "#FF4D6D",
+  // Functional colors — kept greyscale/muted to preserve the mono aesthetic
+  warning: "#8E8E93",     // "pending" indicators — now a neutral grey
+  success: "#FFFFFF",     // "priced" indicators — now white
+  danger: "#FF4D6D",      // destructive actions only — kept as a pale red
 
   // Text — high contrast on true black
   text: "#F5F5F5",
-  textSecondary: "#8E8E93", // iOS-style secondary grey
+  textSecondary: "#8E8E93",
   textDisabled: "#48484A",
 
   // Inputs
@@ -41,14 +40,14 @@ export const spacing = { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 };
 
 export const radius = { sm: 6, md: 10, lg: 16, pill: 999 };
 
-// Reusable luxury glow shadow (use as `style={[..., shadows.neon]}` on RN)
+// Luxury white glow (rarely used — kept for compatibility with the shadows prop)
 export const shadows = {
   neon: {
     shadowColor: colors.neon,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 4,
   },
   soft: {
     shadowColor: "#000000",
@@ -59,9 +58,13 @@ export const shadows = {
   },
 };
 
-// Serif for wordmark/headings to match Fourbuy's classic wordmark feel
+// ONE font throughout the app: system UI (San Francisco on iOS, Roboto on
+// Android, native system stack on web). No serif / no distinct heading font.
+// Mono kept for data readouts (VIN, reference IDs) where character alignment
+// matters — it's a legibility choice, not a heading style.
 export const fonts = {
-  serif: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }) as string,
+  // All aliases point at the same system font so any existing usages just work.
+  serif: "System",
   heading: "System",
   body: "System",
   mono: Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }) as string,

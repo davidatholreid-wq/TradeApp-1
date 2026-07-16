@@ -266,7 +266,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  title: { color: colors.text, fontSize: 22, fontWeight: "700", fontFamily: fonts.serif, letterSpacing: 0.3 },
+  title: { color: colors.text, fontSize: 22, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 2, textTransform: "uppercase" },
   sub: { color: colors.textSecondary, fontSize: 12, marginTop: 2, letterSpacing: 0.5 },
   monthRow: {
     flexDirection: "row",

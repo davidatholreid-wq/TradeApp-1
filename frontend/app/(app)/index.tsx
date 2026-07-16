@@ -263,7 +263,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  greeting: { color: colors.text, fontSize: 22, fontWeight: "700", fontFamily: fonts.serif, letterSpacing: 0.3 },
+  greeting: { color: colors.text, fontSize: 22, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 2, textTransform: "uppercase" },
   subGreeting: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
   newBtn: {
     flexDirection: "row",
