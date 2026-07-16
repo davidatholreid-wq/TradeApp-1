@@ -252,9 +252,15 @@ agent_communication:
       cover_photo. Frontend: new PhotoCarousel (fullscreen swipe modal),
       DealerPhotosModal (admin upload), rewritten vehicle/[id].tsx and updated
       WebAdminDashboard detail column with hero average condition + new sections,
-      redesigned profile.tsx banner. Please regression-test admin login → open a priced
-      submission → verify hero average rating displays with X.X/10 + progress bar,
-      all new sections render, tap a photo opens fullscreen carousel with swipe/dots.
-      Also: on Dealers screen, tap Photos → upload cover + profile → save → login as
-      dealer → verify photos appear on profile. Credentials in
-      /app/memory/test_credentials.md.
+      redesigned profile.tsx banner.
+  - agent: "testing"
+    message: |
+      All 6 tasks PASS. 22/22 backend pytest cases + 5/5 frontend flows verified on
+      mobile 390x844 and desktop 1440x900. Hero rating renders correctly (8.0/10 on
+      seeded FB-000016), all new sections present, PhotoCarousel opens/closes/swipes/
+      shows dots + chevrons on desktop. Dealer photo modal upload works; dealer profile
+      shows read-only WhatsApp-Business banner. Monochrome preserved — only theme
+      danger red used on destructive actions and Yes flags. No blocking bugs.
+      Seed data left: FB-000016 (BMW 3 Series 2021) owned by seed_photo_488f91@example.com
+      / Seed1234!. Test files under /app/backend/tests/ and /app/test_reports/iteration_11.json.
+
