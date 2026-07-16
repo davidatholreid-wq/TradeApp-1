@@ -225,20 +225,57 @@ frontend:
           card informs dealer photos are managed by Fourbuy (read-only) when neither
           is set. Extended User type in AuthContext with profile_pic + cover_photo.
 
+  - task: "Dealers management inside web admin cockpit"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/components/WebAdminDashboard.tsx, /app/frontend/app/(app)/dealers.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Added a third top-nav tab "DEALERS" (testID cockpit-view-dealers) beside
+          Submissions and Billing in the web cockpit. Selecting it renders the existing
+          DealersScreen inline. DealersScreen uses BottomTabBarHeightContext via
+          useContext (safe fallback = 0) so it no longer crashes when rendered outside
+          a bottom-tab navigator. All existing dealer actions (Edit, Photos, Reset PW,
+          Archive/Restore, Active toggle, Add Dealer) work in the web cockpit.
+
+  - task: "Vertical spec list + softer typography on detail views"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/(app)/vehicle/[id].tsx, /app/frontend/src/components/WebAdminDashboard.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Rewrote both mobile /vehicle/[id] and desktop cockpit detail column to
+          use a vertical "Label: value" list (DetailRow helper) for Vehicle Details,
+          Condition, Service History, Reconditioning and Identity. New layout order
+          exactly matches user spec: Year Registered / Make / Model / Derivative /
+          Mileage / Transmission / Fuel Type / Colour / Year of Production.
+          Softened typography app-wide: removed textTransform:"uppercase" and heavy
+          letterSpacing (2+) from headings/titles/labels; bumped font sizes 1-2px
+          for legibility. Reference numbers now show at 14-16px in white mono.
+          Also updated the dealer dashboard cards, profile screen and cockpit list
+          row typography for consistency. Added a `type` scale in theme.ts for
+          future consistency.
+
 metadata:
   created_by: "main_agent"
-  version: "1.1"
-  test_sequence: 11
+  version: "1.2"
+  test_sequence: 12
   run_ui: true
 
 test_plan:
   current_focus:
-    - "Add dealer photo fields + admin photo upload endpoint"
-    - "Admin mobile vehicle detail view — new fields, avg rating hero, fullscreen carousel"
-    - "Desktop cockpit detail view — hero rating, new sections, tap-to-expand carousel"
-    - "Reusable fullscreen PhotoCarousel modal"
-    - "Admin dealer photo upload modal + Photos action button"
-    - "Dealer profile screen — WhatsApp Business-style banner"
+    - "Dealers management inside web admin cockpit"
+    - "Vertical spec list + softer typography on detail views"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"

@@ -15,6 +15,7 @@ import { colors, spacing, radius, fonts, BRAND } from "@/src/theme";
 import { apiFetch } from "@/src/api";
 import { buildWhatsappUrl, buildDealerMessage } from "@/src/utils/whatsapp";
 import BillingScreen from "@/app/(app)/billing";
+import DealersScreen from "@/app/(app)/dealers";
 import PhotoCarousel, { CarouselPhoto } from "@/src/components/PhotoCarousel";
 
 type ReconItem = { label: string; amount_zar: number };
@@ -91,7 +92,7 @@ function resolvePhoto(photos: Record<string, string> | undefined, key: string, f
 }
 
 type Bucket = "incoming" | "priced" | "archived";
-type CockpitView = "submissions" | "billing";
+type CockpitView = "submissions" | "dealers" | "billing";
 
 export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }) {
   const { width } = useWindowDimensions();
@@ -318,6 +319,16 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
+              testID="cockpit-view-dealers"
+              style={[styles.viewBtn, view === "dealers" && styles.viewBtnActive]}
+              onPress={() => setView("dealers")}
+            >
+              <Ionicons name="people" size={14} color={view === "dealers" ? "#000" : colors.text} />
+              <Text style={[styles.viewBtnText, view === "dealers" && styles.viewBtnTextActive]}>
+                Dealers
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               testID="cockpit-view-billing"
               style={[styles.viewBtn, view === "billing" && styles.viewBtnActive]}
               onPress={() => setView("billing")}
@@ -355,6 +366,10 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
       {view === "billing" ? (
         <View style={{ flex: 1 }}>
           <BillingScreen />
+        </View>
+      ) : view === "dealers" ? (
+        <View style={{ flex: 1 }}>
+          <DealersScreen />
         </View>
       ) : (
       <View style={styles.body}>
@@ -514,61 +529,63 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 </View>
               ) : null}
 
-              {/* Specs */}
-              <Text style={styles.groupTitle}>VEHICLE SPECS</Text>
-              <View style={styles.specsGrid}>
-                <SpecCell label="Year Reg" value={String(selected.year_registered ?? selected.year)} />
-                <SpecCell label="Year of Prod" value={String(selected.year_of_production ?? selected.year)} />
-                <SpecCell label="Mileage" value={`${selected.mileage.toLocaleString()} km`} />
-                <SpecCell label="Fuel" value={selected.fuel_type ?? "—"} />
-                <SpecCell label="Transmission" value={selected.transmission ?? "—"} />
-                <SpecCell label="Colour" value={selected.colour} />
+              {/* Vehicle Details — vertical spec list, easy to scan top-to-bottom */}
+              <Text style={styles.groupTitle}>Vehicle Details</Text>
+              <View style={styles.detailsList}>
+                <DetailRow label="Year Registered" value={String(selected.year_registered ?? selected.year)} />
+                <DetailRow label="Make" value={selected.make_name} />
+                <DetailRow label="Model" value={selected.model_name} />
+                <DetailRow label="Derivative" value={selected.derivative_name} />
+                <DetailRow label="Mileage" value={`${selected.mileage.toLocaleString()} km`} />
+                <DetailRow label="Transmission" value={selected.transmission ?? "—"} />
+                <DetailRow label="Fuel Type" value={selected.fuel_type ?? "—"} />
+                <DetailRow label="Colour" value={selected.colour} />
+                <DetailRow label="Year of Production" value={String(selected.year_of_production ?? selected.year)} last />
               </View>
 
-              {/* Condition detail */}
-              <Text style={styles.groupTitle}>CONDITION</Text>
-              <View style={styles.specsGrid}>
-                <SpecCell label="Exterior" value={selected.exterior_condition ? `${selected.exterior_condition}/10` : "—"} />
-                <SpecCell label="Interior" value={selected.interior_condition ? `${selected.interior_condition}/10` : "—"} />
-                <SpecCell label="Tyres" value={selected.tyre_condition ? `${selected.tyre_condition}/10` : "—"} />
-                <SpecCell label="Windscreen" value={selected.windscreen_condition ?? "—"} />
-                <SpecCell
-                  label="Accident"
+              {/* Condition detail — vertical rows */}
+              <Text style={styles.groupTitle}>Condition</Text>
+              <View style={styles.detailsList}>
+                <DetailRow label="Exterior" value={selected.exterior_condition ? `${selected.exterior_condition} / 10` : "—"} />
+                <DetailRow label="Interior" value={selected.interior_condition ? `${selected.interior_condition} / 10` : "—"} />
+                <DetailRow label="Tyres" value={selected.tyre_condition ? `${selected.tyre_condition} / 10` : "—"} />
+                <DetailRow label="Windscreen" value={selected.windscreen_condition ?? "—"} />
+                <DetailRow
+                  label="Accident Damage"
                   value={selected.accident_damage ? "Yes" : "None"}
                   color={selected.accident_damage ? colors.danger : colors.text}
                 />
-                <SpecCell
+                <DetailRow
                   label="Paint Evidence"
                   value={selected.paint_evidence ? "Yes" : "No"}
                   color={selected.paint_evidence ? colors.danger : colors.text}
+                  last
                 />
               </View>
 
               {/* Service history */}
               {selected.service_history ? (
                 <>
-                  <Text style={styles.groupTitle}>SERVICE HISTORY</Text>
-                  <View style={styles.infoCard}>
-                    <View style={styles.infoRow}>
-                      <Text style={styles.infoLabel}>HISTORY</Text>
-                      <Text style={styles.infoValue}>{selected.service_history}</Text>
-                    </View>
-                    <View style={styles.infoRow}>
-                      <Text style={styles.infoLabel}>LAST SERVICE</Text>
-                      <Text style={styles.infoValue}>
-                        {selected.last_service_date && selected.last_service_date !== "TBC"
+                  <Text style={styles.groupTitle}>Service History</Text>
+                  <View style={styles.detailsList}>
+                    <DetailRow label="History" value={selected.service_history} />
+                    <DetailRow
+                      label="Last Service"
+                      value={
+                        selected.last_service_date && selected.last_service_date !== "TBC"
                           ? selected.last_service_date
-                          : "TBC"}
-                      </Text>
-                    </View>
-                    <View style={styles.infoRow}>
-                      <Text style={styles.infoLabel}>SERVICE MILEAGE</Text>
-                      <Text style={styles.infoValue}>
-                        {selected.last_service_mileage
+                          : "TBC"
+                      }
+                    />
+                    <DetailRow
+                      label="Service Mileage"
+                      value={
+                        selected.last_service_mileage
                           ? `${selected.last_service_mileage.toLocaleString()} km`
-                          : "TBC"}
-                      </Text>
-                    </View>
+                          : "TBC"
+                      }
+                      last
+                    />
                   </View>
                 </>
               ) : null}
@@ -576,16 +593,18 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
               {/* Reconditioning */}
               {selected.reconditioning_items && selected.reconditioning_items.length > 0 ? (
                 <>
-                  <Text style={styles.groupTitle}>RECONDITIONING ESTIMATE</Text>
-                  <View style={styles.infoCard}>
+                  <Text style={styles.groupTitle}>Reconditioning Estimate</Text>
+                  <View style={styles.detailsList}>
                     {selected.reconditioning_items.map((r, i) => (
-                      <View key={i} style={styles.infoRow}>
-                        <Text style={styles.infoValue}>{r.label}</Text>
-                        <Text style={styles.reconAmount}>R {r.amount_zar.toLocaleString()}</Text>
+                      <View key={i} style={styles.detailRow}>
+                        <Text style={styles.detailRowLabel}>{r.label}</Text>
+                        <Text style={[styles.detailRowValue, { fontFamily: fonts.mono }]}>
+                          R {r.amount_zar.toLocaleString()}
+                        </Text>
                       </View>
                     ))}
                     <View style={styles.reconTotalRow}>
-                      <Text style={styles.infoLabel}>TOTAL</Text>
+                      <Text style={styles.detailRowLabel}>Total</Text>
                       <Text style={styles.reconTotal}>
                         R{" "}
                         {(selected.reconditioning_total_zar ??
@@ -601,20 +620,14 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
               ) : null}
 
               {/* Identity */}
-              <Text style={styles.groupTitle}>IDENTITY</Text>
-              <View style={styles.infoCard}>
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>VIN</Text>
-                  <Text style={styles.monoValue} numberOfLines={1}>{selected.vin || "TBC"}</Text>
-                </View>
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>ENGINE NO</Text>
-                  <Text style={styles.monoValue} numberOfLines={1}>{selected.engine_number || "TBC"}</Text>
-                </View>
+              <Text style={styles.groupTitle}>Identity</Text>
+              <View style={styles.detailsList}>
+                <DetailRow label="VIN" value={selected.vin || "TBC"} mono />
+                <DetailRow label="Engine No" value={selected.engine_number || "TBC"} mono last />
               </View>
 
               {/* Photos */}
-              <Text style={styles.groupTitle}>PHOTOS · TAP TO EXPAND</Text>
+              <Text style={styles.groupTitle}>Photos <Text style={styles.groupHint}>· tap to expand</Text></Text>
               <View style={styles.photoRow}>
                 {PHOTO_ORDER.map((p) => {
                   const uri = resolvePhoto(selected.photos, p.key, p.fallback);
@@ -853,14 +866,42 @@ function HeroPill({ label, value }: { label: string; value?: number }) {
   );
 }
 
-function SpecCell({ label, value, color }: { label: string; value: string; color?: string }) {
+function DetailRow({
+  label,
+  value,
+  color,
+  last,
+  mono,
+}: {
+  label: string;
+  value: string;
+  color?: string;
+  last?: boolean;
+  mono?: boolean;
+}) {
   return (
-    <View style={styles.specCell}>
-      <Text style={styles.specLabel}>{label.toUpperCase()}</Text>
-      <Text style={[styles.specValue, color ? { color } : null]}>{value}</Text>
+    <View style={[styles.detailRow, last && { borderBottomWidth: 0 }]}>
+      <Text style={styles.detailRowLabel}>{label}:</Text>
+      <Text
+        style={[
+          styles.detailRowValue,
+          mono && { fontFamily: fonts.mono, letterSpacing: 0.5 },
+          color ? { color } : null,
+        ]}
+        numberOfLines={2}
+      >
+        {value}
+      </Text>
     </View>
   );
 }
+
+function SpecCell(_props: { label: string; value: string; color?: string }) {
+  return null;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const __SpecCellUnused = SpecCell;
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
@@ -988,12 +1029,12 @@ const styles = StyleSheet.create({
   },
   rowActive: { backgroundColor: colors.card, borderLeftWidth: 3, borderLeftColor: colors.neon },
   rowHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  rowRef: { color: colors.neon, fontSize: 11, fontWeight: "800", fontFamily: fonts.mono, letterSpacing: 1 },
-  rowBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.sm },
-  rowBadgeText: { fontSize: 9, fontWeight: "800", letterSpacing: 1 },
-  rowTitle: { color: colors.text, fontSize: 14, fontWeight: "700", marginTop: 6 },
-  rowSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
-  rowDealer: { color: colors.textDisabled, fontSize: 11, marginTop: 4 },
+  rowRef: { color: "#fff", fontSize: 13, fontWeight: "800", fontFamily: fonts.mono, letterSpacing: 0.5 },
+  rowBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm },
+  rowBadgeText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },
+  rowTitle: { color: colors.text, fontSize: 15, fontWeight: "700", marginTop: 8, letterSpacing: 0.1 },
+  rowSub: { color: colors.textSecondary, fontSize: 13, marginTop: 3, letterSpacing: 0.1 },
+  rowDealer: { color: colors.textDisabled, fontSize: 12, marginTop: 4, letterSpacing: 0.1 },
   rowPrice: {
     color: colors.success,
     fontSize: 14,
@@ -1012,9 +1053,9 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     marginBottom: spacing.md,
   },
-  detailRef: { color: colors.neon, fontFamily: fonts.mono, fontSize: 13, fontWeight: "800", letterSpacing: 1.5 },
-  detailTitle: { color: colors.text, fontSize: 26, fontWeight: "800", fontFamily: fonts.heading, marginTop: 4, letterSpacing: 1.5, textTransform: "uppercase" },
-  detailSub: { color: colors.textSecondary, fontSize: 14, marginTop: 2 },
+  detailRef: { color: "#fff", fontFamily: fonts.mono, fontSize: 16, fontWeight: "800", letterSpacing: 0.8 },
+  detailTitle: { color: colors.text, fontSize: 28, fontWeight: "800", fontFamily: fonts.heading, marginTop: 6, letterSpacing: 0.3 },
+  detailSub: { color: colors.textSecondary, fontSize: 15, marginTop: 4, letterSpacing: 0.1 },
   deleteBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1081,9 +1122,9 @@ const styles = StyleSheet.create({
   },
   heroLabel: {
     color: colors.textSecondary,
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 2.5,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.6,
     marginBottom: spacing.sm,
   },
   heroRow: { flexDirection: "row", alignItems: "baseline" },
@@ -1117,10 +1158,54 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
   },
-  heroPillLabel: { color: colors.textSecondary, fontSize: 10, fontWeight: "800", letterSpacing: 1.5 },
+  heroPillLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: "700", letterSpacing: 0.4 },
   heroPillValue: { color: colors.text, fontSize: 13, fontWeight: "800", fontFamily: fonts.mono },
 
-  groupTitle: { color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 2, marginTop: spacing.md, marginBottom: spacing.xs },
+  groupTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  groupHint: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "500",
+  },
+
+  detailsList: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.card,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+  },
+  detailRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: spacing.md,
+  },
+  detailRowLabel: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: "500",
+    letterSpacing: 0.1,
+  },
+  detailRowValue: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700",
+    letterSpacing: 0.1,
+    flex: 1,
+    textAlign: "right",
+  },
 
   infoCard: {
     padding: spacing.md,
@@ -1159,7 +1244,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     backgroundColor: colors.card,
   },
-  boxTitle: { color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 1.5 },
+  boxTitle: { color: colors.textSecondary, fontSize: 12, fontWeight: "700", letterSpacing: 0.4 },
   dealerName: { color: colors.text, fontSize: 15, fontWeight: "700", marginTop: 6 },
   dealerMeta: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
   dealerRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
@@ -1215,7 +1300,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     minWidth: 140,
   },
-  sendBtnText: { color: "#000", fontWeight: "800", fontSize: 13, letterSpacing: 1.5 },
+  sendBtnText: { color: "#000", fontWeight: "800", fontSize: 14, letterSpacing: 0.3 },
   notesInput: {
     marginTop: spacing.sm,
     backgroundColor: colors.inputBg,

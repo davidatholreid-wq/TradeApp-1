@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 12 regression: Dealers-in-cockpit tab + softer typography + vertical DetailRow spec list. BACKEND smoke (test_dealer_photos.py) → 22/22 PASS in 2.98s (no regression from iteration_11). FRONTEND all 5 focus flows PASS on 1440x900 (desktop cockpit) and 390x844 (mobile). (1) DESKTOP admin cockpit shows 3 nav tabs (data-testid cockpit-view-submissions / cockpit-view-dealers / cockpit-view-billing) — all visible after admin login. Clicking Dealers renders DealersScreen inline with 7 dealer rows; each row has Edit / Photos / Reset PW and a red archive icon action + an Active toggle. Clicking Photos on a dealer opens DealerPhotosModal (Cover 16:9 + Profile 1:1, Upload/Cancel/Save controls, testIDs dealer-photos-save / dealer-photos-close). ZERO console errors — no useBottomTabBarHeight / hook errors thanks to BottomTabBarHeightContext + useContext fallback in dealers.tsx. (2) DESKTOP submission detail (FB-000017 Toyota Hilux 2020) renders TOP-TO-BOTTOM: FB reference (white monospace, rgb(255,255,255), fontSize 13px) + mixed-case title 2020 Toyota Hilux, hero OVERALL CONDITION 7.7 / 10 with EXT 8/10 · INT 7/10 · TYRES 8/10 pills, then vertical Vehicle Details list in EXACT required order (verified via DOM positions): Year Registered → Make → Model → Derivative → Mileage → Transmission → Fuel Type → Colour → Year of Production. Condition + Service History + Identity sections all render as vertical rows. Model reads 'Hilux' not 'HILUX' — mixed-case confirmed everywhere. On FB-000016 (BMW 3 Series) title reads '3 Series' not '3 SERIES'. (3) MOBILE /vehicle/[id] on FB-000002 shows a REFERENCE badge card with 'FB-000002' on the right in white monospace 14px (letterSpacing 0.6px), title 'BMW / 3 Series / 320i M-Sport' in mixed-case, then Vehicle Details as vertical DetailRows in the required 9-label order. Missing Transmission/Fuel Type (em-dash '—') is expected — the legacy seed FB-000002 was created before those fields were added, NOT a regression. (4) MOBILE dealer dashboard (minitest@example.com): submission cards show reference in 14px white monospace with letterSpacing 0.6 (was previously stretched at 1.5) — clean and readable. Greeting/list header 'My Submissions' + subline '2 vehicles' read cleanly in mixed case. (5) MOBILE /profile: cover-photo banner + round avatar placeholder both render; 'Test Dealer' name, 'minitest@example.com' email, DEALER role badge, and Company card all legible with softer letter-spacing. Read-only hint card correctly displayed since dealer has no photos yet. Photo carousel could NOT be verified on FB-000002 (dealer's own submissions have no photos in DB) — but this was fully verified in iteration_11 on FB-000016 and is untouched code. Monochrome theme preserved.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Desktop cockpit detail (WebAdminDashboard.tsx)", "issues": ["Reference 'FB-000017' renders at fontSize 13px (color rgb(255,255,255), monospace). Spec requested '~16px'. It IS clearly white mono and NOT the tiny 11px cyan of the old design, but 13px is 3px below the specified 16px. Consider bumping to 15–16px if you want to match the mobile REFERENCE badge more closely."]},
+      {"screen": "Mobile /vehicle/[id]", "issues": ["Legacy submissions (FB-000001 / FB-000002 seeded before Jan 2026) don't have exterior_condition / interior_condition / tyre_condition / fuel_type / transmission populated, so the hero 'X.X / 10' block and Transmission/Fuel Type rows fall back to em-dash '—'. Not a code regression — verified against iteration_11 seed FB-000016 which renders 8.0/10 correctly. Consider seeding minitest@example.com's submissions with the new fields for a cleaner dealer-side demo."]}
+    ],
+    "react_native_issues": [
+      {"component": "react-native-web deprecation", "issue": "Non-blocking: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' still emitted (carried over from iteration_10/11 — not introduced this round)."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_dealer_photos.py",
+    "/app/test_reports/pytest/dealer_photos_results.xml"
+  ],
+  "action_items": [
+    "Optional: bump the cockpit reference-number fontSize from 13px to 15–16px in WebAdminDashboard.tsx to match the mobile REFERENCE badge (14px) and the spec's '~16px' request.",
+    "Optional: reseed FB-000001 / FB-000002 (minitest@example.com's inventory) with the new condition + fuel_type + transmission fields so the hero rating + Vehicle Details render fully on the dealer-side mobile detail screen (currently show '—' fallback for those rows).",
+    "Optional carry-over: migrate remaining shadow* style props to boxShadow to silence RN-web deprecation warnings."
+  ],
+  "critical_code_review_comments": [
+    "WebAdminDashboard.tsx:322 correctly wires the third cockpit-view-dealers nav button; clicking it renders <DealersScreen /> inline. No console errors, confirming BottomTabBarHeightContext fallback works.",
+    "dealers.tsx:45 useContext(BottomTabBarHeightContext) ?? 0 — safe fallback verified: no hook-mismatch or 'useBottomTabBarHeight must be used inside a bottom tab' errors when the screen is mounted outside the bottom-tab navigator (i.e., inside the cockpit).",
+    "vehicle/[id].tsx DetailRow helper renders label:value vertically; DOM positions confirm all 9 labels appear in the exact spec order on both mobile and desktop cockpit.",
+    "profile.tsx typography reads cleanly on 390x844 — letterSpacing values softened (0.6 range) and no textTransform:uppercase on the main name/email/role labels."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (22/22)", "frontend": "100% (5/5 focus flows)"},
+  "seed_data_creation": "No new seed data created this iteration. Existing seed FB-000016 (BMW 3 Series, dealer seed_photo_488f91@example.com / Seed1234!) from iteration_11 was used to verify the desktop cockpit vertical detail list. Legacy seed FB-000002 was used for the mobile dealer /vehicle/[id] verification.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Both test_plan.current_focus tasks — 'Dealers management inside web admin cockpit' and 'Vertical spec list + softer typography on detail views' — PASS end-to-end. Cockpit shows 3 nav tabs (Submissions / Dealers / Billing) with testIDs cockpit-view-{submissions|dealers|billing}. DealersScreen mounts inline without hook errors. Detail-view DetailRow order verified in DOM: Year Registered → Make → Model → Derivative → Mileage → Transmission → Fuel Type → Colour → Year of Production. Reference numbers now white monospace: cockpit 13px, mobile REFERENCE badge 14px (spec was ~16px — minor gap on desktop, not a regression). All titles mixed-case. Dealer submission list card ref = 14px white mono, letterSpacing 0.6 (was 1.5). No red-screen errors. Row testID prefix on submissions is admin-row-{id} (NOT admin-sub-row-*). Note: prev-chevron on PhotoCarousel is unmounted at index 0 (verified iteration_11); dealer row 'Archive' action is a red trash-can icon-only button testID admin-delete-button — not the archive testID.",
+  "rca_of_issue": "N/A — no bugs found."
+}

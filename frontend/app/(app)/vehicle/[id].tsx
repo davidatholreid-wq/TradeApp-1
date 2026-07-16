@@ -281,6 +281,14 @@ export default function VehicleDetail() {
           </View>
         )}
 
+        {/* Reference badge */}
+        {sub.reference ? (
+          <View style={styles.refBadge}>
+            <Text style={styles.refBadgeLabel}>REFERENCE</Text>
+            <Text style={styles.refBadgeValue}>{sub.reference}</Text>
+          </View>
+        ) : null}
+
         {/* Title */}
         <View style={styles.titleBox}>
           <Text style={styles.brand}>{sub.make_name}</Text>
@@ -288,34 +296,41 @@ export default function VehicleDetail() {
           <Text style={styles.derivative}>{sub.derivative_name}</Text>
         </View>
 
-        {/* Specs grid */}
-        <View style={styles.grid}>
-          <SpecTile icon="calendar-outline" label="Year Registered" value={String(sub.year_registered ?? sub.year)} />
-          <SpecTile icon="construct-outline" label="Year of Production" value={String(sub.year_of_production ?? sub.year)} />
-          <SpecTile icon="speedometer-outline" label="Mileage" value={`${sub.mileage.toLocaleString()} km`} />
-          <SpecTile icon="water-outline" label="Fuel" value={sub.fuel_type ?? "—"} />
-          <SpecTile icon="cog-outline" label="Transmission" value={sub.transmission ?? "—"} />
-          <SpecTile icon="color-palette-outline" label="Colour" value={sub.colour} />
+        {/* Vehicle Details — vertical spec list, easy to scan top-to-bottom */}
+        <Text style={styles.sectionTitle}>Vehicle Details</Text>
+        <View style={styles.detailsList}>
+          <DetailRow label="Year Registered" value={String(sub.year_registered ?? sub.year)} />
+          <DetailRow label="Make" value={sub.make_name} />
+          <DetailRow label="Model" value={sub.model_name} />
+          <DetailRow label="Derivative" value={sub.derivative_name} />
+          <DetailRow label="Mileage" value={`${sub.mileage.toLocaleString()} km`} />
+          <DetailRow label="Transmission" value={sub.transmission ?? "—"} />
+          <DetailRow label="Fuel Type" value={sub.fuel_type ?? "—"} />
+          <DetailRow label="Colour" value={sub.colour} />
+          <DetailRow
+            label="Year of Production"
+            value={String(sub.year_of_production ?? sub.year)}
+            last
+          />
         </View>
 
-        {/* Condition breakdown */}
+        {/* Condition breakdown — vertical rows for readability */}
         <Text style={styles.sectionTitle}>Condition</Text>
-        <View style={styles.grid}>
-          <SpecTile icon="car-sport-outline" label="Exterior" value={sub.exterior_condition ? `${sub.exterior_condition}/10` : "—"} />
-          <SpecTile icon="cube-outline" label="Interior" value={sub.interior_condition ? `${sub.interior_condition}/10` : "—"} />
-          <SpecTile icon="ellipse-outline" label="Tyres" value={sub.tyre_condition ? `${sub.tyre_condition}/10` : "—"} />
-          <SpecTile icon="scan-outline" label="Windscreen" value={sub.windscreen_condition ?? "—"} />
-          <SpecTile
-            icon={sub.accident_damage ? "warning" : "checkmark-circle-outline"}
+        <View style={styles.detailsList}>
+          <DetailRow label="Exterior" value={sub.exterior_condition ? `${sub.exterior_condition} / 10` : "—"} />
+          <DetailRow label="Interior" value={sub.interior_condition ? `${sub.interior_condition} / 10` : "—"} />
+          <DetailRow label="Tyres" value={sub.tyre_condition ? `${sub.tyre_condition} / 10` : "—"} />
+          <DetailRow label="Windscreen" value={sub.windscreen_condition ?? "—"} />
+          <DetailRow
             label="Accident Damage"
             value={sub.accident_damage ? "Yes" : "None"}
             valueColor={sub.accident_damage ? colors.danger : colors.text}
           />
-          <SpecTile
-            icon={sub.paint_evidence ? "brush" : "brush-outline"}
+          <DetailRow
             label="Paint Evidence"
             value={sub.paint_evidence ? "Yes" : "No"}
             valueColor={sub.paint_evidence ? colors.danger : colors.text}
+            last
           />
         </View>
 
@@ -323,21 +338,17 @@ export default function VehicleDetail() {
         {sub.service_history ? (
           <>
             <Text style={styles.sectionTitle}>Service History</Text>
-            <View style={styles.infoCard}>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>HISTORY</Text>
-                <Text style={styles.infoValue}>{sub.service_history}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>LAST SERVICE</Text>
-                <Text style={styles.infoValue}>{sub.last_service_date && sub.last_service_date !== "TBC" ? sub.last_service_date : "TBC"}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>SERVICE MILEAGE</Text>
-                <Text style={styles.infoValue}>
-                  {sub.last_service_mileage ? `${sub.last_service_mileage.toLocaleString()} km` : "TBC"}
-                </Text>
-              </View>
+            <View style={styles.detailsList}>
+              <DetailRow label="History" value={sub.service_history} />
+              <DetailRow
+                label="Last Service"
+                value={sub.last_service_date && sub.last_service_date !== "TBC" ? sub.last_service_date : "TBC"}
+              />
+              <DetailRow
+                label="Service Mileage"
+                value={sub.last_service_mileage ? `${sub.last_service_mileage.toLocaleString()} km` : "TBC"}
+                last
+              />
             </View>
           </>
         ) : null}
@@ -346,7 +357,7 @@ export default function VehicleDetail() {
         {sub.reconditioning_items && sub.reconditioning_items.length > 0 ? (
           <>
             <Text style={styles.sectionTitle}>Reconditioning Estimate</Text>
-            <View style={styles.infoCard}>
+            <View style={styles.detailsList}>
               {sub.reconditioning_items.map((r, i) => (
                 <View key={i} style={styles.reconRow}>
                   <Text style={styles.reconLabel}>{r.label}</Text>
@@ -365,15 +376,9 @@ export default function VehicleDetail() {
 
         {/* Identity */}
         <Text style={styles.sectionTitle}>Identity</Text>
-        <View style={styles.infoCard}>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>VIN</Text>
-            <Text style={styles.infoValueMono} numberOfLines={1}>{sub.vin || "TBC"}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>ENGINE NO</Text>
-            <Text style={styles.infoValueMono} numberOfLines={1}>{sub.engine_number || "TBC"}</Text>
-          </View>
+        <View style={styles.detailsList}>
+          <DetailRow label="VIN" value={sub.vin || "TBC"} mono />
+          <DetailRow label="Engine No" value={sub.engine_number || "TBC"} mono last />
         </View>
 
         {/* Photos */}
@@ -697,22 +702,30 @@ export default function VehicleDetail() {
   );
 }
 
-function SpecTile({
-  icon,
+function DetailRow({
   label,
   value,
   valueColor,
+  last,
+  mono,
 }: {
-  icon: any;
   label: string;
   value: string;
   valueColor?: string;
+  last?: boolean;
+  mono?: boolean;
 }) {
   return (
-    <View style={styles.gridItem}>
-      <Ionicons name={icon} size={16} color={colors.textSecondary} />
-      <Text style={styles.gridLabel}>{label.toUpperCase()}</Text>
-      <Text style={[styles.gridValue, valueColor ? { color: valueColor } : null]} numberOfLines={2}>
+    <View style={[styles.detailRow, last && { borderBottomWidth: 0 }]}>
+      <Text style={styles.detailRowLabel}>{label}:</Text>
+      <Text
+        style={[
+          styles.detailRowValue,
+          mono && { fontFamily: fonts.mono, letterSpacing: 0.5 },
+          valueColor ? { color: valueColor } : null,
+        ]}
+        numberOfLines={2}
+      >
         {value}
       </Text>
     </View>
@@ -743,8 +756,43 @@ const styles = StyleSheet.create({
   },
   deleteBtn: { padding: 4 },
   backBtn: { padding: 4 },
-  headerTitle: { color: colors.text, fontSize: 17, fontWeight: "800", fontFamily: fonts.heading, flex: 1, textAlign: "center", letterSpacing: 2, textTransform: "uppercase" },
+  headerTitle: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: "700",
+    fontFamily: fonts.heading,
+    flex: 1,
+    textAlign: "center",
+    letterSpacing: 0.3,
+  },
   scroll: { padding: spacing.lg, paddingBottom: 120 },
+
+  // Reference badge — high-contrast, clean mono readout
+  refBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    borderRadius: radius.md,
+    backgroundColor: colors.card,
+    marginBottom: spacing.md,
+  },
+  refBadgeLabel: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1.5,
+  },
+  refBadgeValue: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "800",
+    fontFamily: fonts.mono,
+    letterSpacing: 1,
+  },
 
   // Hero average rating
   heroBox: {
@@ -758,9 +806,9 @@ const styles = StyleSheet.create({
   },
   heroLabel: {
     color: colors.textSecondary,
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 2.5,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.6,
     marginBottom: spacing.sm,
   },
   heroRow: { flexDirection: "row", alignItems: "baseline" },
@@ -818,7 +866,7 @@ const styles = StyleSheet.create({
     borderColor: colors.borderLight,
     marginBottom: spacing.lg,
   },
-  priceLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 1.5 },
+  priceLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: "700", letterSpacing: 0.5 },
   priceValue: { color: colors.text, fontSize: 28, fontWeight: "800", fontFamily: fonts.mono, marginTop: 4 },
   priceNotes: { color: colors.textSecondary, fontSize: 13, marginTop: 4 },
   pendingBanner: {
@@ -832,12 +880,52 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     marginBottom: spacing.lg,
   },
-  pendingText: { color: colors.textSecondary, fontWeight: "800", letterSpacing: 1.5, fontSize: 12 },
+  pendingText: { color: colors.textSecondary, fontWeight: "700", letterSpacing: 0.5, fontSize: 13 },
 
   titleBox: { marginBottom: spacing.md },
-  brand: { color: colors.textSecondary, fontSize: 13, fontWeight: "600", textTransform: "uppercase", letterSpacing: 1 },
-  model: { color: colors.text, fontSize: 24, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 1.5, textTransform: "uppercase" },
-  derivative: { color: colors.textSecondary, fontSize: 15, marginTop: 2 },
+  brand: { color: colors.textSecondary, fontSize: 13, fontWeight: "600", letterSpacing: 0.5 },
+  model: {
+    color: colors.text,
+    fontSize: 26,
+    fontWeight: "800",
+    fontFamily: fonts.heading,
+    letterSpacing: 0.3,
+    marginTop: 2,
+  },
+  derivative: { color: colors.textSecondary, fontSize: 15, marginTop: 4, letterSpacing: 0.1 },
+
+  // Vertical detail list — used for Vehicle Details, Condition, etc.
+  detailsList: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+  },
+  detailRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: spacing.md,
+  },
+  detailRowLabel: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: "500",
+    letterSpacing: 0.1,
+  },
+  detailRowValue: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700",
+    letterSpacing: 0.1,
+    flex: 1,
+    textAlign: "right",
+  },
 
   grid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   gridItem: {
@@ -854,10 +942,9 @@ const styles = StyleSheet.create({
 
   sectionTitle: {
     color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "800",
-    textTransform: "uppercase",
-    letterSpacing: 1.5,
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 0.4,
     marginTop: spacing.lg,
     marginBottom: spacing.sm,
   },
@@ -887,7 +974,7 @@ const styles = StyleSheet.create({
   reconLabel: { color: colors.text, fontSize: 13, flex: 1 },
   reconAmount: { color: colors.text, fontSize: 13, fontWeight: "800", fontFamily: fonts.mono },
   reconTotalRow: { flexDirection: "row", justifyContent: "space-between", paddingTop: spacing.sm, marginTop: 4 },
-  reconTotalLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 1.5 },
+  reconTotalLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: "700", letterSpacing: 0.5 },
   reconTotalValue: { color: "#fff", fontSize: 16, fontWeight: "800", fontFamily: fonts.mono },
 
   photoGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
@@ -938,15 +1025,14 @@ const styles = StyleSheet.create({
   },
   diskDecodedLabel: {
     color: colors.textSecondary,
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    minWidth: 100,
+    fontSize: 13,
+    fontWeight: "500",
+    letterSpacing: 0.1,
+    minWidth: 110,
   },
   diskDecodedValue: {
     color: colors.text,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "700",
     flex: 1,
     textAlign: "right",
@@ -1042,7 +1128,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     paddingVertical: 14,
   },
-  priceBtnText: { color: "#000", fontWeight: "800", fontSize: 15, letterSpacing: 1.5, textTransform: "uppercase" },
+  priceBtnText: { color: "#000", fontWeight: "800", fontSize: 15, letterSpacing: 0.4 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
   modalSheet: {
     backgroundColor: colors.paper,
@@ -1054,7 +1140,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
-  modalTitle: { color: colors.text, fontSize: 20, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 2, textTransform: "uppercase" },
+  modalTitle: { color: colors.text, fontSize: 20, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 0.3 },
   modalHint: { color: colors.textSecondary, fontSize: 13, marginBottom: spacing.sm },
   label: { color: colors.textSecondary, fontSize: 13, marginTop: spacing.sm },
   priceInput: {
@@ -1075,5 +1161,5 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     alignItems: "center",
   },
-  confirmBtnText: { color: "#000", fontWeight: "800", fontSize: 15, letterSpacing: 1.5, textTransform: "uppercase" },
+  confirmBtnText: { color: "#000", fontWeight: "800", fontSize: 15, letterSpacing: 0.4 },
 });

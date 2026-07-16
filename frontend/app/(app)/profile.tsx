@@ -112,8 +112,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  headerTitle: { color: colors.text, fontSize: 22, fontWeight: "800", letterSpacing: 2, textTransform: "uppercase" },
-  brandTag: { color: colors.textSecondary, fontSize: 11, marginTop: 4, letterSpacing: 2 },
+  headerTitle: { color: colors.text, fontSize: 24, fontWeight: "800", letterSpacing: 0.3 },
+  brandTag: { color: colors.textSecondary, fontSize: 12, marginTop: 4, letterSpacing: 0.4 },
   scroll: { padding: 0 },
 
   banner: {
@@ -159,8 +159,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
     marginTop: spacing.sm,
   },
-  name: { color: colors.text, fontSize: 22, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 1 },
-  email: { color: colors.textSecondary, fontSize: 14, marginTop: 4 },
+  name: { color: colors.text, fontSize: 24, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 0.3 },
+  email: { color: colors.textSecondary, fontSize: 15, marginTop: 4, letterSpacing: 0.1 },
   roleBadge: {
     marginTop: spacing.sm,
     alignSelf: "flex-start",
@@ -171,7 +171,7 @@ const styles = StyleSheet.create({
     borderColor: colors.borderLight,
     backgroundColor: colors.card,
   },
-  roleText: { color: colors.text, fontSize: 11, fontWeight: "800", letterSpacing: 1.5 },
+  roleText: { color: colors.text, fontSize: 12, fontWeight: "700", letterSpacing: 0.5 },
 
   section: {
     marginHorizontal: spacing.lg,
@@ -183,11 +183,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   sectionTitle: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    fontWeight: "800",
-    textTransform: "uppercase",
-    letterSpacing: 1.5,
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700",
+    letterSpacing: 0.3,
     marginBottom: spacing.sm,
   },
   row: {

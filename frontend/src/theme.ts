@@ -70,6 +70,27 @@ export const fonts = {
   mono: Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }) as string,
 };
 
+// Typography scale — sizes chosen for legibility, letter-spacing kept tight
+// so text feels editorial rather than stretched. Use these across the app
+// instead of ad-hoc sizes so headings & body stay consistent.
+export const type = {
+  // Screen / section titles
+  hero: { fontSize: 26, fontWeight: "800" as const, letterSpacing: 0.4 },
+  h1: { fontSize: 20, fontWeight: "800" as const, letterSpacing: 0.3 },
+  h2: { fontSize: 17, fontWeight: "800" as const, letterSpacing: 0.3 },
+  h3: { fontSize: 15, fontWeight: "700" as const, letterSpacing: 0.2 },
+  // Body / label / caption
+  body: { fontSize: 15, fontWeight: "500" as const, letterSpacing: 0.1 },
+  bodyStrong: { fontSize: 15, fontWeight: "700" as const, letterSpacing: 0.1 },
+  small: { fontSize: 13, fontWeight: "500" as const, letterSpacing: 0.1 },
+  smallStrong: { fontSize: 13, fontWeight: "700" as const, letterSpacing: 0.1 },
+  // Uppercase mini-labels (used sparingly for section eyebrows / chips)
+  eyebrow: { fontSize: 11, fontWeight: "700" as const, letterSpacing: 1.2, textTransform: "uppercase" as const },
+  // Data monospace (VIN, reference numbers)
+  mono: { fontSize: 14, fontWeight: "700" as const, letterSpacing: 0.5 },
+  monoLarge: { fontSize: 18, fontWeight: "800" as const, letterSpacing: 0.8 },
+};
+
 export const BRAND = {
   name: "Fourbuy Car Buying Co.",
   short: "Fourbuy",

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useContext, useState } from "react";
 import {
   View,
   Text,
@@ -18,7 +18,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { BottomTabBarHeightContext } from "@react-navigation/bottom-tabs";
 import { colors, spacing, radius, fonts } from "@/src/theme";
 import { apiFetch } from "@/src/api";
 import DealerPhotosModal from "@/src/components/DealerPhotosModal";
@@ -40,7 +40,9 @@ type Dealer = {
 };
 
 export default function Dealers() {
-  const tabBarHeight = useBottomTabBarHeight();
+  // Safe fallback for when this screen is embedded in the web admin cockpit
+  // (which is outside a bottom-tab navigator).
+  const tabBarHeight = useContext(BottomTabBarHeightContext) ?? 0;
   const [dealers, setDealers] = useState<Dealer[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
