@@ -411,14 +411,13 @@ agent_communication:
       redesigned profile.tsx banner.
   - agent: "testing"
     message: |
-      Iteration 14 — Four-pillar condition overhaul verified end-to-end.
-      Backend 26/26 pass (new required pillars, legacy fields optional,
-      `condition` alias = round(avg), 422 on bogus values, 40/40 companion
-      regressions). Frontend mobile: 4 rating rows in the exact spec order
-      with color-coded dots. E2E: FB-000041 posted with 8/5/9/3 → admin
-      hero reads 6.3 / 10 with MECH/COSM/INT/HIST pills on both mobile and
-      desktop. Legacy submissions (FB-000031) still render with EXT/INT/
-      TYRES pills — regression path intact. Housekeeping: /app/backend/
-      tests/test_phase3.py has stale fixtures; endpoints themselves are
-      healthy. Report: /app/test_reports/iteration_14.json.
+      Iteration 15 — Rim Size + AI Tyre Estimate PASS. Backend 20/20
+      (bounds 12-26, admin-only, real GPT-5.2 happy path with BMW 3 Series
+      320i M-Sport 2020 rim=18 returning tyre_spec 225/45 R18, set-of-four
+      R11k-R25k, brands Bridgestone/Michelin/Continental, medium
+      confidence, cache overwrite on refresh). Frontend mobile submit has
+      RIM SIZE wheel picker 13"-22". Desktop cockpit renders full
+      TYRE REPLACEMENT ESTIMATE card with big total, ranges, brands,
+      REFRESH cycle. Zero bugs, zero regressions on dealer/admin/market
+      analysis endpoints. Report: /app/test_reports/iteration_15.json.
 
