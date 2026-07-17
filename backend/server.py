@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Query
 from fastapi.responses import Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -163,6 +163,39 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
     if not user:
         raise HTTPException(401, "User not found")
     return user
+
+
+async def _resolve_user_from_token(token: str) -> dict:
+    """Decode a raw JWT (from Authorization header or `access_token` query param).
+
+    Used by GET endpoints that need to be embed-able inside a mobile in-app
+    browser (WebBrowser.openBrowserAsync) which cannot forward custom headers.
+    """
+    try:
+        decoded = pyjwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    except pyjwt.ExpiredSignatureError:
+        raise HTTPException(401, "Token expired")
+    except Exception:
+        raise HTTPException(401, "Invalid token")
+    user = await db.users.find_one({"id": decoded["sub"]}, {"_id": 0, "password_hash": 0})
+    if not user:
+        raise HTTPException(401, "User not found")
+    return user
+
+
+async def get_user_flexible(
+    authorization: Optional[str] = Header(None),
+    access_token: Optional[str] = Query(None),
+) -> dict:
+    """Auth dependency that accepts either the Authorization header OR an
+    `?access_token=` query parameter. Only intended for GET endpoints that
+    return blob content (PDFs) previewable in an in-app browser.
+    """
+    if authorization and authorization.startswith("Bearer "):
+        return await _resolve_user_from_token(authorization.split(" ", 1)[1])
+    if access_token:
+        return await _resolve_user_from_token(access_token)
+    raise HTTPException(401, "Missing authentication")
 
 
 async def require_admin(current: dict = Depends(get_current_user)) -> dict:
@@ -746,6 +779,125 @@ async def list_submission_reports(sub_id: str, current: dict = Depends(get_curre
     return {"reports": reports}
 
 
+def _mock_report_data(report_type: str, sub: dict) -> dict:
+    """Generate a realistic-looking mock payload for a given report type.
+
+    This is a placeholder until real Lightstone / CarVertical APIs are wired
+    up. Content is deterministic-ish based on the submission so the same
+    vehicle always renders the same story in the UI. Structure is
+    intentionally shaped as {summary, sections: {label: {k: v}}} so the
+    generic frontend renderer (ReportResultBody) handles it without knowing
+    each provider's schema.
+    """
+    vin = (sub.get("vin") or "").strip() or "—"
+    make = sub.get("make_name") or "—"
+    model = sub.get("model_name") or "—"
+    year = sub.get("year") or sub.get("year_registered") or "—"
+    mileage = int(sub.get("mileage") or 0)
+
+    if report_type == "lightstone_verification":
+        return {
+            "summary": (
+                f"Vehicle verification complete. VIN {vin} matches SAPS and eNaTIS records "
+                f"for a {year} {make} {model}. No stolen/interest markers found."
+            ),
+            "sections": {
+                "Identity Match": {
+                    "VIN": vin,
+                    "Registered Make/Model": f"{make} {model}",
+                    "Registered Year": str(year),
+                    "Registered Colour": sub.get("colour") or "—",
+                    "License Number": (sub.get("license_disk_data") or "").split("|")[0][:12] or "CA 000 000",
+                },
+                "Registration Status": {
+                    "Current Status": "Active",
+                    "Licence Expiry": "2027-03-31",
+                    "Registered Owner Type": "Private",
+                    "Duplicate Keys Issued": "No",
+                    "Ownership Changes (last 3y)": "1",
+                },
+                "SAPS / Interest Checks": {
+                    "Stolen Marker": "None",
+                    "Border Alert": "None",
+                    "Finance Interest": "None",
+                    "Insurance Write-off": "None",
+                },
+                "Compliance": {
+                    "Roadworthy Certificate": "Valid — 2025-11-18",
+                    "eNaTIS Last Sync": "2026-07-14",
+                },
+            },
+        }
+
+    if report_type == "lightstone_repair":
+        approx_events = 3 if mileage > 80000 else 2
+        return {
+            "summary": (
+                f"Repair history captured for VIN {vin}. {approx_events} insurance/workshop event(s) "
+                "found across the last 6 years. No structural repairs recorded."
+            ),
+            "sections": {
+                "Repair Summary": {
+                    "Total Events": str(approx_events),
+                    "Structural Repairs": "0",
+                    "Cosmetic Repairs": str(approx_events - 1) if approx_events > 1 else "0",
+                    "Mechanical Repairs": "1",
+                    "Highest Claim Value": _fmt_zar(23400),
+                },
+                "Events Timeline": [
+                    "2022-08 — Rear bumper respray (Cosmetic, claim R8,240)",
+                    "2023-11 — Front left panel repair (Cosmetic, claim R14,180)",
+                    "2025-04 — Alternator replacement (Mechanical, claim R23,400)",
+                ][:approx_events],
+                "Service Milestones": {
+                    "Last Full Service": "2026-02 · 92,400 km",
+                    "Cambelt / Chain": "OK — replaced 2024-06",
+                    "Battery": "OK — replaced 2025-09",
+                },
+            },
+        }
+
+    if report_type == "car_vertical":
+        return {
+            "summary": (
+                f"CarVertical dossier for VIN {vin}. Cross-referenced against 900+ international "
+                "databases including EU imports, mileage records, and damage archives."
+            ),
+            "sections": {
+                "Overview": {
+                    "VIN": vin,
+                    "Vehicle": f"{year} {make} {model}",
+                    "First Registered": f"{max(int(year or 2020) - 1, 1990)}-04-12",
+                    "Country of Origin": "South Africa",
+                    "Imported": "No",
+                },
+                "Mileage Cross-check": {
+                    "Records Found": "4",
+                    "Latest Reading": f"{mileage:,} km",
+                    "Rollback Detected": "No",
+                    "Consistency": "PASS",
+                },
+                "Damage Records": {
+                    "Photos Attached": "2",
+                    "Severity": "Minor" if mileage < 100000 else "Moderate",
+                    "Airbag Deployment": "No",
+                    "Odometer Freeze": "No",
+                },
+                "International Checks": [
+                    "EU Stolen Vehicle Database: No match",
+                    "Auction History (US/EU): 0 auction listings",
+                    "Recall Notices: None outstanding",
+                ],
+                "Estimated Market Value (ZAR)": {
+                    "Trade": _fmt_zar((sub.get("price") or 0) * 0.94),
+                    "Retail": _fmt_zar((sub.get("price") or 0) * 1.12),
+                },
+            },
+        }
+
+    return {"summary": "No mock data for this report type.", "sections": {}}
+
+
 @api_router.post("/submissions/{sub_id}/reports")
 async def order_submission_report(
     sub_id: str,
@@ -755,19 +907,25 @@ async def order_submission_report(
     """Dealer orders a chargeable VIN report against a priced submission.
 
     Guards:
-      - Must be the owning dealer (or admin).
+      - ONLY the owning dealer may place the order. Admins can view but cannot
+        purchase reports on behalf of a dealer.
       - Submission must have status 'priced' (offer received) so an offer exists.
       - VIN must be present (empty or 'TBC' is rejected).
       - Explicit charge acceptance (accepted_charge=True) is mandatory.
       - Same report type cannot be ordered twice for the same submission.
     """
+    if current.get("role") == "admin":
+        raise HTTPException(
+            403,
+            "Admins cannot order reports on behalf of a dealer. The dealer must place the order themselves.",
+        )
     if not payload.accepted_charge:
         raise HTTPException(400, "Charge must be accepted before ordering the report")
 
     sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
     if not sub:
         raise HTTPException(404, "Submission not found")
-    if current["role"] != "admin" and sub["dealer_id"] != current["id"]:
+    if sub["dealer_id"] != current["id"]:
         raise HTTPException(403, "Not authorized")
     if sub.get("status") != "priced":
         raise HTTPException(400, "Reports can only be ordered after an offer has been received")
@@ -786,6 +944,12 @@ async def order_submission_report(
     if existing:
         raise HTTPException(409, "This report has already been ordered for this submission")
 
+    # MOCKED: real Lightstone / CarVertical APIs will replace this generator.
+    # For now the report is marked delivered immediately with a realistic payload
+    # so the dealer can see the shape of the final output.
+    result_data = _mock_report_data(payload.type, sub)
+    now_ts = now_utc()
+
     order = {
         "id": str(uuid.uuid4()),
         "submission_id": sub_id,
@@ -794,12 +958,13 @@ async def order_submission_report(
         "type": payload.type,
         "name": catalog["name"],
         "cost_zar": catalog["cost_zar"],
-        "status": "pending",   # 'pending' | 'delivered' | 'failed'
-        "ordered_at": now_utc(),
+        "status": "delivered",
+        "ordered_at": now_ts,
         "ordered_by": current["id"],
-        "delivered_at": None,
-        "result_data": None,
-        "note": "Order captured. Awaiting API integration — result will populate once the provider responds.",
+        "delivered_at": now_ts,
+        "result_data": result_data,
+        "note": "MOCK DATA — this report was generated locally while the real provider APIs are being integrated.",
+        "mocked": True,
     }
     await db.report_orders.insert_one(order)
     order.pop("_id", None)
@@ -954,7 +1119,7 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
             story.append(Spacer(1, 4))
             story.append(Paragraph(tyre["disclaimer"], small))
 
-    # Ordered VIN reports (pending until real APIs are wired)
+    # Ordered VIN reports — includes result_data for delivered ones
     if reports:
         story.append(Paragraph("ORDERED VIN REPORTS", h2))
         rep_rows = [["Report", "Cost", "Status", "Ordered"]]
@@ -977,6 +1142,50 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
             ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
         ]))
         story.append(t5)
+
+        # For each delivered report with structured mock/real data, embed a
+        # per-report detail block so the PDF is a complete stand-alone package.
+        for r in reports:
+            data = r.get("result_data")
+            if not data or (r.get("status") or "").lower() != "delivered":
+                continue
+            story.append(Spacer(1, 10))
+            story.append(Paragraph(
+                f"{r.get('name') or r.get('type')} — VIN {r.get('vin') or '—'}",
+                ParagraphStyle(
+                    "reportName", parent=styles["Heading3"],
+                    fontSize=11, leading=13, textColor=rl_colors.black,
+                    spaceBefore=6, spaceAfter=4,
+                )
+            ))
+            if r.get("mocked"):
+                story.append(Paragraph(
+                    "MOCK DATA — will be replaced by the real provider response once integrated.",
+                    small,
+                ))
+                story.append(Spacer(1, 3))
+            if data.get("summary"):
+                story.append(Paragraph(data["summary"], body))
+                story.append(Spacer(1, 4))
+            for section_name, section_val in (data.get("sections") or {}).items():
+                story.append(Paragraph(f"<b>{section_name}</b>", body))
+                if isinstance(section_val, list):
+                    for item in section_val:
+                        story.append(Paragraph(f"•&nbsp;&nbsp;{item}", small))
+                elif isinstance(section_val, dict):
+                    sec_rows = [[str(k), str(v)] for k, v in section_val.items()]
+                    if sec_rows:
+                        st = Table(sec_rows, colWidths=[55*mm, 115*mm])
+                        st.setStyle(TableStyle([
+                            ("FONT", (0, 0), (-1, -1), "Helvetica", 9),
+                            ("FONT", (0, 0), (0, -1), "Helvetica-Bold", 9),
+                            ("LINEBELOW", (0, 0), (-1, -1), 0.15, rl_colors.lightgrey),
+                            ("TOPPADDING", (0, 0), (-1, -1), 3),
+                            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                        ]))
+                        story.append(st)
+                story.append(Spacer(1, 3))
+
         pending_count = sum(1 for r in reports if (r.get("status") or "pending") == "pending")
         if pending_count:
             story.append(Spacer(1, 4))
@@ -998,8 +1207,146 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
     return buf.getvalue()
 
 
+async def _build_report_pdf(sub: dict, order: dict) -> bytes:
+    """Render a single VIN report as a stand-alone PDF.
+
+    Layout is deliberately provider-styled for the Car Vertical case (dark
+    header, blue accent), otherwise a monochrome Lightstone-style layout.
+    Content is pulled from `order['result_data']` which the mock generator
+    (or a future real API) fills in.
+    """
+    from io import BytesIO
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors as rl_colors
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+    )
+
+    report_type = order.get("type") or "report"
+    provider_map = {
+        "lightstone_verification": ("Lightstone", rl_colors.HexColor("#111111"), rl_colors.HexColor("#8ec7ff")),
+        "lightstone_repair":       ("Lightstone", rl_colors.HexColor("#111111"), rl_colors.HexColor("#f7c56e")),
+        "car_vertical":            ("carVertical", rl_colors.HexColor("#0f2540"), rl_colors.HexColor("#00b3ff")),
+    }
+    provider_name, header_bg, accent = provider_map.get(
+        report_type, ("Report", rl_colors.black, rl_colors.grey)
+    )
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=16*mm, rightMargin=16*mm,
+        topMargin=10*mm, bottomMargin=14*mm,
+        title=f"{order.get('name') or report_type} - {sub.get('reference') or ''}",
+        author="Fourbuy Car Buying Co.",
+    )
+    styles = getSampleStyleSheet()
+    body = ParagraphStyle("body", parent=styles["Normal"], fontSize=10, leading=14)
+    small = ParagraphStyle("small", parent=styles["Normal"], fontSize=8, leading=11, textColor=rl_colors.grey)
+    h_section = ParagraphStyle(
+        "h_section", parent=styles["Heading2"],
+        fontSize=11, leading=14, textColor=rl_colors.HexColor("#0f2540") if report_type == "car_vertical" else rl_colors.black,
+        spaceBefore=12, spaceAfter=6, textTransform="uppercase",
+    )
+    story = []
+
+    # Header banner
+    header_rows = [[
+        Paragraph(
+            f"<font color='white' size='16'><b>{provider_name}</b></font>"
+            f"<br/><font color='white' size='9'>{order.get('name') or report_type}</font>",
+            body,
+        ),
+        Paragraph(
+            f"<font color='white' size='8'>VIN</font><br/>"
+            f"<font color='white' size='10'><b>{order.get('vin') or '—'}</b></font>",
+            body,
+        ),
+    ]]
+    header_table = Table(header_rows, colWidths=[125*mm, 55*mm])
+    header_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), header_bg),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 14),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 14),
+        ("TOPPADDING", (0, 0), (-1, -1), 14),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
+    ]))
+    story.append(header_table)
+
+    # Accent strip
+    strip = Table([[""]], colWidths=[180*mm], rowHeights=[3])
+    strip.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), accent)]))
+    story.append(strip)
+
+    # Meta row
+    meta_rows = [[
+        Paragraph(f"<b>{sub.get('year') or ''} {sub.get('make_name') or ''} {sub.get('model_name') or ''}</b>", body),
+        Paragraph(f"<b>Reference:</b> {sub.get('reference') or sub.get('id', '')[:8]}", small),
+        Paragraph(
+            f"<b>Report Date:</b> {(order.get('delivered_at') or order.get('ordered_at') or '')[:10]}",
+            small,
+        ),
+    ]]
+    meta_table = Table(meta_rows, colWidths=[70*mm, 55*mm, 55*mm])
+    meta_table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.5, rl_colors.lightgrey),
+    ]))
+    story.append(meta_table)
+
+    # Mock disclaimer
+    if order.get("mocked"):
+        story.append(Spacer(1, 6))
+        story.append(Paragraph(
+            "<i>MOCK DATA — this dossier is generated locally while the real provider APIs are being integrated. Structure mirrors the live provider response.</i>",
+            small,
+        ))
+
+    data = order.get("result_data") or {}
+
+    # Summary paragraph
+    if data.get("summary"):
+        story.append(Paragraph("SUMMARY", h_section))
+        story.append(Paragraph(data["summary"], body))
+
+    # Sections
+    for section_name, section_val in (data.get("sections") or {}).items():
+        story.append(Paragraph(section_name.upper(), h_section))
+        if isinstance(section_val, list):
+            for item in section_val:
+                story.append(Paragraph(f"•&nbsp;&nbsp;{item}", body))
+        elif isinstance(section_val, dict) and section_val:
+            rows = [[str(k), str(v)] for k, v in section_val.items()]
+            tbl = Table(rows, colWidths=[70*mm, 105*mm])
+            tbl.setStyle(TableStyle([
+                ("FONT", (0, 0), (-1, -1), "Helvetica", 9.5),
+                ("FONT", (0, 0), (0, -1), "Helvetica-Bold", 9.5),
+                ("LINEBELOW", (0, 0), (-1, -1), 0.25, rl_colors.lightgrey),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]))
+            story.append(tbl)
+        story.append(Spacer(1, 4))
+
+    # Footer
+    story.append(Spacer(1, 16))
+    story.append(Paragraph(
+        f"Delivered via Fourbuy Car Buying Co. · Report Cost: R{order.get('cost_zar', 0):.0f} · Order ID: {order.get('id')}",
+        small,
+    ))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
 @api_router.get("/submissions/{sub_id}/valuation.pdf")
-async def download_valuation_pdf(sub_id: str, current: dict = Depends(get_current_user)):
+async def download_valuation_pdf(sub_id: str, current: dict = Depends(get_user_flexible)):
     sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0, "photos": 0})
     if not sub:
         raise HTTPException(404, "Submission not found")
@@ -1019,10 +1366,55 @@ async def download_valuation_pdf(sub_id: str, current: dict = Depends(get_curren
         raise HTTPException(500, f"Failed to generate PDF: {e}")
 
     filename = f"valuation_{sub.get('reference') or sub_id}.pdf".replace(" ", "_")
+    # `inline` so mobile in-app browsers preview the PDF instead of prompting to
+    # download. On the web/desktop flow the frontend fetches as a blob and
+    # triggers a download link itself, so `inline` is fine for both cases.
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+@api_router.get("/submissions/{sub_id}/reports/{report_type}.pdf")
+async def download_report_pdf(
+    sub_id: str,
+    report_type: str,
+    current: dict = Depends(get_user_flexible),
+):
+    """Render a single VIN report as its own PDF (Lightstone / CarVertical
+    styled). Useful when the dealer wants to keep a copy of the individual
+    report — especially the Car Vertical dossier which mimics the sample
+    provider PDF layout.
+    """
+    if report_type not in REPORT_CATALOG:
+        raise HTTPException(400, "Unknown report type")
+
+    sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0, "photos": 0})
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+    if current["role"] != "admin" and sub["dealer_id"] != current["id"]:
+        raise HTTPException(403, "Not authorized")
+
+    order = await db.report_orders.find_one(
+        {"submission_id": sub_id, "type": report_type}, {"_id": 0}
+    )
+    if not order:
+        raise HTTPException(404, "Report has not been ordered for this submission")
+    if (order.get("status") or "") != "delivered":
+        raise HTTPException(400, "Report has not been delivered yet")
+
+    try:
+        pdf_bytes = await _build_report_pdf(sub, order)
+    except Exception as e:
+        logger.exception("Report PDF generation failed")
+        raise HTTPException(500, f"Failed to generate report PDF: {e}")
+
+    filename = f"{report_type}_{sub.get('reference') or sub_id}.pdf".replace(" ", "_")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
 
 

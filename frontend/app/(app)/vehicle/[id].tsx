@@ -18,7 +18,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
-import * as FileSystem from "expo-file-system";
+import * as WebBrowser from "expo-web-browser";
+import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { colors, spacing, radius, fonts } from "@/src/theme";
 import { apiFetch } from "@/src/api";
@@ -101,6 +102,7 @@ type ReportOrder = {
   delivered_at?: string | null;
   vin?: string;
   note?: string;
+  result_data?: Record<string, any> | null;
 };
 
 type TyreEstimate = {
@@ -180,6 +182,7 @@ export default function VehicleDetail() {
     { type: ReportOrder["type"]; name: string; cost_zar: number } | null
   >(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [viewingReport, setViewingReport] = useState<ReportOrder | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -327,49 +330,116 @@ export default function VehicleDetail() {
     setDownloadingPdf(true);
     try {
       const backend = process.env.EXPO_PUBLIC_BACKEND_URL;
-      const url = `${backend}/api/submissions/${sub.id}/valuation.pdf`;
+      if (!backend) throw new Error("Missing EXPO_PUBLIC_BACKEND_URL");
+      const path = `/api/submissions/${sub.id}/valuation.pdf`;
       const token = await storage.secureGet<string>(TOKEN_KEY, "");
       const filename = `valuation_${sub.reference || sub.id}.pdf`;
 
       if (Platform.OS === "web") {
         // Fetch as blob, then trigger a download link.
-        const res = await fetch(url, {
+        const res = await fetch(`${backend}${path}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (!res.ok) {
+          const errText = await res.text().catch(() => "");
+          throw new Error(`Server returned HTTP ${res.status} ${errText.slice(0, 120)}`);
+        }
+        const blob = await res.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        // Open in a new tab so the user gets an inline PDF preview and can
+        // then decide to download it. This matches the mobile UX below.
+        window.open(objectUrl, "_blank");
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      } else {
+        // Native: open the PDF inline inside an in-app browser (which previews
+        // PDFs on both iOS and Android). The token is passed as a query param
+        // because mobile in-app browsers cannot forward custom headers.
+        const url = `${backend}${path}?access_token=${encodeURIComponent(token || "")}`;
+        const opened = await WebBrowser.openBrowserAsync(url, {
+          dismissButtonStyle: "close",
+          controlsColor: colors.text,
+          toolbarColor: colors.paper,
+          enableBarCollapsing: true,
+        });
+        // If WebBrowser fails to open (very rare), fall back to download+share.
+        if (opened.type === "cancel" || opened.type === "dismiss") {
+          // User just closed the preview — nothing to do.
+          return;
+        }
+      }
+    } catch (e: any) {
+      // eslint-disable-next-line no-console
+      console.error("[valuation-pdf] preview failed:", e);
+      // Last-ditch fallback: download to cache and hand off to Sharing so the
+      // user still gets the PDF somehow.
+      try {
+        const backend = process.env.EXPO_PUBLIC_BACKEND_URL;
+        const token = await storage.secureGet<string>(TOKEN_KEY, "");
+        const cacheDir = FileSystem.cacheDirectory || FileSystem.documentDirectory;
+        if (cacheDir && sub) {
+          const target = `${cacheDir}valuation_${sub.reference || sub.id}.pdf`;
+          const dl = await FileSystem.downloadAsync(
+            `${backend}/api/submissions/${sub.id}/valuation.pdf`,
+            target,
+            { headers: token ? { Authorization: `Bearer ${token}` } : undefined }
+          );
+          if (dl.status >= 200 && dl.status < 300) {
+            const canShare = await Sharing.isAvailableAsync();
+            if (canShare) {
+              await Sharing.shareAsync(dl.uri, {
+                mimeType: "application/pdf",
+                dialogTitle: "Valuation PDF",
+                UTI: "com.adobe.pdf",
+              });
+              return;
+            }
+          }
+        }
+      } catch (fallbackErr) {
+        // eslint-disable-next-line no-console
+        console.error("[valuation-pdf] fallback share failed:", fallbackErr);
+      }
+      Alert.alert(
+        "Preview failed",
+        e?.message ? String(e.message) : "Could not open the valuation PDF. Please try again."
+      );
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
+  const handleOpenReportPdf = async (reportType: ReportOrder["type"]) => {
+    if (!sub) return;
+    try {
+      const backend = process.env.EXPO_PUBLIC_BACKEND_URL;
+      if (!backend) throw new Error("Missing EXPO_PUBLIC_BACKEND_URL");
+      const path = `/api/submissions/${sub.id}/reports/${reportType}.pdf`;
+      const token = await storage.secureGet<string>(TOKEN_KEY, "");
+
+      if (Platform.OS === "web") {
+        const res = await fetch(`${backend}${path}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const blob = await res.blob();
         const objectUrl = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = objectUrl;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+        window.open(objectUrl, "_blank");
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
       } else {
-        // Native: download to cache dir with auth header, then share.
-        const target = `${FileSystem.cacheDirectory}${filename}`;
-        const dl = await FileSystem.downloadAsync(url, target, {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        const url = `${backend}${path}?access_token=${encodeURIComponent(token || "")}`;
+        await WebBrowser.openBrowserAsync(url, {
+          dismissButtonStyle: "close",
+          controlsColor: colors.text,
+          toolbarColor: colors.paper,
         });
-        if (dl.status < 200 || dl.status >= 300) {
-          throw new Error(`Server returned HTTP ${dl.status}`);
-        }
-        const canShare = await Sharing.isAvailableAsync();
-        if (canShare) {
-          await Sharing.shareAsync(dl.uri, {
-            mimeType: "application/pdf",
-            dialogTitle: "Valuation PDF",
-            UTI: "com.adobe.pdf",
-          });
-        } else {
-          Alert.alert("Saved", `PDF saved to ${dl.uri}`);
-        }
       }
     } catch (e: any) {
-      Alert.alert("Download failed", e.message || "Could not download the valuation PDF");
-    } finally {
-      setDownloadingPdf(false);
+      // eslint-disable-next-line no-console
+      console.error("[report-pdf] open failed:", e);
+      Alert.alert(
+        "Preview failed",
+        e?.message ? String(e.message) : "Could not open the report PDF."
+      );
     }
   };
 
@@ -462,7 +532,7 @@ export default function VehicleDetail() {
               <View style={styles.docBtnLeft}>
                 <Ionicons name="document-text-outline" size={22} color={colors.text} />
                 <View style={{ marginLeft: spacing.sm, flex: 1 }}>
-                  <Text style={styles.docBtnTitle}>Download Valuation PDF</Text>
+                  <Text style={styles.docBtnTitle}>Open Valuation PDF</Text>
                   <Text style={styles.docBtnSubtitle}>
                     Includes offer, condition, tyre estimate & any purchased reports
                   </Text>
@@ -471,24 +541,50 @@ export default function VehicleDetail() {
               {downloadingPdf ? (
                 <ActivityIndicator color={colors.text} />
               ) : (
-                <Ionicons name="download-outline" size={20} color={colors.text} />
+                <Ionicons name="open-outline" size={20} color={colors.text} />
               )}
             </TouchableOpacity>
 
-            {/* VIN-linked report ordering — only when a VIN was entered/scanned */}
+            {/* VIN-linked report ordering — only when a VIN was entered/scanned.
+                Admins never see the "Order" buttons: they can only view reports
+                the dealer has already ordered. */}
             {sub.vin && sub.vin.trim() && sub.vin.toUpperCase() !== "TBC" ? (
               <>
-                <Text style={styles.reportsSubhead}>Order a VIN-linked report</Text>
-                <Text style={styles.reportsHelp}>
-                  Reports are verified against VIN {sub.vin}. The charge will be added to your next invoice.
-                </Text>
+                {isAdmin ? (
+                  // Admin: hide the order UI. Show ordered reports (if any) or a
+                  // small hint that the dealer hasn't purchased any yet.
+                  (sub.report_orders || []).length > 0 ? (
+                    <>
+                      <Text style={styles.reportsSubhead}>VIN reports ordered by dealer</Text>
+                      <Text style={styles.reportsHelp}>
+                        Verified against VIN {sub.vin}. Admins can view results but cannot order reports on behalf of a dealer.
+                      </Text>
+                    </>
+                  ) : (
+                    <View style={styles.adminNoReports}>
+                      <Ionicons name="lock-closed-outline" size={16} color={colors.textDisabled} />
+                      <Text style={styles.adminNoReportsText}>
+                        VIN reports can only be ordered by the dealer. None purchased yet.
+                      </Text>
+                    </View>
+                  )
+                ) : (
+                  <>
+                    <Text style={styles.reportsSubhead}>Order a VIN-linked report</Text>
+                    <Text style={styles.reportsHelp}>
+                      Reports are verified against VIN {sub.vin}. The charge will be added to your next invoice.
+                    </Text>
+                  </>
+                )}
 
-                {(["lightstone_verification", "lightstone_repair", "car_vertical"] as ReportOrder["type"][]).map(
-                  (t) => {
+                {(["lightstone_verification", "lightstone_repair", "car_vertical"] as ReportOrder["type"][])
+                  .filter((t) => !isAdmin || orderedReportTypes.has(t))
+                  .map((t) => {
                     const meta = REPORT_CATALOG[t];
                     const alreadyOrdered = orderedReportTypes.has(t);
                     const existing = (sub.report_orders || []).find((r) => r.type === t);
                     const busy = orderingReportType === t;
+                    const isDelivered = existing?.status === "delivered";
                     return (
                       <View key={t} style={styles.reportCard}>
                         <View style={{ flex: 1, marginRight: spacing.sm }}>
@@ -499,15 +595,13 @@ export default function VehicleDetail() {
                               <View
                                 style={[
                                   styles.statusPill,
-                                  existing?.status === "delivered"
-                                    ? styles.statusPillOk
-                                    : styles.statusPillPending,
+                                  isDelivered ? styles.statusPillOk : styles.statusPillPending,
                                 ]}
                               >
                                 <Text
                                   style={[
                                     styles.statusPillText,
-                                    existing?.status === "delivered"
+                                    isDelivered
                                       ? { color: colors.success }
                                       : { color: colors.warning },
                                   ]}
@@ -515,18 +609,31 @@ export default function VehicleDetail() {
                                   {(existing?.status || "pending").toUpperCase()}
                                 </Text>
                               </View>
-                              <Text style={styles.reportPendingNote} numberOfLines={2}>
-                                {existing?.note ||
-                                  "Awaiting API integration — result will appear here once the provider responds."}
-                              </Text>
+                              {!isDelivered ? (
+                                <Text style={styles.reportPendingNote} numberOfLines={2}>
+                                  {existing?.note ||
+                                    "Awaiting API integration — result will appear here once the provider responds."}
+                                </Text>
+                              ) : null}
                             </View>
                           ) : null}
                         </View>
                         {alreadyOrdered ? (
-                          <View style={styles.reportOrderedBadge}>
-                            <Ionicons name="checkmark" size={16} color={colors.text} />
-                            <Text style={styles.reportOrderedBadgeText}>Ordered</Text>
-                          </View>
+                          isDelivered ? (
+                            <TouchableOpacity
+                              testID={`view-report-${t}`}
+                              style={styles.viewReportBtn}
+                              onPress={() => setViewingReport(existing || null)}
+                            >
+                              <Ionicons name="eye-outline" size={16} color="#000" />
+                              <Text style={styles.viewReportBtnText}>View</Text>
+                            </TouchableOpacity>
+                          ) : (
+                            <View style={styles.reportOrderedBadge}>
+                              <Ionicons name="checkmark" size={16} color={colors.text} />
+                              <Text style={styles.reportOrderedBadgeText}>Ordered</Text>
+                            </View>
+                          )
                         ) : (
                           <TouchableOpacity
                             testID={`order-report-${t}`}
@@ -545,8 +652,7 @@ export default function VehicleDetail() {
                         )}
                       </View>
                     );
-                  }
-                )}
+                  })}
               </>
             ) : null}
           </View>
@@ -1241,6 +1347,61 @@ export default function VehicleDetail() {
           </View>
         </View>
       </Modal>
+
+      {/* Report result viewer modal */}
+      <Modal
+        visible={viewingReport !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setViewingReport(null)}
+      >
+        <View style={styles.reportModalBackdrop}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setViewingReport(null)} />
+          <View style={styles.viewReportCard}>
+            <View style={styles.viewReportHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.viewReportKicker}>
+                  {viewingReport?.status?.toUpperCase() || "REPORT"}
+                </Text>
+                <Text style={styles.viewReportTitle}>{viewingReport?.name}</Text>
+                <Text style={styles.viewReportMeta}>
+                  VIN {viewingReport?.vin} · Delivered {(viewingReport?.delivered_at || viewingReport?.ordered_at || "").slice(0, 10)}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setViewingReport(null)} testID="close-report-viewer">
+                <Ionicons name="close" size={26} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 480 }} contentContainerStyle={{ paddingBottom: spacing.md }}>
+              {viewingReport?.result_data ? (
+                <ReportResultBody data={viewingReport.result_data} />
+              ) : (
+                <Text style={styles.viewReportBody}>
+                  This report was ordered but no result payload is attached yet.
+                </Text>
+              )}
+              <View style={styles.mockBanner}>
+                <Ionicons name="information-circle-outline" size={16} color={colors.textDisabled} />
+                <Text style={styles.mockBannerText}>
+                  MOCK DATA — real provider APIs will replace this content once integrated.
+                </Text>
+              </View>
+            </ScrollView>
+
+            {viewingReport?.status === "delivered" ? (
+              <TouchableOpacity
+                testID="open-report-pdf"
+                style={styles.reportPdfBtn}
+                onPress={() => viewingReport && handleOpenReportPdf(viewingReport.type)}
+              >
+                <Ionicons name="document-text-outline" size={18} color="#000" />
+                <Text style={styles.reportPdfBtnText}>Open Full Report PDF</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1280,6 +1441,54 @@ function HeroPill({ label, value }: { label: string; value?: number }) {
     <View style={styles.heroPill}>
       <Text style={styles.heroPillLabel}>{label}</Text>
       <Text style={styles.heroPillValue}>{value ? `${value}/10` : "—"}</Text>
+    </View>
+  );
+}
+
+/**
+ * Renders a structured report result payload. Handles arbitrary keys by
+ * grouping known sections first and then dumping the remainder as key/value
+ * rows. Arrays are rendered as bulleted lists, nested objects as sub-rows.
+ */
+function ReportResultBody({ data }: { data: Record<string, any> }) {
+  const summary = data.summary as string | undefined;
+  const sections = data.sections as
+    | Record<string, Record<string, any> | any[]>
+    | undefined;
+
+  const renderValue = (v: any): string => {
+    if (v == null) return "—";
+    if (typeof v === "boolean") return v ? "Yes" : "No";
+    if (Array.isArray(v)) return v.map((x) => renderValue(x)).join(", ");
+    if (typeof v === "object") return JSON.stringify(v);
+    return String(v);
+  };
+
+  return (
+    <View>
+      {summary ? (
+        <Text style={[styles.viewReportBody, { marginBottom: spacing.sm }]}>{summary}</Text>
+      ) : null}
+
+      {sections && typeof sections === "object"
+        ? Object.entries(sections).map(([sectionName, sectionValue]) => (
+            <View key={sectionName}>
+              <Text style={styles.reportSectionHeader}>{sectionName}</Text>
+              {Array.isArray(sectionValue)
+                ? sectionValue.map((item, i) => (
+                    <Text key={`${sectionName}-${i}`} style={styles.reportBullet}>
+                      •  {renderValue(item)}
+                    </Text>
+                  ))
+                : Object.entries(sectionValue || {}).map(([k, v]) => (
+                    <View key={`${sectionName}-${k}`} style={styles.reportRow}>
+                      <Text style={styles.reportRowLabel}>{k}</Text>
+                      <Text style={styles.reportRowValue}>{renderValue(v)}</Text>
+                    </View>
+                  ))}
+            </View>
+          ))
+        : null}
     </View>
   );
 }
@@ -1923,4 +2132,157 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   confirmBtnText: { color: "#000", fontWeight: "800", fontSize: 15, letterSpacing: 0.4 },
+
+  // Admin "no reports yet" hint
+  adminNoReports: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderStyle: "dashed",
+    marginTop: spacing.sm,
+  },
+  adminNoReportsText: {
+    color: colors.textDisabled,
+    fontSize: 12,
+    marginLeft: 8,
+    flex: 1,
+    lineHeight: 16,
+  },
+
+  // View Report button (delivered)
+  viewReportBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.text,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: radius.sm,
+    minWidth: 80,
+    justifyContent: "center",
+  },
+  viewReportBtnText: {
+    color: "#000",
+    fontWeight: "800",
+    letterSpacing: 1,
+    fontSize: 12,
+    marginLeft: 4,
+    textTransform: "uppercase",
+  },
+
+  // Report viewer modal
+  viewReportCard: {
+    width: "100%",
+    maxWidth: 520,
+    maxHeight: "88%",
+    backgroundColor: colors.paper,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+  },
+  viewReportHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    marginBottom: spacing.md,
+  },
+  viewReportKicker: {
+    color: colors.success,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1.5,
+  },
+  viewReportTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "800",
+    marginTop: 4,
+    lineHeight: 20,
+  },
+  viewReportMeta: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    marginTop: 4,
+    fontFamily: fonts.mono,
+  },
+  viewReportBody: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  reportSectionHeader: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    marginTop: spacing.md,
+    marginBottom: 6,
+  },
+  reportRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: spacing.sm,
+  },
+  reportRowLabel: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    flex: 1,
+  },
+  reportRowValue: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "600",
+    flexShrink: 1,
+    textAlign: "right",
+    maxWidth: "60%",
+  },
+  reportBullet: {
+    color: colors.text,
+    fontSize: 12,
+    paddingVertical: 3,
+    lineHeight: 17,
+  },
+  mockBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: spacing.md,
+    padding: 10,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderStyle: "dashed",
+    backgroundColor: colors.card,
+  },
+  mockBannerText: {
+    color: colors.textDisabled,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.8,
+    marginLeft: 6,
+    flex: 1,
+  },
+  reportPdfBtn: {
+    marginTop: spacing.sm,
+    backgroundColor: colors.text,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    borderRadius: radius.sm,
+  },
+  reportPdfBtnText: {
+    color: "#000",
+    fontWeight: "800",
+    letterSpacing: 1,
+    marginLeft: 6,
+    textTransform: "uppercase",
+    fontSize: 13,
+  },
 });
