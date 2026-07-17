@@ -65,6 +65,7 @@ type Submission = {
   paint_quality?: string | null;
   accident_damage: boolean;
   accident_damage_types?: string[];
+  rim_size?: number | null;
   reconditioning_items?: ReconItem[];
   reconditioning_total_zar?: number;
   colour: string;
@@ -78,7 +79,29 @@ type Submission = {
   priced_at?: string | null;
   market_analysis?: MarketAnalysisPayload | null;
   market_analysis_at?: string | null;
+  tyre_estimate?: TyreEstimatePayload | null;
+  tyre_estimate_at?: string | null;
   created_at: string;
+};
+
+type TyreEstimate = {
+  tyre_spec?: string;
+  per_tyre_range_zar?: { low: number; high: number; typical: number };
+  set_of_four_zar?: { low: number; high: number; typical: number };
+  fitment_and_balance_zar?: number;
+  total_replacement_estimate_zar?: number;
+  recommended_brands?: string[];
+  notes?: string;
+  confidence?: "low" | "medium" | "high";
+  disclaimer?: string;
+  raw?: string;
+};
+
+type TyreEstimatePayload = {
+  estimate: TyreEstimate;
+  rim_size?: number | null;
+  generated_at: string;
+  model: string;
 };
 
 type MarketAnalysis = {
@@ -128,6 +151,7 @@ export default function VehicleDetail() {
   const [carouselIdx, setCarouselIdx] = useState<number | null>(null);
   const [conditionInfoOpen, setConditionInfoOpen] = useState(false);
   const [analysing, setAnalysing] = useState(false);
+  const [estimatingTyres, setEstimatingTyres] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
@@ -217,6 +241,19 @@ export default function VehicleDetail() {
       Alert.alert("Analysis failed", e.message);
     } finally {
       setAnalysing(false);
+    }
+  };
+
+  const handleTyreEstimate = async () => {
+    if (!sub) return;
+    setEstimatingTyres(true);
+    try {
+      const data = await apiFetch(`/api/submissions/${id}/tyre-estimate`, { method: "POST" });
+      setSub({ ...sub, tyre_estimate: data, tyre_estimate_at: data.generated_at });
+    } catch (e: any) {
+      Alert.alert("Tyre estimate failed", e.message);
+    } finally {
+      setEstimatingTyres(false);
     }
   };
 
@@ -320,6 +357,10 @@ export default function VehicleDetail() {
           <DetailRow label="Transmission" value={sub.transmission ?? "—"} />
           <DetailRow label="Fuel Type" value={sub.fuel_type ?? "—"} />
           <DetailRow label="Colour" value={sub.colour} />
+          <DetailRow
+            label="Rim Size"
+            value={sub.rim_size ? `${sub.rim_size}″` : "—"}
+          />
           <DetailRow
             label="Year of Production"
             value={String(sub.year_of_production ?? sub.year)}
@@ -607,6 +648,144 @@ export default function VehicleDetail() {
             </Text>
           </View>
         )}
+
+        {/* Tyre Replacement Estimate — admin-only */}
+        {isAdmin ? (
+          <>
+            <View style={styles.analysisHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sectionTitle}>Tyre Replacement Estimate</Text>
+                {sub.tyre_estimate?.generated_at ? (
+                  <Text style={styles.analysisTs}>
+                    Generated {new Date(sub.tyre_estimate.generated_at).toLocaleString()}
+                  </Text>
+                ) : null}
+              </View>
+              <TouchableOpacity
+                testID="tyre-estimate-button"
+                style={[styles.analysisBtn, estimatingTyres && { opacity: 0.6 }]}
+                onPress={handleTyreEstimate}
+                disabled={estimatingTyres}
+              >
+                {estimatingTyres ? (
+                  <ActivityIndicator color={colors.primary} size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="disc-outline" size={14} color={colors.primary} />
+                    <Text style={styles.analysisBtnText}>
+                      {sub.tyre_estimate ? "Refresh" : "Estimate"}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {sub.tyre_estimate?.estimate ? (
+              <View style={styles.analysisCard} testID="tyre-estimate-card">
+                <View style={styles.tyreHeaderRow}>
+                  <View style={styles.tyreSpecBadge}>
+                    <Ionicons name="disc" size={14} color="#fff" />
+                    <Text style={styles.tyreSpecText}>
+                      {sub.tyre_estimate.estimate.tyre_spec ?? "—"}
+                    </Text>
+                  </View>
+                  {sub.rim_size ? (
+                    <Text style={styles.tyreRimText}>Rim: {sub.rim_size}″</Text>
+                  ) : null}
+                </View>
+
+                {sub.tyre_estimate.estimate.total_replacement_estimate_zar ? (
+                  <View style={styles.tyreTotalBox}>
+                    <Text style={styles.tyreTotalLabel}>Total 4-tyre replacement</Text>
+                    <Text style={styles.tyreTotalValue}>
+                      R {sub.tyre_estimate.estimate.total_replacement_estimate_zar.toLocaleString()}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {sub.tyre_estimate.estimate.set_of_four_zar ? (
+                  <View style={styles.rangeBox}>
+                    <View style={styles.rangeCol}>
+                      <Text style={styles.rangeLabel}>SET LOW</Text>
+                      <Text style={styles.rangeValue}>
+                        R {sub.tyre_estimate.estimate.set_of_four_zar.low.toLocaleString()}
+                      </Text>
+                    </View>
+                    <View style={[styles.rangeCol, styles.rangeColMid]}>
+                      <Text style={styles.rangeLabel}>TYPICAL</Text>
+                      <Text style={styles.rangeValue}>
+                        R {sub.tyre_estimate.estimate.set_of_four_zar.typical.toLocaleString()}
+                      </Text>
+                    </View>
+                    <View style={styles.rangeCol}>
+                      <Text style={styles.rangeLabel}>SET HIGH</Text>
+                      <Text style={styles.rangeValue}>
+                        R {sub.tyre_estimate.estimate.set_of_four_zar.high.toLocaleString()}
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
+
+                <View style={styles.tradeRow}>
+                  {sub.tyre_estimate.estimate.per_tyre_range_zar ? (
+                    <View style={styles.tradeCol}>
+                      <Text style={styles.tradeLabel}>Per tyre (typical)</Text>
+                      <Text style={styles.tradeValue}>
+                        R {sub.tyre_estimate.estimate.per_tyre_range_zar.typical.toLocaleString()}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {sub.tyre_estimate.estimate.fitment_and_balance_zar ? (
+                    <View style={styles.tradeCol}>
+                      <Text style={styles.tradeLabel}>Fitment & balance</Text>
+                      <Text style={styles.tradeValue}>
+                        R {sub.tyre_estimate.estimate.fitment_and_balance_zar.toLocaleString()}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                {sub.tyre_estimate.estimate.recommended_brands?.length ? (
+                  <View style={styles.factorsBox}>
+                    <Text style={styles.factorsTitle}>RECOMMENDED BRANDS</Text>
+                    {sub.tyre_estimate.estimate.recommended_brands.map((b, i) => (
+                      <View key={i} style={styles.factorRow}>
+                        <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
+                        <Text style={styles.factorText}>{b}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+
+                {sub.tyre_estimate.estimate.notes ? (
+                  <Text style={styles.summary}>{sub.tyre_estimate.estimate.notes}</Text>
+                ) : null}
+
+                {sub.tyre_estimate.estimate.confidence ? (
+                  <Text style={styles.confidence}>
+                    Confidence: {sub.tyre_estimate.estimate.confidence.toUpperCase()}
+                  </Text>
+                ) : null}
+
+                {sub.tyre_estimate.estimate.raw ? (
+                  <Text style={styles.summary}>{sub.tyre_estimate.estimate.raw}</Text>
+                ) : null}
+
+                {sub.tyre_estimate.estimate.disclaimer ? (
+                  <Text style={styles.disclaimer}>{sub.tyre_estimate.estimate.disclaimer}</Text>
+                ) : null}
+              </View>
+            ) : (
+              <View style={styles.analysisEmpty}>
+                <Ionicons name="disc-outline" size={20} color={colors.textSecondary} />
+                <Text style={styles.analysisEmptyText}>
+                  Tap Estimate for a GPT-5.2 tyre-replacement price based on this vehicle&apos;s
+                  OEM tyre spec and current SA aftermarket pricing.
+                </Text>
+              </View>
+            )}
+          </>
+        ) : null}
 
         {/* License disk */}
         {sub.license_disk_data ? (
@@ -1190,6 +1369,38 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
   },
   analysisEmptyText: { color: colors.textSecondary, fontSize: 12, flex: 1, lineHeight: 17 },
+
+  // Tyre estimate section styles
+  tyreHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.md,
+  },
+  tyreSpecBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    backgroundColor: "#000",
+  },
+  tyreSpecText: { color: "#fff", fontFamily: fonts.mono, fontSize: 13, fontWeight: "700", letterSpacing: 0.5 },
+  tyreRimText: { color: colors.textSecondary, fontSize: 12, fontWeight: "700", letterSpacing: 0.5 },
+  tyreTotalBox: {
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    backgroundColor: colors.paper,
+    marginBottom: spacing.md,
+    alignItems: "center",
+  },
+  tyreTotalLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: "700", letterSpacing: 0.5 },
+  tyreTotalValue: { color: "#fff", fontSize: 26, fontWeight: "800", fontFamily: fonts.mono, letterSpacing: 0.5, marginTop: 4 },
 
   dealerBox: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
   dealerName: { color: colors.text, fontSize: 15, fontWeight: "700" },

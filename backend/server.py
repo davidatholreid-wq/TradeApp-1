@@ -266,6 +266,9 @@ class VehicleSubmission(BaseModel):
     # currently offers: Cosmetic, Structural, Mechanical, Glass,
     # Electrical/Functional.
     accident_damage_types: list[str] = []
+    # Rim size in inches — feeds the AI tyre-replacement estimate on the
+    # admin pricing view. Optional so legacy submissions still validate.
+    rim_size: Optional[int] = Field(default=None, ge=12, le=26)
 
     # Reconditioning costs: list of {label: str, amount_zar: float}
     reconditioning_items: list[dict] = []
@@ -563,6 +566,7 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         "paint_quality": payload.paint_quality if payload.paint_evidence else None,
         "accident_damage": payload.accident_damage,
         "accident_damage_types": payload.accident_damage_types if payload.accident_damage else [],
+        "rim_size": payload.rim_size,
         # Reconditioning
         "reconditioning_items": payload.reconditioning_items,
         "reconditioning_total_zar": round(float(total_recon), 2),
@@ -577,6 +581,8 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         "priced_at": None,
         "market_analysis": None,
         "market_analysis_at": None,
+        "tyre_estimate": None,
+        "tyre_estimate_at": None,
         "billing_accepted_at": now_utc(),
         "created_at": now_utc(),
     }
@@ -751,6 +757,83 @@ async def market_analysis(sub_id: str, current: dict = Depends(get_current_user)
     await db.submissions.update_one(
         {"id": sub_id},
         {"$set": {"market_analysis": payload, "market_analysis_at": payload["generated_at"]}},
+    )
+    return payload
+
+
+@api_router.post("/submissions/{sub_id}/tyre-estimate")
+async def tyre_estimate(sub_id: str, current: dict = Depends(get_current_user)):
+    """GPT-5.2 estimates the cost of replacing all four tyres in South Africa
+    for this specific vehicle + rim size combo. Admin-triggered from the
+    detail view; result is cached on the submission doc."""
+    sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0, "photos": 0})
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+    # Only admins should be spending LLM budget on tyre estimates.
+    if current["role"] != "admin":
+        raise HTTPException(403, "Admin only")
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(500, "LLM key not configured")
+
+    system_prompt = (
+        "You are a South African automotive parts pricing expert who tracks retail "
+        "tyre prices from Tiger Wheel & Tyre, Supa Quick, HiQ, Tyres & More and "
+        "similar SA fitment centres. Given a vehicle's make/model/derivative/year "
+        "and its wheel rim size (in inches), respond with ONLY a valid JSON object "
+        "(no markdown, no explanation) in this exact shape:\n"
+        "{\n"
+        '  "tyre_spec": "<e.g. 225/45 R18 — the OEM tyre size for this rim>",\n'
+        '  "per_tyre_range_zar": {"low": <int>, "high": <int>, "typical": <int>},\n'
+        '  "set_of_four_zar": {"low": <int>, "high": <int>, "typical": <int>},\n'
+        '  "fitment_and_balance_zar": <int, expected fitment+balance+alignment charge for 4 tyres at a SA workshop>,\n'
+        '  "total_replacement_estimate_zar": <int, set_of_four_zar.typical + fitment_and_balance_zar>,\n'
+        '  "recommended_brands": ["<brand 1>", "<brand 2>", "<brand 3>"],\n'
+        '  "notes": "<1-2 sentences explaining any assumptions about wheel width, run-flat availability, or performance rating>",\n'
+        '  "confidence": "low|medium|high",\n'
+        '  "disclaimer": "Prices are ZAR estimates for the SA aftermarket based on general knowledge — verify at fitment centre."\n'
+        "}\n"
+        "Use current SA retail prices. If run-flats are OEM for this model (e.g. many BMWs), reflect that in the price. "
+        "Round all Rand values to the nearest R50."
+    )
+    prompt = (
+        "Vehicle:\n"
+        f"- Make: {sub['make_name']}\n"
+        f"- Model: {sub['model_name']}\n"
+        f"- Derivative: {sub['derivative_name']}\n"
+        f"- Year: {sub.get('year_of_production') or sub.get('year')}\n"
+        f"- Rim size: {sub.get('rim_size') or 'unspecified — assume OEM factory size'} inches\n"
+        f"- Tyre condition rated by dealer: {sub.get('tyre_condition') or 'not rated'} / 10\n"
+        "\nProvide the tyre-replacement estimate JSON for the South African market."
+    )
+
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"tyre-{sub_id}",
+            system_message=system_prompt,
+        ).with_model("openai", "gpt-5.2")
+        reply = await chat.send_message(UserMessage(text=prompt))
+    except Exception as e:
+        logger.exception("LLM tyre estimate failed")
+        raise HTTPException(502, f"Tyre estimate unavailable: {e}")
+
+    import json, re
+    text = reply.strip()
+    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.MULTILINE).strip()
+    try:
+        estimate = json.loads(text)
+    except Exception:
+        estimate = {"raw": text, "disclaimer": "Estimate returned in non-JSON format"}
+
+    payload = {
+        "estimate": estimate,
+        "rim_size": sub.get("rim_size"),
+        "generated_at": now_utc(),
+        "model": "gpt-5.2",
+    }
+    await db.submissions.update_one(
+        {"id": sub_id},
+        {"$set": {"tyre_estimate": payload, "tyre_estimate_at": payload["generated_at"]}},
     )
     return payload
 

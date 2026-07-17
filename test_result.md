@@ -358,15 +358,43 @@ frontend:
           76x58 thumb next to the reference/title. Both preserve monochrome
           styling and existing testIDs so downstream tests keep working.
 
+  - task: "Rim size + AI tyre replacement estimate on admin pricing view"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py, /app/frontend/app/(app)/submit.tsx, /app/frontend/app/(app)/vehicle/[id].tsx, /app/frontend/src/components/WebAdminDashboard.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Two-part feature. (1) Submit form now requires a rim_size (inches)
+          via the same iOS-style WheelPicker used elsewhere (options 13-22").
+          Backend VehicleSubmission model gains rim_size: Optional[int]
+          (12-26) for legacy compat; persistence layer saves it. (2) New
+          admin-only endpoint POST /api/submissions/{id}/tyre-estimate that
+          calls GPT-5.2 via emergentintegrations with a strict JSON prompt
+          asking for SA aftermarket tyre replacement pricing based on
+          make/model/derivative/year + rim size. Response includes tyre_spec
+          (e.g. "225/45 R18"), per_tyre_range_zar, set_of_four_zar range,
+          fitment_and_balance_zar, total_replacement_estimate_zar,
+          recommended_brands, notes, confidence, and disclaimer. Cached on
+          the submission doc so admins don't burn LLM credits on repeat
+          opens. Both mobile /vehicle/[id] and desktop cockpit render a new
+          "Tyre Replacement Estimate" card under Market Analysis with a big
+          hero total, low/typical/high range, per-tyre + fitment split, and
+          recommended brands. Admin-only visibility.
+
 metadata:
   created_by: "main_agent"
-  version: "1.5"
-  test_sequence: 15
+  version: "1.6"
+  test_sequence: 16
   run_ui: true
 
 test_plan:
   current_focus:
-    - "Front photo thumbnail on submissions list (dealer + admin)"
+    - "Rim size + AI tyre replacement estimate on admin pricing view"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
