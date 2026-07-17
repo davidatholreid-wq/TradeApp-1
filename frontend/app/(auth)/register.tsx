@@ -9,6 +9,7 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Link, useRouter } from "expo-router";
@@ -19,6 +20,8 @@ import { useAuth } from "@/src/context/AuthContext";
 export default function Register() {
   const { register } = useAuth();
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const isWide = width >= 768;
   const [form, setForm] = useState({
     email: "",
     password: "",
@@ -94,7 +97,14 @@ export default function Register() {
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Create Account</Text>
         </View>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={[
+            styles.scroll,
+            isWide && styles.scrollWide,
+          ]}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={[styles.card, isWide && styles.cardWide]}>
           <Text style={styles.title}>Dealer Registration</Text>
           <Text style={styles.subtitle}>Register your dealership with {BRAND.short}</Text>
 
@@ -135,6 +145,7 @@ export default function Register() {
               </TouchableOpacity>
             </Link>
           </View>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -155,6 +166,20 @@ const styles = StyleSheet.create({
   backBtn: { padding: spacing.xs, marginRight: spacing.sm },
   headerTitle: { color: colors.text, fontSize: 17, fontWeight: "700" },
   scroll: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
+  scrollWide: {
+    alignItems: "center",
+    paddingVertical: spacing.xl,
+  },
+  card: { width: "100%" },
+  cardWide: {
+    maxWidth: 560,
+    width: "100%",
+    backgroundColor: colors.paper,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    padding: spacing.xl,
+  },
   title: { color: colors.text, fontSize: 22, fontWeight: "800", fontFamily: fonts.heading, marginBottom: 4, letterSpacing: 2, textTransform: "uppercase" },
   subtitle: { color: colors.textSecondary, fontSize: 14, marginBottom: spacing.lg },
   sectionTitle: {

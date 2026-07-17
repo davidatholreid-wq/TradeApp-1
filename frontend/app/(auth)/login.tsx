@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   ImageBackground,
   Image,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Link, useRouter } from "expo-router";
@@ -20,6 +21,8 @@ import { useAuth } from "@/src/context/AuthContext";
 export default function Login() {
   const { login } = useAuth();
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const isWide = width >= 768; // tablet / desktop
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -53,7 +56,14 @@ export default function Login() {
       <View style={styles.overlay} />
       <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-          <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <ScrollView
+            contentContainerStyle={[
+              styles.scroll,
+              isWide && styles.scrollWide,
+            ]}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={[styles.card, isWide && styles.cardWide]}>
             {/* Fourbuy Logo */}
             <View style={styles.logoBox}>
               <Image
@@ -127,6 +137,7 @@ export default function Login() {
             </View>
 
             <Text style={styles.footerTag}>{BRAND.tagline}</Text>
+            </View>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -139,6 +150,29 @@ const styles = StyleSheet.create({
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(10,10,10,0.7)" },
   safe: { flex: 1 },
   scroll: { padding: spacing.lg, paddingTop: spacing.xl, flexGrow: 1 },
+  scrollWide: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: spacing.xl * 2,
+  },
+  card: {
+    width: "100%",
+  },
+  cardWide: {
+    maxWidth: 440,
+    width: "100%",
+    backgroundColor: "rgba(20,20,20,0.85)",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    padding: spacing.xl,
+    shadowColor: "#000",
+    shadowOpacity: 0.5,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
+    // @ts-ignore web-only backdrop
+    backdropFilter: "blur(8px)",
+  },
   logoBox: {
     alignItems: "center",
     marginTop: spacing.md,
