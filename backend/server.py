@@ -1,4 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header
+from fastapi.responses import Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -49,6 +50,25 @@ _push_client = httpx.AsyncClient(
 ARCHIVE_AFTER_DAYS = 14
 BILLING_FEE_ZAR = 50.0
 BILLING_SLA_HOURS = 24
+
+# Vehicle report catalogue — dealers may purchase these against a submission's
+# VIN after an offer has been received. Cost is added to the dealer's monthly
+# billing (alongside the R50 valuation fee). Real APIs are wired up later; for
+# now the order is stored as PENDING so the UI can reflect it.
+REPORT_CATALOG = {
+    "lightstone_verification": {
+        "name": "Lightstone Vehicle Verification Report",
+        "cost_zar": 100.0,
+    },
+    "lightstone_repair": {
+        "name": "Lightstone Vehicle Repair History Report",
+        "cost_zar": 50.0,
+    },
+    "car_vertical": {
+        "name": "Car Vertical Report",
+        "cost_zar": 200.0,
+    },
+}
 
 
 def now_utc() -> str:
@@ -302,6 +322,11 @@ class DealerActiveToggle(BaseModel):
 class DealerPhotoUpload(BaseModel):
     profile_pic: Optional[str] = None   # base64 data URL, empty string clears
     cover_photo: Optional[str] = None   # base64 data URL, empty string clears
+
+
+class ReportOrderCreate(BaseModel):
+    type: Literal["lightstone_verification", "lightstone_repair", "car_vertical"]
+    accepted_charge: bool = False
 
 
 # ============ Auth routes ============
@@ -627,6 +652,11 @@ async def get_submission(sub_id: str, current: dict = Depends(get_current_user))
     if current["role"] != "admin" and compute_bucket(sub) == "archived":
         raise HTTPException(404, "Submission not found")
     sub["bucket"] = compute_bucket(sub)
+    # Attach report orders (dealer-visible list of ordered VIN reports).
+    reports = await db.report_orders.find(
+        {"submission_id": sub_id}, {"_id": 0}
+    ).sort("ordered_at", -1).to_list(50)
+    sub["report_orders"] = reports
     return {"submission": sub}
 
 
@@ -686,7 +716,315 @@ async def admin_delete_submission(sub_id: str, current: dict = Depends(require_a
     result = await db.submissions.delete_one({"id": sub_id})
     if result.deleted_count == 0:
         raise HTTPException(404, "Submission not found")
+    # Cascade: remove report orders tied to this submission so billing stays consistent.
+    await db.report_orders.delete_many({"submission_id": sub_id})
     return {"status": "deleted"}
+
+
+# ============ Vehicle report orders (VIN-linked, chargeable) ============
+@api_router.get("/reports/catalog")
+async def report_catalog(_: dict = Depends(get_current_user)):
+    """Return the list of available VIN reports and their costs."""
+    return {
+        "reports": [
+            {"type": k, "name": v["name"], "cost_zar": v["cost_zar"]}
+            for k, v in REPORT_CATALOG.items()
+        ]
+    }
+
+
+@api_router.get("/submissions/{sub_id}/reports")
+async def list_submission_reports(sub_id: str, current: dict = Depends(get_current_user)):
+    sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0, "dealer_id": 1})
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+    if current["role"] != "admin" and sub["dealer_id"] != current["id"]:
+        raise HTTPException(403, "Not authorized")
+    reports = await db.report_orders.find(
+        {"submission_id": sub_id}, {"_id": 0}
+    ).sort("ordered_at", -1).to_list(50)
+    return {"reports": reports}
+
+
+@api_router.post("/submissions/{sub_id}/reports")
+async def order_submission_report(
+    sub_id: str,
+    payload: ReportOrderCreate,
+    current: dict = Depends(get_current_user),
+):
+    """Dealer orders a chargeable VIN report against a priced submission.
+
+    Guards:
+      - Must be the owning dealer (or admin).
+      - Submission must have status 'priced' (offer received) so an offer exists.
+      - VIN must be present (empty or 'TBC' is rejected).
+      - Explicit charge acceptance (accepted_charge=True) is mandatory.
+      - Same report type cannot be ordered twice for the same submission.
+    """
+    if not payload.accepted_charge:
+        raise HTTPException(400, "Charge must be accepted before ordering the report")
+
+    sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+    if current["role"] != "admin" and sub["dealer_id"] != current["id"]:
+        raise HTTPException(403, "Not authorized")
+    if sub.get("status") != "priced":
+        raise HTTPException(400, "Reports can only be ordered after an offer has been received")
+
+    vin = (sub.get("vin") or "").strip()
+    if not vin or vin.upper() == "TBC":
+        raise HTTPException(400, "VIN is required to order a report")
+
+    catalog = REPORT_CATALOG.get(payload.type)
+    if not catalog:
+        raise HTTPException(400, "Unknown report type")
+
+    existing = await db.report_orders.find_one(
+        {"submission_id": sub_id, "type": payload.type}
+    )
+    if existing:
+        raise HTTPException(409, "This report has already been ordered for this submission")
+
+    order = {
+        "id": str(uuid.uuid4()),
+        "submission_id": sub_id,
+        "dealer_id": sub["dealer_id"],
+        "vin": vin,
+        "type": payload.type,
+        "name": catalog["name"],
+        "cost_zar": catalog["cost_zar"],
+        "status": "pending",   # 'pending' | 'delivered' | 'failed'
+        "ordered_at": now_utc(),
+        "ordered_by": current["id"],
+        "delivered_at": None,
+        "result_data": None,
+        "note": "Order captured. Awaiting API integration — result will populate once the provider responds.",
+    }
+    await db.report_orders.insert_one(order)
+    order.pop("_id", None)
+    return {"order": order}
+
+
+# ============ Valuation PDF ============
+def _fmt_zar(v) -> str:
+    try:
+        return f"R{float(v):,.2f}"
+    except Exception:
+        return "—"
+
+
+async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
+    """Render the valuation as a monochrome A4 PDF using reportlab."""
+    from io import BytesIO
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors as rl_colors
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak,
+    )
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=18*mm, rightMargin=18*mm,
+        topMargin=18*mm, bottomMargin=18*mm,
+        title=f"Valuation {sub.get('reference') or sub.get('id')}",
+        author="Fourbuy Car Buying Co.",
+    )
+    styles = getSampleStyleSheet()
+    h1 = ParagraphStyle("h1", parent=styles["Heading1"], textColor=rl_colors.black,
+                        fontSize=20, leading=24, spaceAfter=4)
+    h2 = ParagraphStyle("h2", parent=styles["Heading2"], textColor=rl_colors.black,
+                        fontSize=12, leading=14, spaceBefore=14, spaceAfter=6,
+                        textTransform="uppercase")
+    body = ParagraphStyle("body", parent=styles["Normal"], fontSize=10, leading=14)
+    small = ParagraphStyle("small", parent=styles["Normal"], fontSize=8,
+                           leading=11, textColor=rl_colors.grey)
+
+    story = []
+
+    # Header brand + reference
+    story.append(Paragraph("FOURBUY CAR BUYING CO.", h1))
+    story.append(Paragraph("Vehicle Valuation Statement", body))
+    story.append(Spacer(1, 6))
+    ref_bits = []
+    if sub.get("reference"):
+        ref_bits.append(f"Reference: <b>{sub['reference']}</b>")
+    ref_bits.append(f"Generated: {now_utc()[:19].replace('T', ' ')} UTC")
+    story.append(Paragraph(" &nbsp;·&nbsp; ".join(ref_bits), small))
+
+    # Offer banner
+    story.append(Paragraph("OFFER", h2))
+    price = sub.get("price")
+    offer_rows = [
+        ["Offer Price", _fmt_zar(price) if price is not None else "—"],
+        ["Offer Date", (sub.get("priced_at") or "—")[:19].replace("T", " ")],
+    ]
+    if sub.get("price_notes"):
+        offer_rows.append(["Notes", sub["price_notes"]])
+    t = Table(offer_rows, colWidths=[55*mm, 115*mm])
+    t.setStyle(TableStyle([
+        ("FONT", (0, 0), (-1, -1), "Helvetica", 10),
+        ("FONT", (0, 0), (0, -1), "Helvetica-Bold", 10),
+        ("TEXTCOLOR", (0, 0), (-1, -1), rl_colors.black),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.25, rl_colors.lightgrey),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story.append(t)
+
+    # Vehicle details
+    story.append(Paragraph("VEHICLE DETAILS", h2))
+    v_rows = [
+        ["Make", sub.get("make_name", "—")],
+        ["Model", sub.get("model_name", "—")],
+        ["Derivative", sub.get("derivative_name", "—") or "—"],
+        ["Year Registered", str(sub.get("year_registered") or sub.get("year") or "—")],
+        ["Year of Production", str(sub.get("year_of_production") or sub.get("year") or "—")],
+        ["Mileage", f"{int(sub.get('mileage') or 0):,} km"],
+        ["Transmission", sub.get("transmission") or "—"],
+        ["Fuel Type", sub.get("fuel_type") or "—"],
+        ["Colour", sub.get("colour") or "—"],
+        ["VIN", sub.get("vin") or "—"],
+        ["Engine Number", sub.get("engine_number") or "—"],
+        ["Rim Size", f"{sub.get('rim_size')}″" if sub.get("rim_size") else "—"],
+    ]
+    t2 = Table(v_rows, colWidths=[55*mm, 115*mm])
+    t2.setStyle(TableStyle([
+        ("FONT", (0, 0), (-1, -1), "Helvetica", 10),
+        ("FONT", (0, 0), (0, -1), "Helvetica-Bold", 10),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.25, rl_colors.lightgrey),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.append(t2)
+
+    # Condition breakdown
+    story.append(Paragraph("CONDITION ASSESSMENT", h2))
+    c_rows = []
+    if sub.get("mechanical_condition") is not None:
+        c_rows.extend([
+            ["Mechanical Health (30%)", f"{sub.get('mechanical_condition')} / 10"],
+            ["Cosmetic Appearance (25%)", f"{sub.get('cosmetic_condition')} / 10"],
+            ["Interior Condition (25%)", f"{sub.get('interior_condition')} / 10"],
+            ["History / Maintenance (20%)", f"{sub.get('history_condition')} / 10"],
+        ])
+    c_rows.append(["Windscreen", sub.get("windscreen_condition") or "—"])
+    c_rows.append(["Previous Accident Damage", "Yes" if sub.get("accident_damage") else "None"])
+    if sub.get("accident_damage") and sub.get("accident_damage_types"):
+        c_rows.append(["Damage Categories", ", ".join(sub.get("accident_damage_types") or [])])
+    c_rows.append(["Paint Evidence", "Yes" if sub.get("paint_evidence") else "None"])
+    if sub.get("paint_evidence") and sub.get("paint_quality"):
+        c_rows.append(["Paint Repair Quality", sub.get("paint_quality")])
+    t3 = Table(c_rows, colWidths=[55*mm, 115*mm])
+    t3.setStyle(TableStyle([
+        ("FONT", (0, 0), (-1, -1), "Helvetica", 10),
+        ("FONT", (0, 0), (0, -1), "Helvetica-Bold", 10),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.25, rl_colors.lightgrey),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.append(t3)
+
+    # Tyre estimate
+    tyre = (sub.get("tyre_estimate") or {}).get("estimate") if sub.get("tyre_estimate") else None
+    if tyre:
+        story.append(Paragraph("TYRE REPLACEMENT ESTIMATE", h2))
+        tyre_rows = [
+            ["Tyre Spec", tyre.get("tyre_spec") or "—"],
+            ["Total Replacement (set of 4)", _fmt_zar(tyre.get("total_replacement_estimate_zar"))],
+            ["Fitment & Balance", _fmt_zar(tyre.get("fitment_and_balance_zar"))],
+            ["Confidence", (tyre.get("confidence") or "—").upper()],
+        ]
+        if tyre.get("recommended_brands"):
+            tyre_rows.append(["Recommended Brands", ", ".join(tyre["recommended_brands"])])
+        t4 = Table(tyre_rows, colWidths=[55*mm, 115*mm])
+        t4.setStyle(TableStyle([
+            ("FONT", (0, 0), (-1, -1), "Helvetica", 10),
+            ("FONT", (0, 0), (0, -1), "Helvetica-Bold", 10),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.25, rl_colors.lightgrey),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(t4)
+        if tyre.get("disclaimer"):
+            story.append(Spacer(1, 4))
+            story.append(Paragraph(tyre["disclaimer"], small))
+
+    # Ordered VIN reports (pending until real APIs are wired)
+    if reports:
+        story.append(Paragraph("ORDERED VIN REPORTS", h2))
+        rep_rows = [["Report", "Cost", "Status", "Ordered"]]
+        for r in reports:
+            rep_rows.append([
+                r.get("name") or r.get("type"),
+                _fmt_zar(r.get("cost_zar")),
+                (r.get("status") or "pending").upper(),
+                (r.get("ordered_at") or "")[:10],
+            ])
+        t5 = Table(rep_rows, colWidths=[80*mm, 25*mm, 30*mm, 30*mm])
+        t5.setStyle(TableStyle([
+            ("FONT", (0, 0), (-1, -1), "Helvetica", 9),
+            ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 9),
+            ("BACKGROUND", (0, 0), (-1, 0), rl_colors.black),
+            ("TEXTCOLOR", (0, 0), (-1, 0), rl_colors.white),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.25, rl_colors.lightgrey),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ]))
+        story.append(t5)
+        pending_count = sum(1 for r in reports if (r.get("status") or "pending") == "pending")
+        if pending_count:
+            story.append(Spacer(1, 4))
+            story.append(Paragraph(
+                f"{pending_count} report(s) are currently PENDING. Detailed results will be attached once the provider APIs complete.",
+                small,
+            ))
+
+    # Footer disclaimer
+    story.append(Spacer(1, 12))
+    story.append(Paragraph(
+        "This document is generated for the dealer's internal record. "
+        "Offer prices are indicative and subject to a physical inspection at Fourbuy premises. "
+        "Fourbuy Car Buying Co. — Quality Used Cars at Wholesale Prices.",
+        small,
+    ))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+@api_router.get("/submissions/{sub_id}/valuation.pdf")
+async def download_valuation_pdf(sub_id: str, current: dict = Depends(get_current_user)):
+    sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0, "photos": 0})
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+    if current["role"] != "admin" and sub["dealer_id"] != current["id"]:
+        raise HTTPException(403, "Not authorized")
+    if sub.get("status") != "priced":
+        raise HTTPException(400, "Valuation PDF is available only after an offer has been received")
+
+    reports = await db.report_orders.find(
+        {"submission_id": sub_id}, {"_id": 0}
+    ).sort("ordered_at", 1).to_list(50)
+
+    try:
+        pdf_bytes = await _build_valuation_pdf(sub, reports)
+    except Exception as e:
+        logger.exception("PDF generation failed")
+        raise HTTPException(500, f"Failed to generate PDF: {e}")
+
+    filename = f"valuation_{sub.get('reference') or sub_id}.pdf".replace(" ", "_")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
 
 
 # ============ Market analysis (AI) ============
@@ -1085,11 +1423,48 @@ async def admin_billing(
     ).to_list(2000) if dealer_ids else []
     dealers_by_id = {d["id"]: d for d in dealers}
 
+    # Fetch report orders in the window (may belong to dealers with no priced
+    # submissions this month — include them too so billing stays correct).
+    all_report_orders = await db.report_orders.find(
+        {}, {"_id": 0}
+    ).to_list(20000)
+    reports_by_dealer: dict = {}
+    for r in all_report_orders:
+        ordered_at = parse_iso(r.get("ordered_at"))
+        if not ordered_at or not (start <= ordered_at < end):
+            continue
+        did = r.get("dealer_id")
+        entry = reports_by_dealer.setdefault(did, {"count": 0, "amount": 0.0, "items": []})
+        entry["count"] += 1
+        entry["amount"] += float(r.get("cost_zar") or 0)
+        entry["items"].append({
+            "type": r.get("type"),
+            "name": r.get("name"),
+            "cost_zar": r.get("cost_zar"),
+            "status": r.get("status"),
+            "ordered_at": r.get("ordered_at"),
+            "submission_id": r.get("submission_id"),
+            "vin": r.get("vin"),
+        })
+
+    # Pull in dealer profiles for any report-only dealers not already in the set.
+    extra_ids = [did for did in reports_by_dealer.keys() if did not in dealers_by_id]
+    if extra_ids:
+        more = await db.users.find(
+            {"id": {"$in": extra_ids}},
+            {"_id": 0, "id": 1, "email": 1, "dealer_info": 1, "company_info": 1, "active": 1, "archived_at": 1},
+        ).to_list(2000)
+        for d in more:
+            dealers_by_id[d["id"]] = d
+
     rows = []
+    seen_dealers = set()
     for did, row in by_dealer.items():
         d = dealers_by_id.get(did, {})
         info = d.get("dealer_info") or {}
         company = d.get("company_info") or {}
+        rep = reports_by_dealer.get(did, {"count": 0, "amount": 0.0, "items": []})
+        submission_amount = row["billable_count"] * BILLING_FEE_ZAR
         rows.append({
             **row,
             "dealer_name": f"{info.get('first_name', '')} {info.get('last_name', '')}".strip() or "(deleted dealer)",
@@ -1098,22 +1473,63 @@ async def admin_billing(
             "active": d.get("active", True),
             "archived": bool(d.get("archived_at")),
             "archived_at": d.get("archived_at"),
-            "amount_zar": round(row["billable_count"] * BILLING_FEE_ZAR, 2),
+            "submission_amount_zar": round(submission_amount, 2),
+            "report_count": rep["count"],
+            "report_amount_zar": round(rep["amount"], 2),
+            "report_items": rep["items"],
+            "amount_zar": round(submission_amount + rep["amount"], 2),
         })
-    rows.sort(key=lambda r: r["billable_count"], reverse=True)
+        seen_dealers.add(did)
+
+    # Dealers who only ordered reports this month (no priced submissions).
+    for did, rep in reports_by_dealer.items():
+        if did in seen_dealers:
+            continue
+        d = dealers_by_id.get(did, {})
+        info = d.get("dealer_info") or {}
+        company = d.get("company_info") or {}
+        rows.append({
+            "dealer_id": did,
+            "priced_count": 0,
+            "billable_count": 0,
+            "items": [],
+            "dealer_name": f"{info.get('first_name', '')} {info.get('last_name', '')}".strip() or "(deleted dealer)",
+            "dealer_email": d.get("email", ""),
+            "company_name": company.get("company_name", ""),
+            "active": d.get("active", True),
+            "archived": bool(d.get("archived_at")),
+            "archived_at": d.get("archived_at"),
+            "submission_amount_zar": 0.0,
+            "report_count": rep["count"],
+            "report_amount_zar": round(rep["amount"], 2),
+            "report_items": rep["items"],
+            "amount_zar": round(rep["amount"], 2),
+        })
+
+    rows.sort(key=lambda r: r["amount_zar"], reverse=True)
 
     total_billable = sum(r["billable_count"] for r in rows)
     total_priced = sum(r["priced_count"] for r in rows)
-    total_zar = round(total_billable * BILLING_FEE_ZAR, 2)
+    total_report_count = sum(r.get("report_count", 0) for r in rows)
+    total_report_amount = sum(r.get("report_amount_zar", 0.0) for r in rows)
+    total_submission_amount = total_billable * BILLING_FEE_ZAR
+    total_zar = round(total_submission_amount + total_report_amount, 2)
 
     return {
         "month": f"{start.year:04d}-{start.month:02d}",
         "fee_zar": BILLING_FEE_ZAR,
         "sla_hours": BILLING_SLA_HOURS,
+        "report_catalog": [
+            {"type": k, "name": v["name"], "cost_zar": v["cost_zar"]}
+            for k, v in REPORT_CATALOG.items()
+        ],
         "rows": rows,
         "totals": {
             "priced_count": total_priced,
             "billable_count": total_billable,
+            "submission_amount_zar": round(total_submission_amount, 2),
+            "report_count": total_report_count,
+            "report_amount_zar": round(total_report_amount, 2),
             "amount_zar": total_zar,
         },
     }

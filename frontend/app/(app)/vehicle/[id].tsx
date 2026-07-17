@@ -18,8 +18,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
+import * as FileSystem from "expo-file-system";
+import * as Sharing from "expo-sharing";
 import { colors, spacing, radius, fonts } from "@/src/theme";
 import { apiFetch } from "@/src/api";
+import { storage } from "@/src/utils/storage";
+import { TOKEN_KEY } from "@/src/api";
 import { useAuth } from "@/src/context/AuthContext";
 import { buildWhatsappUrl, buildDealerMessage } from "@/src/utils/whatsapp";
 import { decodeLicenseDisk } from "@/src/utils/licenseDisk";
@@ -83,6 +87,20 @@ type Submission = {
   tyre_estimate?: TyreEstimatePayload | null;
   tyre_estimate_at?: string | null;
   created_at: string;
+  report_orders?: ReportOrder[];
+};
+
+type ReportOrder = {
+  id: string;
+  submission_id: string;
+  type: "lightstone_verification" | "lightstone_repair" | "car_vertical";
+  name: string;
+  cost_zar: number;
+  status: "pending" | "delivered" | "failed";
+  ordered_at: string;
+  delivered_at?: string | null;
+  vin?: string;
+  note?: string;
 };
 
 type TyreEstimate = {
@@ -154,6 +172,14 @@ export default function VehicleDetail() {
   const [analysing, setAnalysing] = useState(false);
   const [estimatingTyres, setEstimatingTyres] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // VIN reports & valuation PDF
+  const [orderingReportType, setOrderingReportType] = useState<
+    "lightstone_verification" | "lightstone_repair" | "car_vertical" | null
+  >(null);
+  const [confirmReport, setConfirmReport] = useState<
+    { type: ReportOrder["type"]; name: string; cost_zar: number } | null
+  >(null);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -258,6 +284,95 @@ export default function VehicleDetail() {
     }
   };
 
+  const REPORT_CATALOG: Record<
+    ReportOrder["type"],
+    { name: string; cost_zar: number }
+  > = {
+    lightstone_verification: { name: "Lightstone Vehicle Verification Report", cost_zar: 100 },
+    lightstone_repair: { name: "Lightstone Vehicle Repair History Report", cost_zar: 50 },
+    car_vertical: { name: "Car Vertical Report", cost_zar: 200 },
+  };
+
+  const orderedReportTypes = useMemo(
+    () => new Set((sub?.report_orders || []).map((r) => r.type)),
+    [sub?.report_orders]
+  );
+
+  const submitReportOrder = async () => {
+    if (!sub || !confirmReport) return;
+    setOrderingReportType(confirmReport.type);
+    try {
+      const res = await apiFetch(`/api/submissions/${id}/reports`, {
+        method: "POST",
+        body: JSON.stringify({ type: confirmReport.type, accepted_charge: true }),
+      });
+      setSub({
+        ...sub,
+        report_orders: [res.order, ...(sub.report_orders || [])],
+      });
+      setConfirmReport(null);
+      Alert.alert(
+        "Report Ordered",
+        `${confirmReport.name} has been ordered. The charge of R${confirmReport.cost_zar.toFixed(0)} will be added to your next invoice. Results will populate once the provider responds.`
+      );
+    } catch (e: any) {
+      Alert.alert("Order failed", e.message || "Could not place the report order");
+    } finally {
+      setOrderingReportType(null);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!sub) return;
+    setDownloadingPdf(true);
+    try {
+      const backend = process.env.EXPO_PUBLIC_BACKEND_URL;
+      const url = `${backend}/api/submissions/${sub.id}/valuation.pdf`;
+      const token = await storage.secureGet<string>(TOKEN_KEY, "");
+      const filename = `valuation_${sub.reference || sub.id}.pdf`;
+
+      if (Platform.OS === "web") {
+        // Fetch as blob, then trigger a download link.
+        const res = await fetch(url, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = objectUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      } else {
+        // Native: download to cache dir with auth header, then share.
+        const target = `${FileSystem.cacheDirectory}${filename}`;
+        const dl = await FileSystem.downloadAsync(url, target, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (dl.status < 200 || dl.status >= 300) {
+          throw new Error(`Server returned HTTP ${dl.status}`);
+        }
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(dl.uri, {
+            mimeType: "application/pdf",
+            dialogTitle: "Valuation PDF",
+            UTI: "com.adobe.pdf",
+          });
+        } else {
+          Alert.alert("Saved", `PDF saved to ${dl.uri}`);
+        }
+      }
+    } catch (e: any) {
+      Alert.alert("Download failed", e.message || "Could not download the valuation PDF");
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
   const handleDelete = () => {
     if (!sub) return;
     Alert.alert(
@@ -331,6 +446,111 @@ export default function VehicleDetail() {
             <Text style={styles.pendingText}>AWAITING PRICE OFFER</Text>
           </View>
         )}
+
+        {/* Reports & Documents — only shown once an offer has been received */}
+        {sub.status === "priced" ? (
+          <View style={styles.reportsSection} testID="reports-section">
+            <Text style={styles.sectionTitle}>Reports & Documents</Text>
+
+            {/* Valuation PDF — always available once priced */}
+            <TouchableOpacity
+              testID="download-valuation-pdf"
+              style={[styles.docBtn, downloadingPdf && styles.docBtnDisabled]}
+              onPress={handleDownloadPdf}
+              disabled={downloadingPdf}
+            >
+              <View style={styles.docBtnLeft}>
+                <Ionicons name="document-text-outline" size={22} color={colors.text} />
+                <View style={{ marginLeft: spacing.sm, flex: 1 }}>
+                  <Text style={styles.docBtnTitle}>Download Valuation PDF</Text>
+                  <Text style={styles.docBtnSubtitle}>
+                    Includes offer, condition, tyre estimate & any purchased reports
+                  </Text>
+                </View>
+              </View>
+              {downloadingPdf ? (
+                <ActivityIndicator color={colors.text} />
+              ) : (
+                <Ionicons name="download-outline" size={20} color={colors.text} />
+              )}
+            </TouchableOpacity>
+
+            {/* VIN-linked report ordering — only when a VIN was entered/scanned */}
+            {sub.vin && sub.vin.trim() && sub.vin.toUpperCase() !== "TBC" ? (
+              <>
+                <Text style={styles.reportsSubhead}>Order a VIN-linked report</Text>
+                <Text style={styles.reportsHelp}>
+                  Reports are verified against VIN {sub.vin}. The charge will be added to your next invoice.
+                </Text>
+
+                {(["lightstone_verification", "lightstone_repair", "car_vertical"] as ReportOrder["type"][]).map(
+                  (t) => {
+                    const meta = REPORT_CATALOG[t];
+                    const alreadyOrdered = orderedReportTypes.has(t);
+                    const existing = (sub.report_orders || []).find((r) => r.type === t);
+                    const busy = orderingReportType === t;
+                    return (
+                      <View key={t} style={styles.reportCard}>
+                        <View style={{ flex: 1, marginRight: spacing.sm }}>
+                          <Text style={styles.reportName}>{meta.name}</Text>
+                          <Text style={styles.reportCost}>R{meta.cost_zar.toFixed(0)}</Text>
+                          {alreadyOrdered ? (
+                            <View style={styles.reportStatusRow}>
+                              <View
+                                style={[
+                                  styles.statusPill,
+                                  existing?.status === "delivered"
+                                    ? styles.statusPillOk
+                                    : styles.statusPillPending,
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.statusPillText,
+                                    existing?.status === "delivered"
+                                      ? { color: colors.success }
+                                      : { color: colors.warning },
+                                  ]}
+                                >
+                                  {(existing?.status || "pending").toUpperCase()}
+                                </Text>
+                              </View>
+                              <Text style={styles.reportPendingNote} numberOfLines={2}>
+                                {existing?.note ||
+                                  "Awaiting API integration — result will appear here once the provider responds."}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </View>
+                        {alreadyOrdered ? (
+                          <View style={styles.reportOrderedBadge}>
+                            <Ionicons name="checkmark" size={16} color={colors.text} />
+                            <Text style={styles.reportOrderedBadgeText}>Ordered</Text>
+                          </View>
+                        ) : (
+                          <TouchableOpacity
+                            testID={`order-report-${t}`}
+                            style={[styles.orderBtn, busy && styles.docBtnDisabled]}
+                            onPress={() =>
+                              setConfirmReport({ type: t, name: meta.name, cost_zar: meta.cost_zar })
+                            }
+                            disabled={busy}
+                          >
+                            {busy ? (
+                              <ActivityIndicator color="#000" size="small" />
+                            ) : (
+                              <Text style={styles.orderBtnText}>Order</Text>
+                            )}
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    );
+                  }
+                )}
+              </>
+            ) : null}
+          </View>
+        ) : null}
 
         {/* Reference badge */}
         {sub.reference ? (
@@ -961,6 +1181,66 @@ export default function VehicleDetail() {
         visible={conditionInfoOpen}
         onClose={() => setConditionInfoOpen(false)}
       />
+
+      {/* Report order confirmation modal */}
+      <Modal
+        visible={confirmReport !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => (orderingReportType ? null : setConfirmReport(null))}
+      >
+        <View style={styles.reportModalBackdrop}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => (orderingReportType ? null : setConfirmReport(null))}
+          />
+          <View style={styles.reportModalCard}>
+            <View style={styles.reportModalHeader}>
+              <Ionicons name="receipt-outline" size={22} color={colors.text} />
+              <Text style={styles.reportModalTitle}>Confirm Charge</Text>
+            </View>
+            <Text style={styles.reportModalReport}>{confirmReport?.name}</Text>
+            <Text style={styles.reportModalPrice}>
+              R{confirmReport?.cost_zar?.toFixed(0) ?? "0"}
+            </Text>
+            <Text style={styles.reportModalBody}>
+              By continuing, you accept the charge of R{confirmReport?.cost_zar?.toFixed(0) ?? "0"}.
+              This amount will be added to your next Fourbuy invoice alongside the R50 valuation fee.
+            </Text>
+            <Text style={styles.reportModalBodySmall}>
+              The report will be run against VIN {sub?.vin || "—"}.
+            </Text>
+
+            <View style={styles.reportModalActions}>
+              <TouchableOpacity
+                testID="cancel-report-order"
+                style={styles.reportModalCancel}
+                onPress={() => setConfirmReport(null)}
+                disabled={!!orderingReportType}
+              >
+                <Text style={styles.reportModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="confirm-report-order"
+                style={[
+                  styles.reportModalConfirm,
+                  !!orderingReportType && styles.docBtnDisabled,
+                ]}
+                onPress={submitReportOrder}
+                disabled={!!orderingReportType}
+              >
+                {orderingReportType ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <Text style={styles.reportModalConfirmText}>
+                    Accept & Order
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1162,6 +1442,174 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   pendingText: { color: colors.textSecondary, fontWeight: "700", letterSpacing: 0.5, fontSize: 13 },
+
+  // Reports & Documents section
+  reportsSection: {
+    marginBottom: spacing.lg,
+  },
+  reportsSubhead: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    marginTop: spacing.md,
+    marginBottom: 4,
+  },
+  reportsHelp: {
+    color: colors.textDisabled,
+    fontSize: 12,
+    marginBottom: spacing.sm,
+    lineHeight: 17,
+  },
+  docBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  docBtnLeft: { flexDirection: "row", alignItems: "center", flex: 1, marginRight: spacing.sm },
+  docBtnTitle: { color: colors.text, fontSize: 15, fontWeight: "700" },
+  docBtnSubtitle: { color: colors.textSecondary, fontSize: 12, marginTop: 2, lineHeight: 16 },
+  docBtnDisabled: { opacity: 0.5 },
+  reportCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  reportName: { color: colors.text, fontSize: 14, fontWeight: "700", lineHeight: 18 },
+  reportCost: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    marginTop: 2,
+    fontFamily: fonts.number,
+    fontVariant: ["tabular-nums"],
+  },
+  reportStatusRow: { marginTop: 8 },
+  statusPill: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    marginBottom: 4,
+  },
+  statusPillPending: { borderColor: colors.warning + "77", backgroundColor: colors.warning + "1A" },
+  statusPillOk: { borderColor: colors.success + "77", backgroundColor: colors.success + "1A" },
+  statusPillText: { fontSize: 10, fontWeight: "800", letterSpacing: 1.1 },
+  reportPendingNote: { color: colors.textDisabled, fontSize: 11, lineHeight: 15 },
+  reportOrderedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+  },
+  reportOrderedBadgeText: { color: colors.text, fontSize: 11, fontWeight: "700", marginLeft: 4, letterSpacing: 0.5 },
+  orderBtn: {
+    backgroundColor: colors.text,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: radius.sm,
+    minWidth: 80,
+    alignItems: "center",
+  },
+  orderBtnText: { color: "#000", fontWeight: "800", letterSpacing: 1, fontSize: 12, textTransform: "uppercase" },
+
+  // Report confirmation modal
+  reportModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: spacing.lg,
+  },
+  reportModalCard: {
+    width: "100%",
+    maxWidth: 420,
+    backgroundColor: colors.paper,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+  },
+  reportModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: spacing.sm,
+  },
+  reportModalTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "800",
+    marginLeft: 8,
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+  },
+  reportModalReport: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "700",
+    marginTop: spacing.sm,
+  },
+  reportModalPrice: {
+    color: colors.text,
+    fontSize: 32,
+    fontWeight: "800",
+    fontFamily: fonts.number,
+    fontVariant: ["tabular-nums"],
+    marginTop: 4,
+    marginBottom: spacing.sm,
+  },
+  reportModalBody: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: spacing.xs,
+  },
+  reportModalBodySmall: {
+    color: colors.textDisabled,
+    fontSize: 12,
+    marginBottom: spacing.md,
+  },
+  reportModalActions: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  reportModalCancel: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+  },
+  reportModalCancelText: { color: colors.text, fontWeight: "700", letterSpacing: 0.5 },
+  reportModalConfirm: {
+    flex: 1.4,
+    paddingVertical: 14,
+    borderRadius: radius.sm,
+    backgroundColor: colors.text,
+    alignItems: "center",
+  },
+  reportModalConfirmText: { color: "#000", fontWeight: "800", letterSpacing: 1, textTransform: "uppercase" },
+
 
   titleBox: { marginBottom: spacing.md },
   brand: { color: colors.textSecondary, fontSize: 13, fontWeight: "600", letterSpacing: 0.5 },
