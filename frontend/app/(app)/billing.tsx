@@ -307,7 +307,7 @@ const styles = StyleSheet.create({
   },
   totalCardAccent: { borderColor: colors.neon + "55", backgroundColor: colors.neon + "10" },
   totalLabel: { color: colors.textSecondary, fontSize: 10, fontWeight: "800", letterSpacing: 1.5, marginBottom: 4 },
-  totalValue: { color: colors.text, fontSize: 18, fontWeight: "800" },
+  totalValue: { color: colors.text, fontSize: 22, fontWeight: "800", fontFamily: fonts.number, fontVariant: ["tabular-nums"], letterSpacing: -0.2 },
   scroll: { padding: spacing.md, paddingBottom: spacing.xl, gap: spacing.sm },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.lg },
   emptyBox: { alignItems: "center", padding: spacing.xl, gap: 8 },
@@ -345,7 +345,7 @@ const styles = StyleSheet.create({
   dealerCompany: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
   dealerEmail: { color: colors.textDisabled, fontSize: 11, marginTop: 1 },
   amountBox: { alignItems: "flex-end" },
-  amountValue: { color: colors.neon, fontSize: 16, fontWeight: "800", fontFamily: fonts.mono, letterSpacing: 0.5 },
+  amountValue: { color: colors.text, fontSize: 20, fontWeight: "800", fontFamily: fonts.number, fontVariant: ["tabular-nums"], letterSpacing: -0.2 },
   amountCaption: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
   itemsBox: { borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.paper, padding: spacing.sm, gap: 6 },
   item: {

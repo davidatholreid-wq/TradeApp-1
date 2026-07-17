@@ -1198,7 +1198,7 @@ const styles = StyleSheet.create({
     minWidth: 90,
   },
   statPillLabel: { color: colors.textSecondary, fontSize: 10, letterSpacing: 1, fontWeight: "700" },
-  statPillValue: { fontSize: 18, fontWeight: "800", fontFamily: fonts.mono },
+  statPillValue: { fontSize: 20, fontWeight: "800", fontFamily: fonts.number, fontVariant: ["tabular-nums"], letterSpacing: -0.2 },
   iconBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1293,9 +1293,11 @@ const styles = StyleSheet.create({
   rowDealer: { color: colors.textDisabled, fontSize: 12, marginTop: 4, letterSpacing: 0.1 },
   rowPrice: {
     color: colors.success,
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: "800",
-    fontFamily: fonts.mono,
+    fontFamily: fonts.number,
+    fontVariant: ["tabular-nums"],
+    letterSpacing: -0.1,
     marginTop: 6,
   },
 
@@ -1500,14 +1502,14 @@ const styles = StyleSheet.create({
   infoLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: "700", letterSpacing: 1, minWidth: 130 },
   infoValue: { color: colors.text, fontSize: 13, fontWeight: "700", flex: 1, textAlign: "right" },
   monoValue: { color: colors.text, fontSize: 12, fontFamily: fonts.mono, fontWeight: "700", flex: 1, textAlign: "right" },
-  reconAmount: { color: colors.text, fontFamily: fonts.mono, fontWeight: "800", fontSize: 13 },
+  reconAmount: { color: colors.text, fontFamily: fonts.number, fontVariant: ["tabular-nums"], fontWeight: "700", fontSize: 15, letterSpacing: -0.1 },
   reconTotalRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     paddingVertical: 10,
     paddingTop: 14,
   },
-  reconTotal: { color: "#fff", fontFamily: fonts.mono, fontWeight: "800", fontSize: 18 },
+  reconTotal: { color: "#fff", fontFamily: fonts.number, fontVariant: ["tabular-nums"], fontWeight: "800", fontSize: 20, letterSpacing: -0.2 },
 
   dealerBox: {
     marginTop: spacing.md,
@@ -1543,7 +1545,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
   },
   priceBoxHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.sm },
-  priceBadge: { color: colors.success, fontFamily: fonts.mono, fontSize: 16, fontWeight: "800" },
+  priceBadge: { color: colors.success, fontFamily: fonts.number, fontVariant: ["tabular-nums"], fontSize: 18, fontWeight: "800", letterSpacing: -0.2 },
   priceInputRow: { flexDirection: "row", gap: spacing.sm },
   priceInputWrap: {
     flex: 1,
@@ -1555,13 +1557,15 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     paddingHorizontal: spacing.md,
   },
-  currencyLabel: { color: colors.textSecondary, fontSize: 18, fontFamily: fonts.mono, marginRight: 6 },
+  currencyLabel: { color: colors.textSecondary, fontSize: 18, fontFamily: fonts.number, marginRight: 6 },
   priceInput: {
     flex: 1,
     color: colors.text,
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "700",
-    fontFamily: fonts.mono,
+    fontFamily: fonts.number,
+    fontVariant: ["tabular-nums"],
+    letterSpacing: -0.2,
     paddingVertical: 12,
     outlineStyle: "none" as any,
   },
@@ -1619,7 +1623,7 @@ const styles = StyleSheet.create({
   },
   rangeCell: { flex: 1, padding: spacing.md, alignItems: "center", borderRightWidth: 1, borderRightColor: colors.border },
   rangeLabel: { color: colors.textSecondary, fontSize: 10, letterSpacing: 1, fontWeight: "700", marginBottom: 4 },
-  rangeValue: { color: colors.text, fontSize: 14, fontWeight: "800", fontFamily: fonts.mono },
+  rangeValue: { color: colors.text, fontSize: 16, fontWeight: "800", fontFamily: fonts.number, fontVariant: ["tabular-nums"], letterSpacing: -0.1 },
   tradeSplit: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },
   tradeCell: {
     flex: 1,
@@ -1666,5 +1670,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   tyreTotalLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: "700", letterSpacing: 0.5 },
-  tyreTotalValue: { color: "#fff", fontSize: 26, fontWeight: "800", fontFamily: fonts.mono, letterSpacing: 0.5, marginTop: 4 },
+  tyreTotalValue: { color: "#fff", fontSize: 28, fontWeight: "800", fontFamily: fonts.number, fontVariant: ["tabular-nums"], letterSpacing: -0.3, marginTop: 4 },
 });

@@ -67,7 +67,20 @@ export const fonts = {
   serif: "System",
   heading: "System",
   body: "System",
+  // Data font for prices / large figures. Same system stack as body text so
+  // the numbers feel native, not typewriter-y. Use with the `numberStyle`
+  // helper below (or apply fontVariant: ["tabular-nums"] inline) to keep the
+  // digits column-aligned without picking up the mono look.
+  number: "System",
   mono: Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }) as string,
+};
+
+// Style helper for numeric readouts (prices, mileage, ratings). Pairs the
+// system font with tabular-nums so ranges line up under each other while
+// staying easy on the eye.
+export const numberStyle = {
+  fontFamily: "System",
+  fontVariant: ["tabular-nums"] as any,
 };
 
 // Typography scale — sizes chosen for legibility, letter-spacing kept tight
