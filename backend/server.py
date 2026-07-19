@@ -2945,10 +2945,12 @@ async def admin_billing(
     month: Optional[str] = None,   # YYYY-MM, defaults to current month
     current: dict = Depends(require_admin),
 ):
-    """Per-dealer billing tally for a calendar month.
+    """Per-DEALERSHIP billing tally for a calendar month.
 
-    A submission counts as billable when it was PRICED within 24 hours of
-    being submitted (SLA). Fee is R50 incl. VAT per billable submission.
+    Every user of a dealership shares one bill. A submission counts as
+    billable when it was PRICED within 24 hours of being submitted (SLA).
+    Fee is R50 incl. VAT per billable submission. VIN report orders are
+    billed separately at their catalog price.
     """
     if month:
         try:
@@ -2959,31 +2961,51 @@ async def admin_billing(
     else:
         today = datetime.now(timezone.utc)
         start = datetime(today.year, today.month, 1, tzinfo=timezone.utc)
-
     # Compute month-end boundary.
     if start.month == 12:
         end = datetime(start.year + 1, 1, 1, tzinfo=timezone.utc)
     else:
         end = datetime(start.year, start.month + 1, 1, tzinfo=timezone.utc)
 
-    # Aggregate: fetch every priced submission in the window, filter by billable,
-    # then group by dealer.
+    # Pre-fetch users so we can map any submission/order back to its
+    # dealership if the doc itself lacks `dealership_id` (legacy fallback).
+    all_users = await db.users.find(
+        {"role": "dealer"},
+        {"_id": 0, "id": 1, "email": 1, "dealer_info": 1, "company_info": 1,
+         "active": 1, "archived_at": 1, "dealership_id": 1},
+    ).to_list(20000)
+    users_by_id = {u["id"]: u for u in all_users}
+
+    def _dealership_of(sub_or_order: dict) -> Optional[str]:
+        """Return the dealership_id for a submission/order, falling back to
+        the submitting user's dealership_id if the doc doesn't carry one."""
+        did = sub_or_order.get("dealership_id")
+        if did:
+            return did
+        u = users_by_id.get(sub_or_order.get("dealer_id"))
+        return u.get("dealership_id") if u else None
+
+    # 1) Priced submissions in the window
     all_subs = await db.submissions.find(
         {"status": "priced"},
-        {"_id": 0, "id": 1, "dealer_id": 1, "reference": 1, "make_name": 1,
-         "model_name": 1, "year": 1, "created_at": 1, "priced_at": 1, "price": 1,
-         "status": 1},
+        {"_id": 0, "id": 1, "dealer_id": 1, "dealership_id": 1, "reference": 1,
+         "make_name": 1, "model_name": 1, "year": 1, "created_at": 1,
+         "priced_at": 1, "price": 1, "status": 1,
+         "submitted_by_name": 1, "submitted_by_job_title": 1,
+         "submitted_by_user_id": 1},
     ).to_list(20000)
-
-    by_dealer: dict = {}
+    by_group: dict = {}
     for s in all_subs:
         priced_at = parse_iso(s.get("priced_at"))
         if not priced_at or not (start <= priced_at < end):
             continue
+        gid = _dealership_of(s) or f"user:{s.get('dealer_id')}"
         billable = is_billable(s)
-        did = s.get("dealer_id")
-        row = by_dealer.setdefault(did, {"dealer_id": did, "priced_count": 0,
-                                         "billable_count": 0, "items": []})
+        row = by_group.setdefault(gid, {
+            "dealership_id": gid if not gid.startswith("user:") else None,
+            "priced_count": 0, "billable_count": 0, "items": [],
+            "reports": {"count": 0, "amount": 0.0, "items": []},
+        })
         row["priced_count"] += 1
         if billable:
             row["billable_count"] += 1
@@ -2995,31 +3017,27 @@ async def admin_billing(
             "priced_at": s.get("priced_at"),
             "created_at": s.get("created_at"),
             "billable": billable,
+            "submitted_by_name": s.get("submitted_by_name"),
+            "submitted_by_job_title": s.get("submitted_by_job_title"),
         })
 
-    # Attach dealer profile info.
-    dealer_ids = list(by_dealer.keys())
-    dealers = await db.users.find(
-        {"id": {"$in": dealer_ids}},
-        {"_id": 0, "id": 1, "email": 1, "dealer_info": 1, "company_info": 1, "active": 1, "archived_at": 1},
-    ).to_list(2000) if dealer_ids else []
-    dealers_by_id = {d["id"]: d for d in dealers}
-
-    # Fetch report orders in the window (may belong to dealers with no priced
-    # submissions this month — include them too so billing stays correct).
-    all_report_orders = await db.report_orders.find(
-        {}, {"_id": 0}
-    ).to_list(20000)
-    reports_by_dealer: dict = {}
-    for r in all_report_orders:
+    # 2) VIN report orders in the window
+    all_orders = await db.report_orders.find({}, {"_id": 0}).to_list(20000)
+    for r in all_orders:
         ordered_at = parse_iso(r.get("ordered_at"))
         if not ordered_at or not (start <= ordered_at < end):
             continue
-        did = r.get("dealer_id")
-        entry = reports_by_dealer.setdefault(did, {"count": 0, "amount": 0.0, "items": []})
-        entry["count"] += 1
-        entry["amount"] += float(r.get("cost_zar") or 0)
-        entry["items"].append({
+        gid = _dealership_of(r) or f"user:{r.get('dealer_id')}"
+        row = by_group.setdefault(gid, {
+            "dealership_id": gid if not gid.startswith("user:") else None,
+            "priced_count": 0, "billable_count": 0, "items": [],
+            "reports": {"count": 0, "amount": 0.0, "items": []},
+        })
+        u = users_by_id.get(r.get("dealer_id")) or {}
+        u_info = u.get("dealer_info") or {}
+        row["reports"]["count"] += 1
+        row["reports"]["amount"] += float(r.get("cost_zar") or 0)
+        row["reports"]["items"].append({
             "type": r.get("type"),
             "name": r.get("name"),
             "cost_zar": r.get("cost_zar"),
@@ -3027,65 +3045,71 @@ async def admin_billing(
             "ordered_at": r.get("ordered_at"),
             "submission_id": r.get("submission_id"),
             "vin": r.get("vin"),
+            "ordered_by_name": (u_info.get("first_name", "") + " " + u_info.get("last_name", "")).strip() or None,
+            "ordered_by_job_title": u_info.get("job_title") or None,
         })
 
-    # Pull in dealer profiles for any report-only dealers not already in the set.
-    extra_ids = [did for did in reports_by_dealer.keys() if did not in dealers_by_id]
-    if extra_ids:
-        more = await db.users.find(
-            {"id": {"$in": extra_ids}},
-            {"_id": 0, "id": 1, "email": 1, "dealer_info": 1, "company_info": 1, "active": 1, "archived_at": 1},
-        ).to_list(2000)
-        for d in more:
-            dealers_by_id[d["id"]] = d
+    # 3) Look up dealership docs for naming + member counts
+    real_ds_ids = [gid for gid in by_group.keys() if not gid.startswith("user:")]
+    ds_docs = await db.dealerships.find(
+        {"id": {"$in": real_ds_ids}}, {"_id": 0}
+    ).to_list(len(real_ds_ids)) if real_ds_ids else []
+    ds_by_id = {d["id"]: d for d in ds_docs}
 
     rows = []
-    seen_dealers = set()
-    for did, row in by_dealer.items():
-        d = dealers_by_id.get(did, {})
-        info = d.get("dealer_info") or {}
-        company = d.get("company_info") or {}
-        rep = reports_by_dealer.get(did, {"count": 0, "amount": 0.0, "items": []})
+    for gid, row in by_group.items():
         submission_amount = row["billable_count"] * BILLING_FEE_ZAR
+        report_amount = row["reports"]["amount"]
+        # Resolve display info
+        if gid.startswith("user:"):
+            uid = gid.split(":", 1)[1]
+            u = users_by_id.get(uid) or {}
+            info = u.get("dealer_info") or {}
+            company = u.get("company_info") or {}
+            display_name = company.get("company_name") or (
+                f"{info.get('first_name','')} {info.get('last_name','')}".strip()
+            ) or "(deleted dealer)"
+            member_users = [{
+                "id": uid, "email": u.get("email"),
+                "name": f"{info.get('first_name','')} {info.get('last_name','')}".strip() or None,
+                "job_title": info.get("job_title"),
+                "active": u.get("active", True),
+                "archived": bool(u.get("archived_at")),
+            }] if u else []
+            active = u.get("active", True) if u else True
+            archived = bool(u.get("archived_at")) if u else False
+            legacy = True
+        else:
+            ds = ds_by_id.get(gid, {})
+            display_name = ds.get("name") or "(deleted dealership)"
+            members = [u for u in all_users if u.get("dealership_id") == gid]
+            member_users = [{
+                "id": m["id"], "email": m.get("email"),
+                "name": ((m.get("dealer_info") or {}).get("first_name", "") + " " + (m.get("dealer_info") or {}).get("last_name", "")).strip() or None,
+                "job_title": (m.get("dealer_info") or {}).get("job_title"),
+                "active": m.get("active", True),
+                "archived": bool(m.get("archived_at")),
+            } for m in members]
+            active = ds.get("active", True)
+            archived = False
+            legacy = False
         rows.append({
-            **row,
-            "dealer_name": f"{info.get('first_name', '')} {info.get('last_name', '')}".strip() or "(deleted dealer)",
-            "dealer_email": d.get("email", ""),
-            "company_name": company.get("company_name", ""),
-            "active": d.get("active", True),
-            "archived": bool(d.get("archived_at")),
-            "archived_at": d.get("archived_at"),
+            "dealership_id": row["dealership_id"],
+            "dealership_name": display_name,
+            "company_name": display_name,          # backwards-compat alias for the UI
+            "user_count": len(member_users),
+            "users": member_users,
+            "priced_count": row["priced_count"],
+            "billable_count": row["billable_count"],
+            "items": row["items"],
             "submission_amount_zar": round(submission_amount, 2),
-            "report_count": rep["count"],
-            "report_amount_zar": round(rep["amount"], 2),
-            "report_items": rep["items"],
-            "amount_zar": round(submission_amount + rep["amount"], 2),
-        })
-        seen_dealers.add(did)
-
-    # Dealers who only ordered reports this month (no priced submissions).
-    for did, rep in reports_by_dealer.items():
-        if did in seen_dealers:
-            continue
-        d = dealers_by_id.get(did, {})
-        info = d.get("dealer_info") or {}
-        company = d.get("company_info") or {}
-        rows.append({
-            "dealer_id": did,
-            "priced_count": 0,
-            "billable_count": 0,
-            "items": [],
-            "dealer_name": f"{info.get('first_name', '')} {info.get('last_name', '')}".strip() or "(deleted dealer)",
-            "dealer_email": d.get("email", ""),
-            "company_name": company.get("company_name", ""),
-            "active": d.get("active", True),
-            "archived": bool(d.get("archived_at")),
-            "archived_at": d.get("archived_at"),
-            "submission_amount_zar": 0.0,
-            "report_count": rep["count"],
-            "report_amount_zar": round(rep["amount"], 2),
-            "report_items": rep["items"],
-            "amount_zar": round(rep["amount"], 2),
+            "report_count": row["reports"]["count"],
+            "report_amount_zar": round(report_amount, 2),
+            "report_items": row["reports"]["items"],
+            "amount_zar": round(submission_amount + report_amount, 2),
+            "active": active,
+            "archived": archived,
+            "legacy": legacy,
         })
 
     rows.sort(key=lambda r: r["amount_zar"], reverse=True)

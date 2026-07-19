@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 20 — Admin Billing grouped by DEALERSHIP verified end-to-end. BACKEND (7 passed + 1 intentional skip in /app/backend/tests/test_billing_grouped_by_dealership.py): (1) Every /admin/billing row across the past 12 months carries the new required keys — dealership_id, dealership_name, user_count, users[], legacy, plus the pricing fields. user_count == len(users) enforced on every row. (2) Row math holds: amount_zar == billable_count*fee_zar + report_amount_zar (rounded 2dp) and submission_amount_zar == billable_count*fee_zar for every row in every month. (3) Top-level totals correctly roll up rows (priced_count, billable_count, report_count, report_amount_zar, submission_amount_zar, amount_zar — all match sum of rows within 1 cent). (4) Ford Bryanston appears as ONE row with dealership_id = 5b5cd0c6-3f06-45c4-8067-52c40f0c92bf, user_count = 2, users contain BOTH Zelda Visagie and Johann Linsky, priced_count = 5 (all attributed to that one row — no duplication across two user rows), billable_count 5 → R550.00 total (5*R50 subs + 2 reports @ R100+R200 = R550 which matches). (5) Multi-user grouping generalises: also found TEST E2E Motors (2 users, Alice Alpha + Bob Beta) and TEST UI Motors (1 user, Alice Alpha) rendered as separate rows with correct user_count. (6) Legacy 'user:<id>' rows: correctly not present in this seed (migration clean); guard test skipped as designed. (7) Auth guard: /admin/billing rejects unauthenticated calls (403). (8) Regression /billing/my for dealer minitest@example.com still returns 200 with month/fee_zar/billable_count/amount_zar shape intact and math holds (0 priced this month for that dealer). FRONTEND (admin, 1440x900, /app/frontend/app/(app)/billing.tsx): logged in as admin@fourbuy.co.za/admin123, opened Billing tab. Verified: (a) 4 dealership rows render for July 2026, all with testID `billing-row-<dealership_id>` — no per-user rows. (b) Row headline shows dealership NAME (Ford Bryanston, TEST E2E Motors x2 for two distinct dealerships that happen to share the name, TEST UI Motors) — NOT individual user names. (c) Below the dealership name a sub-line 'N users · Name1, Name2' correctly lists members: Ford Bryanston → '2 users · Zelda Visagie, Johann Linsky'; both TEST E2E Motors rows → '2 users · Alice Alpha, Bob Beta'; TEST UI Motors → '1 user · Alice Alpha' (singular grammar handled). (d) Row totals + counts match backend response (R550/R100/R100/R50). (e) Top totals bar renders: PRICED 10, REPORTS 2, TOTAL DUE R800.00, plus the sub-caption 'Submissions R500.00 · VIN Reports R300.00' — grand total roll-up correct. (f) Clicking a row expands it: Ford Bryanston expansion shows the 'PRICED SUBMISSIONS (5)' section listing all 5 items with reference (FB-000073/74/76/83/89), vehicle, submitted/priced timestamps, R50 fee — plus 'VIN REPORTS ORDERED (2)' section. No regression on expand/collapse; chevron toggles up/down. No React Native red screen, no console errors in either flow. Deprecated packages detected: none new. SafeAreaView issues detected: none.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_billing_grouped_by_dealership.py",
+    "/app/test_reports/pytest/billing_grouped_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:2979-2986 _dealership_of() correctly falls back to the submitting user's dealership_id when the doc lacks one — this is the migration-safety net. If neither the doc NOR the user has a dealership_id (truly pre-migration legacy), gid becomes 'user:<dealer_id>' and the row is flagged legacy=True at L3081. Clean tri-path.",
+    "server.py:3082-3095 For real dealership rows, member_users is rebuilt by scanning all_users where dealership_id == gid — so members[] correctly reflects the *current* dealership roster, including any users that have zero priced submissions this month. This means user_count is the DEALERSHIP roster size, not the number of users who priced this month. Confirm with product: currently for a 2-user dealership where only one user priced, user_count still shows 2. This matches the UI showing 'N users · Name1, Name2' as the dealership team — correct for a shared bill.",
+    "server.py:3105-3109 amount_zar = round(submission_amount + report_amount, 2). submission_amount = billable_count * BILLING_FEE_ZAR (fixed R50). Verified numerically for all rows.",
+    "server.py:3115 rows sorted by amount_zar desc — a nicer UX than random order.",
+    "billing.tsx:301-312 sub-line only rendered when users.length > 0, and slices to first 3 names with a '+N' overflow — good defensive UI. All observed dealerships have <=2 members so overflow not visually exercised but code path is sound.",
+    "billing.tsx:273 rowKey correctly falls back to `legacy-<dealer_id>` for legacy rows — matches the review request's testID convention.",
+    "billing.tsx:285 shows dealership_name with company_name as a secondary fallback (backend already sends company_name = dealership_name alias, so this is just extra defensive)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_billing_grouped_by_dealership.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (7/7 pytest passed, 1 legacy-fallback test intentionally skipped because migration cleaned all pre-migration docs)",
+    "frontend": "100% on all requested flows — dealership-keyed rows, multi-user sub-line, row expansion, totals bar, dealer /billing/my regression"
+  },
+  "seed_data_creation": "None. Used existing seeded data — Ford Bryanston (2 users), TEST E2E Motors (2 users, 2 separate dealerships sharing the name), TEST UI Motors (1 user), minitest@example.com dealer for /billing/my regression.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "To re-verify: `pytest /app/backend/tests/test_billing_grouped_by_dealership.py -v`. UI recipe: login admin@fourbuy.co.za/admin123 → click 'Billing' top-nav tab (admin cockpit, top tabs at 1440x900) → observe rows with testID `billing-row-<dealership_id>` for real dealerships or `billing-row-legacy-<dealer_id>` for legacy. Each row headline is the dealership name; sub-line under the name shows 'N users · Name1, Name2, Name3'. Clicking the row toggles expand — 'PRICED SUBMISSIONS (N)' + optional 'VIN REPORTS ORDERED (N)' sections. Top totals card shows PRICED/REPORTS/TOTAL DUE. Note: the 'TEST E2E Motors' name appears twice in the seed as two separate dealership_ids — this is legitimate test data, not a bug.",
+  "rca_of_issue": "N/A — feature verification, no bugs found."
+}

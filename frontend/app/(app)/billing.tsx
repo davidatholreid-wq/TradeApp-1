@@ -37,13 +37,23 @@ type BillingReportItem = {
 };
 
 type BillingRow = {
-  dealer_id: string;
-  dealer_name: string;
-  dealer_email: string;
-  company_name: string;
+  // Dealership-grouped row. Legacy per-user rows (pre-migration) leave
+  // `dealership_id` null; the client keys off `key` for React iteration.
+  dealership_id: string | null;
+  dealership_name: string;
+  company_name: string;                 // legacy alias, same value as dealership_name
+  user_count?: number;
+  users?: {
+    id: string;
+    email?: string;
+    name?: string | null;
+    job_title?: string | null;
+    active?: boolean;
+    archived?: boolean;
+  }[];
   active: boolean;
   archived?: boolean;
-  archived_at?: string | null;
+  legacy?: boolean;
   priced_count: number;
   billable_count: number;
   amount_zar: number;
@@ -52,6 +62,10 @@ type BillingRow = {
   report_amount_zar?: number;
   report_items?: BillingReportItem[];
   items: BillingItem[];
+  // Legacy fields kept for typescript compat (unused after migration).
+  dealer_id?: string;
+  dealer_name?: string;
+  dealer_email?: string;
 };
 
 type BillingResponse = {
@@ -255,30 +269,47 @@ export default function BillingScreen() {
                 </View>
               ) : null}
 
-              {(data?.rows || []).map((row) => (
-            <View key={row.dealer_id} style={styles.dealerCard} testID={`billing-row-${row.dealer_id}`}>
+              {(data?.rows || []).map((row) => {
+                const rowKey = row.dealership_id || `legacy-${row.dealer_id ?? ""}`;
+                return (
+            <View key={rowKey} style={styles.dealerCard} testID={`billing-row-${rowKey}`}>
               <TouchableOpacity
                 style={styles.dealerHead}
                 onPress={() =>
-                  setExpanded((e) => ({ ...e, [row.dealer_id]: !e[row.dealer_id] }))
+                  setExpanded((e) => ({ ...e, [rowKey]: !e[rowKey] }))
                 }
                 activeOpacity={0.85}
               >
                 <View style={{ flex: 1 }}>
                   <View style={styles.nameLine}>
-                    <Text style={styles.dealerName}>{row.dealer_name || "(deleted dealer)"}</Text>
+                    <Text style={styles.dealerName}>{row.dealership_name || row.company_name || "(deleted dealership)"}</Text>
                     {row.archived ? (
                       <View style={styles.archivedPill}>
                         <Text style={styles.archivedPillText}>ARCHIVED</Text>
                       </View>
                     ) : !row.active ? (
                       <View style={styles.suspendPill}>
-                        <Text style={styles.suspendPillText}>SUSPENDED</Text>
+                        <Text style={styles.suspendPillText}>DISABLED</Text>
+                      </View>
+                    ) : null}
+                    {row.legacy ? (
+                      <View style={styles.suspendPill}>
+                        <Text style={styles.suspendPillText}>LEGACY</Text>
                       </View>
                     ) : null}
                   </View>
-                  <Text style={styles.dealerCompany}>{row.company_name}</Text>
-                  <Text style={styles.dealerEmail}>{row.dealer_email}</Text>
+                  {(row.users?.length ?? 0) > 0 ? (
+                    <Text style={styles.dealerCompany}>
+                      {row.user_count} user{row.user_count === 1 ? "" : "s"}
+                      {(row.users ?? []).length > 0
+                        ? "  ·  " + (row.users ?? [])
+                            .map((u) => u.name || u.email || "—")
+                            .slice(0, 3)
+                            .join(", ")
+                        + ((row.users ?? []).length > 3 ? " +" + ((row.users?.length ?? 0) - 3) : "")
+                        : ""}
+                    </Text>
+                  ) : null}
                 </View>
                 <View style={styles.amountBox}>
                   <Text style={styles.amountValue}>R {row.amount_zar.toFixed(2)}</Text>
@@ -290,14 +321,14 @@ export default function BillingScreen() {
                   </Text>
                 </View>
                 <Ionicons
-                  name={expanded[row.dealer_id] ? "chevron-up" : "chevron-down"}
+                  name={expanded[rowKey] ? "chevron-up" : "chevron-down"}
                   size={18}
                   color={colors.textSecondary}
                   style={{ marginLeft: 6 }}
                 />
               </TouchableOpacity>
 
-              {expanded[row.dealer_id] ? (
+              {expanded[rowKey] ? (
                 <View style={styles.itemsBox}>
                   {row.items.length > 0 ? (
                     <>
@@ -378,7 +409,8 @@ export default function BillingScreen() {
                 </View>
               ) : null}
             </View>
-          ))}
+                );
+              })}
             </>
           ) : (
             // ============ Dealer's own view ============
