@@ -63,6 +63,17 @@ def _looks_like_base64_image(value) -> bool:
     return value.startswith("data:image") or len(value) > 500
 
 
+def _valid_front_photo(value):
+    """Return `value` if it looks like a renderable photo (Cloudinary/https
+    URL, or a base64 data URL big enough to be a real image), else None."""
+    if not value or not isinstance(value, str):
+        return None
+    if value.startswith("http://") or value.startswith("https://"):
+        return value
+    # base64 payload — must be big enough to not be a 1x1 placeholder pixel
+    return value if len(value) > 500 else None
+
+
 def upload_image_to_cloudinary(
     value: Optional[str],
     folder: str,
@@ -788,10 +799,11 @@ async def get_my_submissions(current: dict = Depends(get_current_user)):
         s["bucket"] = bucket
         photos = s.pop("photos", {}) or {}
         # Only expose the front photo if it looks like a real image. Sub-500
-        # byte payloads are almost certainly 1x1 placeholder pixels that
-        # would render as an ugly blank square on the mobile card.
+        # byte base64 payloads are almost certainly 1x1 placeholder pixels
+        # that would render as an ugly blank square on the mobile card.
+        # Cloudinary URLs are short (~130 chars) so we accept any http(s) URL.
         front = photos.get("front") or None
-        s["front_photo"] = front if front and len(front) > 500 else None
+        s["front_photo"] = _valid_front_photo(front)
         if bucket != "archived":
             visible.append(s)
     return {"submissions": visible}
@@ -836,7 +848,7 @@ async def submission_history(
             s["billable"] = is_billable_available
         photos = s.pop("photos", {}) or {}
         front = photos.get("front") or None
-        s["front_photo"] = front if front and len(front) > 500 else None
+        s["front_photo"] = _valid_front_photo(front)
         if q and not _match_search(s, q):
             continue
         results.append(s)
@@ -999,7 +1011,7 @@ async def admin_list_submissions(
         s["billable"] = is_billable(s)
         photos = s.pop("photos", {}) or {}
         front = photos.get("front") or None
-        s["front_photo"] = front if front and len(front) > 500 else None
+        s["front_photo"] = _valid_front_photo(front)
         counts[b] += 1
     if bucket and bucket != "all":
         subs = [s for s in subs if s["bucket"] == bucket]
