@@ -20,7 +20,7 @@ import PhotoCarousel, { CarouselPhoto } from "@/src/components/PhotoCarousel";
 import ConditionRatingInfoModal from "@/src/components/ConditionRatingInfoModal";
 import { computeServiceGap, formatMonthsAgo, formatKm } from "@/src/utils/format";
 
-type ReconItem = { label: string; amount_zar: number };
+type ReconItem = { label: string; amount_zar: number; photo?: string | null };
 
 type Submission = {
   id: string;
@@ -186,10 +186,14 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
 
   const carouselPhotos: CarouselPhoto[] = useMemo(() => {
     if (!selected) return [];
-    return PHOTO_ORDER.map((p) => ({
+    const main = PHOTO_ORDER.map((p) => ({
       uri: resolvePhoto(selected.photos, p.key, p.fallback),
       label: p.label,
     })).filter((p) => !!p.uri);
+    const reconPhotos: CarouselPhoto[] = (selected.reconditioning_items || [])
+      .filter((r: any) => !!r?.photo)
+      .map((r: any) => ({ uri: r.photo as string, label: `Recon · ${r.label}` }));
+    return [...main, ...reconPhotos];
   }, [selected]);
 
   const averageRating = useMemo(() => {
@@ -720,7 +724,19 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                   <View style={styles.detailsList}>
                     {selected.reconditioning_items.map((r, i) => (
                       <View key={i} style={styles.detailRow}>
-                        <Text style={styles.detailRowLabel}>{r.label}</Text>
+                        {r.photo ? (
+                          <TouchableOpacity
+                            onPress={() => {
+                              const idx = carouselPhotos.findIndex((c) => c.uri === r.photo);
+                              if (idx >= 0) setCarouselIdx(idx);
+                            }}
+                            style={styles.reconThumbWrap}
+                            testID={`admin-recon-thumb-${i}`}
+                          >
+                            <Image source={{ uri: r.photo }} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
+                          </TouchableOpacity>
+                        ) : null}
+                        <Text style={[styles.detailRowLabel, { flex: 1 }]}>{r.label}</Text>
                         <Text style={[styles.detailRowValue, { fontFamily: fonts.mono }]}>
                           R {r.amount_zar.toLocaleString()}
                         </Text>
@@ -1559,6 +1575,15 @@ const styles = StyleSheet.create({
     paddingTop: 14,
   },
   reconTotal: { color: "#fff", fontFamily: fonts.number, fontVariant: ["tabular-nums"], fontWeight: "800", fontSize: 20, letterSpacing: -0.2 },
+  reconThumbWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.sm,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginRight: 4,
+  },
 
   dealerBox: {
     marginTop: spacing.md,

@@ -123,8 +123,9 @@ export default function SubmitVehicle() {
   const [accidentDamage, setAccidentDamage] = useState(false);
   const [accidentTypes, setAccidentTypes] = useState<AccidentDamageType[]>([]);
 
-  // Reconditioning items
-  const [reconItems, setReconItems] = useState<{ label: string; amount: string }[]>([]);
+  // Reconditioning items — `photo` is an optional base64 data URL or a
+  // Cloudinary https URL (uploaded server-side on submission).
+  const [reconItems, setReconItems] = useState<{ label: string; amount: string; photo?: string }[]>([]);
 
   // Wheel state + option cache
   const [wheelField, setWheelField] = useState<WheelField | null>(null);
@@ -362,62 +363,73 @@ export default function SubmitVehicle() {
   );
 
   const pickPhoto = async (key: PhotoKey) => {
-    // Ask the user which source to use — camera or gallery. Uses native
-    // Alert (which maps to a proper ActionSheet on iOS and a dialog elsewhere).
-    Alert.alert(
-      "Add photo",
-      "Would you like to take a photo or choose one from your library?",
-      [
-        {
-          text: "Take Photo",
-          onPress: async () => {
-            const perm = await ImagePicker.requestCameraPermissionsAsync();
-            if (!perm.granted) {
-              Alert.alert(
-                "Camera permission needed",
-                "Enable camera access in Settings to take photos, or choose one from your library instead.",
-              );
-              return;
-            }
-            const res = await ImagePicker.launchCameraAsync({
-              base64: true,
-              quality: 0.5,
-              allowsEditing: true,
-              mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            });
-            if (res.canceled || !res.assets?.[0]?.base64) return;
-            setPhotos((p) => ({ ...p, [key]: `data:image/jpeg;base64,${res.assets![0].base64}` }));
-          },
-        },
-        {
-          text: "Choose from Library",
-          onPress: async () => {
-            const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-            if (!perm.granted) {
-              Alert.alert(
-                "Photo library permission needed",
-                "Enable photo library access in Settings to pick an image.",
-              );
-              return;
-            }
-            const res = await ImagePicker.launchImageLibraryAsync({
-              base64: true,
-              quality: 0.5,
-              allowsEditing: true,
-              mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            });
-            if (res.canceled || !res.assets?.[0]?.base64) return;
-            setPhotos((p) => ({ ...p, [key]: `data:image/jpeg;base64,${res.assets![0].base64}` }));
-          },
-        },
-        { text: "Cancel", style: "cancel" },
-      ],
-    );
+    const b64 = await promptPickImage();
+    if (b64) setPhotos((p) => ({ ...p, [key]: b64 }));
   };
 
-  const addReconItem = () => setReconItems((r) => [...r, { label: "", amount: "" }]);
-  const updateReconItem = (i: number, patch: Partial<{ label: string; amount: string }>) => setReconItems((r) => r.map((x, ix) => (ix === i ? { ...x, ...patch } : x)));
+  /** Prompts the user to Take/Choose a photo and returns a data-URL or null. */
+  const promptPickImage = (): Promise<string | null> =>
+    new Promise((resolve) => {
+      const done = (uri: string | null) => resolve(uri);
+      Alert.alert(
+        "Add photo",
+        "Would you like to take a photo or choose one from your library?",
+        [
+          {
+            text: "Take Photo",
+            onPress: async () => {
+              const perm = await ImagePicker.requestCameraPermissionsAsync();
+              if (!perm.granted) {
+                Alert.alert(
+                  "Camera permission needed",
+                  "Enable camera access in Settings to take photos, or choose one from your library instead.",
+                );
+                return done(null);
+              }
+              const res = await ImagePicker.launchCameraAsync({
+                base64: true,
+                quality: 0.5,
+                allowsEditing: true,
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+              });
+              if (res.canceled || !res.assets?.[0]?.base64) return done(null);
+              done(`data:image/jpeg;base64,${res.assets[0].base64}`);
+            },
+          },
+          {
+            text: "Choose from Library",
+            onPress: async () => {
+              const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+              if (!perm.granted) {
+                Alert.alert(
+                  "Photo library permission needed",
+                  "Enable photo library access in Settings to pick an image.",
+                );
+                return done(null);
+              }
+              const res = await ImagePicker.launchImageLibraryAsync({
+                base64: true,
+                quality: 0.5,
+                allowsEditing: true,
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+              });
+              if (res.canceled || !res.assets?.[0]?.base64) return done(null);
+              done(`data:image/jpeg;base64,${res.assets[0].base64}`);
+            },
+          },
+          { text: "Cancel", style: "cancel", onPress: () => done(null) },
+        ],
+        { cancelable: true, onDismiss: () => done(null) },
+      );
+    });
+
+  const addReconItem = () => setReconItems((r) => [...r, { label: "", amount: "", photo: "" }]);
+  const updateReconItem = (i: number, patch: Partial<{ label: string; amount: string; photo: string }>) => setReconItems((r) => r.map((x, ix) => (ix === i ? { ...x, ...patch } : x)));
   const removeReconItem = (i: number) => setReconItems((r) => r.filter((_, ix) => ix !== i));
+  const pickReconPhoto = async (i: number) => {
+    const b64 = await promptPickImage();
+    if (b64) updateReconItem(i, { photo: b64 });
+  };
   const reconTotal = useMemo(() => reconItems.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0), [reconItems]);
 
   const validate = (): string | null => {
@@ -472,7 +484,7 @@ export default function SubmitVehicle() {
           paint_quality: paintEvidence ? paintQuality : null,
           accident_damage: accidentDamage,
           accident_damage_types: accidentDamage ? accidentTypes : [],
-          reconditioning_items: reconItems.filter(r => r.label.trim() && parseFloat(r.amount) > 0).map(r => ({ label: r.label.trim(), amount_zar: parseFloat(r.amount) })),
+          reconditioning_items: reconItems.filter(r => r.label.trim() && parseFloat(r.amount) > 0).map(r => ({ label: r.label.trim(), amount_zar: parseFloat(r.amount), photo: r.photo || null })),
           billing_accepted: true,
         }),
       });
@@ -778,6 +790,26 @@ export default function SubmitVehicle() {
             <View key={i} style={styles.reconRow}>
               <TextInput style={[styles.input, { flex: 2 }]} value={item.label} onChangeText={(v) => updateReconItem(i, { label: v })} placeholder="e.g. Paint front bumper" placeholderTextColor={colors.textDisabled} />
               <TextInput style={[styles.input, { flex: 1 }]} value={item.amount} onChangeText={(v) => updateReconItem(i, { amount: v })} placeholder="R" placeholderTextColor={colors.textDisabled} keyboardType="numeric" />
+              {item.photo ? (
+                <TouchableOpacity
+                  style={styles.reconPhotoThumbWrap}
+                  onPress={() => updateReconItem(i, { photo: "" })}
+                  testID={`recon-photo-${i}`}
+                >
+                  <Image source={{ uri: item.photo }} style={styles.reconPhotoThumb} />
+                  <View style={styles.reconPhotoBadge}>
+                    <Ionicons name="close" size={10} color="#fff" />
+                  </View>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={styles.reconPhotoBtn}
+                  onPress={() => pickReconPhoto(i)}
+                  testID={`recon-photo-${i}`}
+                >
+                  <Ionicons name="camera-outline" size={16} color={colors.text} />
+                </TouchableOpacity>
+              )}
               <TouchableOpacity style={styles.reconRemove} onPress={() => removeReconItem(i)}><Ionicons name="close" size={16} color={colors.danger} /></TouchableOpacity>
             </View>
           ))}
@@ -965,6 +997,10 @@ const styles = StyleSheet.create({
 
   reconRow: { flexDirection: "row", gap: 6, alignItems: "center", marginBottom: 6 },
   reconRemove: { width: 30, height: 30, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.danger + "55", backgroundColor: colors.danger + "12", borderRadius: radius.sm },
+  reconPhotoBtn: { width: 30, height: 30, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, backgroundColor: colors.paper, borderRadius: radius.sm },
+  reconPhotoThumbWrap: { width: 30, height: 30, borderRadius: radius.sm, overflow: "hidden", borderWidth: 1, borderColor: colors.border, position: "relative" },
+  reconPhotoThumb: { width: "100%", height: "100%" },
+  reconPhotoBadge: { position: "absolute", top: -2, right: -2, backgroundColor: colors.danger, width: 14, height: 14, borderRadius: 7, alignItems: "center", justifyContent: "center" },
   reconAdd: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, padding: 10, borderWidth: 1, borderStyle: "dashed", borderColor: colors.border, borderRadius: radius.sm, marginTop: 4 },
   reconAddText: { color: colors.text, fontSize: 12, fontWeight: "800", letterSpacing: 1 },
   reconTotal: { color: colors.text, fontSize: 13, fontWeight: "800", marginTop: 6, textAlign: "right" },

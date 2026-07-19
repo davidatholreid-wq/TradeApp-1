@@ -709,6 +709,21 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         folder=f"fourbuy/submissions/{sub_id}",
         public_id="license_disk",
     )
+    # Reconditioning items may carry an optional per-line photo (base64 data
+    # URL from the mobile picker). Upload each to Cloudinary and store the
+    # secure URL alongside the label & amount.
+    recon_folder = f"fourbuy/submissions/{sub_id}/recon"
+    recon_items_uploaded: list[dict] = []
+    for idx, item in enumerate(payload.reconditioning_items or []):
+        clean = dict(item)
+        photo_val = clean.get("photo")
+        if _looks_like_base64_image(photo_val):
+            clean["photo"] = upload_image_to_cloudinary(
+                photo_val, folder=recon_folder, public_id=f"item_{idx}",
+            )
+        elif not photo_val:
+            clean["photo"] = None
+        recon_items_uploaded.append(clean)
     doc = {
         "id": sub_id,
         "reference": reference,
@@ -760,7 +775,7 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         "accident_damage_types": payload.accident_damage_types if payload.accident_damage else [],
         "rim_size": payload.rim_size,
         # Reconditioning
-        "reconditioning_items": payload.reconditioning_items,
+        "reconditioning_items": recon_items_uploaded,
         "reconditioning_total_zar": round(float(total_recon), 2),
         # Legacy fields kept for backward compat with older views
         "factory_warranty": False,
@@ -925,6 +940,23 @@ async def upsert_draft(payload: SubmissionDraft, current: dict = Depends(get_cur
             folder=f"fourbuy/submissions/{draft_id}",
             public_id="license_disk",
         )
+    # Recon items may carry an optional per-line base64 photo — upload them
+    # so drafts stay small in Mongo too.
+    if isinstance(data.get("recon_items"), list):
+        recon_folder = f"fourbuy/submissions/{draft_id}/recon"
+        new_items: list[dict] = []
+        for idx, item in enumerate(data["recon_items"] or []):
+            if not isinstance(item, dict):
+                new_items.append(item)
+                continue
+            clean = dict(item)
+            photo_val = clean.get("photo")
+            if _looks_like_base64_image(photo_val):
+                clean["photo"] = upload_image_to_cloudinary(
+                    photo_val, folder=recon_folder, public_id=f"item_{idx}",
+                )
+            new_items.append(clean)
+        data["recon_items"] = new_items
     payload_data = data
     if payload.id:
         existing = await db.submission_drafts.find_one(
@@ -1388,101 +1420,339 @@ def _compute_service_gap(sub: dict) -> dict:
 
 
 async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
-    """Render the valuation as a monochrome A4 PDF using reportlab."""
+    """Render the valuation as an app-like monochrome A4 PDF using reportlab.
+
+    Photo layout mirrors the mobile valuation screen: black header band with
+    brand + reference, big vehicle title, 2×2 photo grid (front / driver /
+    passenger / rear) followed by the interior on its own row, then all
+    detail tables in the same order as the app.
+    """
     from io import BytesIO
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import mm
     from reportlab.lib import colors as rl_colors
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
     from reportlab.platypus import (
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak,
+        Image as RLImage, KeepTogether,
     )
+    import base64 as _b64
+    from PIL import Image as PILImage
+
+    async def _fetch_image_bytes(uri: str) -> Optional[bytes]:
+        """Return raw bytes for a Cloudinary URL or a base64 data-URL, or
+        None if the URI is empty / unreachable."""
+        if not uri or not isinstance(uri, str):
+            return None
+        try:
+            if uri.startswith("data:"):
+                _, _, b64part = uri.partition(",")
+                return _b64.b64decode(b64part)
+            if uri.startswith("http://") or uri.startswith("https://"):
+                async with httpx.AsyncClient(timeout=15.0) as cli:
+                    r = await cli.get(uri)
+                    r.raise_for_status()
+                    return r.content
+        except Exception as e:
+            logger.warning("PDF image fetch failed for %s: %s", uri[:80], e)
+        return None
+
+    def _as_rlimage(raw: bytes, max_w_mm: float, max_h_mm: float):
+        """Down-scale + JPEG-encode to keep the PDF light, then wrap in an
+        RLImage sized to fit inside (max_w_mm × max_h_mm) in millimetres."""
+        if not raw:
+            return None
+        try:
+            im = PILImage.open(BytesIO(raw))
+            if im.mode not in ("RGB", "L"):
+                im = im.convert("RGB")
+            # Downscale so the biggest dimension is ~1200 px — plenty for A4
+            # print but keeps the PDF under a few MB even with 5 photos.
+            im.thumbnail((1200, 1200), PILImage.LANCZOS)
+            buf = BytesIO()
+            im.save(buf, format="JPEG", quality=82, optimize=True)
+            buf.seek(0)
+            iw, ih = im.size
+            # Convert target from mm to points for reportlab.
+            max_w_pt = float(max_w_mm) * mm
+            max_h_pt = float(max_h_mm) * mm
+            # Preserve aspect ratio.
+            ratio = min(max_w_pt / iw, max_h_pt / ih)
+            return RLImage(buf, width=iw * ratio, height=ih * ratio)
+        except Exception as e:
+            logger.warning("PDF image render failed: %s", e)
+            return None
 
     buf = BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
-        leftMargin=18*mm, rightMargin=18*mm,
-        topMargin=18*mm, bottomMargin=18*mm,
+        leftMargin=16 * mm, rightMargin=16 * mm,
+        topMargin=14 * mm, bottomMargin=14 * mm,
         title=f"Valuation {sub.get('reference') or sub.get('id')}",
         author="Fourbuy Car Buying Co.",
     )
     styles = getSampleStyleSheet()
-    h1 = ParagraphStyle("h1", parent=styles["Heading1"], textColor=rl_colors.black,
-                        fontSize=20, leading=24, spaceAfter=4)
-    h2 = ParagraphStyle("h2", parent=styles["Heading2"], textColor=rl_colors.black,
-                        fontSize=12, leading=14, spaceBefore=14, spaceAfter=6,
-                        textTransform="uppercase")
-    body = ParagraphStyle("body", parent=styles["Normal"], fontSize=10, leading=14)
-    small = ParagraphStyle("small", parent=styles["Normal"], fontSize=8,
-                           leading=11, textColor=rl_colors.grey)
 
-    story = []
+    # ---- Style palette (monochrome, matches the mobile app) ----
+    BLACK = rl_colors.HexColor("#0A0A0A")
+    INK = rl_colors.HexColor("#111111")
+    MUTED = rl_colors.HexColor("#6B6B6B")
+    LINE = rl_colors.HexColor("#E5E5E5")
+    PAPER = rl_colors.HexColor("#F7F7F7")
+    OK = rl_colors.HexColor("#1F7A3A")
+    WARN = rl_colors.HexColor("#B67900")
+    DANGER = rl_colors.HexColor("#B3261E")
 
-    # Header brand + reference
-    story.append(Paragraph("FOURBUY CAR BUYING CO.", h1))
-    story.append(Paragraph("Vehicle Valuation Statement", body))
-    story.append(Spacer(1, 6))
-    ref_bits = []
-    if sub.get("reference"):
-        ref_bits.append(f"Reference: <b>{sub['reference']}</b>")
-    ref_bits.append(f"Generated: {now_utc()[:19].replace('T', ' ')} UTC")
-    story.append(Paragraph(" &nbsp;·&nbsp; ".join(ref_bits), small))
+    def _row_style(zebra: bool = False, last_black: bool = False) -> TableStyle:
+        s = [
+            ("FONT", (0, 0), (-1, -1), "Helvetica", 10),
+            ("FONT", (0, 0), (0, -1), "Helvetica-Bold", 10),
+            ("TEXTCOLOR", (0, 0), (0, -1), MUTED),
+            ("TEXTCOLOR", (1, 0), (1, -1), INK),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.4, LINE),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ]
+        return TableStyle(s)
 
-    # Offer banner
-    story.append(Paragraph("OFFER", h2))
-    price = sub.get("price")
-    offer_rows = [
-        ["Offer Price", _fmt_zar(price) if price is not None else "—"],
-        ["Offer Date", (sub.get("priced_at") or "—")[:19].replace("T", " ")],
-    ]
-    if sub.get("price_notes"):
-        offer_rows.append(["Notes", sub["price_notes"]])
-    t = Table(offer_rows, colWidths=[55*mm, 115*mm])
-    t.setStyle(TableStyle([
-        ("FONT", (0, 0), (-1, -1), "Helvetica", 10),
-        ("FONT", (0, 0), (0, -1), "Helvetica-Bold", 10),
-        ("TEXTCOLOR", (0, 0), (-1, -1), rl_colors.black),
-        ("LINEBELOW", (0, 0), (-1, -1), 0.25, rl_colors.lightgrey),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
+    section_title = ParagraphStyle(
+        "sect", parent=styles["Normal"], fontName="Helvetica-Bold",
+        fontSize=9, textColor=MUTED, leading=11, spaceBefore=14,
+        spaceAfter=6, letterSpace=2,
+    )
+    body = ParagraphStyle(
+        "body", parent=styles["Normal"], fontName="Helvetica",
+        fontSize=10, leading=14, textColor=INK,
+    )
+    small = ParagraphStyle(
+        "small", parent=styles["Normal"], fontName="Helvetica",
+        fontSize=8, leading=11, textColor=MUTED,
+    )
+    price_big = ParagraphStyle(
+        "priceBig", parent=styles["Normal"], fontName="Helvetica-Bold",
+        fontSize=28, leading=32, textColor=INK, alignment=TA_CENTER,
+    )
+    price_lbl = ParagraphStyle(
+        "priceLbl", parent=styles["Normal"], fontName="Helvetica-Bold",
+        fontSize=8, leading=10, textColor=MUTED, alignment=TA_CENTER,
+    )
+
+    story: list = []
+
+    # ============ HEADER BAND ============
+    reference = sub.get("reference") or (sub.get("id") or "")[:8].upper()
+    status = (sub.get("status") or "pending").upper()
+    header_left = Paragraph(
+        '<font name="Helvetica-Bold" size="14" color="#FFFFFF">FOURBUY CAR BUYING CO.</font><br/>'
+        '<font name="Helvetica" size="8" color="#BFBFBF">Vehicle Valuation Statement</font>',
+        ParagraphStyle("hdrL", parent=styles["Normal"], leading=16),
+    )
+    header_right = Paragraph(
+        f'<para align="right">'
+        f'<font name="Helvetica-Bold" size="11" color="#FFFFFF">{reference}</font><br/>'
+        f'<font name="Helvetica" size="8" color="#BFBFBF">STATUS · {status}</font>'
+        f'</para>',
+        ParagraphStyle("hdrR", parent=styles["Normal"], leading=14),
+    )
+    hdr = Table([[header_left, header_right]], colWidths=[110 * mm, 68 * mm])
+    hdr.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), BLACK),
+        ("TEXTCOLOR", (0, 0), (-1, -1), rl_colors.white),
+        ("LEFTPADDING", (0, 0), (-1, -1), 14),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 14),
+        ("TOPPADDING", (0, 0), (-1, -1), 12),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
-    story.append(t)
+    story.append(hdr)
 
-    # Vehicle details
-    story.append(Paragraph("VEHICLE DETAILS", h2))
+    # ============ VEHICLE TITLE ============
+    year = sub.get("year_registered") or sub.get("year") or sub.get("year_of_production") or ""
+    title_line = " ".join(str(x) for x in [year, sub.get("make_name"), sub.get("model_name")] if x)
+    subtitle_bits = [
+        sub.get("derivative_name"),
+        f"{int(sub.get('mileage') or 0):,} km" if sub.get("mileage") else None,
+        sub.get("transmission"),
+        sub.get("fuel_type"),
+        sub.get("colour"),
+    ]
+    subtitle = " · ".join(str(x) for x in subtitle_bits if x)
+    title_p = Paragraph(
+        f'<font name="Helvetica-Bold" size="22" color="#111111">{title_line}</font><br/>'
+        f'<font name="Helvetica" size="10" color="#6B6B6B">{subtitle}</font><br/>'
+        f'<font name="Helvetica" size="8" color="#6B6B6B">Generated {now_utc()[:19].replace("T", " ")} UTC</font>',
+        ParagraphStyle("title", parent=styles["Normal"], leading=26, spaceBefore=14),
+    )
+    story.append(title_p)
+    story.append(Spacer(1, 8))
+
+    # ============ OFFER CARD (top when priced/declined) ============
+    price = sub.get("price")
+    if status == "PRICED" and price is not None:
+        priced_at = (sub.get("priced_at") or "")[:10]
+        notes = sub.get("price_notes") or ""
+        offer_card_inner = [
+            [Paragraph("OFFER", price_lbl)],
+            [Paragraph(_fmt_zar(price), price_big)],
+            [Paragraph(f'<para align="center"><font color="#6B6B6B" size="9">Offered on {priced_at}</font></para>', body)],
+        ]
+        if notes:
+            offer_card_inner.append([Paragraph(
+                f'<para align="center"><font color="#6B6B6B" size="9"><i>“{notes}”</i></font></para>', body,
+            )])
+        offer_card = Table(offer_card_inner, colWidths=[178 * mm])
+        offer_card.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), PAPER),
+            ("BOX", (0, 0), (-1, -1), 0.75, LINE),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("LEFTPADDING", (0, 0), (-1, -1), 12),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+        ]))
+        story.append(offer_card)
+    elif status == "DECLINED":
+        decl = Paragraph(
+            '<para align="center"><font name="Helvetica-Bold" size="12" color="#B3261E">'
+            'CANNOT OFFER — WE UNFORTUNATELY ARE NOT ABLE TO MAKE AN OFFER ON THIS VEHICLE'
+            '</font></para>',
+            body,
+        )
+        decl_card = Table([[decl]], colWidths=[178 * mm])
+        decl_card.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor("#FFF3F2")),
+            ("BOX", (0, 0), (-1, -1), 0.75, DANGER),
+            ("TOPPADDING", (0, 0), (-1, -1), 12),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+        ]))
+        story.append(decl_card)
+
+    # ============ PHOTOS (2×2 exterior grid + interior full-width) ============
+    photos = sub.get("photos") or {}
+    photo_order = [
+        ("front", "FRONT"),
+        ("driver_side", "DRIVER SIDE"),
+        ("passenger_side", "PASSENGER SIDE"),
+        ("rear", "REAR"),
+        ("interior", "INTERIOR"),
+    ]
+    loaded_photos: list[tuple[str, Optional[bytes]]] = []
+    for key, label in photo_order:
+        raw = await _fetch_image_bytes(photos.get(key))
+        if raw:
+            loaded_photos.append((label, raw))
+    if loaded_photos:
+        story.append(Paragraph("PHOTOS", section_title))
+        # Grid of 2 columns for the exterior photos; interior gets its own row
+        # so it isn't paired with an odd number.
+        cell_w_mm = 87.0
+        cell_h_mm = 58.0
+        pairs: list[list] = []
+        row: list = []
+        for label, raw in loaded_photos:
+            img = _as_rlimage(raw, cell_w_mm - 2, cell_h_mm - 2)
+            if not img:
+                continue
+            cell = Table(
+                [[img], [Paragraph(f'<font size="7" color="#6B6B6B">{label}</font>', body)]],
+                colWidths=[cell_w_mm * mm],
+                rowHeights=[cell_h_mm * mm, 12],
+            )
+            cell.setStyle(TableStyle([
+                ("BOX", (0, 0), (-1, -1), 0.5, LINE),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ]))
+            row.append(cell)
+            if len(row) == 2:
+                pairs.append(row)
+                row = []
+        if row:
+            # Pad the last odd row with a blank cell for alignment.
+            if len(row) == 1:
+                row.append(Paragraph("", body))
+            pairs.append(row)
+        photo_grid = Table(pairs, colWidths=[cell_w_mm * mm, cell_w_mm * mm], hAlign="LEFT")
+        photo_grid.setStyle(TableStyle([
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(photo_grid)
+
+    # ============ VEHICLE DETAILS ============
+    story.append(Paragraph("VEHICLE DETAILS", section_title))
     v_rows = [
-        ["Make", sub.get("make_name", "—")],
-        ["Model", sub.get("model_name", "—")],
-        ["Derivative", sub.get("derivative_name", "—") or "—"],
+        ["Make", sub.get("make_name") or "—"],
+        ["Model", sub.get("model_name") or "—"],
+        ["Derivative", sub.get("derivative_name") or "—"],
         ["Year Registered", str(sub.get("year_registered") or sub.get("year") or "—")],
         ["Year of Production", str(sub.get("year_of_production") or sub.get("year") or "—")],
         ["Mileage", f"{int(sub.get('mileage') or 0):,} km"],
         ["Transmission", sub.get("transmission") or "—"],
         ["Fuel Type", sub.get("fuel_type") or "—"],
         ["Colour", sub.get("colour") or "—"],
+    ]
+    t_v = Table(v_rows, colWidths=[55 * mm, 123 * mm])
+    t_v.setStyle(_row_style())
+    story.append(t_v)
+
+    # ============ IDENTITY ============
+    story.append(Paragraph("IDENTITY", section_title))
+    id_rows = [
         ["VIN", sub.get("vin") or "—"],
         ["Engine Number", sub.get("engine_number") or "—"],
     ]
-    t2 = Table(v_rows, colWidths=[55*mm, 115*mm])
-    t2.setStyle(TableStyle([
-        ("FONT", (0, 0), (-1, -1), "Helvetica", 10),
-        ("FONT", (0, 0), (0, -1), "Helvetica-Bold", 10),
-        ("LINEBELOW", (0, 0), (-1, -1), 0.25, rl_colors.lightgrey),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ]))
-    story.append(t2)
+    t_id = Table(id_rows, colWidths=[55 * mm, 123 * mm])
+    ts_id = _row_style()
+    ts_id.add("FONT", (1, 0), (1, -1), "Courier", 10)  # mono for VIN/engine
+    t_id.setStyle(ts_id)
+    story.append(t_id)
 
-    # Condition breakdown
-    story.append(Paragraph("CONDITION ASSESSMENT", h2))
+    # ============ CONDITION ASSESSMENT ============
+    story.append(Paragraph("CONDITION ASSESSMENT", section_title))
+    m = sub.get("mechanical_condition")
+    c = sub.get("cosmetic_condition")
+    i_ = sub.get("interior_condition")
+    h_ = sub.get("history_condition")
+    if m is not None:
+        overall = round(
+            (m or 0) * 0.30 + (c or 0) * 0.25 + (i_ or 0) * 0.25 + (h_ or 0) * 0.20, 1,
+        )
+        overall_para = Paragraph(
+            f'<para align="center">'
+            f'<font name="Helvetica-Bold" size="30" color="#111111">{overall}</font>'
+            f'<font name="Helvetica" size="12" color="#6B6B6B"> / 10</font><br/>'
+            f'<font name="Helvetica-Bold" size="8" color="#6B6B6B" '
+            f'>OVERALL CONDITION</font>'
+            f'</para>',
+            body,
+        )
+        overall_card = Table([[overall_para]], colWidths=[178 * mm])
+        overall_card.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), PAPER),
+            ("BOX", (0, 0), (-1, -1), 0.5, LINE),
+            ("TOPPADDING", (0, 0), (-1, -1), 12),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+        ]))
+        story.append(overall_card)
+        story.append(Spacer(1, 6))
+
     c_rows = []
-    if sub.get("mechanical_condition") is not None:
+    if m is not None:
         c_rows.extend([
-            ["Mechanical Health (30%)", f"{sub.get('mechanical_condition')} / 10"],
-            ["Cosmetic Appearance (25%)", f"{sub.get('cosmetic_condition')} / 10"],
-            ["Interior Condition (25%)", f"{sub.get('interior_condition')} / 10"],
-            ["History / Maintenance (20%)", f"{sub.get('history_condition')} / 10"],
+            ["Mechanical Health (30%)", f"{m} / 10"],
+            ["Cosmetic Appearance (25%)", f"{c} / 10"],
+            ["Interior Condition (25%)", f"{i_} / 10"],
+            ["History / Maintenance (20%)", f"{h_} / 10"],
         ])
     c_rows.append(["Windscreen", sub.get("windscreen_condition") or "—"])
     c_rows.append(["Previous Accident Damage", "Yes" if sub.get("accident_damage") else "None"])
@@ -1491,52 +1761,106 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
     c_rows.append(["Paint Evidence", "Yes" if sub.get("paint_evidence") else "None"])
     if sub.get("paint_evidence") and sub.get("paint_quality"):
         c_rows.append(["Paint Repair Quality", sub.get("paint_quality")])
-    t3 = Table(c_rows, colWidths=[55*mm, 115*mm])
-    t3.setStyle(TableStyle([
-        ("FONT", (0, 0), (-1, -1), "Helvetica", 10),
-        ("FONT", (0, 0), (0, -1), "Helvetica-Bold", 10),
-        ("LINEBELOW", (0, 0), (-1, -1), 0.25, rl_colors.lightgrey),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ]))
-    story.append(t3)
+    t_c = Table(c_rows, colWidths=[55 * mm, 123 * mm])
+    t_c.setStyle(_row_style())
+    story.append(t_c)
 
-    # Service interval — derived time & mileage since last service
-    gap = _compute_service_gap(sub)
-    if gap["months_ago"] is not None or gap["km_since"] is not None:
-        story.append(Paragraph("SERVICE INTERVAL", h2))
-        service_rows = []
-        if sub.get("last_service_date") and (sub.get("last_service_date") or "").upper() != "TBC":
-            service_rows.append(["Last Service Date", sub["last_service_date"]])
-        if isinstance(sub.get("last_service_mileage"), (int, float)) and sub["last_service_mileage"] > 0:
-            service_rows.append(["Last Service Mileage", f"{int(sub['last_service_mileage']):,} km"])
-        service_rows.append(["Current Mileage", f"{int(sub.get('mileage') or 0):,} km"])
-        service_rows.append(["Time Since Last Service", gap["label_time"]])
-        service_rows.append(["Mileage Since Last Service", gap["label_km"]])
-        # Compact "assessment" note based on which threshold band we sit in.
+    # ============ SERVICE HISTORY ============
+    if sub.get("service_history"):
+        story.append(Paragraph("SERVICE HISTORY", section_title))
+        srv_rows = [
+            ["History", sub.get("service_history") or "—"],
+            ["Last Service", sub.get("last_service_date") if sub.get("last_service_date") and sub.get("last_service_date") != "TBC" else "TBC"],
+            ["Service Mileage", f"{int(sub.get('last_service_mileage')):,} km" if sub.get("last_service_mileage") else "TBC"],
+        ]
+        gap = _compute_service_gap(sub)
         months = gap["months_ago"]
-        km = gap["km_since"]
-        if (months is not None and months >= 24) or (km is not None and km >= 30000):
-            service_rows.append(["Assessment", "Overdue — significantly beyond typical 15,000 km / 12-month interval"])
-        elif (months is not None and months >= 12) or (km is not None and km >= 15000):
-            service_rows.append(["Assessment", "Attention — approaching or past a typical service interval"])
-        else:
-            service_rows.append(["Assessment", "Within typical service interval"])
+        km_since = gap["km_since"]
+        if months is not None or km_since is not None:
+            time_colour = DANGER if (months is not None and months >= 24) else (WARN if (months is not None and months >= 12) else OK)
+            km_colour = DANGER if (km_since is not None and km_since >= 30000) else (WARN if (km_since is not None and km_since >= 15000) else OK)
+            srv_rows.append(["Time Since Service", gap["label_time"]])
+            srv_rows.append(["Mileage Since Service", gap["label_km"]])
+        t_s = Table(srv_rows, colWidths=[55 * mm, 123 * mm])
+        ts_s = _row_style()
+        # Colour the Time / Mileage since rows if we appended them.
+        if months is not None or km_since is not None:
+            time_idx = len(srv_rows) - 2
+            km_idx = len(srv_rows) - 1
+            ts_s.add("TEXTCOLOR", (1, time_idx), (1, time_idx), time_colour)
+            ts_s.add("FONT", (1, time_idx), (1, time_idx), "Helvetica-Bold", 10)
+            ts_s.add("TEXTCOLOR", (1, km_idx), (1, km_idx), km_colour)
+            ts_s.add("FONT", (1, km_idx), (1, km_idx), "Helvetica-Bold", 10)
+        t_s.setStyle(ts_s)
+        story.append(t_s)
 
-        t_srv = Table(service_rows, colWidths=[55*mm, 115*mm])
-        t_srv.setStyle(TableStyle([
-            ("FONT", (0, 0), (-1, -1), "Helvetica", 10),
-            ("FONT", (0, 0), (0, -1), "Helvetica-Bold", 10),
-            ("LINEBELOW", (0, 0), (-1, -1), 0.25, rl_colors.lightgrey),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    # ============ RECONDITIONING ============
+    recon_items = sub.get("reconditioning_items") or []
+    if recon_items:
+        story.append(Paragraph("RECONDITIONING ESTIMATE", section_title))
+        rec_rows = [["Item", "Amount"]]
+        for r in recon_items:
+            rec_rows.append([r.get("label") or "—", _fmt_zar(r.get("amount_zar") or 0)])
+        total = sub.get("reconditioning_total_zar") or sum((r.get("amount_zar") or 0) for r in recon_items)
+        rec_rows.append(["TOTAL", _fmt_zar(total)])
+        t_r = Table(rec_rows, colWidths=[123 * mm, 55 * mm])
+        t_r.setStyle(TableStyle([
+            ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 8),
+            ("TEXTCOLOR", (0, 0), (-1, 0), MUTED),
+            ("BACKGROUND", (0, 0), (-1, 0), PAPER),
+            ("FONT", (0, 1), (-1, -2), "Helvetica", 10),
+            ("FONT", (1, 1), (1, -1), "Courier-Bold", 10),
+            ("FONT", (0, -1), (0, -1), "Helvetica-Bold", 10),
+            ("FONT", (1, -1), (1, -1), "Courier-Bold", 12),
+            ("TEXTCOLOR", (0, -1), (-1, -1), rl_colors.white),
+            ("BACKGROUND", (0, -1), (-1, -1), BLACK),
+            ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+            ("LINEBELOW", (0, 0), (-1, -2), 0.4, LINE),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ]))
-        story.append(t_srv)
+        story.append(t_r)
 
-    # Tyre estimate
-    tyre = (sub.get("tyre_estimate") or {}).get("estimate") if sub.get("tyre_estimate") else None
+    # ============ AI MARKET ANALYSIS ============
+    ma = sub.get("market_analysis") or {}
+    if ma:
+        story.append(Paragraph("AI MARKET ANALYSIS", section_title))
+        ma_rows = []
+        est = ma.get("estimated_value") or {}
+        low, high, mid = est.get("low_zar"), est.get("high_zar"), est.get("mid_zar")
+        if low or high:
+            ma_rows.append(["Estimated Retail Range", f"{_fmt_zar(low)} — {_fmt_zar(high)}"])
+        if mid:
+            ma_rows.append(["Recommended Trade Price", _fmt_zar(mid)])
+        if ma.get("confidence"):
+            ma_rows.append(["Confidence", (ma.get("confidence") or "—").upper()])
+        if ma.get("summary"):
+            ma_rows.append(["Summary", ma.get("summary")])
+        if ma.get("comparables"):
+            comps = ma.get("comparables") or []
+            if isinstance(comps, list):
+                comp_lines = "<br/>".join(
+                    f"• {c.get('title') or c.get('label') or '—'}: {_fmt_zar(c.get('price_zar'))}"
+                    for c in comps[:5] if isinstance(c, dict)
+                )
+                if comp_lines:
+                    ma_rows.append(["Comparables", comp_lines])
+        if ma_rows:
+            t_ma = Table(
+                [[k, Paragraph(str(v), body)] for k, v in ma_rows],
+                colWidths=[55 * mm, 123 * mm],
+            )
+            t_ma.setStyle(_row_style())
+            story.append(t_ma)
+
+    # ============ TYRE ESTIMATE ============
+    tyre_wrap = sub.get("tyre_estimate") or {}
+    tyre = tyre_wrap.get("estimate") if isinstance(tyre_wrap, dict) else None
     if tyre:
-        story.append(Paragraph("TYRE REPLACEMENT ESTIMATE", h2))
+        story.append(Paragraph("TYRE REPLACEMENT ESTIMATE", section_title))
         tyre_rows = [
             ["Tyre Spec", tyre.get("tyre_spec") or "—"],
             ["Total Replacement (set of 4)", _fmt_zar(tyre.get("total_replacement_estimate_zar"))],
@@ -1545,22 +1869,45 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
         ]
         if tyre.get("recommended_brands"):
             tyre_rows.append(["Recommended Brands", ", ".join(tyre["recommended_brands"])])
-        t4 = Table(tyre_rows, colWidths=[55*mm, 115*mm])
-        t4.setStyle(TableStyle([
-            ("FONT", (0, 0), (-1, -1), "Helvetica", 10),
-            ("FONT", (0, 0), (0, -1), "Helvetica-Bold", 10),
-            ("LINEBELOW", (0, 0), (-1, -1), 0.25, rl_colors.lightgrey),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ]))
-        story.append(t4)
+        t_t = Table(tyre_rows, colWidths=[55 * mm, 123 * mm])
+        t_t.setStyle(_row_style())
+        story.append(t_t)
         if tyre.get("disclaimer"):
-            story.append(Spacer(1, 4))
+            story.append(Spacer(1, 3))
             story.append(Paragraph(tyre["disclaimer"], small))
 
-    # Ordered VIN reports — includes result_data for delivered ones
+    # ============ PRICE HISTORY ============
+    ph = sub.get("price_history") or []
+    if ph:
+        story.append(Paragraph("PRICE HISTORY", section_title))
+        ph_rows = [["Date", "Change", "Comment"]]
+        for h in ph:
+            prev = h.get("previous_price")
+            new = h.get("new_price")
+            arrow = f"{_fmt_zar(prev)} → {_fmt_zar(new)}" if prev is not None else f"Initial: {_fmt_zar(new)}"
+            ph_rows.append([
+                (h.get("at") or "")[:10],
+                arrow,
+                h.get("comment") or "—",
+            ])
+        t_ph = Table(ph_rows, colWidths=[28 * mm, 65 * mm, 85 * mm])
+        t_ph.setStyle(TableStyle([
+            ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 8),
+            ("TEXTCOLOR", (0, 0), (-1, 0), MUTED),
+            ("BACKGROUND", (0, 0), (-1, 0), PAPER),
+            ("FONT", (0, 1), (-1, -1), "Helvetica", 9),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.4, LINE),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ]))
+        story.append(t_ph)
+
+    # ============ VIN REPORTS ============
     if reports:
-        story.append(Paragraph("ORDERED VIN REPORTS", h2))
+        story.append(Paragraph("ORDERED VIN REPORTS", section_title))
         rep_rows = [["Report", "Cost", "Status", "Ordered"]]
         for r in reports:
             rep_rows.append([
@@ -1569,40 +1916,40 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
                 (r.get("status") or "pending").upper(),
                 (r.get("ordered_at") or "")[:10],
             ])
-        t5 = Table(rep_rows, colWidths=[80*mm, 25*mm, 30*mm, 30*mm])
-        t5.setStyle(TableStyle([
-            ("FONT", (0, 0), (-1, -1), "Helvetica", 9),
+        t_rep = Table(rep_rows, colWidths=[85 * mm, 28 * mm, 33 * mm, 32 * mm])
+        t_rep.setStyle(TableStyle([
             ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 9),
-            ("BACKGROUND", (0, 0), (-1, 0), rl_colors.black),
+            ("BACKGROUND", (0, 0), (-1, 0), BLACK),
             ("TEXTCOLOR", (0, 0), (-1, 0), rl_colors.white),
-            ("LINEBELOW", (0, 0), (-1, -1), 0.25, rl_colors.lightgrey),
+            ("FONT", (0, 1), (-1, -1), "Helvetica", 9),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.4, LINE),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("TOPPADDING", (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
         ]))
-        story.append(t5)
+        story.append(t_rep)
 
-        # For each delivered report with structured mock/real data, embed a
-        # per-report detail block so the PDF is a complete stand-alone package.
+        # Full delivered mock/real report bodies stay on their own page.
         for r in reports:
             data = r.get("result_data")
             if not data or (r.get("status") or "").lower() != "delivered":
                 continue
-            story.append(Spacer(1, 10))
+            story.append(PageBreak())
             story.append(Paragraph(
-                f"{r.get('name') or r.get('type')} — VIN {r.get('vin') or '—'}",
+                (r.get("name") or r.get("type") or "REPORT").upper(),
                 ParagraphStyle(
-                    "reportName", parent=styles["Heading3"],
-                    fontSize=11, leading=13, textColor=rl_colors.black,
-                    spaceBefore=6, spaceAfter=4,
-                )
+                    "repHdr", parent=styles["Heading2"], fontSize=14,
+                    textColor=INK, spaceAfter=6,
+                ),
             ))
             if r.get("mocked"):
                 story.append(Paragraph(
                     "MOCK DATA — will be replaced by the real provider response once integrated.",
                     small,
                 ))
-                story.append(Spacer(1, 3))
+                story.append(Spacer(1, 4))
             if data.get("summary"):
                 story.append(Paragraph(data["summary"], body))
                 story.append(Spacer(1, 4))
@@ -1610,30 +1957,16 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
                 story.append(Paragraph(f"<b>{section_name}</b>", body))
                 if isinstance(section_val, list):
                     for item in section_val:
-                        story.append(Paragraph(f"•&nbsp;&nbsp;{item}", small))
+                        story.append(Paragraph(f"• {item}", small))
                 elif isinstance(section_val, dict):
                     sec_rows = [[str(k), str(v)] for k, v in section_val.items()]
                     if sec_rows:
-                        st = Table(sec_rows, colWidths=[55*mm, 115*mm])
-                        st.setStyle(TableStyle([
-                            ("FONT", (0, 0), (-1, -1), "Helvetica", 9),
-                            ("FONT", (0, 0), (0, -1), "Helvetica-Bold", 9),
-                            ("LINEBELOW", (0, 0), (-1, -1), 0.15, rl_colors.lightgrey),
-                            ("TOPPADDING", (0, 0), (-1, -1), 3),
-                            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-                        ]))
+                        st = Table(sec_rows, colWidths=[55 * mm, 123 * mm])
+                        st.setStyle(_row_style())
                         story.append(st)
                 story.append(Spacer(1, 3))
 
-        pending_count = sum(1 for r in reports if (r.get("status") or "pending") == "pending")
-        if pending_count:
-            story.append(Spacer(1, 4))
-            story.append(Paragraph(
-                f"{pending_count} report(s) are currently PENDING. Detailed results will be attached once the provider APIs complete.",
-                small,
-            ))
-
-    # Footer disclaimer
+    # ============ FOOTER ============
     story.append(Spacer(1, 12))
     story.append(Paragraph(
         "This document is generated for the dealer's internal record. "
@@ -1786,7 +2119,9 @@ async def _build_report_pdf(sub: dict, order: dict) -> bytes:
 
 @api_router.get("/submissions/{sub_id}/valuation.pdf")
 async def download_valuation_pdf(sub_id: str, current: dict = Depends(get_user_flexible)):
-    sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0, "photos": 0})
+    # Note: keep the `photos` field — the new PDF renderer embeds all 5 main
+    # photos in the document, matching the on-screen valuation.
+    sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
     if not sub:
         raise HTTPException(404, "Submission not found")
     if current["role"] != "admin" and sub["dealer_id"] != current["id"]:

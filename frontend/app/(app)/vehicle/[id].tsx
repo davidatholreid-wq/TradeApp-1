@@ -33,7 +33,7 @@ import ConditionRatingInfoModal from "@/src/components/ConditionRatingInfoModal"
 import BrandLogo from "@/src/components/BrandLogo";
 import { formatZAR, computeServiceGap, formatMonthsAgo, formatKm } from "@/src/utils/format";
 
-type ReconItem = { label: string; amount_zar: number };
+type ReconItem = { label: string; amount_zar: number; photo?: string | null };
 
 type Submission = {
   id: string;
@@ -218,10 +218,16 @@ export default function VehicleDetail() {
 
   const carouselPhotos: CarouselPhoto[] = useMemo(() => {
     if (!sub) return [];
-    return PHOTO_ORDER.map((p) => ({
+    const main = PHOTO_ORDER.map((p) => ({
       uri: resolvePhoto(sub.photos || {}, p.key, p.fallback),
       label: p.label,
     })).filter((p) => !!p.uri);
+    // Append any reconditioning photos so tapping a recon thumbnail opens
+    // the shared full-screen carousel.
+    const reconPhotos: CarouselPhoto[] = (sub.reconditioning_items || [])
+      .filter((r) => !!r.photo)
+      .map((r) => ({ uri: r.photo as string, label: `Recon · ${r.label}` }));
+    return [...main, ...reconPhotos];
   }, [sub]);
 
   const averageRating = useMemo(() => {
@@ -886,6 +892,18 @@ export default function VehicleDetail() {
             <View style={styles.detailsList}>
               {sub.reconditioning_items.map((r, i) => (
                 <View key={i} style={styles.reconRow}>
+                  {r.photo ? (
+                    <TouchableOpacity
+                      onPress={() => {
+                        const idx = carouselPhotos.findIndex((c) => c.uri === r.photo);
+                        if (idx >= 0) setCarouselIdx(idx);
+                      }}
+                      style={styles.reconThumbWrap}
+                      testID={`recon-thumb-${i}`}
+                    >
+                      <Image source={{ uri: r.photo }} style={styles.reconThumb} />
+                    </TouchableOpacity>
+                  ) : null}
                   <Text style={styles.reconLabel}>{r.label}</Text>
                   <Text style={styles.reconAmount}>R {r.amount_zar.toLocaleString()}</Text>
                 </View>
@@ -2336,7 +2354,9 @@ const styles = StyleSheet.create({
   infoValue: { color: colors.text, fontSize: 13, fontWeight: "700", flex: 1, textAlign: "right" },
   infoValueMono: { color: colors.text, fontSize: 12, fontWeight: "700", flex: 1, textAlign: "right", fontFamily: fonts.mono },
 
-  reconRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colors.border },
+  reconRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colors.border },
+  reconThumbWrap: { width: 32, height: 32, borderRadius: radius.sm, overflow: "hidden", borderWidth: 1, borderColor: colors.border, marginRight: 8 },
+  reconThumb: { width: "100%", height: "100%" },
   reconLabel: { color: colors.text, fontSize: 13, flex: 1 },
   reconAmount: { color: colors.text, fontSize: 14, fontWeight: "700", fontFamily: fonts.number, fontVariant: ["tabular-nums"] },
   reconTotalRow: { flexDirection: "row", justifyContent: "space-between", paddingTop: spacing.sm, marginTop: 4 },
