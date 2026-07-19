@@ -211,6 +211,7 @@ export default function DashboardScreen() {
           <Text style={styles.dealerText} numberOfLines={1}>
             {item.submitted_by_name}
             {item.submitted_by_job_title ? ` · ${item.submitted_by_job_title}` : ""}
+            {item.created_at ? ` · ${(item.created_at || "").slice(0, 10)}` : ""}
           </Text>
         </View>
       ) : null}
