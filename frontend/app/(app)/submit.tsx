@@ -608,16 +608,33 @@ export default function SubmitVehicle() {
             <View style={styles.diskInfo}>
               {licenseDiskInfo.vin ? <Text style={styles.diskLine}>VIN: <Text style={styles.diskMono}>{licenseDiskInfo.vin}</Text></Text> : null}
               {licenseDiskInfo.engineNo ? <Text style={styles.diskLine}>Engine: <Text style={styles.diskMono}>{licenseDiskInfo.engineNo}</Text></Text> : null}
-              {licenseDiskInfo.colour ? <Text style={styles.diskLine}>Colour: <Text style={styles.diskMono}>{licenseDiskInfo.colour}</Text></Text> : null}
+              {licenseDiskInfo.colour ? (
+                <Text style={styles.diskLine}>
+                  Colour: <Text style={styles.diskMono}>{licenseDiskInfo.colour}</Text>
+                  <Text style={styles.diskHint}> · editable below</Text>
+                </Text>
+              ) : (
+                <Text style={styles.diskLine}>
+                  <Text style={styles.diskHint}>Colour not detected on disc — please pick below.</Text>
+                </Text>
+              )}
             </View>
-          ) : (
-            <>
-              <Field label="Colour" value={colour} hint="Choose colour" onPress={() => openWheel("colour")} testID="pick-colour" />
-              <View style={styles.tbcRow}>
-                <Text style={styles.tbcLabel}>VIN & Engine will default to <Text style={styles.tbcHl}>TBC</Text> until scanned.</Text>
-              </View>
-            </>
-          )}
+          ) : null}
+          {/* Colour picker is always available. If the scan decoded a colour it
+              pre-fills automatically, but the dealer can still override here
+              in case the disc has an outdated or unusual entry. */}
+          <Field
+            label="Colour"
+            value={colour}
+            hint={licenseDiskInfo?.colour ? "Change colour" : "Choose colour"}
+            onPress={() => openWheel("colour")}
+            testID="pick-colour"
+          />
+          {!scannedIdentity ? (
+            <View style={styles.tbcRow}>
+              <Text style={styles.tbcLabel}>VIN & Engine will default to <Text style={styles.tbcHl}>TBC</Text> until scanned.</Text>
+            </View>
+          ) : null}
 
           <Text style={styles.sectionTitle}>CONDITION</Text>
           <Text style={styles.sectionHint}>
@@ -896,6 +913,7 @@ const styles = StyleSheet.create({
   diskInfo: { backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.borderLight, borderRadius: radius.sm, padding: spacing.sm, marginBottom: spacing.sm, gap: 4 },
   diskLine: { color: colors.text, fontSize: 12 },
   diskMono: { fontFamily: fonts.mono, color: colors.text, fontWeight: "700" },
+  diskHint: { color: colors.textSecondary, fontSize: 11, fontStyle: "italic" },
   tbcRow: { padding: 10, backgroundColor: colors.paper, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.borderLight, marginTop: 4 },
   tbcLabel: { color: colors.textSecondary, fontSize: 11 },
   tbcHl: { color: colors.text, fontWeight: "800" },
