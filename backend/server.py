@@ -30,6 +30,95 @@ PUSH_BASE_URL = "https://integrations.emergentagent.com"
 PUSH_KEY = os.environ.get("EMERGENT_PUSH_KEY", "placeholder")
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 
+# ============ Cloudinary (image hosting) ============
+# Photos are uploaded to Cloudinary server-side; MongoDB stores only the
+# returned secure HTTPS URL. Legacy base64 photos from prior submissions are
+# left untouched (Option B) — the helper is a no-op for anything that is
+# already an https URL.
+import cloudinary
+import cloudinary.uploader
+
+CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
+CLOUDINARY_API_KEY = os.environ.get("CLOUDINARY_API_KEY", "")
+CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "")
+CLOUDINARY_ENABLED = bool(
+    CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET
+)
+if CLOUDINARY_ENABLED:
+    cloudinary.config(
+        cloud_name=CLOUDINARY_CLOUD_NAME,
+        api_key=CLOUDINARY_API_KEY,
+        api_secret=CLOUDINARY_API_SECRET,
+        secure=True,
+    )
+
+
+def _looks_like_base64_image(value) -> bool:
+    """True if value is a base64 data URL (data:image/...;base64,....) that
+    should be uploaded to Cloudinary. Ignores http(s) URLs and empty values."""
+    if not value or not isinstance(value, str):
+        return False
+    if value.startswith("http://") or value.startswith("https://"):
+        return False
+    return value.startswith("data:image") or len(value) > 500
+
+
+def upload_image_to_cloudinary(
+    value: Optional[str],
+    folder: str,
+    public_id: Optional[str] = None,
+) -> Optional[str]:
+    """Upload a base64 data-URL to Cloudinary and return the secure_url.
+
+    - Returns the value unchanged if it is empty, already an https URL, or
+      too small to be a real photo.
+    - Returns None on upload failure (logs the error) so callers can decide
+      to fall back to the original base64 payload if desired.
+    """
+    if not CLOUDINARY_ENABLED:
+        return value
+    if not _looks_like_base64_image(value):
+        return value
+    payload = value if value.startswith("data:") else f"data:image/jpeg;base64,{value}"
+    try:
+        params = {
+            "folder": folder,
+            "resource_type": "image",
+            "overwrite": True,
+            "unique_filename": public_id is None,
+        }
+        if public_id:
+            params["public_id"] = public_id
+        res = cloudinary.uploader.upload(payload, **params)
+        return res.get("secure_url") or value
+    except Exception as e:
+        logging.getLogger(__name__).error(
+            "Cloudinary upload failed (folder=%s, public_id=%s): %s",
+            folder, public_id, e,
+        )
+        # Fall back to keeping the base64 payload so nothing is lost.
+        return value
+
+
+def upload_photos_dict_to_cloudinary(
+    photos: Optional[dict],
+    sub_id: str,
+) -> Optional[dict]:
+    """Upload every base64 photo in a submission's photos dict to Cloudinary
+    and return a new dict with the same keys mapped to secure URLs."""
+    if not photos or not isinstance(photos, dict):
+        return photos
+    if not CLOUDINARY_ENABLED:
+        return photos
+    out: dict = {}
+    folder = f"fourbuy/submissions/{sub_id}"
+    for key, val in photos.items():
+        if _looks_like_base64_image(val):
+            out[key] = upload_image_to_cloudinary(val, folder, public_id=str(key))
+        else:
+            out[key] = val
+    return out
+
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
@@ -600,6 +689,15 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
     total_recon = sum((r.get("amount_zar", 0) or 0) for r in payload.reconditioning_items)
     sub_id = str(uuid.uuid4())
     reference = await next_reference_number()
+    # Upload photos to Cloudinary (server-side). Old submissions with base64
+    # in the DB are left untouched. New submissions store the returned https
+    # secure URL instead of the huge base64 payload.
+    photos_uploaded = upload_photos_dict_to_cloudinary(payload.photos, sub_id)
+    license_disk_uploaded = upload_image_to_cloudinary(
+        payload.license_disk_data,
+        folder=f"fourbuy/submissions/{sub_id}",
+        public_id="license_disk",
+    )
     doc = {
         "id": sub_id,
         "reference": reference,
@@ -622,7 +720,7 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         "vin": payload.vin or "TBC",
         "engine_number": payload.engine_number or "TBC",
         "colour": payload.colour,
-        "license_disk_data": payload.license_disk_data,
+        "license_disk_data": license_disk_uploaded,
         # Condition — 4 weighted pillars form the overall condition score:
         #   Mechanical 30% · Cosmetic 25% · Interior 25% · History 20%.
         # exterior/tyre kept for legacy compatibility with older submissions.
@@ -657,7 +755,7 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         "factory_warranty": False,
         # Photos & mileage
         "mileage": payload.mileage,
-        "photos": payload.photos,
+        "photos": photos_uploaded,
         "status": "pending",
         "price": None,
         "price_notes": None,
@@ -801,6 +899,21 @@ async def upsert_draft(payload: SubmissionDraft, current: dict = Depends(get_cur
     if current.get("role") == "admin":
         raise HTTPException(403, "Drafts are dealer-only")
     now = now_utc()
+    # Upload any base64 photos in the draft's form-state to Cloudinary so the
+    # draft document itself stays small. We reuse the draft id (or generate
+    # one now for a brand-new draft) as the Cloudinary sub-folder so an
+    # updated draft overwrites its own images rather than piling up copies.
+    draft_id = payload.id or str(uuid.uuid4())
+    data = dict(payload.data or {})
+    if isinstance(data.get("photos"), dict):
+        data["photos"] = upload_photos_dict_to_cloudinary(data["photos"], draft_id) or {}
+    if _looks_like_base64_image(data.get("license_disk_data")):
+        data["license_disk_data"] = upload_image_to_cloudinary(
+            data["license_disk_data"],
+            folder=f"fourbuy/submissions/{draft_id}",
+            public_id="license_disk",
+        )
+    payload_data = data
     if payload.id:
         existing = await db.submission_drafts.find_one(
             {"id": payload.id, "dealer_id": current["id"]}, {"_id": 0}
@@ -808,7 +921,7 @@ async def upsert_draft(payload: SubmissionDraft, current: dict = Depends(get_cur
         if not existing:
             raise HTTPException(404, "Draft not found")
         update = {
-            "data": payload.data,
+            "data": payload_data,
             "label": payload.label or existing.get("label"),
             "updated_at": now,
         }
@@ -818,7 +931,7 @@ async def upsert_draft(payload: SubmissionDraft, current: dict = Depends(get_cur
         return {"draft": {**existing, **update}}
     # New draft — synthesize a friendly label from the vehicle bits if the
     # client didn't provide one.
-    data = payload.data or {}
+    data = payload_data
     label = payload.label or " ".join(
         str(x) for x in [
             data.get("year_registered") or data.get("year_of_production") or data.get("year"),
@@ -827,7 +940,7 @@ async def upsert_draft(payload: SubmissionDraft, current: dict = Depends(get_cur
         ] if x
     ) or "Untitled draft"
     doc = {
-        "id": str(uuid.uuid4()),
+        "id": draft_id,
         "dealer_id": current["id"],
         "data": data,
         "label": label,
@@ -1993,10 +2106,21 @@ async def admin_upload_dealer_photos(
     if not user or user.get("role") != "dealer":
         raise HTTPException(404, "Dealer not found")
     updates: dict = {}
+    folder = f"fourbuy/dealers/{dealer_id}"
     if payload.profile_pic is not None:
-        updates["profile_pic"] = payload.profile_pic or None
+        if not payload.profile_pic:
+            updates["profile_pic"] = None
+        else:
+            updates["profile_pic"] = upload_image_to_cloudinary(
+                payload.profile_pic, folder=folder, public_id="profile_pic",
+            )
     if payload.cover_photo is not None:
-        updates["cover_photo"] = payload.cover_photo or None
+        if not payload.cover_photo:
+            updates["cover_photo"] = None
+        else:
+            updates["cover_photo"] = upload_image_to_cloudinary(
+                payload.cover_photo, folder=folder, public_id="cover_photo",
+            )
     if not updates:
         raise HTTPException(400, "Provide profile_pic and/or cover_photo")
     await db.users.update_one({"id": dealer_id}, {"$set": updates})
