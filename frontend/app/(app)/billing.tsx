@@ -25,6 +25,16 @@ type BillingItem = {
   billable: boolean;
 };
 
+type BillingReportItem = {
+  type: string;
+  name: string;
+  cost_zar: number;
+  status: string;
+  ordered_at: string;
+  submission_id: string;
+  vin?: string;
+};
+
 type BillingRow = {
   dealer_id: string;
   dealer_name: string;
@@ -36,6 +46,10 @@ type BillingRow = {
   priced_count: number;
   billable_count: number;
   amount_zar: number;
+  submission_amount_zar?: number;
+  report_count?: number;
+  report_amount_zar?: number;
+  report_items?: BillingReportItem[];
   items: BillingItem[];
 };
 
@@ -48,6 +62,9 @@ type BillingResponse = {
     priced_count: number;
     billable_count: number;
     amount_zar: number;
+    submission_amount_zar?: number;
+    report_count?: number;
+    report_amount_zar?: number;
   };
 };
 
@@ -136,8 +153,10 @@ export default function BillingScreen() {
           <Text style={styles.totalValue}>{totals.priced_count}</Text>
         </View>
         <View style={styles.totalCard}>
-          <Text style={styles.totalLabel}>BILLABLE</Text>
-          <Text style={[styles.totalValue, { color: colors.neon }]}>{totals.billable_count}</Text>
+          <Text style={styles.totalLabel}>REPORTS</Text>
+          <Text style={[styles.totalValue, { color: colors.neon }]}>
+            {totals.report_count ?? 0}
+          </Text>
         </View>
         <View style={[styles.totalCard, styles.totalCardAccent]}>
           <Text style={styles.totalLabel}>TOTAL DUE</Text>
@@ -146,6 +165,17 @@ export default function BillingScreen() {
           </Text>
         </View>
       </View>
+
+      {/* Compact submissions vs reports breakdown, only when there's report activity */}
+      {(totals.report_count ?? 0) > 0 ? (
+        <View style={styles.totalsBreakdown}>
+          <Text style={styles.breakdownText}>
+            Submissions <Text style={styles.breakdownValue}>R {(totals.submission_amount_zar ?? 0).toFixed(2)}</Text>
+            {"  ·  "}
+            VIN Reports <Text style={styles.breakdownValue}>R {(totals.report_amount_zar ?? 0).toFixed(2)}</Text>
+          </Text>
+        </View>
+      ) : null}
 
       {loading ? (
         <View style={styles.center}>
@@ -204,6 +234,9 @@ export default function BillingScreen() {
                   <Text style={styles.amountValue}>R {row.amount_zar.toFixed(2)}</Text>
                   <Text style={styles.amountCaption}>
                     {row.billable_count} of {row.priced_count} priced
+                    {(row.report_count ?? 0) > 0
+                      ? `  ·  ${row.report_count} report${row.report_count === 1 ? "" : "s"}`
+                      : ""}
                   </Text>
                 </View>
                 <Ionicons
@@ -216,37 +249,82 @@ export default function BillingScreen() {
 
               {expanded[row.dealer_id] ? (
                 <View style={styles.itemsBox}>
-                  {row.items.map((it) => (
-                    <View key={it.id} style={styles.item}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.itemRef}>{it.reference}</Text>
-                        <Text style={styles.itemVehicle}>{it.vehicle}</Text>
-                        <Text style={styles.itemMeta}>
-                          Submitted {new Date(it.created_at).toLocaleString()}
-                        </Text>
-                        <Text style={styles.itemMeta}>
-                          Priced {new Date(it.priced_at).toLocaleString()}
-                        </Text>
-                      </View>
-                      <View
-                        style={[
-                          styles.itemBadge,
-                          it.billable
-                            ? { backgroundColor: colors.neon + "22", borderColor: colors.neon + "55" }
-                            : { backgroundColor: colors.warning + "18", borderColor: colors.warning + "55" },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.itemBadgeText,
-                            { color: it.billable ? colors.neon : colors.warning },
-                          ]}
-                        >
-                          {it.billable ? "R50" : "WAIVED"}
-                        </Text>
-                      </View>
-                    </View>
-                  ))}
+                  {row.items.length > 0 ? (
+                    <>
+                      <Text style={styles.itemsHeader}>
+                        Priced Submissions ({row.items.length})
+                      </Text>
+                      {row.items.map((it) => (
+                        <View key={it.id} style={styles.item}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.itemRef}>{it.reference}</Text>
+                            <Text style={styles.itemVehicle}>{it.vehicle}</Text>
+                            <Text style={styles.itemMeta}>
+                              Submitted {new Date(it.created_at).toLocaleString()}
+                            </Text>
+                            <Text style={styles.itemMeta}>
+                              Priced {new Date(it.priced_at).toLocaleString()}
+                            </Text>
+                          </View>
+                          <View
+                            style={[
+                              styles.itemBadge,
+                              it.billable
+                                ? { backgroundColor: colors.neon + "22", borderColor: colors.neon + "55" }
+                                : { backgroundColor: colors.warning + "18", borderColor: colors.warning + "55" },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.itemBadgeText,
+                                { color: it.billable ? colors.neon : colors.warning },
+                              ]}
+                            >
+                              {it.billable ? "R50" : "WAIVED"}
+                            </Text>
+                          </View>
+                        </View>
+                      ))}
+                    </>
+                  ) : null}
+
+                  {(row.report_items || []).length > 0 ? (
+                    <>
+                      <Text style={[styles.itemsHeader, { marginTop: spacing.sm }]}>
+                        VIN Reports Ordered ({row.report_items!.length})
+                      </Text>
+                      {row.report_items!.map((r, idx) => (
+                        <View key={`${r.type}-${idx}`} style={styles.item}>
+                          <View style={styles.reportIconBox}>
+                            <Ionicons name="document-text" size={16} color={colors.neon} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.itemVehicle}>{r.name}</Text>
+                            {r.vin ? (
+                              <Text style={[styles.itemMeta, { fontFamily: fonts.mono }]}>
+                                VIN {r.vin}
+                              </Text>
+                            ) : null}
+                            <Text style={styles.itemMeta}>
+                              Ordered {new Date(r.ordered_at).toLocaleString()} · {r.status.toUpperCase()}
+                            </Text>
+                          </View>
+                          <View
+                            style={[
+                              styles.itemBadge,
+                              { backgroundColor: colors.neon + "22", borderColor: colors.neon + "55" },
+                            ]}
+                          >
+                            <Text
+                              style={[styles.itemBadgeText, { color: colors.neon }]}
+                            >
+                              R{r.cost_zar.toFixed(0)}
+                            </Text>
+                          </View>
+                        </View>
+                      ))}
+                    </>
+                  ) : null}
                 </View>
               ) : null}
             </View>
@@ -368,4 +446,40 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   itemBadgeText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.5 },
+  totalsBreakdown: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  breakdownText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    letterSpacing: 0.3,
+  },
+  breakdownValue: {
+    color: colors.text,
+    fontFamily: fonts.number,
+    fontVariant: ["tabular-nums"],
+    fontWeight: "700",
+  },
+  itemsHeader: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1.4,
+    textTransform: "uppercase",
+    marginTop: 2,
+    marginBottom: 4,
+    paddingHorizontal: 4,
+  },
+  reportIconBox: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.sm,
+    backgroundColor: colors.neon + "18",
+    borderWidth: 1,
+    borderColor: colors.neon + "44",
+    marginRight: spacing.xs,
+  },
 });
