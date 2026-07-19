@@ -1,0 +1,32 @@
+{
+  "summary": "Iteration 22 — RETEST of iteration-21 critical bug (master ACTIVE/DISABLED Switch on a collapsed dealership group ALSO expands the group on react-native-web). FIX VERIFIED. All 6 acceptance checks PASS at 1440x900 as admin@fourbuy.co.za on /dealers. (1) PRIMARY — Tap master Switch (group-toggle-5b5cd0c6-3f06-45c4-8067-52c40f0c92bf, Ford Bryanston, 2 users) while collapsed: switch flips ACTIVE→DISABLED, header sub still reads '2 users', dealership counter goes '17 active · 3 suspended' (baseline was '17 active') confirming cascade suspension of both Johann Linsky + Zelda Visagie, AND dealer-card DOM count stays at 0 — group REMAINS COLLAPSED. (2) PRIMARY — Tap again to re-enable: DISABLED→ACTIVE, counter goes back to '19 active · 1 suspended', dealer-card count still 0. (3) SECONDARY — Tap group-toggle-open-5b5cd0c6-... (left half chevron+title): 2 dealer-cards appear (Johann Linsky, Zelda Visagie) and chevron flips to chevron-down. (4) SECONDARY — group-add-user-5b5cd0c6-... opens the invite modal titled 'ADD USER TO FORD BRYANSTON' with all form fields (invite-first_name, invite-last_name, invite-phone, invite-job_title, invite-email, invite-password, invite-submit) and dealer-card count stays at 0. Cancel button closes cleanly. (5) REGRESSION — When Ford Bryanston is expanded, all per-user action testIDs are present for both users (10 total = 5×2): dealer-edit-<uid>, dealer-reset-pw-<uid>, dealer-active-toggle-<uid>, dealer-add-teammate-<uid>, remove-dealer-<uid>. (6) Collapse via left half returns dealer-card count to 0. The refactor at dealers.tsx:606-654 — making the outer container a plain <View> and wrapping ONLY the chevron+title block in a <TouchableOpacity testID='group-toggle-open-<id>'> while leaving the groupToggleWrap (Add-User icon + Switch) as a sibling <View> — is the correct and clean fix and works reliably on react-native-web. Deprecated packages detected: none. SafeAreaView issues detected: none.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/tmp/primary_after_switch1.png — Ford Bryanston DISABLED, group collapsed (bug fix verified)",
+    "/tmp/primary_after_switch2.png — Ford Bryanston re-enabled ACTIVE, group still collapsed",
+    "/tmp/secondary_expanded.png — Left-half tap expands to show Johann + Zelda",
+    "/tmp/invite_modal.png — Add-User modal opens with correct dealership title"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "dealers.tsx:612-631 — Clean pattern: only left-half (chevron + title) is inside <TouchableOpacity testID='group-toggle-open-<id>'>; groupToggleWrap containing Add-User TouchableOpacity + <Switch> is a sibling <View> outside the toggle target. This is architecturally correct rather than relying on stopPropagation hacks.",
+    "dealers.tsx:632-653 — groupToggleWrap layout with Add-User + label + Switch is intact; disabled prop on Switch still honored for isSolo groups.",
+    "No further code changes required for this bug."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "not tested (frontend-only retest request)",
+    "frontend": "100% (6/6 acceptance criteria pass; iteration-21 CRITICAL bug is FIXED)"
+  },
+  "seed_data_creation": "None. Used existing seeded Ford Bryanston dealership (5b5cd0c6-3f06-45c4-8067-52c40f0c92bf) with 2 users (Johann Linsky, Zelda Visagie).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration-21 Switch-expands-group bug is confirmed FIXED. The header refactor (outer <View>, left-only TouchableOpacity 'group-toggle-open-<id>', groupToggleWrap as sibling) is the pattern in place at dealers.tsx:606-654. No further work needed on this flow.",
+  "rca_of_issue": "N/A — bug already fixed. Root cause was: react-native-web renders <Switch> as a plain <div role='switch'> which does NOT stopPropagation, so a click on the Switch bubbled up to the outer <TouchableOpacity onPress={toggleExpanded}>. Fix: pull the outer TouchableOpacity apart so the toggle-tap-target is ONLY the chevron+title (left half), and place the Switch + Add-User in a sibling <View> — no bubble path to a toggle handler exists anymore."
+}

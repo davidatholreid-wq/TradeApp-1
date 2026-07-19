@@ -603,25 +603,32 @@ export default function Dealers() {
             const disabled = isSolo || savingDealershipId === g.dealership_id;
             const isExpanded = !!expandedGroups[g.dealership_id];
             return (
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() => setExpandedGroups((e) => ({ ...e, [g.dealership_id]: !e[g.dealership_id] }))}
-                style={styles.groupHeader}
-                testID={`group-${g.dealership_id}`}
-              >
-                <Ionicons
-                  name={isExpanded ? "chevron-down" : "chevron-forward"}
-                  size={18}
-                  color={colors.textSecondary}
-                />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.groupName}>{g.dealership_name}</Text>
-                  <Text style={styles.groupSub}>
-                    {g.users.length} user{g.users.length === 1 ? "" : "s"}
-                    {activeUsers !== g.users.length ? ` · ${activeUsers} active` : ""}
-                    {isSolo ? " · legacy" : ""}
-                  </Text>
-                </View>
+              <View style={styles.groupHeader} testID={`group-${g.dealership_id}`}>
+                {/* LEFT: chevron + title — this is the toggle target. Only
+                    this region flips the expanded state so the ACTIVE/DISABLED
+                    switch and Add-User button don't inadvertently expand the
+                    group (react-native-web doesn't stop propagation from a
+                    child Switch, unlike native). */}
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => setExpandedGroups((e) => ({ ...e, [g.dealership_id]: !e[g.dealership_id] }))}
+                  style={styles.groupHeaderToggle}
+                  testID={`group-toggle-open-${g.dealership_id}`}
+                >
+                  <Ionicons
+                    name={isExpanded ? "chevron-down" : "chevron-forward"}
+                    size={18}
+                    color={colors.textSecondary}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.groupName}>{g.dealership_name}</Text>
+                    <Text style={styles.groupSub}>
+                      {g.users.length} user{g.users.length === 1 ? "" : "s"}
+                      {activeUsers !== g.users.length ? ` · ${activeUsers} active` : ""}
+                      {isSolo ? " · legacy" : ""}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
                 <View style={styles.groupToggleWrap}>
                   {!isSolo ? (
                     <TouchableOpacity
@@ -644,7 +651,7 @@ export default function Dealers() {
                     thumbColor="#fff"
                   />
                 </View>
-              </TouchableOpacity>
+              </View>
             );
           }}
           stickySectionHeadersEnabled={false}
@@ -1112,6 +1119,14 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  groupHeaderToggle: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    // Give the tap area enough padding for a comfortable target on mobile.
+    paddingVertical: 4,
   },
   groupName: { color: colors.text, fontSize: 16, fontWeight: "800", letterSpacing: 0.4 },
   groupSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
