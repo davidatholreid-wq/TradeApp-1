@@ -500,164 +500,6 @@ export default function VehicleDetail() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        {/* Status banner */}
-        {sub.status === "priced" ? (
-          <View style={styles.priceBanner} testID="price-banner">
-            <View>
-              <Text style={styles.priceLabel}>OFFER RECEIVED</Text>
-              <Text style={styles.priceValue}>{formatZAR(sub.price)}</Text>
-              {sub.price_notes ? <Text style={styles.priceNotes}>{sub.price_notes}</Text> : null}
-            </View>
-            <Ionicons name="checkmark-circle" size={40} color={colors.text} />
-          </View>
-        ) : (
-          <View style={styles.pendingBanner}>
-            <Ionicons name="time-outline" size={20} color={colors.textSecondary} />
-            <Text style={styles.pendingText}>AWAITING PRICE OFFER</Text>
-          </View>
-        )}
-
-        {/* Reports & Documents — only shown once an offer has been received */}
-        {sub.status === "priced" ? (
-          <View style={styles.reportsSection} testID="reports-section">
-            <Text style={styles.sectionTitle}>Reports & Documents</Text>
-
-            {/* Valuation PDF — always available once priced */}
-            <TouchableOpacity
-              testID="download-valuation-pdf"
-              style={[styles.docBtn, downloadingPdf && styles.docBtnDisabled]}
-              onPress={handleDownloadPdf}
-              disabled={downloadingPdf}
-            >
-              <View style={styles.docBtnLeft}>
-                <Ionicons name="document-text-outline" size={22} color={colors.text} />
-                <View style={{ marginLeft: spacing.sm, flex: 1 }}>
-                  <Text style={styles.docBtnTitle}>Open Valuation PDF</Text>
-                  <Text style={styles.docBtnSubtitle}>
-                    Includes offer, condition, tyre estimate & any purchased reports
-                  </Text>
-                </View>
-              </View>
-              {downloadingPdf ? (
-                <ActivityIndicator color={colors.text} />
-              ) : (
-                <Ionicons name="open-outline" size={20} color={colors.text} />
-              )}
-            </TouchableOpacity>
-
-            {/* VIN-linked report ordering — only when a VIN was entered/scanned.
-                Admins never see the "Order" buttons: they can only view reports
-                the dealer has already ordered. */}
-            {sub.vin && sub.vin.trim() && sub.vin.toUpperCase() !== "TBC" ? (
-              <>
-                {isAdmin ? (
-                  // Admin: hide the order UI. Show ordered reports (if any) or a
-                  // small hint that the dealer hasn't purchased any yet.
-                  (sub.report_orders || []).length > 0 ? (
-                    <>
-                      <Text style={styles.reportsSubhead}>VIN reports ordered by dealer</Text>
-                      <Text style={styles.reportsHelp}>
-                        Verified against VIN {sub.vin}. Admins can view results but cannot order reports on behalf of a dealer.
-                      </Text>
-                    </>
-                  ) : (
-                    <View style={styles.adminNoReports}>
-                      <Ionicons name="lock-closed-outline" size={16} color={colors.textDisabled} />
-                      <Text style={styles.adminNoReportsText}>
-                        VIN reports can only be ordered by the dealer. None purchased yet.
-                      </Text>
-                    </View>
-                  )
-                ) : (
-                  <>
-                    <Text style={styles.reportsSubhead}>Order a VIN-linked report</Text>
-                    <Text style={styles.reportsHelp}>
-                      Reports are verified against VIN {sub.vin}. The charge will be added to your next invoice.
-                    </Text>
-                  </>
-                )}
-
-                {(["lightstone_verification", "lightstone_repair", "car_vertical"] as ReportOrder["type"][])
-                  .filter((t) => !isAdmin || orderedReportTypes.has(t))
-                  .map((t) => {
-                    const meta = REPORT_CATALOG[t];
-                    const alreadyOrdered = orderedReportTypes.has(t);
-                    const existing = (sub.report_orders || []).find((r) => r.type === t);
-                    const busy = orderingReportType === t;
-                    const isDelivered = existing?.status === "delivered";
-                    return (
-                      <View key={t} style={styles.reportCard}>
-                        <View style={{ flex: 1, marginRight: spacing.sm }}>
-                          <Text style={styles.reportName}>{meta.name}</Text>
-                          <Text style={styles.reportCost}>R{meta.cost_zar.toFixed(0)}</Text>
-                          {alreadyOrdered ? (
-                            <View style={styles.reportStatusRow}>
-                              <View
-                                style={[
-                                  styles.statusPill,
-                                  isDelivered ? styles.statusPillOk : styles.statusPillPending,
-                                ]}
-                              >
-                                <Text
-                                  style={[
-                                    styles.statusPillText,
-                                    isDelivered
-                                      ? { color: colors.success }
-                                      : { color: colors.warning },
-                                  ]}
-                                >
-                                  {(existing?.status || "pending").toUpperCase()}
-                                </Text>
-                              </View>
-                              {!isDelivered ? (
-                                <Text style={styles.reportPendingNote} numberOfLines={2}>
-                                  {existing?.note ||
-                                    "Awaiting API integration — result will appear here once the provider responds."}
-                                </Text>
-                              ) : null}
-                            </View>
-                          ) : null}
-                        </View>
-                        {alreadyOrdered ? (
-                          isDelivered ? (
-                            <TouchableOpacity
-                              testID={`view-report-${t}`}
-                              style={styles.viewReportBtn}
-                              onPress={() => setViewingReport(existing || null)}
-                            >
-                              <Ionicons name="eye-outline" size={16} color="#000" />
-                              <Text style={styles.viewReportBtnText}>View</Text>
-                            </TouchableOpacity>
-                          ) : (
-                            <View style={styles.reportOrderedBadge}>
-                              <Ionicons name="checkmark" size={16} color={colors.text} />
-                              <Text style={styles.reportOrderedBadgeText}>Ordered</Text>
-                            </View>
-                          )
-                        ) : (
-                          <TouchableOpacity
-                            testID={`order-report-${t}`}
-                            style={[styles.orderBtn, busy && styles.docBtnDisabled]}
-                            onPress={() =>
-                              setConfirmReport({ type: t, name: meta.name, cost_zar: meta.cost_zar })
-                            }
-                            disabled={busy}
-                          >
-                            {busy ? (
-                              <ActivityIndicator color="#000" size="small" />
-                            ) : (
-                              <Text style={styles.orderBtnText}>Order</Text>
-                            )}
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    );
-                  })}
-              </>
-            ) : null}
-          </View>
-        ) : null}
-
         {/* Reference badge */}
         {sub.reference ? (
           <View style={styles.refBadge}>
@@ -694,6 +536,144 @@ export default function VehicleDetail() {
             last
           />
         </View>
+
+        {/* Photos */}
+        <Text style={styles.sectionTitle}>Photos</Text>
+        <View style={styles.photoGrid}>
+          {PHOTO_ORDER.map((p, i) => {
+            const uri = resolvePhoto(sub.photos || {}, p.key, p.fallback);
+            return (
+              <TouchableOpacity
+                key={p.key}
+                testID={`detail-photo-${p.key}`}
+                style={styles.photoSlot}
+                onPress={() => {
+                  if (!uri) return;
+                  // Find the actual index in the filtered carouselPhotos list.
+                  const idx = carouselPhotos.findIndex((c) => c.uri === uri);
+                  if (idx >= 0) setCarouselIdx(idx);
+                }}
+                activeOpacity={uri ? 0.7 : 1}
+              >
+                {uri ? (
+                  <>
+                    <Image source={{ uri }} style={styles.photoImg} />
+                    <View style={styles.photoOverlay}>
+                      <Text style={styles.photoLabel}>{p.label.toUpperCase()}</Text>
+                      <Ionicons name="expand-outline" size={14} color="#fff" />
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="image-outline" size={20} color={colors.textDisabled} />
+                    <Text style={styles.photoLabelDim}>{p.label.toUpperCase()}</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Status banner */}
+        {sub.status === "priced" ? (
+          <View style={styles.priceBanner} testID="price-banner">
+            <View>
+              <Text style={styles.priceLabel}>OFFER RECEIVED</Text>
+              <Text style={styles.priceValue}>{formatZAR(sub.price)}</Text>
+              {sub.price_notes ? <Text style={styles.priceNotes}>{sub.price_notes}</Text> : null}
+            </View>
+            <Ionicons name="checkmark-circle" size={40} color={colors.text} />
+          </View>
+        ) : (
+          <View style={styles.pendingBanner}>
+            <Ionicons name="time-outline" size={20} color={colors.textSecondary} />
+            <Text style={styles.pendingText}>AWAITING PRICE OFFER</Text>
+          </View>
+        )}
+
+        {/* Open Valuation PDF — always available once an offer has been received */}
+        {sub.status === "priced" ? (
+          <View style={styles.reportsSection}>
+            <TouchableOpacity
+              testID="download-valuation-pdf"
+              style={[styles.docBtn, downloadingPdf && styles.docBtnDisabled]}
+              onPress={handleDownloadPdf}
+              disabled={downloadingPdf}
+            >
+              <View style={styles.docBtnLeft}>
+                <Ionicons name="document-text-outline" size={22} color={colors.text} />
+                <View style={{ marginLeft: spacing.sm, flex: 1 }}>
+                  <Text style={styles.docBtnTitle}>Open Valuation PDF</Text>
+                  <Text style={styles.docBtnSubtitle}>
+                    Includes offer, condition, tyre estimate & any purchased reports
+                  </Text>
+                </View>
+              </View>
+              {downloadingPdf ? (
+                <ActivityIndicator color={colors.text} />
+              ) : (
+                <Ionicons name="open-outline" size={20} color={colors.text} />
+              )}
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {/* Identity */}
+        <Text style={styles.sectionTitle}>Identity</Text>
+        <View style={styles.detailsList}>
+          <DetailRow label="VIN" value={sub.vin || "TBC"} mono />
+          <DetailRow label="Engine No" value={sub.engine_number || "TBC"} mono last />
+        </View>
+
+        {/* License disk */}
+        {sub.license_disk_data ? (
+          <>
+            <Text style={styles.sectionTitle}>License Disk Data</Text>
+            {(() => {
+              const info = decodeLicenseDisk(sub.license_disk_data!);
+              const hasFields =
+                info.vin ||
+                info.make ||
+                info.model ||
+                info.licenceNo ||
+                info.vehicleRegisterNo ||
+                info.engineNo ||
+                info.expiryDate ||
+                info.licenceDiscNo;
+              if (!hasFields) {
+                return (
+                  <View style={styles.diskBox}>
+                    <Text style={styles.diskText}>{sub.license_disk_data}</Text>
+                  </View>
+                );
+              }
+              const rows: [string, string | undefined][] = [
+                ["Licence No", info.licenceNo],
+                ["Register No", info.vehicleRegisterNo],
+                ["Make", info.make],
+                ["Model", info.model],
+                ["Colour", info.colour],
+                ["Description", info.vehicleDescription],
+                ["VIN", info.vin],
+                ["Engine No", info.engineNo],
+                ["Expires", info.expiryDate],
+                ["Disc No", info.licenceDiscNo],
+              ];
+              return (
+                <View style={styles.diskDecodedBox}>
+                  {rows
+                    .filter(([, v]) => !!v)
+                    .map(([label, value]) => (
+                      <View key={label} style={styles.diskDecodedRow}>
+                        <Text style={styles.diskDecodedLabel}>{label}</Text>
+                        <Text style={styles.diskDecodedValue}>{value}</Text>
+                      </View>
+                    ))}
+                </View>
+              );
+            })()}
+          </>
+        ) : null}
 
         {/* Condition breakdown — 4 pillars for new submissions, legacy 3 fallback. */}
         <Text style={styles.sectionTitle}>Condition</Text>
@@ -735,6 +715,71 @@ export default function VehicleDetail() {
             <DetailRow label="Paint Repair Quality" value={sub.paint_quality} last />
           ) : null}
         </View>
+
+        {/* Overall condition hero — sits directly under the Condition
+            breakdown per updated valuation layout. Tap to open the Condition
+            Rating Guide modal. */}
+        {averageRating !== null ? (
+          <TouchableOpacity
+            testID="avg-rating-hero"
+            style={styles.heroBox}
+            activeOpacity={0.85}
+            onPress={() => setConditionInfoOpen(true)}
+            accessibilityLabel="Tap to view condition rating guide"
+          >
+            <View style={styles.heroTopRow}>
+              <Text style={styles.heroLabel}>OVERALL CONDITION</Text>
+              <View style={styles.heroInfoBtn}>
+                <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
+                <Text style={styles.heroInfoText}>Guide</Text>
+              </View>
+            </View>
+            <View style={styles.heroRow}>
+              <Text style={styles.heroValue}>{averageRating.toFixed(1)}</Text>
+              <Text style={styles.heroOutOf}>/ 10</Text>
+            </View>
+            <View style={styles.heroBar}>
+              <View style={[styles.heroBarFill, { width: `${(averageRating / 10) * 100}%` }]} />
+            </View>
+            <View style={styles.heroBreakdown}>
+              {typeof sub.mechanical_condition === "number" ? (
+                <>
+                  <HeroPill label="MECH" value={sub.mechanical_condition} />
+                  <HeroPill label="COSM" value={sub.cosmetic_condition} />
+                  <HeroPill label="INT" value={sub.interior_condition} />
+                  <HeroPill label="HIST" value={sub.history_condition} />
+                </>
+              ) : (
+                <>
+                  <HeroPill label="EXT" value={sub.exterior_condition} />
+                  <HeroPill label="INT" value={sub.interior_condition} />
+                  <HeroPill label="TYRES" value={sub.tyre_condition} />
+                </>
+              )}
+            </View>
+          </TouchableOpacity>
+        ) : null}
+
+        {/* Reconditioning */}
+        {sub.reconditioning_items && sub.reconditioning_items.length > 0 ? (
+          <>
+            <Text style={styles.sectionTitle}>Reconditioning Estimate</Text>
+            <View style={styles.detailsList}>
+              {sub.reconditioning_items.map((r, i) => (
+                <View key={i} style={styles.reconRow}>
+                  <Text style={styles.reconLabel}>{r.label}</Text>
+                  <Text style={styles.reconAmount}>R {r.amount_zar.toLocaleString()}</Text>
+                </View>
+              ))}
+              <View style={styles.reconTotalRow}>
+                <Text style={styles.reconTotalLabel}>TOTAL</Text>
+                <Text style={styles.reconTotalValue}>
+                  R {(sub.reconditioning_total_zar ?? sub.reconditioning_items.reduce((s, x) => s + (x.amount_zar || 0), 0)).toLocaleString()}
+                </Text>
+              </View>
+            </View>
+          </>
+        ) : null}
 
         {/* Service history */}
         {sub.service_history ? (
@@ -791,114 +836,6 @@ export default function VehicleDetail() {
               })()}
             </View>
           </>
-        ) : null}
-
-        {/* Reconditioning */}
-        {sub.reconditioning_items && sub.reconditioning_items.length > 0 ? (
-          <>
-            <Text style={styles.sectionTitle}>Reconditioning Estimate</Text>
-            <View style={styles.detailsList}>
-              {sub.reconditioning_items.map((r, i) => (
-                <View key={i} style={styles.reconRow}>
-                  <Text style={styles.reconLabel}>{r.label}</Text>
-                  <Text style={styles.reconAmount}>R {r.amount_zar.toLocaleString()}</Text>
-                </View>
-              ))}
-              <View style={styles.reconTotalRow}>
-                <Text style={styles.reconTotalLabel}>TOTAL</Text>
-                <Text style={styles.reconTotalValue}>
-                  R {(sub.reconditioning_total_zar ?? sub.reconditioning_items.reduce((s, x) => s + (x.amount_zar || 0), 0)).toLocaleString()}
-                </Text>
-              </View>
-            </View>
-          </>
-        ) : null}
-
-        {/* Identity */}
-        <Text style={styles.sectionTitle}>Identity</Text>
-        <View style={styles.detailsList}>
-          <DetailRow label="VIN" value={sub.vin || "TBC"} mono />
-          <DetailRow label="Engine No" value={sub.engine_number || "TBC"} mono last />
-        </View>
-
-        {/* Photos */}
-        <Text style={styles.sectionTitle}>Photos</Text>
-        <View style={styles.photoGrid}>
-          {PHOTO_ORDER.map((p, i) => {
-            const uri = resolvePhoto(sub.photos || {}, p.key, p.fallback);
-            return (
-              <TouchableOpacity
-                key={p.key}
-                testID={`detail-photo-${p.key}`}
-                style={styles.photoSlot}
-                onPress={() => {
-                  if (!uri) return;
-                  // Find the actual index in the filtered carouselPhotos list.
-                  const idx = carouselPhotos.findIndex((c) => c.uri === uri);
-                  if (idx >= 0) setCarouselIdx(idx);
-                }}
-                activeOpacity={uri ? 0.7 : 1}
-              >
-                {uri ? (
-                  <>
-                    <Image source={{ uri }} style={styles.photoImg} />
-                    <View style={styles.photoOverlay}>
-                      <Text style={styles.photoLabel}>{p.label.toUpperCase()}</Text>
-                      <Ionicons name="expand-outline" size={14} color="#fff" />
-                    </View>
-                  </>
-                ) : (
-                  <>
-                    <Ionicons name="image-outline" size={20} color={colors.textDisabled} />
-                    <Text style={styles.photoLabelDim}>{p.label.toUpperCase()}</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* Overall condition hero — moved below Photos per spec.
-            Tap to open the Condition Rating Guide. */}
-        {averageRating !== null ? (
-          <TouchableOpacity
-            testID="avg-rating-hero"
-            style={styles.heroBox}
-            activeOpacity={0.85}
-            onPress={() => setConditionInfoOpen(true)}
-            accessibilityLabel="Tap to view condition rating guide"
-          >
-            <View style={styles.heroTopRow}>
-              <Text style={styles.heroLabel}>OVERALL CONDITION</Text>
-              <View style={styles.heroInfoBtn}>
-                <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
-                <Text style={styles.heroInfoText}>Guide</Text>
-              </View>
-            </View>
-            <View style={styles.heroRow}>
-              <Text style={styles.heroValue}>{averageRating.toFixed(1)}</Text>
-              <Text style={styles.heroOutOf}>/ 10</Text>
-            </View>
-            <View style={styles.heroBar}>
-              <View style={[styles.heroBarFill, { width: `${(averageRating / 10) * 100}%` }]} />
-            </View>
-            <View style={styles.heroBreakdown}>
-              {typeof sub.mechanical_condition === "number" ? (
-                <>
-                  <HeroPill label="MECH" value={sub.mechanical_condition} />
-                  <HeroPill label="COSM" value={sub.cosmetic_condition} />
-                  <HeroPill label="INT" value={sub.interior_condition} />
-                  <HeroPill label="HIST" value={sub.history_condition} />
-                </>
-              ) : (
-                <>
-                  <HeroPill label="EXT" value={sub.exterior_condition} />
-                  <HeroPill label="INT" value={sub.interior_condition} />
-                  <HeroPill label="TYRES" value={sub.tyre_condition} />
-                </>
-              )}
-            </View>
-          </TouchableOpacity>
         ) : null}
 
         {/* AI Market Analysis */}
@@ -1152,54 +1089,121 @@ export default function VehicleDetail() {
           </>
         ) : null}
 
-        {/* License disk */}
-        {sub.license_disk_data ? (
-          <>
-            <Text style={styles.sectionTitle}>License Disk Data</Text>
-            {(() => {
-              const info = decodeLicenseDisk(sub.license_disk_data!);
-              const hasFields =
-                info.vin ||
-                info.make ||
-                info.model ||
-                info.licenceNo ||
-                info.vehicleRegisterNo ||
-                info.engineNo ||
-                info.expiryDate ||
-                info.licenceDiscNo;
-              if (!hasFields) {
-                return (
-                  <View style={styles.diskBox}>
-                    <Text style={styles.diskText}>{sub.license_disk_data}</Text>
-                  </View>
-                );
-              }
-              const rows: [string, string | undefined][] = [
-                ["Licence No", info.licenceNo],
-                ["Register No", info.vehicleRegisterNo],
-                ["Make", info.make],
-                ["Model", info.model],
-                ["Colour", info.colour],
-                ["Description", info.vehicleDescription],
-                ["VIN", info.vin],
-                ["Engine No", info.engineNo],
-                ["Expires", info.expiryDate],
-                ["Disc No", info.licenceDiscNo],
-              ];
-              return (
-                <View style={styles.diskDecodedBox}>
-                  {rows
-                    .filter(([, v]) => !!v)
-                    .map(([label, value]) => (
-                      <View key={label} style={styles.diskDecodedRow}>
-                        <Text style={styles.diskDecodedLabel}>{label}</Text>
-                        <Text style={styles.diskDecodedValue}>{value}</Text>
+        {/* VIN-linked Reports — order or view */}
+        {sub.status === "priced" ? (
+          <View style={styles.reportsSection} testID="reports-section">
+            <Text style={styles.sectionTitle}>Order a VIN-Linked Report</Text>
+        {/* VIN-linked report ordering — only when a VIN was entered/scanned.
+                Admins never see the "Order" buttons: they can only view reports
+                the dealer has already ordered. */}
+            {sub.vin && sub.vin.trim() && sub.vin.toUpperCase() !== "TBC" ? (
+              <>
+                {isAdmin ? (
+                  // Admin: hide the order UI. Show ordered reports (if any) or a
+                  // small hint that the dealer hasn't purchased any yet.
+                  (sub.report_orders || []).length > 0 ? (
+                    <>
+                      <Text style={styles.reportsSubhead}>VIN reports ordered by dealer</Text>
+                      <Text style={styles.reportsHelp}>
+                        Verified against VIN {sub.vin}. Admins can view results but cannot order reports on behalf of a dealer.
+                      </Text>
+                    </>
+                  ) : (
+                    <View style={styles.adminNoReports}>
+                      <Ionicons name="lock-closed-outline" size={16} color={colors.textDisabled} />
+                      <Text style={styles.adminNoReportsText}>
+                        VIN reports can only be ordered by the dealer. None purchased yet.
+                      </Text>
+                    </View>
+                  )
+                ) : (
+                  <>
+                    <Text style={styles.reportsSubhead}>Order a VIN-linked report</Text>
+                    <Text style={styles.reportsHelp}>
+                      Reports are verified against VIN {sub.vin}. The charge will be added to your next invoice.
+                    </Text>
+                  </>
+                )}
+
+                {(["lightstone_verification", "lightstone_repair", "car_vertical"] as ReportOrder["type"][])
+                  .filter((t) => !isAdmin || orderedReportTypes.has(t))
+                  .map((t) => {
+                    const meta = REPORT_CATALOG[t];
+                    const alreadyOrdered = orderedReportTypes.has(t);
+                    const existing = (sub.report_orders || []).find((r) => r.type === t);
+                    const busy = orderingReportType === t;
+                    const isDelivered = existing?.status === "delivered";
+                    return (
+                      <View key={t} style={styles.reportCard}>
+                        <View style={{ flex: 1, marginRight: spacing.sm }}>
+                          <Text style={styles.reportName}>{meta.name}</Text>
+                          <Text style={styles.reportCost}>R{meta.cost_zar.toFixed(0)}</Text>
+                          {alreadyOrdered ? (
+                            <View style={styles.reportStatusRow}>
+                              <View
+                                style={[
+                                  styles.statusPill,
+                                  isDelivered ? styles.statusPillOk : styles.statusPillPending,
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.statusPillText,
+                                    isDelivered
+                                      ? { color: colors.success }
+                                      : { color: colors.warning },
+                                  ]}
+                                >
+                                  {(existing?.status || "pending").toUpperCase()}
+                                </Text>
+                              </View>
+                              {!isDelivered ? (
+                                <Text style={styles.reportPendingNote} numberOfLines={2}>
+                                  {existing?.note ||
+                                    "Awaiting API integration — result will appear here once the provider responds."}
+                                </Text>
+                              ) : null}
+                            </View>
+                          ) : null}
+                        </View>
+                        {alreadyOrdered ? (
+                          isDelivered ? (
+                            <TouchableOpacity
+                              testID={`view-report-${t}`}
+                              style={styles.viewReportBtn}
+                              onPress={() => setViewingReport(existing || null)}
+                            >
+                              <Ionicons name="eye-outline" size={16} color="#000" />
+                              <Text style={styles.viewReportBtnText}>View</Text>
+                            </TouchableOpacity>
+                          ) : (
+                            <View style={styles.reportOrderedBadge}>
+                              <Ionicons name="checkmark" size={16} color={colors.text} />
+                              <Text style={styles.reportOrderedBadgeText}>Ordered</Text>
+                            </View>
+                          )
+                        ) : (
+                          <TouchableOpacity
+                            testID={`order-report-${t}`}
+                            style={[styles.orderBtn, busy && styles.docBtnDisabled]}
+                            onPress={() =>
+                              setConfirmReport({ type: t, name: meta.name, cost_zar: meta.cost_zar })
+                            }
+                            disabled={busy}
+                          >
+                            {busy ? (
+                              <ActivityIndicator color="#000" size="small" />
+                            ) : (
+                              <Text style={styles.orderBtnText}>Order</Text>
+                            )}
+                          </TouchableOpacity>
+                        )}
                       </View>
-                    ))}
-                </View>
-              );
-            })()}
-          </>
+                    );
+                  })}
+              </>
+            ) : null}
+          </View>
         ) : null}
 
         {/* Dealer info for admin */}
