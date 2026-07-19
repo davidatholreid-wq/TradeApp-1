@@ -31,7 +31,7 @@ import { decodeLicenseDisk } from "@/src/utils/licenseDisk";
 import PhotoCarousel, { CarouselPhoto } from "@/src/components/PhotoCarousel";
 import ConditionRatingInfoModal from "@/src/components/ConditionRatingInfoModal";
 import BrandLogo from "@/src/components/BrandLogo";
-import { formatZAR } from "@/src/utils/format";
+import { formatZAR, computeServiceGap, formatMonthsAgo, formatKm } from "@/src/utils/format";
 
 type ReconItem = { label: string; amount_zar: number };
 
@@ -749,8 +749,46 @@ export default function VehicleDetail() {
               <DetailRow
                 label="Service Mileage"
                 value={sub.last_service_mileage ? `${sub.last_service_mileage.toLocaleString()} km` : "TBC"}
-                last
               />
+              {(() => {
+                // Derived "gap since last service" — helps admins pricing older/
+                // deferred maintenance quickly. Time & mileage overdue trigger
+                // colour-coded warnings (amber >12m or >15,000 km; red >24m or
+                // >30,000 km).
+                const gap = computeServiceGap(
+                  sub.last_service_date,
+                  sub.last_service_mileage,
+                  sub.mileage,
+                );
+                if (gap.monthsAgo == null && gap.kmSince == null) return null;
+                const timeColour =
+                  gap.monthsAgo != null && gap.monthsAgo >= 24
+                    ? colors.danger
+                    : gap.monthsAgo != null && gap.monthsAgo >= 12
+                    ? colors.warning
+                    : colors.success;
+                const kmColour =
+                  gap.kmSince != null && gap.kmSince >= 30000
+                    ? colors.danger
+                    : gap.kmSince != null && gap.kmSince >= 15000
+                    ? colors.warning
+                    : colors.success;
+                return (
+                  <>
+                    <DetailRow
+                      label="Time Since Service"
+                      value={gap.monthsAgo != null ? formatMonthsAgo(gap.monthsAgo) : "—"}
+                      valueColor={timeColour}
+                    />
+                    <DetailRow
+                      label="Mileage Since Service"
+                      value={gap.kmSince != null ? formatKm(gap.kmSince) : "—"}
+                      valueColor={kmColour}
+                      last
+                    />
+                  </>
+                );
+              })()}
             </View>
           </>
         ) : null}

@@ -979,6 +979,42 @@ def _fmt_zar(v) -> str:
         return "—"
 
 
+def _compute_service_gap(sub: dict) -> dict:
+    """Compute how long / how many km have elapsed since the recorded last
+    service. Returns {'months_ago': int|None, 'km_since': int|None, 'label_time':
+    str, 'label_km': str} for direct rendering.
+    """
+    out = {"months_ago": None, "km_since": None, "label_time": "—", "label_km": "—"}
+    lsd = (sub.get("last_service_date") or "").strip()
+    if lsd and lsd.upper() != "TBC":
+        try:
+            year_s, month_s = lsd.split("-", 1)[0], lsd.split("-")[1][:2]
+            year, month = int(year_s), int(month_s)
+            now = datetime.now(timezone.utc)
+            months = (now.year - year) * 12 + (now.month - month)
+            months = max(0, months)
+            out["months_ago"] = months
+            if months == 0:
+                out["label_time"] = "This month"
+            elif months < 12:
+                out["label_time"] = f"{months} month{'' if months == 1 else 's'} ago"
+            else:
+                y, rem = divmod(months, 12)
+                out["label_time"] = (
+                    f"{y} year{'' if y == 1 else 's'} ago" if rem == 0
+                    else f"{y}y {rem}m ago"
+                )
+        except Exception:
+            pass
+    lsm = sub.get("last_service_mileage")
+    cur = sub.get("mileage")
+    if isinstance(lsm, (int, float)) and isinstance(cur, (int, float)) and lsm > 0:
+        delta = max(0, int(cur) - int(lsm))
+        out["km_since"] = delta
+        out["label_km"] = f"{delta:,} km"
+    return out
+
+
 async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
     """Render the valuation as a monochrome A4 PDF using reportlab."""
     from io import BytesIO
@@ -1093,6 +1129,38 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]))
     story.append(t3)
+
+    # Service interval — derived time & mileage since last service
+    gap = _compute_service_gap(sub)
+    if gap["months_ago"] is not None or gap["km_since"] is not None:
+        story.append(Paragraph("SERVICE INTERVAL", h2))
+        service_rows = []
+        if sub.get("last_service_date") and (sub.get("last_service_date") or "").upper() != "TBC":
+            service_rows.append(["Last Service Date", sub["last_service_date"]])
+        if isinstance(sub.get("last_service_mileage"), (int, float)) and sub["last_service_mileage"] > 0:
+            service_rows.append(["Last Service Mileage", f"{int(sub['last_service_mileage']):,} km"])
+        service_rows.append(["Current Mileage", f"{int(sub.get('mileage') or 0):,} km"])
+        service_rows.append(["Time Since Last Service", gap["label_time"]])
+        service_rows.append(["Mileage Since Last Service", gap["label_km"]])
+        # Compact "assessment" note based on which threshold band we sit in.
+        months = gap["months_ago"]
+        km = gap["km_since"]
+        if (months is not None and months >= 24) or (km is not None and km >= 30000):
+            service_rows.append(["Assessment", "Overdue — significantly beyond typical 15,000 km / 12-month interval"])
+        elif (months is not None and months >= 12) or (km is not None and km >= 15000):
+            service_rows.append(["Assessment", "Attention — approaching or past a typical service interval"])
+        else:
+            service_rows.append(["Assessment", "Within typical service interval"])
+
+        t_srv = Table(service_rows, colWidths=[55*mm, 115*mm])
+        t_srv.setStyle(TableStyle([
+            ("FONT", (0, 0), (-1, -1), "Helvetica", 10),
+            ("FONT", (0, 0), (0, -1), "Helvetica-Bold", 10),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.25, rl_colors.lightgrey),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(t_srv)
 
     # Tyre estimate
     tyre = (sub.get("tyre_estimate") or {}).get("estimate") if sub.get("tyre_estimate") else None
