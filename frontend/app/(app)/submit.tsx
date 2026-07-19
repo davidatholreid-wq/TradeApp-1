@@ -443,7 +443,7 @@ export default function SubmitVehicle() {
     if (!mechanicalRating) return "Please rate the mechanical health.";
     if (!cosmeticRating) return "Please rate the cosmetic appearance.";
     if (!interiorRating) return "Please rate the interior condition.";
-    if (!historyRating) return "Please rate the history / maintenance.";
+    if (!historyRating) return "Please rate the general condition.";
     if (!windscreen) return "Please choose the windscreen condition.";
     if (!serviceHistory) return "Please choose the service history.";
     if (paintEvidence && !paintQuality) return "Choose the paintwork quality (Excellent, Fair or Poor).";
@@ -639,7 +639,7 @@ export default function SubmitVehicle() {
           <Text style={styles.sectionTitle}>CONDITION</Text>
           <Text style={styles.sectionHint}>
             Four pillars — weighted average forms the overall condition score
-            (Mechanical 30% · Cosmetic 25% · Interior 25% · History 20%).
+            (Mechanical 30% · Cosmetic 25% · Interior 25% · General 20%).
           </Text>
 
           <View style={styles.ratingHeader}>
@@ -673,7 +673,7 @@ export default function SubmitVehicle() {
           <RatingDots value={interiorRating} onChange={setInteriorRating} />
 
           <View style={styles.ratingHeader}>
-            <Text style={styles.ratingTitle}>History / Maintenance</Text>
+            <Text style={styles.ratingTitle}>General Condition</Text>
             <View style={[styles.ratingBadge, { borderColor: ratingColor(historyRating) }]}>
               <Text style={[styles.ratingBadgeText, { color: ratingColor(historyRating) }]}>
                 {historyRating != null ? `${historyRating}/10 · ${ratingLabelFor(historyRating)}` : "Not rated"}

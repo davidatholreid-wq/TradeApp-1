@@ -1897,7 +1897,7 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
             ["Mechanical (30%)", f"{m} / 10"],
             ["Cosmetic (25%)", f"{c} / 10"],
             ["Interior (25%)", f"{i_} / 10"],
-            ["History (20%)", f"{h_} / 10"],
+            ["General (20%)", f"{h_} / 10"],
         ])
     c_rows.append(["Windscreen", sub.get("windscreen_condition") or "—"])
     c_rows.append(["Accident Damage", "Yes" if sub.get("accident_damage") else "None"])

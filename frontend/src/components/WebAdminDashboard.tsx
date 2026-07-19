@@ -202,7 +202,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
 
   const averageRating = useMemo(() => {
     if (!selected) return null;
-    // Weighted overall condition: Mechanical 30% · Cosmetic 25% · Interior 25% · History 20%.
+    // Weighted overall condition: Mechanical 30% · Cosmetic 25% · Interior 25% · General 20%.
     const m = selected.mechanical_condition;
     const c = selected.cosmetic_condition;
     const i = selected.interior_condition;
@@ -634,7 +634,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                     <DetailRow label="Mechanical Health" value={`${selected.mechanical_condition} / 10`} />
                     <DetailRow label="Cosmetic Appearance" value={`${selected.cosmetic_condition} / 10`} />
                     <DetailRow label="Interior Condition" value={`${selected.interior_condition} / 10`} />
-                    <DetailRow label="History / Maintenance" value={`${selected.history_condition} / 10`} />
+                    <DetailRow label="General Condition" value={`${selected.history_condition} / 10`} />
                   </>
                 ) : (
                   <>
@@ -839,7 +839,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                         <HeroPill label="MECH" value={selected.mechanical_condition} />
                         <HeroPill label="COSM" value={selected.cosmetic_condition} />
                         <HeroPill label="INT" value={selected.interior_condition} />
-                        <HeroPill label="HIST" value={selected.history_condition} />
+                        <HeroPill label="GEN" value={selected.history_condition} />
                       </>
                     ) : (
                       <>

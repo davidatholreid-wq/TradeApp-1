@@ -259,7 +259,7 @@ export default function VehicleDetail() {
   const averageRating = useMemo(() => {
     if (!sub) return null;
     // New submissions use the four weighted pillars. Weightings:
-    //   Mechanical 30% · Cosmetic 25% · Interior 25% · History 20%.
+    //   Mechanical 30% · Cosmetic 25% · Interior 25% · General 20%.
     const m = sub.mechanical_condition;
     const c = sub.cosmetic_condition;
     const i = sub.interior_condition;
@@ -847,7 +847,7 @@ export default function VehicleDetail() {
               <DetailRow label="Mechanical Health" value={`${sub.mechanical_condition} / 10`} />
               <DetailRow label="Cosmetic Appearance" value={`${sub.cosmetic_condition} / 10`} />
               <DetailRow label="Interior Condition" value={`${sub.interior_condition} / 10`} />
-              <DetailRow label="History / Maintenance" value={`${sub.history_condition} / 10`} />
+              <DetailRow label="General Condition" value={`${sub.history_condition} / 10`} />
             </>
           ) : (
             <>
@@ -911,7 +911,7 @@ export default function VehicleDetail() {
                   <HeroPill label="MECH" value={sub.mechanical_condition} />
                   <HeroPill label="COSM" value={sub.cosmetic_condition} />
                   <HeroPill label="INT" value={sub.interior_condition} />
-                  <HeroPill label="HIST" value={sub.history_condition} />
+                  <HeroPill label="GEN" value={sub.history_condition} />
                 </>
               ) : (
                 <>

@@ -74,7 +74,7 @@ const PILLARS: Pillar[] = [
     ],
   },
   {
-    title: "History & Maintenance",
+    title: "General Condition",
     weight: 20,
     bullets: [
       {
@@ -91,6 +91,21 @@ const PILLARS: Pillar[] = [
       },
     ],
   },
+];
+
+// Reference scale surfaced at the bottom of the guide so dealers know exactly
+// what each 1-10 rating maps to across all four pillars.
+const SCALE: { score: number; label: string; body: string }[] = [
+  { score: 10, label: "Showroom / Concours", body: "Absolutely flawless. Mechanically perfect, zero cosmetic flaws, factory-fresh or meticulously restored." },
+  { score: 9, label: "Excellent", body: "Like-new condition. Very minor cosmetic imperfections upon close inspection, pristine interior, and runs perfectly." },
+  { score: 8, label: "Great", body: "Above average. Light cosmetic wear (e.g. minor scuffs or a tiny scratch), excellent interior, mechanically sound." },
+  { score: 7, label: "Good", body: "Normal wear and tear. Well-maintained with minor exterior dings or a slightly worn interior; requires no immediate repairs." },
+  { score: 6, label: "Fair", body: "Below average for its age. Noticeable signs of daily use, a few minor dents or stains, but fully operational and roadworthy." },
+  { score: 5, label: "Average", body: "Typical daily driver. Visible paint flaws, noticeable interior wear, and might need minor reconditioning." },
+  { score: 4, label: "Below Average", body: "Heavy wear and tear. Significant cosmetic issues or requires immediate minor mechanical attention." },
+  { score: 3, label: "Poor", body: "Deteriorated condition. Requires major mechanical repairs to be reliable or significant bodywork to be presentable." },
+  { score: 2, label: "Very Poor", body: "Barely running or non-running, severe structural damage, or major rust issues." },
+  { score: 1, label: "Salvage", body: "Complete parts car, wrecked or flooded, and not suitable for driving." },
 ];
 
 export default function ConditionRatingInfoModal({ visible, onClose }: Props) {
@@ -128,10 +143,28 @@ export default function ConditionRatingInfoModal({ visible, onClose }: Props) {
                 ))}
               </View>
             ))}
+            <View style={styles.scaleBlock}>
+              <Text style={styles.scaleTitle}>THE 1–10 CAR CONDITION SCALE</Text>
+              <Text style={styles.scaleIntro}>
+                Apply this scale to each pillar individually. The overall score is the
+                weighted average using the percentages above.
+              </Text>
+              {SCALE.map((s) => (
+                <View key={s.score} style={styles.scaleRow}>
+                  <View style={styles.scaleChip}>
+                    <Text style={styles.scaleChipText}>{s.score}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.scaleLabel}>{s.label}</Text>
+                    <Text style={styles.scaleBody}>{s.body}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
             <View style={styles.footer}>
               <Ionicons name="calculator-outline" size={14} color={colors.textSecondary} />
               <Text style={styles.footerText}>
-                Overall score = Mech × 0.30 + Cosm × 0.25 + Int × 0.25 + Hist × 0.20
+                Overall score = Mech × 0.30 + Cosm × 0.25 + Int × 0.25 + General × 0.20
               </Text>
             </View>
           </ScrollView>
@@ -203,4 +236,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   footerText: { color: colors.textSecondary, fontSize: 12, fontStyle: "italic", flex: 1 },
+  scaleBlock: {
+    marginTop: spacing.sm,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.card,
+    gap: 8,
+  },
+  scaleTitle: { color: colors.text, fontSize: 12, fontWeight: "800", letterSpacing: 1.2 },
+  scaleIntro: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, letterSpacing: 0.1, marginBottom: 4 },
+  scaleRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    paddingVertical: 5,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  scaleChip: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.paper,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scaleChipText: { color: colors.text, fontFamily: fonts.mono, fontSize: 12, fontWeight: "800" },
+  scaleLabel: { color: colors.text, fontSize: 13, fontWeight: "700", letterSpacing: 0.1 },
+  scaleBody: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, letterSpacing: 0.1, marginTop: 2 },
 });
