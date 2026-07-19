@@ -230,6 +230,9 @@ export default function Dealers() {
   };
 
   const [savingDealershipId, setSavingDealershipId] = useState<string | null>(null);
+  // Dealership groups start collapsed — the admin taps a header to reveal
+  // the users nested underneath, mirroring the billing screen's UX.
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   // ------ Grouping ------
   // Bundle dealers by dealership so the admin sees a single "team" card per
@@ -586,7 +589,9 @@ export default function Dealers() {
           sections={groups.map((g) => ({
             key: g.dealership_id,
             title: g.dealership_name,
-            data: g.users,
+            // Only expose users when the group is expanded — the header
+            // itself is always rendered.
+            data: expandedGroups[g.dealership_id] ? g.users : [],
             group: g,
           }))}
           keyExtractor={(item) => item.id}
@@ -596,8 +601,19 @@ export default function Dealers() {
             const isSolo = g.dealership_id.startsWith("solo:");
             const activeUsers = g.users.filter((u) => !u.archived_at).length;
             const disabled = isSolo || savingDealershipId === g.dealership_id;
+            const isExpanded = !!expandedGroups[g.dealership_id];
             return (
-              <View style={styles.groupHeader} testID={`group-${g.dealership_id}`}>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => setExpandedGroups((e) => ({ ...e, [g.dealership_id]: !e[g.dealership_id] }))}
+                style={styles.groupHeader}
+                testID={`group-${g.dealership_id}`}
+              >
+                <Ionicons
+                  name={isExpanded ? "chevron-down" : "chevron-forward"}
+                  size={18}
+                  color={colors.textSecondary}
+                />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.groupName}>{g.dealership_name}</Text>
                   <Text style={styles.groupSub}>
@@ -607,6 +623,15 @@ export default function Dealers() {
                   </Text>
                 </View>
                 <View style={styles.groupToggleWrap}>
+                  {!isSolo ? (
+                    <TouchableOpacity
+                      testID={`group-add-user-${g.dealership_id}`}
+                      onPress={() => setInvitingDealership({ id: g.dealership_id, name: g.dealership_name })}
+                      style={styles.groupAddBtn}
+                    >
+                      <Ionicons name="person-add-outline" size={16} color={colors.text} />
+                    </TouchableOpacity>
+                  ) : null}
                   <Text style={[styles.groupToggleLabel, !g.dealership_active && styles.groupToggleLabelOff]}>
                     {g.dealership_active ? "ACTIVE" : "DISABLED"}
                   </Text>
@@ -619,7 +644,7 @@ export default function Dealers() {
                     thumbColor="#fff"
                   />
                 </View>
-              </View>
+              </TouchableOpacity>
             );
           }}
           stickySectionHeadersEnabled={false}
@@ -1091,6 +1116,16 @@ const styles = StyleSheet.create({
   groupName: { color: colors.text, fontSize: 16, fontWeight: "800", letterSpacing: 0.4 },
   groupSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
   groupToggleWrap: { flexDirection: "row", alignItems: "center", gap: 8 },
+  groupAddBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   groupToggleLabel: { color: colors.primary, fontSize: 11, fontWeight: "800", letterSpacing: 1 },
   groupToggleLabelOff: { color: colors.textSecondary },
 });
