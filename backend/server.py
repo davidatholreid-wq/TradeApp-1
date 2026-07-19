@@ -1818,6 +1818,107 @@ async def admin_restore_dealer(dealer_id: str, current: dict = Depends(require_a
 
 
 # ============ Admin billing report ============
+@api_router.get("/billing/my")
+async def my_billing(
+    month: Optional[str] = None,
+    current: dict = Depends(get_current_user),
+):
+    """Dealer-facing billing summary for the current dealer for a given month.
+
+    Attribution rules (same as admin billing):
+      - Submissions are billed in the month they were PRICED (priced_at).
+      - VIN reports are billed in the month they were ORDERED (ordered_at).
+      Cross-month scenarios: a car submitted in July but priced in August
+      appears on the August invoice; a report ordered in September for a car
+      priced in August appears on the September invoice.
+    """
+    if current.get("role") == "admin":
+        # Admins should use /api/admin/billing which aggregates all dealers.
+        raise HTTPException(400, "Admins should query /api/admin/billing")
+
+    if month:
+        try:
+            year, mo = [int(x) for x in month.split("-", 1)]
+            start = datetime(year, mo, 1, tzinfo=timezone.utc)
+        except Exception:
+            raise HTTPException(400, "month must be YYYY-MM")
+    else:
+        today = datetime.now(timezone.utc)
+        start = datetime(today.year, today.month, 1, tzinfo=timezone.utc)
+
+    if start.month == 12:
+        end = datetime(start.year + 1, 1, 1, tzinfo=timezone.utc)
+    else:
+        end = datetime(start.year, start.month + 1, 1, tzinfo=timezone.utc)
+
+    dealer_id = current["id"]
+
+    # Priced submissions for this dealer whose priced_at falls inside the window.
+    subs = await db.submissions.find(
+        {"dealer_id": dealer_id, "status": "priced"},
+        {"_id": 0, "id": 1, "reference": 1, "make_name": 1, "model_name": 1,
+         "year": 1, "created_at": 1, "priced_at": 1, "price": 1, "status": 1},
+    ).to_list(20000)
+
+    items = []
+    priced_count = 0
+    billable_count = 0
+    for s in subs:
+        pa = parse_iso(s.get("priced_at"))
+        if not pa or not (start <= pa < end):
+            continue
+        priced_count += 1
+        billable = is_billable(s)
+        if billable:
+            billable_count += 1
+        items.append({
+            "id": s.get("id"),
+            "reference": s.get("reference"),
+            "vehicle": f"{s.get('year')} {s.get('make_name')} {s.get('model_name')}",
+            "price": s.get("price"),
+            "priced_at": s.get("priced_at"),
+            "created_at": s.get("created_at"),
+            "billable": billable,
+        })
+
+    # Report orders for this dealer whose ordered_at falls inside the window.
+    orders = await db.report_orders.find(
+        {"dealer_id": dealer_id}, {"_id": 0}
+    ).to_list(20000)
+
+    report_items = []
+    for r in orders:
+        oa = parse_iso(r.get("ordered_at"))
+        if not oa or not (start <= oa < end):
+            continue
+        report_items.append({
+            "type": r.get("type"),
+            "name": r.get("name"),
+            "cost_zar": r.get("cost_zar"),
+            "status": r.get("status"),
+            "ordered_at": r.get("ordered_at"),
+            "submission_id": r.get("submission_id"),
+            "vin": r.get("vin"),
+        })
+
+    submission_amount = round(billable_count * BILLING_FEE_ZAR, 2)
+    report_amount = round(sum(float(r.get("cost_zar") or 0) for r in report_items), 2)
+
+    return {
+        "month": f"{start.year:04d}-{start.month:02d}",
+        "fee_zar": BILLING_FEE_ZAR,
+        "sla_hours": BILLING_SLA_HOURS,
+        "priced_count": priced_count,
+        "billable_count": billable_count,
+        "submission_amount_zar": submission_amount,
+        "report_count": len(report_items),
+        "report_amount_zar": report_amount,
+        "amount_zar": round(submission_amount + report_amount, 2),
+        "items": items,
+        "report_items": report_items,
+    }
+
+
 @api_router.get("/admin/billing")
 async def admin_billing(
     month: Optional[str] = None,   # YYYY-MM, defaults to current month

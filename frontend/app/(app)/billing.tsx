@@ -14,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeTabBarHeight } from "@/src/utils/useSafeTabBarHeight";
 import { colors, spacing, radius, fonts } from "@/src/theme";
 import { apiFetch } from "@/src/api";
+import { useAuth } from "@/src/context/AuthContext";
 
 type BillingItem = {
   id: string;
@@ -68,6 +69,21 @@ type BillingResponse = {
   };
 };
 
+// Dealer-facing response — a single dealer's summary for the month.
+type MyBillingResponse = {
+  month: string;
+  fee_zar: number;
+  sla_hours: number;
+  priced_count: number;
+  billable_count: number;
+  submission_amount_zar: number;
+  report_count: number;
+  report_amount_zar: number;
+  amount_zar: number;
+  items: BillingItem[];
+  report_items: BillingReportItem[];
+};
+
 function shiftMonth(ym: string, delta: number): string {
   const [y, m] = ym.split("-").map((n) => parseInt(n, 10));
   const d = new Date(Date.UTC(y, m - 1 + delta, 1));
@@ -82,11 +98,14 @@ function monthLabel(ym: string): string {
 
 export default function BillingScreen() {
   const tabBarHeight = useSafeTabBarHeight();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const today = new Date();
   const currentYm = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
 
   const [month, setMonth] = useState<string>(currentYm);
   const [data, setData] = useState<BillingResponse | null>(null);
+  const [myData, setMyData] = useState<MyBillingResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -94,8 +113,13 @@ export default function BillingScreen() {
   const load = useCallback(
     async (m: string) => {
       try {
-        const res = await apiFetch(`/api/admin/billing?month=${m}`);
-        setData(res);
+        if (isAdmin) {
+          const res = await apiFetch(`/api/admin/billing?month=${m}`);
+          setData(res);
+        } else {
+          const res = await apiFetch(`/api/billing/my?month=${m}`);
+          setMyData(res);
+        }
       } catch (e) {
         console.log(e);
       } finally {
@@ -103,7 +127,7 @@ export default function BillingScreen() {
         setRefreshing(false);
       }
     },
-    []
+    [isAdmin]
   );
 
   useFocusEffect(
@@ -113,14 +137,38 @@ export default function BillingScreen() {
     }, [load, month])
   );
 
-  const totals = data?.totals || { priced_count: 0, billable_count: 0, amount_zar: 0 };
+  const feeZar = (isAdmin ? data?.fee_zar : myData?.fee_zar) ?? 50;
+  const slaHours = (isAdmin ? data?.sla_hours : myData?.sla_hours) ?? 24;
+
+  // Unified totals — admin uses aggregated `totals`, dealer uses top-level fields.
+  const totals = isAdmin
+    ? data?.totals || {
+        priced_count: 0,
+        billable_count: 0,
+        amount_zar: 0,
+        submission_amount_zar: 0,
+        report_count: 0,
+        report_amount_zar: 0,
+      }
+    : {
+        priced_count: myData?.priced_count ?? 0,
+        billable_count: myData?.billable_count ?? 0,
+        amount_zar: myData?.amount_zar ?? 0,
+        submission_amount_zar: myData?.submission_amount_zar ?? 0,
+        report_count: myData?.report_count ?? 0,
+        report_amount_zar: myData?.report_amount_zar ?? 0,
+      };
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Billing</Text>
-          <Text style={styles.sub}>R{data?.fee_zar ?? 50} incl. VAT · SLA {data?.sla_hours ?? 24}h</Text>
+          <Text style={styles.sub}>
+            {isAdmin
+              ? `R${feeZar} incl. VAT · SLA ${slaHours}h`
+              : "Your monthly invoice — submissions & VIN reports"}
+          </Text>
         </View>
       </View>
 
@@ -195,17 +243,19 @@ export default function BillingScreen() {
             />
           }
         >
-          {(data?.rows || []).length === 0 ? (
-            <View style={styles.emptyBox}>
-              <Ionicons name="cash-outline" size={54} color={colors.textDisabled} />
-              <Text style={styles.emptyTitle}>Nothing billable this month</Text>
-              <Text style={styles.emptyText}>
-                Vehicles priced within 24 hours of submission will appear here.
-              </Text>
-            </View>
-          ) : null}
+          {isAdmin ? (
+            <>
+              {(data?.rows || []).length === 0 ? (
+                <View style={styles.emptyBox}>
+                  <Ionicons name="cash-outline" size={54} color={colors.textDisabled} />
+                  <Text style={styles.emptyTitle}>Nothing billable this month</Text>
+                  <Text style={styles.emptyText}>
+                    Vehicles priced within 24 hours of submission will appear here.
+                  </Text>
+                </View>
+              ) : null}
 
-          {(data?.rows || []).map((row) => (
+              {(data?.rows || []).map((row) => (
             <View key={row.dealer_id} style={styles.dealerCard} testID={`billing-row-${row.dealer_id}`}>
               <TouchableOpacity
                 style={styles.dealerHead}
@@ -329,6 +379,111 @@ export default function BillingScreen() {
               ) : null}
             </View>
           ))}
+            </>
+          ) : (
+            // ============ Dealer's own view ============
+            <>
+              {(myData?.items?.length ?? 0) === 0 &&
+              (myData?.report_items?.length ?? 0) === 0 ? (
+                <View style={styles.emptyBox}>
+                  <Ionicons name="cash-outline" size={54} color={colors.textDisabled} />
+                  <Text style={styles.emptyTitle}>Nothing billable this month</Text>
+                  <Text style={styles.emptyText}>
+                    Vehicles priced this month (within {slaHours}h of submission) and any VIN reports you order will appear here.
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.dealerCard} testID="my-billing-card">
+                  {/* Priced submissions */}
+                  {(myData?.items || []).length > 0 ? (
+                    <View style={styles.itemsBox}>
+                      <Text style={styles.itemsHeader}>
+                        Priced Submissions ({myData?.items?.length ?? 0})
+                      </Text>
+                      {(myData?.items || []).map((it) => (
+                        <View key={it.id} style={styles.item}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.itemRef}>{it.reference}</Text>
+                            <Text style={styles.itemVehicle}>{it.vehicle}</Text>
+                            <Text style={styles.itemMeta}>
+                              Submitted {new Date(it.created_at).toLocaleString()}
+                            </Text>
+                            <Text style={styles.itemMeta}>
+                              Priced {new Date(it.priced_at).toLocaleString()}
+                            </Text>
+                          </View>
+                          <View
+                            style={[
+                              styles.itemBadge,
+                              it.billable
+                                ? { backgroundColor: colors.neon + "22", borderColor: colors.neon + "55" }
+                                : { backgroundColor: colors.warning + "18", borderColor: colors.warning + "55" },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.itemBadgeText,
+                                { color: it.billable ? colors.neon : colors.warning },
+                              ]}
+                            >
+                              {it.billable ? `R${feeZar}` : "WAIVED"}
+                            </Text>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+
+                  {/* VIN Reports */}
+                  {(myData?.report_items || []).length > 0 ? (
+                    <View style={[styles.itemsBox, (myData?.items || []).length > 0 && { borderTopWidth: 1, borderTopColor: colors.border }]}>
+                      <Text style={styles.itemsHeader}>
+                        VIN Reports Ordered ({myData?.report_items?.length ?? 0})
+                      </Text>
+                      {(myData?.report_items || []).map((r, idx) => (
+                        <View key={`${r.type}-${idx}`} style={styles.item}>
+                          <View style={styles.reportIconBox}>
+                            <Ionicons name="document-text" size={16} color={colors.neon} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.itemVehicle}>{r.name}</Text>
+                            {r.vin ? (
+                              <Text style={[styles.itemMeta, { fontFamily: fonts.mono }]}>
+                                VIN {r.vin}
+                              </Text>
+                            ) : null}
+                            <Text style={styles.itemMeta}>
+                              Ordered {new Date(r.ordered_at).toLocaleString()} · {r.status.toUpperCase()}
+                            </Text>
+                          </View>
+                          <View
+                            style={[
+                              styles.itemBadge,
+                              { backgroundColor: colors.neon + "22", borderColor: colors.neon + "55" },
+                            ]}
+                          >
+                            <Text style={[styles.itemBadgeText, { color: colors.neon }]}>
+                              R{r.cost_zar.toFixed(0)}
+                            </Text>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                </View>
+              )}
+
+              {/* Footer note explaining month attribution */}
+              {((myData?.items?.length ?? 0) > 0 || (myData?.report_items?.length ?? 0) > 0) ? (
+                <View style={styles.attributionNote}>
+                  <Ionicons name="calendar-outline" size={14} color={colors.textDisabled} />
+                  <Text style={styles.attributionText}>
+                    Submissions are billed in the month they were priced. VIN reports are billed in the month they were ordered.
+                  </Text>
+                </View>
+              ) : null}
+            </>
+          )}
         </ScrollView>
       )}
     </SafeAreaView>
@@ -481,5 +636,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.neon + "44",
     marginRight: spacing.xs,
+  },
+  attributionNote: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    marginTop: spacing.md,
+    padding: spacing.sm,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderStyle: "dashed",
+    backgroundColor: colors.card,
+  },
+  attributionText: {
+    flex: 1,
+    color: colors.textDisabled,
+    fontSize: 11,
+    lineHeight: 15,
   },
 });

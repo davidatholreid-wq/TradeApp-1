@@ -70,7 +70,8 @@ export default function AppLayout() {
           name="billing"
           options={{
             title: "Billing",
-            href: isAdmin ? "/billing" : null,
+            // Billing is available to everyone now — dealers see their own
+            // monthly summary, admins see the aggregate across all dealers.
             tabBarIcon: ({ color, size }) => <Ionicons name="cash" color={color} size={size} />,
           }}
         />
