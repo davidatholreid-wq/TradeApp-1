@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 18 — Dealership group toggle + cascade verified end-to-end. BACKEND (5/5 pytest passed, /app/backend/tests/test_dealership_cascade.py): (1) PATCH /api/admin/dealerships/{id} {active:false} cascades active=false to ALL non-archived users of the dealership; response returns updated dealership doc. (2) Suspended users can no longer log in — POST /api/auth/login returns 403 for both cascaded users. (3) PATCH with {active:true} re-enables the dealership + all non-archived users; login succeeds again. (4) Cascade does NOT touch archived users — archived_at is preserved and the archived user stays archived while the non-archived teammate is cascaded to inactive. (5) GET /api/admin/dealers now returns a `dealership: {id, name, active, address?}` object on every dealer that has a dealership_id (verified on 5 real dealerships from the seed data). FRONTEND (admin, desktop 1440x900, /app/frontend/app/(app)/dealers.tsx): the Dealers tab now renders a SectionList with 14 grouped headers (each `testID=group-<dealership_id>`) covering all 20 seeded dealer rows. Each header shows the dealership name, user count (e.g. 'Ford Bryanston · 2 users') and an ACTIVE/DISABLED master Switch (`testID=group-toggle-<dealership_id>`). Multi-user dealerships found: 6 groups with 2 users each (Ford Bryanston, TEST E2E Motors, TEST Add-User Motors, etc.) — each renders as ONE group with BOTH users nested underneath, matching the review requirement. Toggling Ford Bryanston's group switch: (a) fired PATCH /api/admin/dealerships/{id} → 200, (b) pill flipped to 'DISABLED', (c) both nested users (Johann Linsky + Zelda Visagie) rendered the individual 'SUSPENDED' pill and per-user toggle flipped off, (d) header stats went from '19 active · 1 suspended' to '17 active · 3 suspended' — cascade of 2 confirmed. Re-toggling back restored ACTIVE state, users returned to ACTIVE. REGRESSION: (i) Add User modal (testID `invite-submit`, `invite-first_name` etc.) still opens from `dealer-add-teammate-<user_id>` on every dealer row; verified with programmatic click. (ii) Per-user individual toggles (`dealer-active-toggle-<id>`) still present on all 20 dealer cards. (iii) Edit / Reset PW / Photos / Archive buttons still render on each dealer row (Edit, Photos, Reset PW, Add User, red delete visible in screenshots). No 'solo:' synthetic groups needed — all 20 seeded dealers have real dealership_id (backend migration is complete). Deprecated packages detected: none new (pre-existing 'shadow*' style prop deprecation warnings from react-native-web remain — unrelated to this iteration). SafeAreaView issues detected: none.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_dealership_cascade.py",
+    "/app/test_reports/pytest/dealership_cascade.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:2548-2572 PATCH /admin/dealerships correctly guards `active` cascade with `archived_at: {$in: [None, ''] }` so archived users are NOT reactivated by a group toggle — verified by test_cascade_does_not_touch_archived_users. Clean.",
+    "server.py:2641-2650 /admin/dealers response enriches each dealer with the parent `dealership` doc (id, name, active, address). This lets the client group without a second API call and keeps the reload-free optimistic update in dealers.tsx working.",
+    "dealers.tsx:238-265 grouping useMemo correctly falls back to `solo:<user_id>` for legacy users without a dealership_id, and toggleDealershipActive (line 267-294) refuses to PATCH synthetic IDs with a helpful error — good defensive coding.",
+    "dealers.tsx:284-288 after a successful PATCH the local state is mirrored (users cascaded to `active: next` and dealership.active updated) to avoid a full refetch — matches backend cascade behaviour exactly. Verified visually.",
+    "dealers.tsx:594-624 sticky headers are DISABLED (stickySectionHeadersEnabled={false}) which is the right call for a scrollable admin list — otherwise the master toggle would visually cover dealer rows.",
+    "dealers.tsx:502 Add-User button falls back to `item.id` when dealership_id is missing — this would POST to /admin/dealerships/{user_id}/users which would 404, but that path is only taken for the solo legacy edge case which no longer exists in the seed. Minor future-proofing suggestion but non-blocking.",
+    "Test coverage is now comprehensive: individual toggle (test_billing_dealers.py from earlier iterations) + group cascade (this iteration) + login suspension (this iteration) all covered."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_dealership_cascade.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (5/5 pytest cases pass in test_dealership_cascade.py)",
+    "frontend": "100% on all requested flows — grouping, master toggle, cascade UI reflection, regression Add User modal, individual toggles still present"
+  },
+  "seed_data_creation": "Test file creates ephemeral test_* dealerships/users on the fly (TEST Cascade Motors, TEST Arc Motors + teammate). All are non-archived active dealers left in DB after tests; safe (no production data touched). All passwords Test1234!. Additionally exercised existing seeded 'Ford Bryanston' (dealership id 5b5cd0c6-...) via UI toggle — restored to ACTIVE state at end of run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "To re-verify the group toggle cascade: `pytest /app/backend/tests/test_dealership_cascade.py -v`. UI recipe: login as admin@fourbuy.co.za/admin123 → click 'Dealers' tab (top nav in admin cockpit, NOT bottom tabs — this admin desktop UI has top tabs at width 1440x900) → scroll to any multi-user dealership (e.g. Ford Bryanston, 2 users) → click `[data-testid=\"group-toggle-<dealership_id>\"]` → observe pill 'ACTIVE'→'DISABLED' and both nested cards show 'SUSPENDED' pill. Login form testIDs are `login-email-input`, `login-password-input`, `login-submit-button` (with -input/-button suffix). Dealers list uses `SectionList`, headers `group-<id>`, switches `group-toggle-<id>`, cards `dealer-card-<user_id>`.",
+  "rca_of_issue": "N/A — feature verification, no bugs found."
+}

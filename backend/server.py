@@ -2559,6 +2559,15 @@ async def admin_update_dealership(
         raise HTTPException(400, "No fields to update")
     updates["updated_at"] = now_utc()
     await db.dealerships.update_one({"id": dealership_id}, {"$set": updates})
+    # If the admin toggled `active`, cascade to every user in the dealership
+    # so a single switch disables/enables the whole team's ability to log in.
+    # We DON'T touch users that are archived — archive is a stricter, opt-in
+    # state and shouldn't be reversed by a dealership toggle.
+    if "active" in updates:
+        await db.users.update_many(
+            {"dealership_id": dealership_id, "archived_at": {"$in": [None, ""]}},
+            {"$set": {"active": bool(updates["active"])}},
+        )
     fresh = await db.dealerships.find_one({"id": dealership_id}, {"_id": 0})
     return {"dealership": fresh}
 
@@ -2629,6 +2638,16 @@ async def admin_list_dealers(
         billable = sum(1 for s in subs if is_billable(s))
         d["billable_count"] = billable
         d["billable_total_zar"] = round(billable * BILLING_FEE_ZAR, 2)
+    # Enrich with the dealership doc (name + active) so the frontend can group
+    # rows without needing a second call.
+    ds_ids = list({d.get("dealership_id") for d in dealers if d.get("dealership_id")})
+    ds_map: dict = {}
+    if ds_ids:
+        ds_docs = await db.dealerships.find({"id": {"$in": ds_ids}}, {"_id": 0}).to_list(len(ds_ids))
+        ds_map = {ds["id"]: ds for ds in ds_docs}
+    for d in dealers:
+        ds = ds_map.get(d.get("dealership_id") or "")
+        d["dealership"] = ds  # {id, name, active, ...} or None
     return {"dealers": dealers, "fee_zar": BILLING_FEE_ZAR, "sla_hours": BILLING_SLA_HOURS}
 
 

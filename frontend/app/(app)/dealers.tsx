@@ -1,9 +1,9 @@
-import { useCallback, useContext, useState } from "react";
+import { useCallback, useContext, useMemo, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
+  SectionList,
   RefreshControl,
   TouchableOpacity,
   ActivityIndicator,
@@ -39,6 +39,12 @@ type Dealer = {
   cover_photo?: string | null;
   created_at: string;
   dealership_id?: string | null;
+  dealership?: {
+    id: string;
+    name: string;
+    address?: string;
+    active?: boolean;
+  } | null;
 };
 
 export default function Dealers() {
@@ -220,6 +226,70 @@ export default function Dealers() {
       showError(e.message || "Could not update status");
     } finally {
       setSavingActiveId(null);
+    }
+  };
+
+  const [savingDealershipId, setSavingDealershipId] = useState<string | null>(null);
+
+  // ------ Grouping ------
+  // Bundle dealers by dealership so the admin sees a single "team" card per
+  // dealership with all its users nested. Users without a dealership_id
+  // (legacy / mid-migration) get their own "solo" group keyed by user id.
+  const groups = useMemo(() => {
+    const map = new Map<string, {
+      dealership_id: string;
+      dealership_name: string;
+      dealership_active: boolean;
+      dealership_address?: string;
+      users: Dealer[];
+    }>();
+    for (const dealer of dealers) {
+      const dsId = dealer.dealership_id || `solo:${dealer.id}`;
+      const dsName = dealer.dealership?.name || dealer.company_info?.company_name || "Untitled dealership";
+      const dsActive = dealer.dealership?.active ?? (dealer.active !== false);
+      const dsAddr = dealer.dealership?.address || dealer.company_info?.company_address;
+      const g = map.get(dsId);
+      if (g) {
+        g.users.push(dealer);
+      } else {
+        map.set(dsId, {
+          dealership_id: dsId,
+          dealership_name: dsName,
+          dealership_active: dsActive,
+          dealership_address: dsAddr,
+          users: [dealer],
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.dealership_name.localeCompare(b.dealership_name));
+  }, [dealers]);
+
+  const toggleDealershipActive = async (groupId: string, currentActive: boolean) => {
+    // Skip synthetic "solo:" IDs — those are for pre-migration users that
+    // don't yet have a real dealership document.
+    if (groupId.startsWith("solo:")) {
+      showError("This dealer is still on the legacy single-user model. Ask them to log in once to auto-migrate, then try again.");
+      return;
+    }
+    const next = !currentActive;
+    setSavingDealershipId(groupId);
+    try {
+      await apiFetch(`/api/admin/dealerships/${groupId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ active: next }),
+      });
+      // Reflect the change locally — the backend cascades `active` to every
+      // (non-archived) user in the dealership, so mirror that here to avoid a
+      // full reload.
+      setDealers((prev) => prev.map((d) => (
+        d.dealership_id === groupId && !d.archived_at
+          ? { ...d, active: next, dealership: d.dealership ? { ...d.dealership, active: next } : d.dealership }
+          : d
+      )));
+    } catch (e: any) {
+      showError(e.message || "Could not toggle dealership");
+    } finally {
+      setSavingDealershipId(null);
     }
   };
 
@@ -512,10 +582,47 @@ export default function Dealers() {
           </Text>
         </View>
       ) : (
-        <FlatList
-          data={dealers}
-          keyExtractor={(i) => i.id}
+        <SectionList
+          sections={groups.map((g) => ({
+            key: g.dealership_id,
+            title: g.dealership_name,
+            data: g.users,
+            group: g,
+          }))}
+          keyExtractor={(item) => item.id}
           renderItem={renderItem}
+          renderSectionHeader={({ section }) => {
+            const g = (section as any).group as (typeof groups)[number];
+            const isSolo = g.dealership_id.startsWith("solo:");
+            const activeUsers = g.users.filter((u) => !u.archived_at).length;
+            const disabled = isSolo || savingDealershipId === g.dealership_id;
+            return (
+              <View style={styles.groupHeader} testID={`group-${g.dealership_id}`}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.groupName}>{g.dealership_name}</Text>
+                  <Text style={styles.groupSub}>
+                    {g.users.length} user{g.users.length === 1 ? "" : "s"}
+                    {activeUsers !== g.users.length ? ` · ${activeUsers} active` : ""}
+                    {isSolo ? " · legacy" : ""}
+                  </Text>
+                </View>
+                <View style={styles.groupToggleWrap}>
+                  <Text style={[styles.groupToggleLabel, !g.dealership_active && styles.groupToggleLabelOff]}>
+                    {g.dealership_active ? "ACTIVE" : "DISABLED"}
+                  </Text>
+                  <Switch
+                    testID={`group-toggle-${g.dealership_id}`}
+                    value={g.dealership_active}
+                    onValueChange={() => toggleDealershipActive(g.dealership_id, g.dealership_active)}
+                    disabled={disabled}
+                    trackColor={{ true: colors.primary, false: colors.border }}
+                    thumbColor="#fff"
+                  />
+                </View>
+              </View>
+            );
+          }}
+          stickySectionHeadersEnabled={false}
           contentContainerStyle={[styles.list, { paddingBottom: tabBarHeight + spacing.md }]}
           refreshControl={
             <RefreshControl
@@ -961,4 +1068,24 @@ const styles = StyleSheet.create({
 
   // Dealer row extras
   jobTitleText: { color: colors.textSecondary, fontSize: 12, marginTop: 2, fontStyle: "italic", letterSpacing: 0.2 },
+
+  // Grouped dealership header
+  groupHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  groupName: { color: colors.text, fontSize: 16, fontWeight: "800", letterSpacing: 0.4 },
+  groupSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+  groupToggleWrap: { flexDirection: "row", alignItems: "center", gap: 8 },
+  groupToggleLabel: { color: colors.primary, fontSize: 11, fontWeight: "800", letterSpacing: 1 },
+  groupToggleLabelOff: { color: colors.textSecondary },
 });
