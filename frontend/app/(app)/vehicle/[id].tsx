@@ -71,7 +71,6 @@ type Submission = {
   paint_quality?: string | null;
   accident_damage: boolean;
   accident_damage_types?: string[];
-  rim_size?: number | null;
   reconditioning_items?: ReconItem[];
   reconditioning_total_zar?: number;
   colour: string;
@@ -569,10 +568,6 @@ export default function VehicleDetail() {
           <DetailRow label="Transmission" value={sub.transmission ?? "—"} />
           <DetailRow label="Fuel Type" value={sub.fuel_type ?? "—"} />
           <DetailRow label="Colour" value={sub.colour} />
-          <DetailRow
-            label="Rim Size"
-            value={sub.rim_size ? `${sub.rim_size}″` : "—"}
-          />
           <DetailRow
             label="Year of Production"
             value={String(sub.year_of_production ?? sub.year)}
@@ -1115,9 +1110,6 @@ export default function VehicleDetail() {
                       {sub.tyre_estimate.estimate.tyre_spec ?? "—"}
                     </Text>
                   </View>
-                  {sub.rim_size ? (
-                    <Text style={styles.tyreRimText}>Rim: {sub.rim_size}″</Text>
-                  ) : null}
                 </View>
 
                 {sub.tyre_estimate.estimate.total_replacement_estimate_zar ? (
@@ -2483,7 +2475,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#000",
   },
   tyreSpecText: { color: "#fff", fontFamily: fonts.mono, fontSize: 13, fontWeight: "700", letterSpacing: 0.5 },
-  tyreRimText: { color: colors.textSecondary, fontSize: 12, fontWeight: "700", letterSpacing: 0.5 },
+  tyreRimText: { color: colors.textSecondary, fontSize: 12, fontWeight: "700", letterSpacing: 0.5 }, // legacy — retained for a11y snapshots
   tyreTotalBox: {
     padding: spacing.md,
     borderRadius: radius.md,

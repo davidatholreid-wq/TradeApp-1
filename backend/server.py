@@ -335,8 +335,9 @@ class VehicleSubmission(BaseModel):
     # currently offers: Cosmetic, Structural, Mechanical, Glass,
     # Electrical/Functional.
     accident_damage_types: list[str] = []
-    # Rim size in inches — feeds the AI tyre-replacement estimate on the
-    # admin pricing view. Optional so legacy submissions still validate.
+    # Rim size in inches — no longer collected on the form (removed 2026-07)
+    # but the field is kept optional so historic drafts / API callers still
+    # validate. The AI tyre estimate now assumes OEM factory rim size.
     rim_size: Optional[int] = Field(default=None, ge=12, le=26)
 
     # Reconditioning costs: list of {label: str, amount_zar: float}
@@ -1337,7 +1338,6 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
         ["Colour", sub.get("colour") or "—"],
         ["VIN", sub.get("vin") or "—"],
         ["Engine Number", sub.get("engine_number") or "—"],
-        ["Rim Size", f"{sub.get('rim_size')}″" if sub.get("rim_size") else "—"],
     ]
     t2 = Table(v_rows, colWidths=[55*mm, 115*mm])
     t2.setStyle(TableStyle([
@@ -1845,7 +1845,9 @@ async def tyre_estimate(sub_id: str, current: dict = Depends(get_current_user)):
         f"- Model: {sub['model_name']}\n"
         f"- Derivative: {sub['derivative_name']}\n"
         f"- Year: {sub.get('year_of_production') or sub.get('year')}\n"
-        f"- Rim size: {sub.get('rim_size') or 'unspecified — assume OEM factory size'} inches\n"
+        # Rim size is no longer captured in the valuation form, so we ask the
+        # model to fall back to the OEM factory rim size for this derivative.
+        "- Rim size: unspecified — assume OEM factory size for this derivative\n"
         f"- Tyre condition rated by dealer: {sub.get('tyre_condition') or 'not rated'} / 10\n"
         "\nProvide the tyre-replacement estimate JSON for the South African market."
     )
@@ -1871,7 +1873,7 @@ async def tyre_estimate(sub_id: str, current: dict = Depends(get_current_user)):
 
     payload = {
         "estimate": estimate,
-        "rim_size": sub.get("rim_size"),
+        "rim_size": None,  # rim size no longer captured on the submission form
         "generated_at": now_utc(),
         "model": "gpt-5.2",
     }

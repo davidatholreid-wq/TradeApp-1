@@ -46,10 +46,6 @@ const SERVICE_HISTORY = [
 type ServiceHistory = typeof SERVICE_HISTORY[number];
 const COLOURS = ["White", "Black", "Silver", "Grey", "Blue", "Red", "Green", "Yellow", "Orange", "Brown", "Beige", "Gold", "Maroon"];
 
-// Common passenger-car / bakkie rim sizes in the SA market. Feeds the AI
-// tyre-replacement estimate on the admin pricing view.
-const RIM_SIZES = [13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
-
 const PAINT_QUALITY_OPTIONS = ["Excellent", "Fair", "Poor"] as const;
 type PaintQuality = typeof PAINT_QUALITY_OPTIONS[number];
 
@@ -80,7 +76,7 @@ const ratingLabelFor = (n: number | null): string => {
 type WheelField =
   | "make" | "fuel_type" | "year_of_production" | "transmission"
   | "model" | "derivative" | "year_registered" | "colour"
-  | "windscreen_condition" | "service_history" | "rim_size";
+  | "windscreen_condition" | "service_history";
 
 export default function SubmitVehicle() {
   const router = useRouter();
@@ -94,9 +90,6 @@ export default function SubmitVehicle() {
   const [model, setModel] = useState<string | null>(null);
   const [derivative, setDerivative] = useState<string | null>(null);
   const [yearRegistered, setYearRegistered] = useState<number | null>(null);
-
-  // Rim size in inches — feeds the admin tyre-replacement estimate.
-  const [rimSize, setRimSize] = useState<number | null>(null);
 
   // Identity (license-disc-scan-fed or manual)
   const [licenseDisk, setLicenseDisk] = useState<string | null>(null);
@@ -161,7 +154,6 @@ export default function SubmitVehicle() {
     setModel(null);
     setDerivative(null);
     setYearRegistered(null);
-    setRimSize(null);
     setLicenseDisk(null);
     setLicenseDiskInfo(null);
     setColour(null);
@@ -195,7 +187,6 @@ export default function SubmitVehicle() {
     model_name: model,
     derivative_name: derivative,
     year_registered: yearRegistered,
-    rim_size: rimSize,
     license_disk_data: licenseDisk,
     colour,
     vin,
@@ -215,7 +206,7 @@ export default function SubmitVehicle() {
     accident_damage: accidentDamage,
     accident_damage_types: accidentTypes,
     recon_items: reconItems,
-  }), [make, fuelType, yearOfProduction, transmission, model, derivative, yearRegistered, rimSize, licenseDisk, colour, vin, engineNo, mechanicalRating, cosmeticRating, interiorRating, historyRating, windscreen, serviceHistory, lastServiceDate, lastServiceMileage, photos, mileage, paintEvidence, paintQuality, accidentDamage, accidentTypes, reconItems]);
+  }), [make, fuelType, yearOfProduction, transmission, model, derivative, yearRegistered, licenseDisk, colour, vin, engineNo, mechanicalRating, cosmeticRating, interiorRating, historyRating, windscreen, serviceHistory, lastServiceDate, lastServiceMileage, photos, mileage, paintEvidence, paintQuality, accidentDamage, accidentTypes, reconItems]);
 
   /** Restore all form fields from a saved draft payload. */
   const applyDraft = useCallback((d: any) => {
@@ -226,7 +217,6 @@ export default function SubmitVehicle() {
     setModel(d.model_name ?? null);
     setDerivative(d.derivative_name ?? null);
     setYearRegistered(d.year_registered ?? null);
-    setRimSize(d.rim_size ?? null);
     setLicenseDisk(d.license_disk_data ?? null);
     setColour(d.colour ?? null);
     setVin(d.vin ?? "TBC");
@@ -337,7 +327,7 @@ export default function SubmitVehicle() {
 
   const openWheel = async (field: WheelField) => {
     // For the discrete pickers, we don't need to hit the API.
-    if (field !== "windscreen_condition" && field !== "service_history" && field !== "colour" && field !== "year_registered" && field !== "rim_size") {
+    if (field !== "windscreen_condition" && field !== "service_history" && field !== "colour" && field !== "year_registered") {
       await fetchOptions({});
     }
     setWheelField(field);
@@ -433,7 +423,6 @@ export default function SubmitVehicle() {
   const validate = (): string | null => {
     if (!make || !fuelType || !yearOfProduction || !transmission || !model || !derivative) return "Please complete all vehicle spec fields.";
     if (!yearRegistered) return "Please choose year registered.";
-    if (!rimSize) return "Please choose the rim size.";
     if (!mileage || isNaN(parseInt(mileage))) return "Enter mileage.";
     // If no VIN from scan and no manual colour picked → force colour.
     if ((!vin || vin === "TBC") && !colour) return "Please pick a colour (or scan the license disc).";
@@ -483,7 +472,6 @@ export default function SubmitVehicle() {
           paint_quality: paintEvidence ? paintQuality : null,
           accident_damage: accidentDamage,
           accident_damage_types: accidentDamage ? accidentTypes : [],
-          rim_size: rimSize,
           reconditioning_items: reconItems.filter(r => r.label.trim() && parseFloat(r.amount) > 0).map(r => ({ label: r.label.trim(), amount_zar: parseFloat(r.amount) })),
           billing_accepted: true,
         }),
@@ -555,13 +543,6 @@ export default function SubmitVehicle() {
       case "colour": return { title: "Colour", options: COLOURS, value: colour, onSelect: setColour };
       case "windscreen_condition": return { title: "Windscreen", options: [...WINDSCREEN_OPTIONS], value: windscreen, onSelect: (v: any) => setWindscreen(v as Windscreen) };
       case "service_history": return { title: "Service History", options: [...SERVICE_HISTORY], value: serviceHistory, onSelect: (v: any) => setServiceHistory(v as ServiceHistory) };
-      case "rim_size": return {
-        title: "Rim Size (inches)",
-        options: RIM_SIZES,
-        value: rimSize,
-        onSelect: (v: any) => setRimSize(v as number),
-        formatter: (v: number) => `${v}″`,
-      };
       default: return { title: "", options: [], value: null, onSelect: () => {} };
     }
   };
@@ -673,14 +654,6 @@ export default function SubmitVehicle() {
           <RatingDots value={historyRating} onChange={setHistoryRating} />
 
           <Field label="Windscreen" value={windscreen} onPress={() => openWheel("windscreen_condition")} testID="pick-windscreen" hint="Choose windscreen condition" />
-
-          <Field
-            label="Rim Size"
-            value={rimSize != null ? `${rimSize}″` : null}
-            hint="Choose rim size (inches)"
-            onPress={() => openWheel("rim_size")}
-            testID="pick-rim-size"
-          />
 
           <Text style={styles.sectionTitle}>SERVICE HISTORY</Text>
           <Field label="Service History" value={serviceHistory} hint="Choose service history" onPress={() => openWheel("service_history")} testID="pick-service" />
