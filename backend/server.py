@@ -1487,8 +1487,8 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
     buf = BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
-        leftMargin=16 * mm, rightMargin=16 * mm,
-        topMargin=14 * mm, bottomMargin=14 * mm,
+        leftMargin=12 * mm, rightMargin=12 * mm,
+        topMargin=10 * mm, bottomMargin=10 * mm,
         title=f"Valuation {sub.get('reference') or sub.get('id')}",
         author="Fourbuy Car Buying Co.",
     )
@@ -1504,41 +1504,43 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
     WARN = rl_colors.HexColor("#B67900")
     DANGER = rl_colors.HexColor("#B3261E")
 
-    def _row_style(zebra: bool = False, last_black: bool = False) -> TableStyle:
-        s = [
-            ("FONT", (0, 0), (-1, -1), "Helvetica", 10),
-            ("FONT", (0, 0), (0, -1), "Helvetica-Bold", 10),
+    # Content width for A4 minus the 12mm side margins.
+    CONTENT_W_MM = 186.0
+
+    def _row_style() -> TableStyle:
+        return TableStyle([
+            ("FONT", (0, 0), (-1, -1), "Helvetica", 8),
+            ("FONT", (0, 0), (0, -1), "Helvetica-Bold", 8),
             ("TEXTCOLOR", (0, 0), (0, -1), MUTED),
             ("TEXTCOLOR", (1, 0), (1, -1), INK),
-            ("LINEBELOW", (0, 0), (-1, -1), 0.4, LINE),
-            ("TOPPADDING", (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.35, LINE),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 8),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ]
-        return TableStyle(s)
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ])
 
     section_title = ParagraphStyle(
         "sect", parent=styles["Normal"], fontName="Helvetica-Bold",
-        fontSize=9, textColor=MUTED, leading=11, spaceBefore=14,
-        spaceAfter=6, letterSpace=2,
+        fontSize=8, textColor=MUTED, leading=10, spaceBefore=6,
+        spaceAfter=3, letterSpace=1.5,
     )
     body = ParagraphStyle(
         "body", parent=styles["Normal"], fontName="Helvetica",
-        fontSize=10, leading=14, textColor=INK,
+        fontSize=9, leading=12, textColor=INK,
     )
     small = ParagraphStyle(
         "small", parent=styles["Normal"], fontName="Helvetica",
-        fontSize=8, leading=11, textColor=MUTED,
+        fontSize=7, leading=10, textColor=MUTED,
     )
     price_big = ParagraphStyle(
         "priceBig", parent=styles["Normal"], fontName="Helvetica-Bold",
-        fontSize=28, leading=32, textColor=INK, alignment=TA_CENTER,
+        fontSize=22, leading=26, textColor=INK, alignment=TA_CENTER,
     )
     price_lbl = ParagraphStyle(
         "priceLbl", parent=styles["Normal"], fontName="Helvetica-Bold",
-        fontSize=8, leading=10, textColor=MUTED, alignment=TA_CENTER,
+        fontSize=7, leading=9, textColor=MUTED, alignment=TA_CENTER,
     )
 
     story: list = []
@@ -1547,25 +1549,25 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
     reference = sub.get("reference") or (sub.get("id") or "")[:8].upper()
     status = (sub.get("status") or "pending").upper()
     header_left = Paragraph(
-        '<font name="Helvetica-Bold" size="14" color="#FFFFFF">FOURBUY CAR BUYING CO.</font><br/>'
-        '<font name="Helvetica" size="8" color="#BFBFBF">Vehicle Valuation Statement</font>',
-        ParagraphStyle("hdrL", parent=styles["Normal"], leading=16),
+        '<font name="Helvetica-Bold" size="12" color="#FFFFFF">FOURBUY CAR BUYING CO.</font><br/>'
+        '<font name="Helvetica" size="7" color="#BFBFBF">Vehicle Valuation Statement</font>',
+        ParagraphStyle("hdrL", parent=styles["Normal"], leading=13),
     )
     header_right = Paragraph(
         f'<para align="right">'
-        f'<font name="Helvetica-Bold" size="11" color="#FFFFFF">{reference}</font><br/>'
-        f'<font name="Helvetica" size="8" color="#BFBFBF">STATUS · {status}</font>'
+        f'<font name="Helvetica-Bold" size="10" color="#FFFFFF">{reference}</font><br/>'
+        f'<font name="Helvetica" size="7" color="#BFBFBF">STATUS · {status}</font>'
         f'</para>',
-        ParagraphStyle("hdrR", parent=styles["Normal"], leading=14),
+        ParagraphStyle("hdrR", parent=styles["Normal"], leading=12),
     )
-    hdr = Table([[header_left, header_right]], colWidths=[110 * mm, 68 * mm])
+    hdr = Table([[header_left, header_right]], colWidths=[120 * mm, 66 * mm])
     hdr.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), BLACK),
         ("TEXTCOLOR", (0, 0), (-1, -1), rl_colors.white),
-        ("LEFTPADDING", (0, 0), (-1, -1), 14),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 14),
-        ("TOPPADDING", (0, 0), (-1, -1), 12),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     story.append(hdr)
@@ -1582,192 +1584,192 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
     ]
     subtitle = " · ".join(str(x) for x in subtitle_bits if x)
     title_p = Paragraph(
-        f'<font name="Helvetica-Bold" size="22" color="#111111">{title_line}</font><br/>'
-        f'<font name="Helvetica" size="10" color="#6B6B6B">{subtitle}</font><br/>'
-        f'<font name="Helvetica" size="8" color="#6B6B6B">Generated {now_utc()[:19].replace("T", " ")} UTC</font>',
-        ParagraphStyle("title", parent=styles["Normal"], leading=26, spaceBefore=14),
+        f'<font name="Helvetica-Bold" size="16" color="#111111">{title_line}</font><br/>'
+        f'<font name="Helvetica" size="8" color="#6B6B6B">{subtitle}</font>',
+        ParagraphStyle("title", parent=styles["Normal"], leading=19),
     )
-    story.append(title_p)
-    story.append(Spacer(1, 8))
+    gen_p = Paragraph(
+        f'<para align="right">'
+        f'<font name="Helvetica" size="7" color="#6B6B6B">Generated<br/>{now_utc()[:19].replace("T", " ")} UTC</font>'
+        f'</para>',
+        ParagraphStyle("gen", parent=styles["Normal"], leading=10),
+    )
+    title_tbl = Table([[title_p, gen_p]], colWidths=[140 * mm, 46 * mm])
+    title_tbl.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.append(title_tbl)
 
     # ============ OFFER CARD (top when priced/declined) ============
     price = sub.get("price")
     if status == "PRICED" and price is not None:
         priced_at = (sub.get("priced_at") or "")[:10]
         notes = sub.get("price_notes") or ""
-        offer_card_inner = [
-            [Paragraph("OFFER", price_lbl)],
-            [Paragraph(_fmt_zar(price), price_big)],
-            [Paragraph(f'<para align="center"><font color="#6B6B6B" size="9">Offered on {priced_at}</font></para>', body)],
-        ]
+        # Two-column layout: label + big price on the left, meta on the right.
+        left = Paragraph(
+            f'<font name="Helvetica-Bold" size="7" color="#6B6B6B">OFFER</font><br/>'
+            f'<font name="Helvetica-Bold" size="22" color="#111111">{_fmt_zar(price)}</font>',
+            ParagraphStyle("offerL", parent=styles["Normal"], leading=26),
+        )
+        right_bits = [f'<font name="Helvetica" size="8" color="#6B6B6B">Offered on {priced_at}</font>']
         if notes:
-            offer_card_inner.append([Paragraph(
-                f'<para align="center"><font color="#6B6B6B" size="9"><i>“{notes}”</i></font></para>', body,
-            )])
-        offer_card = Table(offer_card_inner, colWidths=[178 * mm])
+            right_bits.append(f'<font name="Helvetica" size="8" color="#6B6B6B"><i>“{notes}”</i></font>')
+        right = Paragraph(
+            f'<para align="right">' + "<br/>".join(right_bits) + '</para>',
+            ParagraphStyle("offerR", parent=styles["Normal"], leading=11),
+        )
+        offer_card = Table([[left, right]], colWidths=[90 * mm, 96 * mm])
         offer_card.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, -1), PAPER),
-            ("BOX", (0, 0), (-1, -1), 0.75, LINE),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("BOX", (0, 0), (-1, -1), 0.6, LINE),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
             ("LEFTPADDING", (0, 0), (-1, -1), 12),
             ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+            ("TOPPADDING", (0, 0), (-1, -1), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
         ]))
         story.append(offer_card)
     elif status == "DECLINED":
         decl = Paragraph(
-            '<para align="center"><font name="Helvetica-Bold" size="12" color="#B3261E">'
+            '<para align="center"><font name="Helvetica-Bold" size="10" color="#B3261E">'
             'CANNOT OFFER — WE UNFORTUNATELY ARE NOT ABLE TO MAKE AN OFFER ON THIS VEHICLE'
             '</font></para>',
             body,
         )
-        decl_card = Table([[decl]], colWidths=[178 * mm])
+        decl_card = Table([[decl]], colWidths=[CONTENT_W_MM * mm])
         decl_card.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor("#FFF3F2")),
-            ("BOX", (0, 0), (-1, -1), 0.75, DANGER),
-            ("TOPPADDING", (0, 0), (-1, -1), 12),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+            ("BOX", (0, 0), (-1, -1), 0.6, DANGER),
+            ("TOPPADDING", (0, 0), (-1, -1), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
         ]))
         story.append(decl_card)
 
-    # ============ PHOTOS (2×2 exterior grid + interior full-width) ============
+    # ============ PHOTOS (single row of 5, no labels) ============
     photos = sub.get("photos") or {}
-    photo_order = [
-        ("front", "FRONT"),
-        ("driver_side", "DRIVER SIDE"),
-        ("passenger_side", "PASSENGER SIDE"),
-        ("rear", "REAR"),
-        ("interior", "INTERIOR"),
-    ]
-    loaded_photos: list[tuple[str, Optional[bytes]]] = []
-    for key, label in photo_order:
+    photo_keys = ["front", "driver_side", "passenger_side", "rear", "interior"]
+    loaded_photos: list[bytes] = []
+    for key in photo_keys:
         raw = await _fetch_image_bytes(photos.get(key))
         if raw:
-            loaded_photos.append((label, raw))
+            loaded_photos.append(raw)
     if loaded_photos:
-        story.append(Paragraph("PHOTOS", section_title))
-        # Grid of 2 columns for the exterior photos; interior gets its own row
-        # so it isn't paired with an odd number.
-        cell_w_mm = 87.0
-        cell_h_mm = 58.0
-        pairs: list[list] = []
-        row: list = []
-        for label, raw in loaded_photos:
-            img = _as_rlimage(raw, cell_w_mm - 2, cell_h_mm - 2)
-            if not img:
-                continue
-            cell = Table(
-                [[img], [Paragraph(f'<font size="7" color="#6B6B6B">{label}</font>', body)]],
-                colWidths=[cell_w_mm * mm],
-                rowHeights=[cell_h_mm * mm, 12],
-            )
-            cell.setStyle(TableStyle([
-                ("BOX", (0, 0), (-1, -1), 0.5, LINE),
-                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        # Divide the content width evenly across up to 5 photos with a small
+        # gap between each. 186mm content – (n-1)*2mm gaps = per-cell width.
+        n = min(5, len(loaded_photos))
+        gap_mm = 1.5
+        cell_w_mm = (CONTENT_W_MM - (n - 1) * gap_mm) / n
+        cell_h_mm = cell_w_mm * 0.75  # gentle landscape ratio
+        row_cells: list = []
+        for raw in loaded_photos[:5]:
+            img = _as_rlimage(raw, cell_w_mm, cell_h_mm)
+            if img:
+                row_cells.append(img)
+        if row_cells:
+            col_widths = []
+            for i in range(len(row_cells)):
+                col_widths.append(cell_w_mm * mm)
+                if i < len(row_cells) - 1:
+                    col_widths.append(gap_mm * mm)
+            # Interleave photos with empty spacer cells for the gaps.
+            interleaved: list = []
+            for i, cell in enumerate(row_cells):
+                interleaved.append(cell)
+                if i < len(row_cells) - 1:
+                    interleaved.append("")
+            photo_row = Table([interleaved], colWidths=col_widths)
+            photo_row.setStyle(TableStyle([
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 2),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
-                ("TOPPADDING", (0, 0), (-1, -1), 2),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
             ]))
-            row.append(cell)
-            if len(row) == 2:
-                pairs.append(row)
-                row = []
-        if row:
-            # Pad the last odd row with a blank cell for alignment.
-            if len(row) == 1:
-                row.append(Paragraph("", body))
-            pairs.append(row)
-        photo_grid = Table(pairs, colWidths=[cell_w_mm * mm, cell_w_mm * mm], hAlign="LEFT")
-        photo_grid.setStyle(TableStyle([
-            ("LEFTPADDING", (0, 0), (-1, -1), 0),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ]))
-        story.append(photo_grid)
+            story.append(Spacer(1, 6))
+            story.append(photo_row)
 
-    # ============ VEHICLE DETAILS ============
-    story.append(Paragraph("VEHICLE DETAILS", section_title))
+    # ============ DETAILS + CONDITION (side-by-side 2 columns) ============
+    # LEFT column: Vehicle details + identity (VIN / engine).
     v_rows = [
         ["Make", sub.get("make_name") or "—"],
         ["Model", sub.get("model_name") or "—"],
         ["Derivative", sub.get("derivative_name") or "—"],
-        ["Year Registered", str(sub.get("year_registered") or sub.get("year") or "—")],
-        ["Year of Production", str(sub.get("year_of_production") or sub.get("year") or "—")],
+        ["Year Reg.", str(sub.get("year_registered") or sub.get("year") or "—")],
+        ["Year Prod.", str(sub.get("year_of_production") or sub.get("year") or "—")],
         ["Mileage", f"{int(sub.get('mileage') or 0):,} km"],
         ["Transmission", sub.get("transmission") or "—"],
         ["Fuel Type", sub.get("fuel_type") or "—"],
         ["Colour", sub.get("colour") or "—"],
-    ]
-    t_v = Table(v_rows, colWidths=[55 * mm, 123 * mm])
-    t_v.setStyle(_row_style())
-    story.append(t_v)
-
-    # ============ IDENTITY ============
-    story.append(Paragraph("IDENTITY", section_title))
-    id_rows = [
         ["VIN", sub.get("vin") or "—"],
-        ["Engine Number", sub.get("engine_number") or "—"],
+        ["Engine No.", sub.get("engine_number") or "—"],
     ]
-    t_id = Table(id_rows, colWidths=[55 * mm, 123 * mm])
-    ts_id = _row_style()
-    ts_id.add("FONT", (1, 0), (1, -1), "Courier", 10)  # mono for VIN/engine
-    t_id.setStyle(ts_id)
-    story.append(t_id)
+    col_w = 46 * mm  # per row: label col
+    val_w = 46 * mm  # per row: value col
+    t_v = Table(v_rows, colWidths=[col_w, val_w])
+    ts_v = _row_style()
+    # Mono for VIN + Engine (last two rows).
+    ts_v.add("FONT", (1, -2), (1, -1), "Courier", 8)
+    t_v.setStyle(ts_v)
 
-    # ============ CONDITION ASSESSMENT ============
-    story.append(Paragraph("CONDITION ASSESSMENT", section_title))
+    # RIGHT column: Condition assessment. Overall score inlined at the top.
     m = sub.get("mechanical_condition")
     c = sub.get("cosmetic_condition")
     i_ = sub.get("interior_condition")
     h_ = sub.get("history_condition")
+    c_rows = []
     if m is not None:
         overall = round(
             (m or 0) * 0.30 + (c or 0) * 0.25 + (i_ or 0) * 0.25 + (h_ or 0) * 0.20, 1,
         )
-        overall_para = Paragraph(
-            f'<para align="center">'
-            f'<font name="Helvetica-Bold" size="30" color="#111111">{overall}</font>'
-            f'<font name="Helvetica" size="12" color="#6B6B6B"> / 10</font><br/>'
-            f'<font name="Helvetica-Bold" size="8" color="#6B6B6B" '
-            f'>OVERALL CONDITION</font>'
-            f'</para>',
-            body,
-        )
-        overall_card = Table([[overall_para]], colWidths=[178 * mm])
-        overall_card.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), PAPER),
-            ("BOX", (0, 0), (-1, -1), 0.5, LINE),
-            ("TOPPADDING", (0, 0), (-1, -1), 12),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
-        ]))
-        story.append(overall_card)
-        story.append(Spacer(1, 6))
-
-    c_rows = []
-    if m is not None:
+        c_rows.append(["Overall Condition", f"{overall} / 10"])
         c_rows.extend([
-            ["Mechanical Health (30%)", f"{m} / 10"],
-            ["Cosmetic Appearance (25%)", f"{c} / 10"],
-            ["Interior Condition (25%)", f"{i_} / 10"],
-            ["History / Maintenance (20%)", f"{h_} / 10"],
+            ["Mechanical (30%)", f"{m} / 10"],
+            ["Cosmetic (25%)", f"{c} / 10"],
+            ["Interior (25%)", f"{i_} / 10"],
+            ["History (20%)", f"{h_} / 10"],
         ])
     c_rows.append(["Windscreen", sub.get("windscreen_condition") or "—"])
-    c_rows.append(["Previous Accident Damage", "Yes" if sub.get("accident_damage") else "None"])
+    c_rows.append(["Accident Damage", "Yes" if sub.get("accident_damage") else "None"])
     if sub.get("accident_damage") and sub.get("accident_damage_types"):
-        c_rows.append(["Damage Categories", ", ".join(sub.get("accident_damage_types") or [])])
+        c_rows.append(["Damage Types", ", ".join(sub.get("accident_damage_types") or [])])
     c_rows.append(["Paint Evidence", "Yes" if sub.get("paint_evidence") else "None"])
     if sub.get("paint_evidence") and sub.get("paint_quality"):
-        c_rows.append(["Paint Repair Quality", sub.get("paint_quality")])
-    t_c = Table(c_rows, colWidths=[55 * mm, 123 * mm])
-    t_c.setStyle(_row_style())
-    story.append(t_c)
+        c_rows.append(["Paint Quality", sub.get("paint_quality")])
+    t_c = Table(c_rows, colWidths=[col_w, val_w])
+    ts_c = _row_style()
+    # Emphasise the "Overall Condition" row when present.
+    if m is not None:
+        ts_c.add("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 9)
+        ts_c.add("TEXTCOLOR", (1, 0), (1, 0), INK)
+        ts_c.add("BACKGROUND", (0, 0), (-1, 0), PAPER)
+    t_c.setStyle(ts_c)
 
-    # ============ SERVICE HISTORY ============
+    # Titled headers above each column, then the two tables side-by-side.
+    hdr_left = Paragraph("VEHICLE DETAILS", section_title)
+    hdr_right = Paragraph("CONDITION ASSESSMENT", section_title)
+    two_col = Table(
+        [[hdr_left, hdr_right], [t_v, t_c]],
+        colWidths=[92 * mm, 92 * mm],
+    )
+    two_col.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (0, -1), 4),
+        ("LEFTPADDING", (1, 0), (1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(Spacer(1, 4))
+    story.append(two_col)
+
+    # ============ SERVICE + RECONDITIONING (side-by-side) ============
+    srv_block = None
     if sub.get("service_history"):
-        story.append(Paragraph("SERVICE HISTORY", section_title))
         srv_rows = [
             ["History", sub.get("service_history") or "—"],
             ["Last Service", sub.get("last_service_date") if sub.get("last_service_date") and sub.get("last_service_date") != "TBC" else "TBC"],
@@ -1779,50 +1781,66 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
         if months is not None or km_since is not None:
             time_colour = DANGER if (months is not None and months >= 24) else (WARN if (months is not None and months >= 12) else OK)
             km_colour = DANGER if (km_since is not None and km_since >= 30000) else (WARN if (km_since is not None and km_since >= 15000) else OK)
-            srv_rows.append(["Time Since Service", gap["label_time"]])
-            srv_rows.append(["Mileage Since Service", gap["label_km"]])
-        t_s = Table(srv_rows, colWidths=[55 * mm, 123 * mm])
+            srv_rows.append(["Time Since", gap["label_time"]])
+            srv_rows.append(["Mileage Since", gap["label_km"]])
+        t_s = Table(srv_rows, colWidths=[30 * mm, 62 * mm])
         ts_s = _row_style()
-        # Colour the Time / Mileage since rows if we appended them.
         if months is not None or km_since is not None:
             time_idx = len(srv_rows) - 2
             km_idx = len(srv_rows) - 1
             ts_s.add("TEXTCOLOR", (1, time_idx), (1, time_idx), time_colour)
-            ts_s.add("FONT", (1, time_idx), (1, time_idx), "Helvetica-Bold", 10)
+            ts_s.add("FONT", (1, time_idx), (1, time_idx), "Helvetica-Bold", 8)
             ts_s.add("TEXTCOLOR", (1, km_idx), (1, km_idx), km_colour)
-            ts_s.add("FONT", (1, km_idx), (1, km_idx), "Helvetica-Bold", 10)
+            ts_s.add("FONT", (1, km_idx), (1, km_idx), "Helvetica-Bold", 8)
         t_s.setStyle(ts_s)
-        story.append(t_s)
+        srv_block = t_s
 
-    # ============ RECONDITIONING ============
+    recon_block = None
     recon_items = sub.get("reconditioning_items") or []
     if recon_items:
-        story.append(Paragraph("RECONDITIONING ESTIMATE", section_title))
         rec_rows = [["Item", "Amount"]]
         for r in recon_items:
             rec_rows.append([r.get("label") or "—", _fmt_zar(r.get("amount_zar") or 0)])
         total = sub.get("reconditioning_total_zar") or sum((r.get("amount_zar") or 0) for r in recon_items)
         rec_rows.append(["TOTAL", _fmt_zar(total)])
-        t_r = Table(rec_rows, colWidths=[123 * mm, 55 * mm])
+        t_r = Table(rec_rows, colWidths=[62 * mm, 30 * mm])
         t_r.setStyle(TableStyle([
-            ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 8),
+            ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 7),
             ("TEXTCOLOR", (0, 0), (-1, 0), MUTED),
             ("BACKGROUND", (0, 0), (-1, 0), PAPER),
-            ("FONT", (0, 1), (-1, -2), "Helvetica", 10),
-            ("FONT", (1, 1), (1, -1), "Courier-Bold", 10),
-            ("FONT", (0, -1), (0, -1), "Helvetica-Bold", 10),
-            ("FONT", (1, -1), (1, -1), "Courier-Bold", 12),
+            ("FONT", (0, 1), (-1, -2), "Helvetica", 8),
+            ("FONT", (1, 1), (1, -1), "Courier-Bold", 8),
+            ("FONT", (0, -1), (0, -1), "Helvetica-Bold", 8),
+            ("FONT", (1, -1), (1, -1), "Courier-Bold", 9),
             ("TEXTCOLOR", (0, -1), (-1, -1), rl_colors.white),
             ("BACKGROUND", (0, -1), (-1, -1), BLACK),
             ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-            ("LINEBELOW", (0, 0), (-1, -2), 0.4, LINE),
-            ("TOPPADDING", (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-            ("LEFTPADDING", (0, 0), (-1, -1), 8),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("LINEBELOW", (0, 0), (-1, -2), 0.35, LINE),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ]))
-        story.append(t_r)
+        recon_block = t_r
+
+    if srv_block is not None or recon_block is not None:
+        hdr_left = Paragraph("SERVICE HISTORY" if srv_block is not None else "", section_title)
+        hdr_right = Paragraph("RECONDITIONING" if recon_block is not None else "", section_title)
+        two_col2 = Table(
+            [[hdr_left, hdr_right], [srv_block or Paragraph("", body), recon_block or Paragraph("", body)]],
+            colWidths=[92 * mm, 92 * mm],
+        )
+        two_col2.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (0, -1), 4),
+            ("LEFTPADDING", (1, 0), (1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        story.append(Spacer(1, 4))
+        story.append(two_col2)
 
     # ============ AI MARKET ANALYSIS ============
     ma = sub.get("market_analysis") or {}
@@ -1839,19 +1857,10 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
             ma_rows.append(["Confidence", (ma.get("confidence") or "—").upper()])
         if ma.get("summary"):
             ma_rows.append(["Summary", ma.get("summary")])
-        if ma.get("comparables"):
-            comps = ma.get("comparables") or []
-            if isinstance(comps, list):
-                comp_lines = "<br/>".join(
-                    f"• {c.get('title') or c.get('label') or '—'}: {_fmt_zar(c.get('price_zar'))}"
-                    for c in comps[:5] if isinstance(c, dict)
-                )
-                if comp_lines:
-                    ma_rows.append(["Comparables", comp_lines])
         if ma_rows:
             t_ma = Table(
                 [[k, Paragraph(str(v), body)] for k, v in ma_rows],
-                colWidths=[55 * mm, 123 * mm],
+                colWidths=[46 * mm, 140 * mm],
             )
             t_ma.setStyle(_row_style())
             story.append(t_ma)
@@ -1863,18 +1872,13 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
         story.append(Paragraph("TYRE REPLACEMENT ESTIMATE", section_title))
         tyre_rows = [
             ["Tyre Spec", tyre.get("tyre_spec") or "—"],
-            ["Total Replacement (set of 4)", _fmt_zar(tyre.get("total_replacement_estimate_zar"))],
+            ["Set of 4 Replacement", _fmt_zar(tyre.get("total_replacement_estimate_zar"))],
             ["Fitment & Balance", _fmt_zar(tyre.get("fitment_and_balance_zar"))],
             ["Confidence", (tyre.get("confidence") or "—").upper()],
         ]
-        if tyre.get("recommended_brands"):
-            tyre_rows.append(["Recommended Brands", ", ".join(tyre["recommended_brands"])])
-        t_t = Table(tyre_rows, colWidths=[55 * mm, 123 * mm])
+        t_t = Table(tyre_rows, colWidths=[46 * mm, 140 * mm])
         t_t.setStyle(_row_style())
         story.append(t_t)
-        if tyre.get("disclaimer"):
-            story.append(Spacer(1, 3))
-            story.append(Paragraph(tyre["disclaimer"], small))
 
     # ============ PRICE HISTORY ============
     ph = sub.get("price_history") or []
@@ -1890,16 +1894,16 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
                 arrow,
                 h.get("comment") or "—",
             ])
-        t_ph = Table(ph_rows, colWidths=[28 * mm, 65 * mm, 85 * mm])
+        t_ph = Table(ph_rows, colWidths=[24 * mm, 62 * mm, 100 * mm])
         t_ph.setStyle(TableStyle([
-            ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 8),
+            ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 7),
             ("TEXTCOLOR", (0, 0), (-1, 0), MUTED),
             ("BACKGROUND", (0, 0), (-1, 0), PAPER),
-            ("FONT", (0, 1), (-1, -1), "Helvetica", 9),
-            ("LINEBELOW", (0, 0), (-1, -1), 0.4, LINE),
+            ("FONT", (0, 1), (-1, -1), "Helvetica", 8),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.35, LINE),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("TOPPADDING", (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
             ("LEFTPADDING", (0, 0), (-1, -1), 6),
             ("RIGHTPADDING", (0, 0), (-1, -1), 6),
         ]))
@@ -1916,16 +1920,16 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
                 (r.get("status") or "pending").upper(),
                 (r.get("ordered_at") or "")[:10],
             ])
-        t_rep = Table(rep_rows, colWidths=[85 * mm, 28 * mm, 33 * mm, 32 * mm])
+        t_rep = Table(rep_rows, colWidths=[90 * mm, 30 * mm, 34 * mm, 32 * mm])
         t_rep.setStyle(TableStyle([
-            ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 9),
+            ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 8),
             ("BACKGROUND", (0, 0), (-1, 0), BLACK),
             ("TEXTCOLOR", (0, 0), (-1, 0), rl_colors.white),
-            ("FONT", (0, 1), (-1, -1), "Helvetica", 9),
-            ("LINEBELOW", (0, 0), (-1, -1), 0.4, LINE),
+            ("FONT", (0, 1), (-1, -1), "Helvetica", 8),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.35, LINE),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("TOPPADDING", (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
             ("LEFTPADDING", (0, 0), (-1, -1), 6),
             ("RIGHTPADDING", (0, 0), (-1, -1), 6),
         ]))
@@ -1967,11 +1971,10 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
                 story.append(Spacer(1, 3))
 
     # ============ FOOTER ============
-    story.append(Spacer(1, 12))
+    story.append(Spacer(1, 6))
     story.append(Paragraph(
-        "This document is generated for the dealer's internal record. "
-        "Offer prices are indicative and subject to a physical inspection at Fourbuy premises. "
-        "Fourbuy Car Buying Co. — Quality Used Cars at Wholesale Prices.",
+        "This document is generated for the dealer's internal record. Offer prices are indicative and "
+        "subject to a physical inspection at Fourbuy premises. Fourbuy Car Buying Co. — Quality Used Cars at Wholesale Prices.",
         small,
     ))
 
