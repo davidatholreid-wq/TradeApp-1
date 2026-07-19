@@ -28,6 +28,7 @@ export default function Register() {
     first_name: "",
     last_name: "",
     phone: "",
+    job_title: "",
     company_name: "",
     company_address: "",
     company_reg_no: "",
@@ -59,6 +60,7 @@ export default function Register() {
           first_name: form.first_name.trim(),
           last_name: form.last_name.trim(),
           phone: form.phone.trim(),
+          job_title: form.job_title.trim() || undefined,
         },
         company_info: {
           company_name: form.company_name.trim(),
@@ -116,6 +118,7 @@ export default function Register() {
           {renderField("First Name", "first_name")}
           {renderField("Last Name", "last_name")}
           {renderField("Phone", "phone", { keyboardType: "phone-pad" })}
+          {renderField("Job Title (optional)", "job_title")}
 
           <Text style={styles.sectionTitle}>Company Information</Text>
           {renderField("Company Name", "company_name")}

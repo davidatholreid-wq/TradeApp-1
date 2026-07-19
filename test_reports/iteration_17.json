@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 17 — Multi-user dealership feature verified end-to-end. BACKEND (8/8 pytest cases passed, /app/backend/tests/test_multi_user_dealerships.py): (1) POST /api/auth/register creates a brand-new Dealership document and links the first user with dealership_id — response.user.dealership_id present. (2) GET /api/auth/me returns user.dealership_id and a nested user.dealership object with the correct dealership name. (3) PATCH /api/auth/me updates dealer_info.job_title and the change persists across subsequent /auth/me calls. (4) GET /api/admin/dealerships (as admin) returns list with user_count, submission_count, id, name plus fee_zar. (5) POST /api/admin/dealerships/{id}/users adds a teammate — new user can log in, role=dealer, dealership_id matches the parent dealership. (6) E2E multi-user visibility: User A submits a vehicle → User B (added by admin to same dealership) sees it in /submissions/my with submitted_by_name='Alice Alpha' and submitted_by_job_title='Sales Manager'. User B then submits their own vehicle; User A sees BOTH, and each submission carries the CORRECT submitter (A's sub → Alice/Sales Manager; B's sub → Bob/F&I) — no cross-contamination. (7) GET /api/billing/my as User B aggregates both dealership submissions (both A's and B's priced items appear in User B's billing items). (8) GET /api/submissions/{sub_id}/valuation.pdf works for BOTH users (200, content-type application/pdf, %PDF header, >1KB). FRONTEND (all screens verified on mobile 390x844 + admin desktop 1440x900): (a) /register shows the new 'Job Title (optional)' field with testID='register-job_title-input' rendered directly after Phone; all 7 legacy fields still present + submit button. (b) Dealer /profile shows a 'Your role' section with Job Title row and an edit pencil (testID=job-title-edit); tapping reveals inline TextInput (job-title-input) + Save button (job-title-save); typing 'Sales Manager' + save immediately updates the title next to the user's name (profile-job-title) and in the Your role row. Verified with minitest@example.com / Mini1234! after reactivation. (c) Admin Dealers tab: 15 dealer rows each render an 'Add User' button (testID=dealer-add-teammate-<id>); tapping opens the invite modal with all 6 fields (invite-first_name, invite-last_name, invite-phone, invite-job_title, invite-email, invite-password) + invite-submit; Cancel closes the modal cleanly (invite-submit no longer in DOM). (d) Submission list card renders 'Alice Alpha · Sales Manager' chip under the vehicle card when submitted_by_name is populated. (e) Vehicle detail (/vehicle/[id]) shows 'Submitted by Alice Alpha · Sales Manager · 2026-07-19' inside [data-testid=submitted-by-chip]. Minor design deviation noted: the LIST card omits the date (shows only Name · Job Title) whereas the review request wanted 'Name · Job Title · Date' everywhere — the detail screen has all three. Deprecated packages detected: none. SafeAreaView issues detected: none. Pre-existing shadow*/pointerEvents deprecation warnings from previous iterations still present but unrelated.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/(app)/index.tsx submission list card", "issues": ["Review request wanted 'Submitted by [Name · Job Title · Date]' on both list AND detail. Detail screen already includes date; the list card (index.tsx:208-216) shows only 'Name · Job Title'. Consider adding created_at/priced_at date after job_title for consistency. Very minor — not blocking."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_multi_user_dealerships.py",
+    "/app/test_reports/pytest/multi_user_dealerships.xml"
+  ],
+  "action_items": [
+    "OPTIONAL polish: index.tsx:208-216 — append ' · <date>' to the submitted-by chip on the list card so it matches the vehicle-detail chip and the acceptance criterion in the review request ('Name · Job Title · Date').",
+    "OPTIONAL: seed a dedicated test dealer with an existing priced submission so future iterations don't have to register + submit + admin-price a fresh vehicle just to exercise the PDF path."
+  ],
+  "critical_code_review_comments": [
+    "server.py:567-611 /auth/register correctly creates a Dealership doc first, links user with dealership_id, and returns it on the response — matches user choice (a) 'public register creates a brand-new Dealership + first user'.",
+    "server.py:678-694 PATCH /auth/me only allows dealers (403 for admin), writes to dealer_info.job_title via dotted-path $set — no risk of overwriting siblings. Returns the fresh user with password_hash stripped. Correct.",
+    "server.py:859-874 POST /submissions stamps submitted_by_user_id, submitted_by_name, submitted_by_job_title AND dealership_id per submission — so User B's later submission cannot be mis-attributed to User A. E2E test confirms.",
+    "server.py:945-961 /submissions/my scopes by dealership_id with a legacy-safe $or (falls back to dealer_id for pre-migration docs). Ensures ALL users of the same dealership see the same list — matches choice 2b.",
+    "server.py:2833-2851 /billing/my aggregates by dealership_id with the same legacy-safe fallback — all users of a dealership share monthly billing. Matches choice 2b.",
+    "server.py:2566-2605 POST /admin/dealerships/{id}/users denormalises company_info onto the user for legacy code paths and stamps created_by_admin_id — good audit trail.",
+    "server.py:1749-1752 PDF valuation renders 'Submitted by <name> · <job_title> · <ISO date>' — matches spec (5c). PDF endpoint returned 200 + application/pdf for both User A and User B in E2E, confirming the dealership-scoped ownership check at server.py:2287+.",
+    "register.tsx:63 job_title is sent as undefined when the field is empty — clean; backend accepts None.",
+    "profile.tsx:23 PATCH /auth/me is called with trimmed job_title. Local state (jobTitleDraft) is initialised from user?.dealer_info?.job_title. AuthContext is refreshed on save — verified visually.",
+    "dealers.tsx:59-92 invite form + submit builds the AdminInviteUserRequest payload correctly (job_title optional). Modal has cancel + submit, both wired to disabled state during submission.",
+    "index.tsx:206-216 renders the submitted-by chip. The chip is hidden for admin views (isAdmin gate) which is fine because the admin sees dealer_row above with company_name.",
+    "vehicle/[id].tsx:587-596 renders the full 'Submitted by <bold name> · <job_title> · <yyyy-mm-dd>' string. Correct.",
+    "server.py at large (3257 lines) is over the recommended 700-line ceiling and mixes auth, submissions, admin, billing, PDF, LLM. Consider splitting into routers/*.py. Non-blocking for this feature."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_multi_user_dealerships.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 pytest cases pass)",
+    "frontend": "100% on the 4 requested flows (register field, profile job-title edit, admin add-user modal, submitted-by chip on list + detail). Minor design nit on list-card date omission — non-blocking."
+  },
+  "seed_data_creation": "Registered several TEST_ dealerships/users via the public /auth/register + admin /admin/dealerships/{id}/users endpoints (visible on Manage Dealers): TEST E2E Motors (Alice Alpha + Bob Beta), TEST Add-User Motors (Mate Two), TEST Reg Motors, TEST UI Motors (Alice Alpha + one Toyota Corolla FB-000088). All are non-archived active dealers. No production data was touched. Passwords: Test1234!",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Regression recipe for multi-user dealerships: run `pytest /app/backend/tests/test_multi_user_dealerships.py -v` — 8 tests, all class-scoped, uses only the public backend URL from EXPO_PUBLIC_BACKEND_URL. Admin creds (admin@fourbuy.co.za/admin123) are the only pre-existing creds required; every dealer used in the E2E is registered fresh with uuid emails. For UI-side spot checks: use test_ui_300c2f@example.com / Test1234! (single-user dealership 'TEST UI Motors' with one submission FB-000088 owned by Alice Alpha, job_title 'Sales Manager') — verified end-to-end. Admin Dealers UI now shows 15 seeded rows. The submitted-by chip appears on /vehicle/<id> with testID='submitted-by-chip' and on the list card as 'Alice Alpha · Sales Manager' (no date on list — noted design nit).",
+  "rca_of_issue": "N/A — this iteration verified a NEW feature (multi-user dealerships) rather than fixing a bug. Two initial test failures were purely test-side: the backend correctly lowercases email in /auth/register and /admin/dealerships/{id}/users, but my test util was generating uppercase-prefixed emails ('TEST_') and asserting exact equality. Fixed by lowercasing the local part in the _uniq() helper. All 8 tests then passed."
+}

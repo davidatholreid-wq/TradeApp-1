@@ -22,6 +22,8 @@ type Submission = {
   id: string;
   reference?: string;
   dealer_name?: string;
+  submitted_by_name?: string | null;
+  submitted_by_job_title?: string | null;
   company_name?: string;
   make_name: string;
   model_name: string;
@@ -197,6 +199,18 @@ export default function DashboardScreen() {
           <Ionicons name="business-outline" size={12} color={colors.textSecondary} />
           <Text style={styles.dealerText}>
             {item.dealer_name} · {item.company_name}
+          </Text>
+        </View>
+      ) : null}
+
+      {/* Submitted-by chip — for dealer users of a multi-user dealership so
+          you can tell which team member captured this valuation. */}
+      {!isAdmin && item.submitted_by_name ? (
+        <View style={styles.dealerRow}>
+          <Ionicons name="person-circle-outline" size={12} color={colors.textSecondary} />
+          <Text style={styles.dealerText} numberOfLines={1}>
+            {item.submitted_by_name}
+            {item.submitted_by_job_title ? ` · ${item.submitted_by_job_title}` : ""}
           </Text>
         </View>
       ) : null}

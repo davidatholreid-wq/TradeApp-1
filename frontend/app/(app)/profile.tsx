@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, TextInput, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useAuth } from "@/src/context/AuthContext";
@@ -6,11 +6,29 @@ import { colors, spacing, radius, fonts, BRAND } from "@/src/theme";
 import BrandLogo from "@/src/components/BrandLogo";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { useState } from "react";
+import { apiFetch } from "@/src/api";
 
 export default function Profile() {
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
   const router = useRouter();
   const tabBarHeight = useBottomTabBarHeight();
+  const [editingJob, setEditingJob] = useState(false);
+  const [jobTitleDraft, setJobTitleDraft] = useState(user?.dealer_info?.job_title ?? "");
+  const [savingJob, setSavingJob] = useState(false);
+
+  const saveJobTitle = async () => {
+    setSavingJob(true);
+    try {
+      await apiFetch("/api/auth/me", { method: "PATCH", body: JSON.stringify({ job_title: jobTitleDraft.trim() }) });
+      if (refreshUser) await refreshUser();
+      setEditingJob(false);
+    } catch (e: any) {
+      Alert.alert("Error", e?.message || "Could not update job title");
+    } finally {
+      setSavingJob(false);
+    }
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -58,11 +76,72 @@ export default function Profile() {
           <Text style={styles.name} testID="profile-name">
             {user.dealer_info?.first_name} {user.dealer_info?.last_name}
           </Text>
+          {user.dealer_info?.job_title ? (
+            <Text style={styles.jobTitle} testID="profile-job-title">
+              {user.dealer_info.job_title}
+            </Text>
+          ) : null}
           <Text style={styles.email}>{user.email}</Text>
           <View style={styles.roleBadge}>
             <Text style={styles.roleText}>{user.role.toUpperCase()}</Text>
           </View>
         </View>
+
+        {user.role === "dealer" ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Your role</Text>
+            {editingJob ? (
+              <View style={styles.jobEditRow}>
+                <TextInput
+                  testID="job-title-input"
+                  style={styles.jobInput}
+                  value={jobTitleDraft}
+                  onChangeText={setJobTitleDraft}
+                  placeholder="e.g. Sales Manager"
+                  placeholderTextColor={colors.textDisabled}
+                  autoFocus
+                  editable={!savingJob}
+                />
+                <TouchableOpacity
+                  style={[styles.jobBtn, styles.jobBtnPrimary]}
+                  onPress={saveJobTitle}
+                  disabled={savingJob}
+                  testID="job-title-save"
+                >
+                  <Text style={styles.jobBtnPrimaryText}>{savingJob ? "…" : "Save"}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.jobBtn}
+                  onPress={() => {
+                    setEditingJob(false);
+                    setJobTitleDraft(user.dealer_info?.job_title ?? "");
+                  }}
+                  disabled={savingJob}
+                >
+                  <Text style={styles.jobBtnText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>Job Title</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+                  <Text style={styles.rowValue}>
+                    {user.dealer_info?.job_title || <Text style={{ color: colors.textDisabled }}>Not set</Text>}
+                  </Text>
+                  <TouchableOpacity
+                    testID="job-title-edit"
+                    onPress={() => {
+                      setJobTitleDraft(user.dealer_info?.job_title ?? "");
+                      setEditingJob(true);
+                    }}
+                  >
+                    <Ionicons name="pencil-outline" size={16} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
+        ) : null}
 
         {user.role === "dealer" && user.company_info ? (
           <View style={styles.section}>
@@ -167,7 +246,30 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   name: { color: colors.text, fontSize: 24, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 0.3 },
+  jobTitle: { color: colors.textSecondary, fontSize: 13, marginTop: 2, letterSpacing: 0.2, fontStyle: "italic" },
   email: { color: colors.textSecondary, fontSize: 15, marginTop: 4, letterSpacing: 0.1 },
+  jobEditRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  jobInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    color: colors.text,
+    backgroundColor: colors.paper,
+  },
+  jobBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  jobBtnPrimary: { backgroundColor: colors.text, borderColor: colors.text },
+  jobBtnPrimaryText: { color: "#fff", fontWeight: "700" },
+  jobBtnText: { color: colors.text, fontWeight: "600" },
   roleBadge: {
     marginTop: spacing.sm,
     alignSelf: "flex-start",

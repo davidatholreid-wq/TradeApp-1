@@ -26,6 +26,10 @@ type Submission = {
   id: string;
   reference?: string;
   dealer_name?: string;
+  submitted_by_name?: string | null;
+  submitted_by_job_title?: string | null;
+  submitted_at?: string | null;
+  dealership_id?: string | null;
   company_name?: string;
   make_name: string;
   model_name: string;
@@ -579,6 +583,16 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                     {selected.year} {selected.make_name} {selected.model_name}
                   </Text>
                   <Text style={styles.detailSub}>{selected.derivative_name}</Text>
+                  {selected.submitted_by_name ? (
+                    <View style={styles.adminSubmittedBy}>
+                      <Ionicons name="person-circle-outline" size={14} color={colors.textSecondary} />
+                      <Text style={styles.adminSubmittedByText}>
+                        Submitted by <Text style={styles.adminSubmittedByBold}>{selected.submitted_by_name}</Text>
+                        {selected.submitted_by_job_title ? ` · ${selected.submitted_by_job_title}` : ""}
+                        {selected.submitted_at ? ` · ${(selected.submitted_at || "").slice(0, 10)}` : ""}
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
                 <TouchableOpacity
                   testID="admin-delete-button"
@@ -1379,6 +1393,19 @@ const styles = StyleSheet.create({
   detailRef: { color: "#fff", fontFamily: fonts.mono, fontSize: 16, fontWeight: "800", letterSpacing: 0.8 },
   detailTitle: { color: colors.text, fontSize: 28, fontWeight: "800", fontFamily: fonts.heading, marginTop: 6, letterSpacing: 0.3 },
   detailSub: { color: colors.textSecondary, fontSize: 15, marginTop: 4, letterSpacing: 0.1 },
+  adminSubmittedBy: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: radius.sm,
+  },
+  adminSubmittedByText: { color: colors.textSecondary, fontSize: 12 },
+  adminSubmittedByBold: { color: "#fff", fontWeight: "700" },
   deleteBtn: {
     flexDirection: "row",
     alignItems: "center",

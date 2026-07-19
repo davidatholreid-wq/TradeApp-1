@@ -10,10 +10,12 @@ export type User = {
   role: "dealer" | "admin";
   active?: boolean;
   agreement_accepted_at?: string | null;
-  dealer_info?: { first_name: string; last_name: string; phone: string };
+  dealer_info?: { first_name: string; last_name: string; phone: string; job_title?: string | null };
   company_info?: { company_name: string; company_address: string };
   profile_pic?: string | null;
   cover_photo?: string | null;
+  dealership_id?: string | null;
+  dealership?: { id: string; name: string; address?: string; active?: boolean } | null;
 };
 
 type AuthContextType = {
@@ -23,6 +25,7 @@ type AuthContextType = {
   register: (payload: any) => Promise<void>;
   logout: () => Promise<void>;
   markAgreementAccepted: (at: string) => void;
+  refreshUser: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
@@ -96,8 +99,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser((prev) => (prev ? { ...prev, agreement_accepted_at: at } : prev));
   };
 
+  const refreshUser = useCallback(async () => {
+    try {
+      const data = await apiFetch("/api/auth/me");
+      setUser(data.user);
+    } catch {
+      /* silent — the caller can decide how to handle */
+    }
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, markAgreementAccepted }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, markAgreementAccepted, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

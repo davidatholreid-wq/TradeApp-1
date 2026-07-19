@@ -39,11 +39,16 @@ type Submission = {
   id: string;
   reference?: string;
   dealer_id: string;
+  dealership_id?: string | null;
   dealer_name?: string;
   dealer_first_name?: string;
   dealer_phone?: string;
   dealer_email?: string;
   company_name?: string;
+  submitted_by_user_id?: string | null;
+  submitted_by_name?: string | null;
+  submitted_by_job_title?: string | null;
+  submitted_at?: string | null;
   make_name: string;
   model_name: string;
   derivative_name: string;
@@ -574,6 +579,19 @@ export default function VehicleDetail() {
           <View style={styles.refBadge}>
             <Text style={styles.refBadgeLabel}>REFERENCE</Text>
             <Text style={styles.refBadgeValue}>{sub.reference}</Text>
+          </View>
+        ) : null}
+
+        {/* Submitted-by chip — shows which team member captured this
+            valuation. All users of a dealership can see this. */}
+        {sub.submitted_by_name ? (
+          <View style={styles.submittedByChip} testID="submitted-by-chip">
+            <Ionicons name="person-circle-outline" size={16} color={colors.textSecondary} />
+            <Text style={styles.submittedByText}>
+              Submitted by <Text style={styles.submittedByBold}>{sub.submitted_by_name}</Text>
+              {sub.submitted_by_job_title ? ` · ${sub.submitted_by_job_title}` : ""}
+              {sub.submitted_at ? ` · ${(sub.submitted_at || "").slice(0, 10)}` : ""}
+            </Text>
           </View>
         ) : null}
 
@@ -1866,6 +1884,22 @@ const styles = StyleSheet.create({
     fontFamily: fonts.mono,
     letterSpacing: 1,
   },
+
+  // "Submitted by" chip
+  submittedByChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    backgroundColor: colors.paper,
+    marginBottom: spacing.md,
+  },
+  submittedByText: { color: colors.textSecondary, fontSize: 12, flex: 1 },
+  submittedByBold: { color: colors.text, fontWeight: "700" },
 
   // Hero average rating
   heroBox: {

@@ -350,6 +350,9 @@ class DealerInfo(BaseModel):
     last_name: str
     phone: str
     id_number: Optional[str] = None
+    # Job Title (e.g. "Sales Manager", "F&I", "Buyer"). Free text.
+    # Optional for backwards compatibility with pre-multi-user users.
+    job_title: Optional[str] = None
 
 
 class CompanyInfo(BaseModel):
@@ -360,10 +363,83 @@ class CompanyInfo(BaseModel):
 
 
 class RegisterRequest(BaseModel):
+    """Public register — always creates a brand new Dealership plus the
+    first user (who becomes a regular dealer user, not an owner because
+    all users of a dealership are equal per product spec)."""
     email: EmailStr
     password: str
     dealer_info: DealerInfo
     company_info: CompanyInfo
+
+
+class AdminInviteUserRequest(BaseModel):
+    """Admin creates a new user inside an existing dealership."""
+    email: EmailStr
+    password: str
+    dealer_info: DealerInfo
+    active: bool = True
+
+
+class DealershipUpdate(BaseModel):
+    name: Optional[str] = None
+    address: Optional[str] = None
+    company_reg_no: Optional[str] = None
+    vat_no: Optional[str] = None
+    active: Optional[bool] = None
+
+
+async def _ensure_dealership_for_user(user: dict) -> str:
+    """Idempotently create a Dealership for a legacy dealer user that
+    doesn't have one yet. Returns the dealership id.
+
+    Behaviour:
+    - If the user already has `dealership_id`, returns it.
+    - Otherwise creates a new dealership using the user's `company_info` and
+      links the user to it, marking the user as an active member.
+    """
+    if user.get("dealership_id"):
+        return user["dealership_id"]
+    ci = user.get("company_info") or {}
+    dealership_id = str(uuid.uuid4())
+    doc = {
+        "id": dealership_id,
+        "name": ci.get("company_name") or f"Dealership {dealership_id[:8]}",
+        "address": ci.get("company_address") or "",
+        "company_reg_no": ci.get("company_reg_no"),
+        "vat_no": ci.get("vat_no"),
+        "active": True,
+        "created_at": now_utc(),
+    }
+    await db.dealerships.insert_one(doc)
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"dealership_id": dealership_id}},
+    )
+    logger.info("Migrated user %s -> dealership %s (%s)", user.get("email"), dealership_id, doc["name"])
+    return dealership_id
+
+
+async def _get_user_dealership_id(user: dict) -> Optional[str]:
+    """Return the user's dealership_id, creating one on the fly for a legacy
+    dealer that doesn't yet have one. Admins return None."""
+    if user.get("role") != "dealer":
+        return None
+    if user.get("dealership_id"):
+        return user["dealership_id"]
+    return await _ensure_dealership_for_user(user)
+
+
+async def _can_access_submission(sub: dict, user: dict) -> bool:
+    """A user may access a submission when they're an admin OR when the
+    submission belongs to the same dealership (all users of a dealership
+    share visibility). Falls back to the legacy `dealer_id == user.id`
+    check for pre-migration submissions that don't yet carry a
+    `dealership_id`."""
+    if user.get("role") == "admin":
+        return True
+    if sub.get("dealership_id"):
+        return sub["dealership_id"] == await _get_user_dealership_id(user)
+    return sub.get("dealer_id") == user.get("id")
 
 
 class LoginRequest(BaseModel):
@@ -493,6 +569,19 @@ async def register(payload: RegisterRequest):
     existing = await db.users.find_one({"email": payload.email.lower()})
     if existing:
         raise HTTPException(409, "Email already registered")
+    # New signup — spin up a fresh Dealership and link the first user to it.
+    # Company info lives on the Dealership going forward (single source of
+    # truth); user-level `company_info` is kept for backwards compatibility.
+    dealership_id = str(uuid.uuid4())
+    await db.dealerships.insert_one({
+        "id": dealership_id,
+        "name": payload.company_info.company_name,
+        "address": payload.company_info.company_address,
+        "company_reg_no": payload.company_info.company_reg_no,
+        "vat_no": payload.company_info.vat_no,
+        "active": True,
+        "created_at": now_utc(),
+    })
     user_id = str(uuid.uuid4())
     user_doc = {
         "id": user_id,
@@ -504,6 +593,7 @@ async def register(payload: RegisterRequest):
         "agreement_accepted_at": None,
         "dealer_info": payload.dealer_info.dict(),
         "company_info": payload.company_info.dict(),
+        "dealership_id": dealership_id,
         "created_at": now_utc(),
     }
     await db.users.insert_one(user_doc)
@@ -516,6 +606,7 @@ async def register(payload: RegisterRequest):
             "role": "dealer",
             "dealer_info": payload.dealer_info.dict(),
             "company_info": payload.company_info.dict(),
+            "dealership_id": dealership_id,
         },
     }
 
@@ -538,6 +629,11 @@ async def login(payload: LoginRequest):
                 "Your account has been suspended. Please contact Fourbuy to settle any outstanding balance.",
             )
     token = sign_token(user["id"], user["email"], user["role"])
+    # Ensure legacy dealer users have a dealership_id — the startup migration
+    # covers this too, but a lazy fallback keeps login robust on fresh dumps.
+    dealership_id = None
+    if user["role"] == "dealer":
+        dealership_id = await _get_user_dealership_id(user)
     return {
         "token": token,
         "user": {
@@ -551,6 +647,7 @@ async def login(payload: LoginRequest):
             "company_info": user.get("company_info"),
             "profile_pic": user.get("profile_pic"),
             "cover_photo": user.get("cover_photo"),
+            "dealership_id": dealership_id,
         },
     }
 
@@ -559,7 +656,42 @@ async def login(payload: LoginRequest):
 async def me(current: dict = Depends(get_current_user)):
     # Include billing-related fields that the client uses to gate flows.
     current["active"] = current.get("active", True)
+    # Enrich with dealership info so the client can render "Submitted by
+    # …" chips and a "Team" screen without a second round-trip.
+    if current.get("role") == "dealer":
+        dealership_id = await _get_user_dealership_id(current)
+        if dealership_id:
+            current["dealership_id"] = dealership_id
+            dship = await db.dealerships.find_one({"id": dealership_id}, {"_id": 0})
+            if dship:
+                current["dealership"] = dship
     return {"user": current}
+
+
+class SelfProfileUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone: Optional[str] = None
+    job_title: Optional[str] = None
+
+
+@api_router.patch("/auth/me")
+async def update_me(
+    payload: SelfProfileUpdate,
+    current: dict = Depends(get_current_user),
+):
+    """Dealer users can update their own name / phone / job title."""
+    if current.get("role") != "dealer":
+        raise HTTPException(400, "Only dealer users may edit their profile here")
+    fields = payload.dict(exclude_none=True)
+    if not fields:
+        raise HTTPException(400, "No fields to update")
+    set_ops: dict = {}
+    for k, v in fields.items():
+        set_ops[f"dealer_info.{k}"] = v
+    await db.users.update_one({"id": current["id"]}, {"$set": set_ops})
+    fresh = await db.users.find_one({"id": current["id"]}, {"_id": 0, "password_hash": 0})
+    return {"user": fresh}
 
 
 # ============ Billing agreement ============
@@ -724,13 +856,25 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         elif not photo_val:
             clean["photo"] = None
         recon_items_uploaded.append(clean)
+    dealership_id = await _get_user_dealership_id(current)
+    dealer_first = current["dealer_info"].get("first_name", "")
+    dealer_last = current["dealer_info"].get("last_name", "")
+    submitted_by_job_title = current["dealer_info"].get("job_title") or None
     doc = {
         "id": sub_id,
         "reference": reference,
+        # `dealer_id` historically = the submitting user's id. It now doubles
+        # as `submitted_by_user_id` while `dealership_id` is the new
+        # aggregate for multi-user dealerships.
         "dealer_id": current["id"],
+        "dealership_id": dealership_id,
+        "submitted_by_user_id": current["id"],
+        "submitted_by_name": (dealer_first + " " + dealer_last).strip(),
+        "submitted_by_job_title": submitted_by_job_title,
+        "submitted_at": now_utc(),
         "dealer_email": current["email"],
-        "dealer_name": f"{current['dealer_info']['first_name']} {current['dealer_info']['last_name']}",
-        "dealer_first_name": current["dealer_info"].get("first_name", ""),
+        "dealer_name": f"{dealer_first} {dealer_last}",
+        "dealer_first_name": dealer_first,
         "dealer_phone": current["dealer_info"].get("phone", ""),
         "company_name": current["company_info"]["company_name"],
         # Vehicle spec (progressive filter)
@@ -802,10 +946,19 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
 async def get_my_submissions(current: dict = Depends(get_current_user)):
     # Fetch full docs so we can pluck just the front photo for the list card,
     # then drop the rest of the base64 payload to keep the response small.
-    subs = await db.submissions.find(
-        {"dealer_id": current["id"]},
-        {"_id": 0},
-    ).sort("created_at", -1).to_list(1000)
+    # Scope by dealership so ALL users of a dealership see the same list.
+    dealership_id = await _get_user_dealership_id(current)
+    query: dict
+    if dealership_id:
+        # Include legacy submissions that pre-date dealership_id but were
+        # authored by this user, so nothing goes missing during migration.
+        query = {"$or": [
+            {"dealership_id": dealership_id},
+            {"dealer_id": current["id"], "dealership_id": {"$in": [None, ""]}},
+        ]}
+    else:
+        query = {"dealer_id": current["id"]}
+    subs = await db.submissions.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
     # Hide archived submissions from the dealer mobile app (they still exist in
     # the DB and remain visible in the desktop admin archive).
     visible = []
@@ -850,7 +1003,14 @@ async def submission_history(
     if current["role"] == "admin":
         query: dict = {}
     else:
-        query = {"dealer_id": current["id"]}
+        dealership_id = await _get_user_dealership_id(current)
+        if dealership_id:
+            query = {"$or": [
+                {"dealership_id": dealership_id},
+                {"dealer_id": current["id"], "dealership_id": {"$in": [None, ""]}},
+            ]}
+        else:
+            query = {"dealer_id": current["id"]}
     if status and status != "all":
         query["status"] = status
 
@@ -1011,7 +1171,7 @@ async def get_submission(sub_id: str, current: dict = Depends(get_current_user))
     sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
     if not sub:
         raise HTTPException(404, "Submission not found")
-    if current["role"] != "admin" and sub["dealer_id"] != current["id"]:
+    if not await _can_access_submission(sub, current):
         raise HTTPException(403, "Not authorized")
     # Prevent dealers from opening an archived submission from a stale link.
     if current["role"] != "admin" and compute_bucket(sub) == "archived":
@@ -1175,7 +1335,7 @@ async def list_submission_reports(sub_id: str, current: dict = Depends(get_curre
     sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0, "dealer_id": 1})
     if not sub:
         raise HTTPException(404, "Submission not found")
-    if current["role"] != "admin" and sub["dealer_id"] != current["id"]:
+    if not await _can_access_submission(sub, current):
         raise HTTPException(403, "Not authorized")
     reports = await db.report_orders.find(
         {"submission_id": sub_id}, {"_id": 0}
@@ -1329,7 +1489,7 @@ async def order_submission_report(
     sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
     if not sub:
         raise HTTPException(404, "Submission not found")
-    if sub["dealer_id"] != current["id"]:
+    if not await _can_access_submission(sub, current):
         raise HTTPException(403, "Not authorized")
     if sub.get("status") != "priced":
         raise HTTPException(400, "Reports can only be ordered after an offer has been received")
@@ -1585,7 +1745,11 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
     subtitle = " · ".join(str(x) for x in subtitle_bits if x)
     title_p = Paragraph(
         f'<font name="Helvetica-Bold" size="16" color="#111111">{title_line}</font><br/>'
-        f'<font name="Helvetica" size="8" color="#6B6B6B">{subtitle}</font>',
+        f'<font name="Helvetica" size="8" color="#6B6B6B">{subtitle}</font>' +
+        (f'<br/><font name="Helvetica" size="8" color="#6B6B6B">Submitted by <b>{sub.get("submitted_by_name") or "—"}</b>'
+         + (f' · {sub.get("submitted_by_job_title")}' if sub.get("submitted_by_job_title") else "")
+         + (f' · {(sub.get("submitted_at") or "")[:10]}' if sub.get("submitted_at") else "")
+         + '</font>' if sub.get("submitted_by_name") else ''),
         ParagraphStyle("title", parent=styles["Normal"], leading=19),
     )
     gen_p = Paragraph(
@@ -2127,7 +2291,7 @@ async def download_valuation_pdf(sub_id: str, current: dict = Depends(get_user_f
     sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
     if not sub:
         raise HTTPException(404, "Submission not found")
-    if current["role"] != "admin" and sub["dealer_id"] != current["id"]:
+    if not await _can_access_submission(sub, current):
         raise HTTPException(403, "Not authorized")
     if sub.get("status") != "priced":
         raise HTTPException(400, "Valuation PDF is available only after an offer has been received")
@@ -2170,7 +2334,7 @@ async def download_report_pdf(
     sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0, "photos": 0})
     if not sub:
         raise HTTPException(404, "Submission not found")
-    if current["role"] != "admin" and sub["dealer_id"] != current["id"]:
+    if not await _can_access_submission(sub, current):
         raise HTTPException(403, "Not authorized")
 
     order = await db.report_orders.find_one(
@@ -2202,7 +2366,7 @@ async def market_analysis(sub_id: str, current: dict = Depends(get_current_user)
     sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0, "photos": 0})
     if not sub:
         raise HTTPException(404, "Submission not found")
-    if current["role"] != "admin" and sub["dealer_id"] != current["id"]:
+    if not await _can_access_submission(sub, current):
         raise HTTPException(403, "Not authorized")
     if not EMERGENT_LLM_KEY:
         raise HTTPException(500, "LLM key not configured")
@@ -2347,7 +2511,100 @@ async def tyre_estimate(sub_id: str, current: dict = Depends(get_current_user)):
     return payload
 
 
-# ============ Admin dealer management ============
+# ============ Admin dealership management ============
+@api_router.get("/admin/dealerships")
+async def admin_list_dealerships(current: dict = Depends(require_admin)):
+    """List every dealership with user + submission + billing stats."""
+    dships = await db.dealerships.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    for d in dships:
+        d["user_count"] = await db.users.count_documents({"dealership_id": d["id"], "role": "dealer"})
+        d["submission_count"] = await db.submissions.count_documents({"dealership_id": d["id"]})
+        subs = await db.submissions.find(
+            {"dealership_id": d["id"], "status": "priced"},
+            {"_id": 0, "created_at": 1, "priced_at": 1, "status": 1},
+        ).to_list(10000)
+        billable = sum(1 for s in subs if is_billable(s))
+        d["billable_count"] = billable
+        d["billable_total_zar"] = round(billable * BILLING_FEE_ZAR, 2)
+    return {"dealerships": dships, "fee_zar": BILLING_FEE_ZAR}
+
+
+@api_router.get("/admin/dealerships/{dealership_id}")
+async def admin_get_dealership(dealership_id: str, current: dict = Depends(require_admin)):
+    d = await db.dealerships.find_one({"id": dealership_id}, {"_id": 0})
+    if not d:
+        raise HTTPException(404, "Dealership not found")
+    users = await db.users.find(
+        {"dealership_id": dealership_id},
+        {"_id": 0, "password_hash": 0},
+    ).sort("created_at", 1).to_list(200)
+    for u in users:
+        u["active"] = u.get("active", True)
+    d["users"] = users
+    d["submission_count"] = await db.submissions.count_documents({"dealership_id": dealership_id})
+    return {"dealership": d}
+
+
+@api_router.patch("/admin/dealerships/{dealership_id}")
+async def admin_update_dealership(
+    dealership_id: str,
+    payload: DealershipUpdate,
+    current: dict = Depends(require_admin),
+):
+    d = await db.dealerships.find_one({"id": dealership_id})
+    if not d:
+        raise HTTPException(404, "Dealership not found")
+    updates = {k: v for k, v in payload.dict(exclude_none=True).items()}
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+    updates["updated_at"] = now_utc()
+    await db.dealerships.update_one({"id": dealership_id}, {"$set": updates})
+    fresh = await db.dealerships.find_one({"id": dealership_id}, {"_id": 0})
+    return {"dealership": fresh}
+
+
+@api_router.post("/admin/dealerships/{dealership_id}/users")
+async def admin_add_user_to_dealership(
+    dealership_id: str,
+    payload: AdminInviteUserRequest,
+    current: dict = Depends(require_admin),
+):
+    """Admin adds a new user to an existing dealership."""
+    d = await db.dealerships.find_one({"id": dealership_id})
+    if not d:
+        raise HTTPException(404, "Dealership not found")
+    existing = await db.users.find_one({"email": payload.email.lower()})
+    if existing:
+        raise HTTPException(409, "Email already registered")
+    user_id = str(uuid.uuid4())
+    # Denormalise the dealership's company info onto the user so any legacy
+    # code paths still work — the dealership doc is the source of truth
+    # going forward.
+    user_doc = {
+        "id": user_id,
+        "email": payload.email.lower(),
+        "password_hash": hash_password(payload.password),
+        "role": "dealer",
+        "active": payload.active,
+        "archived_at": None,
+        "agreement_accepted_at": None,
+        "dealer_info": payload.dealer_info.dict(),
+        "company_info": {
+            "company_name": d.get("name") or "",
+            "company_address": d.get("address") or "",
+            "company_reg_no": d.get("company_reg_no"),
+            "vat_no": d.get("vat_no"),
+        },
+        "dealership_id": dealership_id,
+        "created_at": now_utc(),
+        "created_by_admin_id": current["id"],
+    }
+    await db.users.insert_one(user_doc)
+    user_doc.pop("password_hash", None)
+    user_doc.pop("_id", None)
+    return {"user": user_doc}
+
+
 @api_router.get("/admin/dealers")
 async def admin_list_dealers(
     include_archived: bool = False,
@@ -2573,13 +2830,24 @@ async def my_billing(
     else:
         end = datetime(start.year, start.month + 1, 1, tzinfo=timezone.utc)
 
-    dealer_id = current["id"]
+    # Billing rolls up to the DEALERSHIP so every user of a dealership shares
+    # a single monthly bill. Fall-back to the legacy per-user dealer_id for
+    # the tiny handful of docs that pre-date the multi-user migration.
+    dealership_id = await _get_user_dealership_id(current)
+    if dealership_id:
+        sub_query: dict = {"$or": [
+            {"dealership_id": dealership_id, "status": "priced"},
+            {"dealer_id": current["id"], "dealership_id": {"$in": [None, ""]}, "status": "priced"},
+        ]}
+    else:
+        sub_query = {"dealer_id": current["id"], "status": "priced"}
 
-    # Priced submissions for this dealer whose priced_at falls inside the window.
+    # Priced submissions for this dealership whose priced_at falls inside the window.
     subs = await db.submissions.find(
-        {"dealer_id": dealer_id, "status": "priced"},
+        sub_query,
         {"_id": 0, "id": 1, "reference": 1, "make_name": 1, "model_name": 1,
-         "year": 1, "created_at": 1, "priced_at": 1, "price": 1, "status": 1},
+         "year": 1, "created_at": 1, "priced_at": 1, "price": 1, "status": 1,
+         "submitted_by_name": 1, "submitted_by_job_title": 1},
     ).to_list(20000)
 
     items = []
@@ -2603,10 +2871,17 @@ async def my_billing(
             "billable": billable,
         })
 
-    # Report orders for this dealer whose ordered_at falls inside the window.
-    orders = await db.report_orders.find(
-        {"dealer_id": dealer_id}, {"_id": 0}
-    ).to_list(20000)
+    # Report orders for this dealership whose ordered_at falls inside the window.
+    # `report_orders` stores `dealer_id` = the ordering user's id, so we
+    # look up every user in the dealership and match on that set.
+    if dealership_id:
+        member_ids = [u["id"] async for u in db.users.find({"dealership_id": dealership_id}, {"_id": 0, "id": 1})]
+        if not member_ids:
+            member_ids = [current["id"]]
+        order_query: dict = {"dealer_id": {"$in": member_ids}}
+    else:
+        order_query = {"dealer_id": current["id"]}
+    orders = await db.report_orders.find(order_query, {"_id": 0}).to_list(20000)
 
     report_items = []
     for r in orders:
@@ -2852,6 +3127,34 @@ async def seed_data():
         }
         await db.users.insert_one(admin_doc)
         logger.info(f"Seeded admin: {ADMIN_EMAIL}")
+
+    # -------- One-off Dealership migration (2026-07) --------
+    # Every legacy dealer user gets its own single-user Dealership. New signups
+    # already create their own on register. This is safe to run every startup
+    # because it only touches users/subs that don't yet have `dealership_id`.
+    async for u in db.users.find({"role": "dealer", "dealership_id": {"$in": [None, ""]}}, {"_id": 0}):
+        await _ensure_dealership_for_user(u)
+    # Back-fill submissions that pre-date the dealership_id field.
+    unmigrated = await db.submissions.count_documents({"dealership_id": {"$in": [None, ""]}})
+    if unmigrated:
+        logger.info("Migrating %d submissions to dealership_id …", unmigrated)
+        async for s in db.submissions.find({"dealership_id": {"$in": [None, ""]}}, {"_id": 0, "id": 1, "dealer_id": 1}):
+            dealer = await db.users.find_one({"id": s.get("dealer_id")}, {"_id": 0, "dealership_id": 1, "dealer_info": 1})
+            if not dealer:
+                # Orphaned submission — skip, admin can clean up manually
+                continue
+            fn = (dealer.get("dealer_info") or {}).get("first_name") or ""
+            ln = (dealer.get("dealer_info") or {}).get("last_name") or ""
+            jt = (dealer.get("dealer_info") or {}).get("job_title") or ""
+            await db.submissions.update_one(
+                {"id": s["id"]},
+                {"$set": {
+                    "dealership_id": dealer.get("dealership_id"),
+                    "submitted_by_user_id": s.get("dealer_id"),
+                    "submitted_by_name": (fn + " " + ln).strip() or None,
+                    "submitted_by_job_title": jt or None,
+                }},
+            )
 
     # Seed vehicle DB if empty
     if await db.makes.count_documents({}) == 0:

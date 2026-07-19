@@ -30,7 +30,7 @@ type Dealer = {
   active?: boolean;
   archived_at?: string | null;
   agreement_accepted_at?: string | null;
-  dealer_info: { first_name: string; last_name: string; phone: string };
+  dealer_info: { first_name: string; last_name: string; phone: string; job_title?: string | null };
   company_info: { company_name: string; company_address: string };
   submission_count: number;
   billable_count?: number;
@@ -38,6 +38,7 @@ type Dealer = {
   profile_pic?: string | null;
   cover_photo?: string | null;
   created_at: string;
+  dealership_id?: string | null;
 };
 
 export default function Dealers() {
@@ -53,6 +54,50 @@ export default function Dealers() {
   const [resettingId, setResettingId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Add-user-to-dealership modal state
+  const [invitingDealership, setInvitingDealership] = useState<{ id: string; name: string } | null>(null);
+  const [inviteForm, setInviteForm] = useState({ first_name: "", last_name: "", phone: "", job_title: "", email: "", password: "" });
+  const [inviteSubmitting, setInviteSubmitting] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+
+  const submitInvite = async () => {
+    if (!invitingDealership) return;
+    for (const [k, label] of [["first_name", "First name"], ["last_name", "Last name"], ["email", "Email"], ["password", "Password"]] as const) {
+      if (!inviteForm[k].trim()) {
+        setInviteError(`${label} is required`);
+        return;
+      }
+    }
+    if (inviteForm.password.length < 6) {
+      setInviteError("Password must be at least 6 characters");
+      return;
+    }
+    setInviteSubmitting(true);
+    setInviteError(null);
+    try {
+      await apiFetch(`/api/admin/dealerships/${invitingDealership.id}/users`, {
+        method: "POST",
+        body: JSON.stringify({
+          email: inviteForm.email.trim().toLowerCase(),
+          password: inviteForm.password,
+          dealer_info: {
+            first_name: inviteForm.first_name.trim(),
+            last_name: inviteForm.last_name.trim(),
+            phone: inviteForm.phone.trim(),
+            job_title: inviteForm.job_title.trim() || undefined,
+          },
+          active: true,
+        }),
+      });
+      setInvitingDealership(null);
+      setInviteForm({ first_name: "", last_name: "", phone: "", job_title: "", email: "", password: "" });
+      load(showArchived);
+    } catch (e: any) {
+      setInviteError(e?.message || "Failed to add user");
+    } finally {
+      setInviteSubmitting(false);
+    }
+  };
 
   const load = useCallback(
     async (withArchived: boolean) => {
@@ -271,6 +316,11 @@ export default function Dealers() {
               ) : null}
             </View>
             <Text style={styles.company}>{item.company_info.company_name}</Text>
+            {item.dealer_info.job_title ? (
+              <Text style={styles.jobTitleText} testID={`dealer-job-title-${item.id}`}>
+                {item.dealer_info.job_title}
+              </Text>
+            ) : null}
           </View>
         </View>
 
@@ -377,6 +427,14 @@ export default function Dealers() {
                 )}
               </TouchableOpacity>
               <TouchableOpacity
+                testID={`dealer-add-teammate-${item.id}`}
+                style={styles.actionBtn}
+                onPress={() => setInvitingDealership({ id: item.dealership_id ?? item.id, name: item.company_info.company_name })}
+              >
+                <Ionicons name="person-add-outline" size={16} color={colors.text} />
+                <Text style={styles.actionBtnText}>Add User</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 testID={`remove-dealer-${item.id}`}
                 style={[styles.actionBtn, styles.dangerBtn]}
                 onPress={() => removeDealer(item)}
@@ -480,6 +538,72 @@ export default function Dealers() {
           setEditing(null);
         }}
       />
+
+      {/* Add-user-to-existing-dealership modal (admin only). All users of a
+          dealership are equal — they share submissions & billing. */}
+      <Modal visible={!!invitingDealership} animationType="slide" transparent onRequestClose={() => setInvitingDealership(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add User to {invitingDealership?.name}</Text>
+              <TouchableOpacity onPress={() => setInvitingDealership(null)}>
+                <Ionicons name="close" size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalHint}>
+              This user will share this dealership&apos;s submissions and monthly billing.
+            </Text>
+            {[
+              ["First Name", "first_name"],
+              ["Last Name", "last_name"],
+              ["Phone", "phone"],
+              ["Job Title (optional)", "job_title"],
+              ["Email", "email"],
+              ["Password (min 6 chars)", "password"],
+            ].map(([label, key]) => (
+              <View key={key} style={styles.modalField}>
+                <Text style={styles.modalLabel}>{label}</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={(inviteForm as any)[key]}
+                  onChangeText={(v) => setInviteForm((f) => ({ ...f, [key]: v }))}
+                  autoCapitalize={key === "email" ? "none" : "words"}
+                  keyboardType={key === "email" ? "email-address" : key === "phone" ? "phone-pad" : "default"}
+                  secureTextEntry={key === "password"}
+                  placeholder={label}
+                  placeholderTextColor={colors.textDisabled}
+                  testID={`invite-${key}`}
+                />
+              </View>
+            ))}
+            {inviteError ? <Text style={styles.modalError}>{inviteError}</Text> : null}
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnGhost]}
+                onPress={() => {
+                  setInvitingDealership(null);
+                  setInviteError(null);
+                }}
+                disabled={inviteSubmitting}
+              >
+                <Text style={styles.modalBtnGhostText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="invite-submit"
+                style={[styles.modalBtn, styles.modalBtnPrimary]}
+                onPress={submitInvite}
+                disabled={inviteSubmitting}
+              >
+                {inviteSubmitting ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <Text style={styles.modalBtnPrimaryText}>Add User</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <DealerPhotosModal
         dealer={
@@ -812,4 +936,29 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   modalSaveText: { color: "#000", fontWeight: "800", letterSpacing: 1 },
+
+  // Add-team-member modal
+  modalHint: { color: colors.textSecondary, fontSize: 12, paddingHorizontal: spacing.md, paddingBottom: spacing.sm },
+  modalField: { paddingHorizontal: spacing.md, paddingVertical: 6 },
+  modalLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 1, marginBottom: 6 },
+  modalInput: {
+    backgroundColor: colors.inputBg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: colors.text,
+    fontSize: 14,
+  },
+  modalError: { color: colors.danger, fontSize: 13, paddingHorizontal: spacing.md, paddingTop: 6 },
+  modalActions: { flexDirection: "row", gap: spacing.sm, padding: spacing.md, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.paper },
+  modalBtn: { flex: 1, paddingVertical: 12, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
+  modalBtnGhost: { borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card },
+  modalBtnGhostText: { color: colors.textSecondary, fontWeight: "700" },
+  modalBtnPrimary: { backgroundColor: colors.primary },
+  modalBtnPrimaryText: { color: "#000", fontWeight: "800", letterSpacing: 1 },
+
+  // Dealer row extras
+  jobTitleText: { color: colors.textSecondary, fontSize: 12, marginTop: 2, fontStyle: "italic", letterSpacing: 0.2 },
 });
