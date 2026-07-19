@@ -33,7 +33,7 @@ type Submission = {
   mileage: number;
   colour: string;
   condition: number;
-  status: "pending" | "priced";
+  status: "pending" | "priced" | "declined";
   bucket?: "incoming" | "priced" | "archived";
   price: number | null;
   priced_at?: string | null;
@@ -148,7 +148,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
       } else {
         const c: Record<Bucket, number> = { incoming: 0, priced: 0, archived: 0 };
         items.forEach((s) => {
-          const b = (s.bucket || (s.status === "priced" ? "priced" : "incoming")) as Bucket;
+          const b = (s.bucket || (s.status === "priced" || s.status === "declined" ? "priced" : "incoming")) as Bucket;
           c[b] = (c[b] || 0) + 1;
         });
         setCounts(c);
@@ -221,7 +221,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
   }, [selected]);
 
   const filtered = subs.filter((s) => {
-    const b = (s.bucket || (s.status === "priced" ? "priced" : "incoming")) as Bucket;
+    const b = (s.bucket || (s.status === "priced" || s.status === "declined" ? "priced" : "incoming")) as Bucket;
     if (b !== bucket) return false;
     if (search) {
       const q = search.toLowerCase();
@@ -512,17 +512,28 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                               styles.rowBadge,
                               {
                                 backgroundColor:
-                                  s.status === "priced" ? colors.success + "22" : colors.warning + "22",
+                                  s.status === "priced"
+                                    ? colors.success + "22"
+                                    : s.status === "declined"
+                                    ? colors.danger + "22"
+                                    : colors.warning + "22",
                               },
                             ]}
                           >
                             <Text
                               style={[
                                 styles.rowBadgeText,
-                                { color: s.status === "priced" ? colors.success : colors.warning },
+                                {
+                                  color:
+                                    s.status === "priced"
+                                      ? colors.success
+                                      : s.status === "declined"
+                                      ? colors.danger
+                                      : colors.warning,
+                                },
                               ]}
                             >
-                              {s.status.toUpperCase()}
+                              {s.status === "declined" ? "NO OFFER" : s.status.toUpperCase()}
                             </Text>
                           </View>
                         </View>

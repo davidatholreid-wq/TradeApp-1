@@ -30,7 +30,7 @@ type Submission = {
   mileage: number;
   condition: number;
   colour: string;
-  status: "pending" | "priced";
+  status: "pending" | "priced" | "declined";
   bucket?: "incoming" | "priced" | "archived";
   price: number | null;
   priced_at?: string | null;
@@ -64,7 +64,7 @@ export default function DashboardScreen() {
           // Fallback: derive counts client-side.
           const c: BucketCounts = { incoming: 0, priced: 0, archived: 0 };
           subs.forEach((s) => {
-            const b = s.bucket || (s.status === "priced" ? "priced" : "incoming");
+            const b = s.bucket || (s.status === "priced" || s.status === "declined" ? "priced" : "incoming");
             c[b] = (c[b] || 0) + 1;
           });
           setCounts(c);
@@ -92,7 +92,7 @@ export default function DashboardScreen() {
   // Filter items by the current silo (admin only). Non-admin sees all their
   // (non-archived) items which are already filtered server-side.
   const visibleItems = isAdmin
-    ? items.filter((s) => (s.bucket || (s.status === "priced" ? "priced" : "incoming")) === bucket)
+    ? items.filter((s) => (s.bucket || (s.status === "priced" || s.status === "declined" ? "priced" : "incoming")) === bucket)
     : items;
 
   const renderItem = ({ item }: { item: Submission }) => (
@@ -127,16 +127,34 @@ export default function DashboardScreen() {
         <View
           style={[
             styles.badge,
-            { backgroundColor: item.status === "priced" ? colors.success + "22" : colors.warning + "22" },
+            {
+              backgroundColor:
+                item.status === "priced"
+                  ? colors.success + "22"
+                  : item.status === "declined"
+                  ? colors.danger + "22"
+                  : colors.warning + "22",
+            },
           ]}
         >
           <Text
             style={[
               styles.badgeText,
-              { color: item.status === "priced" ? colors.success : colors.warning },
+              {
+                color:
+                  item.status === "priced"
+                    ? colors.success
+                    : item.status === "declined"
+                    ? colors.danger
+                    : colors.warning,
+              },
             ]}
           >
-            {item.status === "priced" ? "PRICED" : "PENDING"}
+            {item.status === "priced"
+              ? "PRICED"
+              : item.status === "declined"
+              ? "NO OFFER"
+              : "PENDING"}
           </Text>
         </View>
       </View>
@@ -169,6 +187,13 @@ export default function DashboardScreen() {
         <View style={styles.priceRow}>
           <Text style={styles.priceLabel}>Offer</Text>
           <Text style={styles.priceValue}>R {item.price.toLocaleString()}</Text>
+        </View>
+      ) : item.status === "declined" ? (
+        <View style={styles.priceRow}>
+          <Text style={styles.priceLabel}>Outcome</Text>
+          <Text style={[styles.priceValue, { fontSize: 13, color: colors.textSecondary }]}>
+            No offer — not charged
+          </Text>
         </View>
       ) : null}
     </TouchableOpacity>

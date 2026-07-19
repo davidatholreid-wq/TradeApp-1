@@ -109,8 +109,24 @@ def compute_bucket(sub: dict) -> str:
     - status == 'pending'  → 'incoming'
     - status == 'priced' and priced_at within ARCHIVE_AFTER_DAYS → 'priced'
     - status == 'priced' and priced_at older than ARCHIVE_AFTER_DAYS → 'archived'
+    - status == 'declined' — decisioned (no offer). Grouped into the 'priced'
+      bucket so it lives with other decisioned cars, and archives after the
+      same window using declined_at as the reference.
     """
     status = sub.get("status") or "pending"
+    if status == "declined":
+        declined_at_raw = sub.get("declined_at")
+        if not declined_at_raw:
+            return "priced"
+        try:
+            declined_at = datetime.fromisoformat(declined_at_raw)
+            if declined_at.tzinfo is None:
+                declined_at = declined_at.replace(tzinfo=timezone.utc)
+        except Exception:
+            return "priced"
+        if datetime.now(timezone.utc) - declined_at > timedelta(days=ARCHIVE_AFTER_DAYS):
+            return "archived"
+        return "priced"
     if status != "priced":
         return "incoming"
     priced_at_raw = sub.get("priced_at")
@@ -333,6 +349,10 @@ class VehicleSubmission(BaseModel):
 class PriceOffer(BaseModel):
     price: float
     notes: Optional[str] = None
+
+
+class DeclineOffer(BaseModel):
+    admin_note: Optional[str] = None  # internal note, not shown to the dealer
 
 
 class DealerEditRequest(BaseModel):
@@ -742,6 +762,50 @@ async def admin_price(sub_id: str, offer: PriceOffer, current: dict = Depends(re
     except Exception as e:
         logger.warning(f"Push failed (non-blocking): {e}")
     return {"status": "priced", "price": offer.price}
+
+
+@api_router.post("/admin/submissions/{sub_id}/decline")
+async def admin_decline(
+    sub_id: str,
+    payload: Optional[DeclineOffer] = None,
+    current: dict = Depends(require_admin),
+):
+    """Mark a submission as DECLINED — Fourbuy will not make an offer.
+
+    The dealer is NOT charged (submission is not counted as priced) and sees
+    a standard message on the vehicle detail screen. The admin may attach
+    an internal note (not shown to the dealer).
+    """
+    sub = await db.submissions.find_one({"id": sub_id})
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+    if sub.get("status") == "priced":
+        raise HTTPException(
+            400,
+            "This submission has already been priced. Delete or edit the offer first if you need to decline it.",
+        )
+    update = {
+        "status": "declined",
+        "declined_at": now_utc(),
+        "decline_note": (payload.admin_note if payload else None),
+        # Wipe any stale price data to keep the record clean.
+        "price": None,
+        "price_notes": None,
+        "priced_at": None,
+    }
+    await db.submissions.update_one({"id": sub_id}, {"$set": update})
+    try:
+        await send_push(
+            recipients=[sub["dealer_id"]],
+            data={
+                "title": "Valuation Update",
+                "message": f"We're unable to make an offer on your {sub.get('year')} {sub.get('make_name')} {sub.get('model_name')}. You will not be charged.",
+                "action_url": f"/vehicle/{sub_id}",
+            },
+        )
+    except Exception as e:
+        logger.warning(f"Push failed (non-blocking): {e}")
+    return {"status": "declined"}
 
 
 @api_router.delete("/admin/submissions/{sub_id}")

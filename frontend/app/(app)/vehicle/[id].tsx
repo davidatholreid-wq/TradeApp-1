@@ -79,7 +79,8 @@ type Submission = {
   engine_number?: string;
   license_disk_data?: string;
   photos: Record<string, string>;
-  status: "pending" | "priced";
+  status: "pending" | "priced" | "declined";
+  declined_at?: string | null;
   price: number | null;
   price_notes?: string | null;
   priced_at?: string | null;
@@ -183,6 +184,9 @@ export default function VehicleDetail() {
   >(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [viewingReport, setViewingReport] = useState<ReportOrder | null>(null);
+  const [declineModal, setDeclineModal] = useState(false);
+  const [declineNote, setDeclineNote] = useState("");
+  const [declining, setDeclining] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -258,6 +262,25 @@ export default function VehicleDetail() {
       Alert.alert("Error", e.message);
     } finally {
       setSubmittingPrice(false);
+    }
+  };
+
+  const handleDeclineOffer = async () => {
+    if (!sub) return;
+    setDeclining(true);
+    try {
+      await apiFetch(`/api/admin/submissions/${id}/decline`, {
+        method: "POST",
+        body: JSON.stringify({ admin_note: declineNote.trim() || null }),
+      });
+      const refreshed = await apiFetch(`/api/submissions/${id}`);
+      setSub(refreshed.submission);
+      setDeclineModal(false);
+      setDeclineNote("");
+    } catch (e: any) {
+      Alert.alert("Could not decline", e.message || "Please try again.");
+    } finally {
+      setDeclining(false);
     }
   };
 
@@ -583,6 +606,23 @@ export default function VehicleDetail() {
               {sub.price_notes ? <Text style={styles.priceNotes}>{sub.price_notes}</Text> : null}
             </View>
             <Ionicons name="checkmark-circle" size={40} color={colors.text} />
+          </View>
+        ) : sub.status === "declined" ? (
+          <View style={styles.declinedBanner} testID="declined-banner">
+            <View style={styles.declinedIconWrap}>
+              <Ionicons name="close-circle-outline" size={40} color={colors.text} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.declinedLabel}>NO OFFER MADE</Text>
+              <Text style={styles.declinedBody}>
+                We unfortunately are not able to make an offer on this vehicle. You will not be charged for the valuation.
+              </Text>
+              {sub.declined_at ? (
+                <Text style={styles.declinedMeta}>
+                  {new Date(sub.declined_at).toLocaleString()}
+                </Text>
+              ) : null}
+            </View>
           </View>
         ) : (
           <View style={styles.pendingBanner}>
@@ -1247,12 +1287,12 @@ export default function VehicleDetail() {
         ) : null}
       </ScrollView>
 
-      {/* Admin price button */}
+      {/* Admin action footer — Price + Cannot Offer */}
       {isAdmin ? (
         <View style={styles.footer}>
           <TouchableOpacity
             testID="offer-price-button"
-            style={styles.priceBtn}
+            style={[styles.priceBtn, { flex: 1 }]}
             onPress={() => {
               setPriceInput(sub.price ? String(sub.price) : "");
               setNotesInput(sub.price_notes || "");
@@ -1260,8 +1300,33 @@ export default function VehicleDetail() {
             }}
           >
             <Ionicons name="pricetag" size={18} color="#000" />
-            <Text style={styles.priceBtnText}>{sub.status === "priced" ? "Update Price" : "Offer Price"}</Text>
+            <Text style={styles.priceBtnText}>
+              {sub.status === "priced" ? "Update Price" : "Offer Price"}
+            </Text>
           </TouchableOpacity>
+
+          {/* Only show "Cannot Offer" while the submission has NOT been priced.
+              Once priced, admins should update or void the offer via the
+              existing flow rather than declining. */}
+          {sub.status !== "priced" ? (
+            <TouchableOpacity
+              testID="decline-offer-button"
+              style={styles.declineBtn}
+              onPress={() => setDeclineModal(true)}
+              disabled={declining}
+            >
+              {declining ? (
+                <ActivityIndicator color={colors.text} />
+              ) : (
+                <>
+                  <Ionicons name="close-circle-outline" size={18} color={colors.text} />
+                  <Text style={styles.declineBtnText}>
+                    {sub.status === "declined" ? "Declined" : "Cannot Offer"}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          ) : null}
         </View>
       ) : null}
 
@@ -1314,6 +1379,79 @@ export default function VehicleDetail() {
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Decline confirmation modal — admin cannot offer on this vehicle */}
+      <Modal
+        visible={declineModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => (declining ? null : setDeclineModal(false))}
+      >
+        <View style={styles.reportModalBackdrop}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => (declining ? null : setDeclineModal(false))}
+          />
+          <View style={styles.reportModalCard}>
+            <View style={styles.reportModalHeader}>
+              <Ionicons name="close-circle-outline" size={22} color={colors.text} />
+              <Text style={styles.reportModalTitle}>Cannot Offer</Text>
+            </View>
+            <Text style={styles.reportModalReport}>
+              {sub.year} {sub.make_name} {sub.model_name}
+            </Text>
+            <Text style={[styles.reportModalBody, { marginTop: spacing.sm }]}>
+              This dealer will be notified:
+            </Text>
+            <View style={styles.declineQuote}>
+              <Text style={styles.declineQuoteText}>
+                “We unfortunately are not able to make an offer on this vehicle,
+                you will not be charged for the valuation.”
+              </Text>
+            </View>
+            <Text style={styles.reportModalBodySmall}>
+              The dealer will not be charged the R{50} valuation fee for this submission.
+            </Text>
+
+            <Text style={styles.label}>Internal note (optional — not shown to dealer)</Text>
+            <TextInput
+              testID="decline-note-input"
+              style={[styles.priceInput, { minHeight: 64, textAlignVertical: "top" }]}
+              value={declineNote}
+              onChangeText={setDeclineNote}
+              placeholder="e.g. VIN mismatch, out-of-scope model, etc."
+              placeholderTextColor={colors.textDisabled}
+              multiline
+            />
+
+            <View style={styles.reportModalActions}>
+              <TouchableOpacity
+                testID="decline-cancel"
+                style={styles.reportModalCancel}
+                onPress={() => setDeclineModal(false)}
+                disabled={declining}
+              >
+                <Text style={styles.reportModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="decline-confirm"
+                style={[
+                  styles.reportModalConfirm,
+                  declining && styles.docBtnDisabled,
+                ]}
+                onPress={handleDeclineOffer}
+                disabled={declining}
+              >
+                {declining ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <Text style={styles.reportModalConfirmText}>Confirm Decline</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
 
       {/* Fullscreen photo carousel */}
@@ -1693,6 +1831,77 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   pendingText: { color: colors.textSecondary, fontWeight: "700", letterSpacing: 0.5, fontSize: 13 },
+
+  // Declined state (dealer view)
+  declinedBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  declinedIconWrap: {
+    paddingTop: 2,
+  },
+  declinedLabel: {
+    color: colors.text,
+    fontWeight: "800",
+    letterSpacing: 1.3,
+    fontSize: 12,
+    marginBottom: 4,
+    textTransform: "uppercase",
+  },
+  declinedBody: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  declinedMeta: {
+    color: colors.textDisabled,
+    fontSize: 11,
+    marginTop: 6,
+    fontFamily: fonts.mono,
+  },
+
+  // "Cannot Offer" admin footer button
+  declineBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 14,
+    borderRadius: radius.md,
+    gap: 6,
+    minWidth: 130,
+  },
+  declineBtnText: {
+    color: colors.text,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+    fontSize: 13,
+    textTransform: "uppercase",
+  },
+
+  // Decline modal — dealer-facing quote block
+  declineQuote: {
+    borderLeftWidth: 3,
+    borderLeftColor: colors.text,
+    paddingLeft: spacing.sm,
+    paddingVertical: 8,
+    marginVertical: spacing.sm,
+  },
+  declineQuoteText: {
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 19,
+    fontStyle: "italic",
+  },
 
   // Reports & Documents section
   reportsSection: {
@@ -2130,6 +2339,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.paper,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+    flexDirection: "row",
+    gap: spacing.sm,
   },
   priceBtn: {
     flexDirection: "row",
