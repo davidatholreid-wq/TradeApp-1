@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -15,7 +15,7 @@ import {
   Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
@@ -215,6 +215,27 @@ export default function VehicleDetail() {
       }
     })();
   }, [id, router]);
+
+  // Auto-refresh whenever the screen regains focus (e.g. dealer navigates
+  // back to this vehicle after an admin has posted a price offer). Without
+  // this the screen would stay stuck on "AWAITING PRICE OFFER" until the
+  // dealer manually pulls to refresh or fully closes and reopens the app.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        try {
+          const data = await apiFetch(`/api/submissions/${id}`);
+          if (!cancelled) setSub(data.submission);
+        } catch {
+          /* silent — the initial load already surfaced errors */
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [id])
+  );
 
   const carouselPhotos: CarouselPhoto[] = useMemo(() => {
     if (!sub) return [];
