@@ -754,6 +754,7 @@ function EditDealerModal({
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
   const [email, setEmail] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [companyAddress, setCompanyAddress] = useState("");
@@ -767,6 +768,7 @@ function EditDealerModal({
       setFirstName(dealer.dealer_info.first_name || "");
       setLastName(dealer.dealer_info.last_name || "");
       setPhone(dealer.dealer_info.phone || "");
+      setJobTitle(dealer.dealer_info.job_title || "");
       setEmail(dealer.email || "");
       setCompanyName(dealer.company_info.company_name || "");
       setCompanyAddress(dealer.company_info.company_address || "");
@@ -785,6 +787,7 @@ function EditDealerModal({
           first_name: firstName.trim(),
           last_name: lastName.trim(),
           phone: phone.trim(),
+          job_title: jobTitle.trim(),
           email: email.trim().toLowerCase(),
           company_name: companyName.trim(),
           company_address: companyAddress.trim(),
@@ -813,6 +816,7 @@ function EditDealerModal({
             <Field label="First name" value={firstName} onChangeText={setFirstName} testID="edit-first-name" />
             <Field label="Last name" value={lastName} onChangeText={setLastName} testID="edit-last-name" />
             <Field label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" testID="edit-phone" />
+            <Field label="Job title" value={jobTitle} onChangeText={setJobTitle} testID="edit-job-title" placeholder="e.g. Sales Manager" />
             <Field label="Email (login username)" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" testID="edit-email" />
             <Field label="Company name" value={companyName} onChangeText={setCompanyName} testID="edit-company-name" />
             <Field label="Company address" value={companyAddress} onChangeText={setCompanyAddress} testID="edit-company-address" multiline />
@@ -856,6 +860,7 @@ function Field({
   autoCapitalize?: any;
   multiline?: boolean;
   testID?: string;
+  placeholder?: string;
 }) {
   return (
     <View>

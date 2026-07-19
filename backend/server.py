@@ -540,6 +540,8 @@ class DealerEditRequest(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     phone: Optional[str] = None
+    # Free-text job title (e.g. "Sales Manager"). Empty string clears it.
+    job_title: Optional[str] = None
     email: Optional[EmailStr] = None
     company_name: Optional[str] = None
     company_address: Optional[str] = None
@@ -2668,6 +2670,9 @@ async def admin_edit_dealer(
         updates["dealer_info.last_name"] = payload.last_name
     if payload.phone is not None:
         updates["dealer_info.phone"] = payload.phone
+    if payload.job_title is not None:
+        # Store the trimmed value, or `None` to clear the field entirely.
+        updates["dealer_info.job_title"] = (payload.job_title or "").strip() or None
     if payload.email is not None:
         new_email = payload.email.lower()
         if new_email != user["email"]:

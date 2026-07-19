@@ -1,0 +1,35 @@
+{
+  "summary": "Iteration 19 — Dealer job_title edit feature verified end-to-end on both backend and frontend. BACKEND (6/6 pytest passed, /app/backend/tests/test_dealer_job_title.py): (1) PATCH /api/admin/dealers/{id} { job_title: 'Sales Manager' } returns dealer_info.job_title == 'Sales Manager' (200 OK). (2) GET /api/admin/dealers/{id} after PATCH confirms persistence. (3) Empty string ('') clears the field — response returns dealer_info.job_title === null (verified via `is None` assertion). (4) Omitting job_title from the payload leaves the existing value intact (patched only `phone`, verified previously-set 'Preserved Title' still there). (5) Patching only job_title does NOT overwrite first_name/last_name/phone/email/company_name/company_address — the $set only touches the job_title path. (6) Final cleanup: cleared to null so minitest is left with job_title=null. FRONTEND (admin, desktop 1440x900, /app/frontend/app/(app)/dealers.tsx): logged in as admin@fourbuy.co.za/admin123 → Manage Dealers tab. Confirmed: (a) The pencil/Edit button opens EditDealerModal with a new 'JOB TITLE' field (testID `edit-job-title`) between PHONE and EMAIL fields — visible in screenshot, placeholder 'e.g. Sales Manager'. (b) Field is pre-filled from `dealer.dealer_info.job_title` when opened (empty string when no title; 'Head of Trade' when re-opened after save). (c) Typed 'Head of Trade' → tapped Save (`edit-dealer-save`) → row italic sub-line testID `dealer-job-title-<id>` immediately shows 'Head of Trade' (verified via text_content). (d) Cleared field to '' → saved → label element removed from DOM (empty string cleared job title). (e) Reload of the page and re-entering Dealers tab: cleared state persisted (label still absent). (f) Set to 'Sales Manager' → save → reload → label reappears with 'Sales Manager' (persistence across reload confirmed). REGRESSION: (i) Other pre-filled fields (First name 'Test', Last name 'Dealer', Phone '0821234567', Email 'minitest@example.com', Company name 'Mini Test Motors', Company address '1 Test Ave') all remain intact — frontend re-sends trimmed values for all fields on save. (ii) Existing job titles for other seeded dealers render correctly in italic sub-line: Johann Linsky → 'Sales Executive', Mate Two → 'F&I Manager' (visible in screenshots). (iii) Add User modal (`invite-submit`, `invite-job_title`, etc.) is code-unchanged from iteration 18 — inspected /app/frontend/app/(app)/dealers.tsx lines 663-710, still generates a 'Job Title (optional)' field via the label/key map; no regression. Backend code review of server.py L2673-2675 confirms correct 3-way logic: field absent (None) → skip; empty string → stored as null; non-empty → stripped and stored. Deprecated packages detected: none new (pre-existing 'shadow*' style-prop deprecation warnings from react-native-web remain — unrelated to this iteration). SafeAreaView issues detected: none.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_dealer_job_title.py",
+    "/app/test_reports/pytest/dealer_job_title.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:539-547 DealerEditRequest.job_title is Optional[str]=None — correctly distinguishes 'field absent' (None → no-op) from 'empty string' (clear). Clean tri-state design.",
+    "server.py:2673-2675 The PATCH endpoint stores `(payload.job_title or '').strip() or None` — matches iteration requirement: empty string clears to null, whitespace-only also clears. Verified via pytest.",
+    "dealers.tsx:757, 771, 790 EditDealerModal uses local `jobTitle` state, seeded from dealer.dealer_info.job_title on focus and sent trimmed on save. Frontend never sends `undefined` for job_title — always includes it in PATCH payload — which is fine because backend treats empty string as intentional clear. This means: if a user opens the edit modal for a dealer with an existing title and hits Save without touching the JOB TITLE field, the existing title is re-sent as-is (no data loss).",
+    "dealers.tsx:389-393 The italic sub-line uses `styles.jobTitleText` and testID `dealer-job-title-<id>`, only rendered when `item.dealer_info.job_title` is truthy — so cleared titles correctly hide the label. Confirmed empty string / null both hide (React truthy check on '').",
+    "dealers.tsx:33 Dealer type extended with `job_title?: string | null` — matches backend response shape.",
+    "dealers.tsx:819 Field placeholder 'e.g. Sales Manager' is helpful; label 'Job title' matches the review request's 'JOB TITLE' rendering (label styles uppercase it — verified in screenshot)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_dealer_job_title.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (6/6 pytest cases pass in test_dealer_job_title.py)",
+    "frontend": "100% on all requested flows — modal field visible & pre-filled, set/save reflects in row italic sub-line, clear via empty string works, persists across page reload, regression on other fields OK, Add User modal unchanged"
+  },
+  "seed_data_creation": "Reused existing seeded minitest@example.com dealer. Final state after tests: job_title = null (cleared in both pytest teardown and browser cleanup). No new seed data created; no other users touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "To re-verify: `pytest /app/backend/tests/test_dealer_job_title.py -v`. Frontend UI recipe: login as admin@fourbuy.co.za/admin123 → click 'Dealers' top-nav tab → scroll to any dealer card → click its `[data-testid=\"dealer-edit-<user_id>\"]` button (NOTE: the button testID is `dealer-edit-<id>`, NOT `edit-dealer-<id>` as stated in the review request — this is a naming asymmetry: the modal's save/close buttons use `edit-dealer-save`/`edit-dealer-close`, while the row's edit-launch button uses `dealer-edit-<id>`). The JOB TITLE field is `[data-testid=\"edit-job-title\"]` inside the modal. The italic label under company name on the row is `[data-testid=\"dealer-job-title-<user_id>\"]` and only renders when a title is set.",
+  "rca_of_issue": "N/A — feature verification, no bugs found."
+}
