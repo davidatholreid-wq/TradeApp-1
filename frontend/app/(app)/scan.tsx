@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { colors, spacing, radius } from "@/src/theme";
@@ -13,6 +13,7 @@ export const SCAN_PARSED_KEY = "app.scan.parsed";
 
 export default function ScanScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ returnPath?: string }>();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState<string | null>(null);
 
@@ -35,7 +36,17 @@ export default function ScanScreen() {
     } catch (e) {
       console.log("decodeLicenseDisk failed", e);
     }
-    setTimeout(() => router.back(), 600);
+    setTimeout(() => {
+      // Return to the exact screen the user came from (defaults to /submit
+      // for the license-disc-in-valuation flow). Using explicit navigation
+      // avoids the router.back()-lands-on-home issue on tab-based navigators.
+      const target = params?.returnPath === "submit" ? "/(app)/submit" : null;
+      if (target) {
+        router.replace(target as any);
+      } else {
+        router.back();
+      }
+    }, 600);
   };
 
   if (!permission) {

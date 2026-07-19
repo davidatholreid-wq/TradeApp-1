@@ -84,12 +84,26 @@ type Submission = {
   price: number | null;
   price_notes?: string | null;
   priced_at?: string | null;
+  price_history?: PriceHistoryEntry[];
   market_analysis?: MarketAnalysisPayload | null;
   market_analysis_at?: string | null;
   tyre_estimate?: TyreEstimatePayload | null;
   tyre_estimate_at?: string | null;
   created_at: string;
   report_orders?: ReportOrder[];
+};
+
+type PriceHistoryEntry = {
+  id: string;
+  action: "offer" | "update";
+  previous_price: number | null;
+  new_price: number;
+  previous_notes: string | null;
+  new_notes: string | null;
+  comment: string;
+  admin_id: string;
+  admin_name: string;
+  at: string;
 };
 
 type ReportOrder = {
@@ -169,6 +183,7 @@ export default function VehicleDetail() {
   const [priceModal, setPriceModal] = useState(false);
   const [priceInput, setPriceInput] = useState("");
   const [notesInput, setNotesInput] = useState("");
+  const [changeCommentInput, setChangeCommentInput] = useState("");
   const [submittingPrice, setSubmittingPrice] = useState(false);
   const [carouselIdx, setCarouselIdx] = useState<number | null>(null);
   const [conditionInfoOpen, setConditionInfoOpen] = useState(false);
@@ -251,13 +266,18 @@ export default function VehicleDetail() {
     try {
       await apiFetch(`/api/admin/submissions/${id}/price`, {
         method: "POST",
-        body: JSON.stringify({ price, notes: notesInput.trim() || null }),
+        body: JSON.stringify({
+          price,
+          notes: notesInput.trim() || null,
+          change_comment: changeCommentInput.trim() || null,
+        }),
       });
       const refreshed = await apiFetch(`/api/submissions/${id}`);
       setSub(refreshed.submission);
       setPriceModal(false);
       setPriceInput("");
       setNotesInput("");
+      setChangeCommentInput("");
     } catch (e: any) {
       Alert.alert("Error", e.message);
     } finally {
@@ -630,6 +650,70 @@ export default function VehicleDetail() {
             <Text style={styles.pendingText}>AWAITING PRICE OFFER</Text>
           </View>
         )}
+
+        {/* Price history log — every offer / update the admin has made, most
+            recent first. Visible to both admins and the owning dealer for
+            full transparency. Hidden entirely when there's no history yet. */}
+        {sub.price_history && sub.price_history.length > 0 ? (
+          <View style={styles.priceHistoryBox} testID="price-history">
+            <Text style={styles.sectionTitle}>Offer History</Text>
+            {sub.price_history
+              .slice()
+              .sort((a, b) => (a.at < b.at ? 1 : -1))
+              .map((h, idx) => (
+                <View
+                  key={h.id}
+                  style={[
+                    styles.priceHistoryRow,
+                    idx === sub.price_history!.length - 1 && { borderBottomWidth: 0 },
+                  ]}
+                >
+                  <View style={styles.priceHistoryDot} />
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.priceHistoryHeader}>
+                      <Text style={styles.priceHistoryAction}>
+                        {h.action === "update" ? "PRICE UPDATED" : "INITIAL OFFER"}
+                      </Text>
+                      <Text style={styles.priceHistoryDate}>
+                        {new Date(h.at).toLocaleString()}
+                      </Text>
+                    </View>
+                    <View style={styles.priceHistoryPriceRow}>
+                      {h.previous_price != null ? (
+                        <>
+                          <Text style={styles.priceHistoryOld}>
+                            {formatZAR(h.previous_price)}
+                          </Text>
+                          <Ionicons name="arrow-forward" size={14} color={colors.textSecondary} />
+                        </>
+                      ) : null}
+                      <Text style={styles.priceHistoryNew}>{formatZAR(h.new_price)}</Text>
+                      {h.previous_price != null ? (
+                        <Text
+                          style={[
+                            styles.priceHistoryDelta,
+                            {
+                              color:
+                                h.new_price > (h.previous_price || 0)
+                                  ? colors.success
+                                  : h.new_price < (h.previous_price || 0)
+                                  ? colors.danger
+                                  : colors.textSecondary,
+                            },
+                          ]}
+                        >
+                          {h.new_price > (h.previous_price || 0) ? "+" : ""}
+                          {formatZAR(h.new_price - (h.previous_price || 0))}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <Text style={styles.priceHistoryComment}>{h.comment}</Text>
+                    <Text style={styles.priceHistoryAdmin}>by {h.admin_name}</Text>
+                  </View>
+                </View>
+              ))}
+          </View>
+        ) : null}
 
         {/* Open Valuation PDF — always available once an offer has been received */}
         {sub.status === "priced" ? (
@@ -1296,6 +1380,7 @@ export default function VehicleDetail() {
             onPress={() => {
               setPriceInput(sub.price ? String(sub.price) : "");
               setNotesInput(sub.price_notes || "");
+              setChangeCommentInput("");
               setPriceModal(true);
             }}
           >
@@ -1336,7 +1421,9 @@ export default function VehicleDetail() {
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setPriceModal(false)} />
           <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Offer Price</Text>
+              <Text style={styles.modalTitle}>
+                {sub.status === "priced" ? "Update Price" : "Offer Price"}
+              </Text>
               <TouchableOpacity testID="price-modal-close" onPress={() => setPriceModal(false)}>
                 <Ionicons name="close" size={22} color={colors.text} />
               </TouchableOpacity>
@@ -1344,6 +1431,11 @@ export default function VehicleDetail() {
             <Text style={styles.modalHint}>
               {sub.year} {sub.make_name} {sub.model_name}
             </Text>
+            {sub.status === "priced" && sub.price != null ? (
+              <Text style={[styles.modalHint, { marginTop: 2 }]}>
+                Previous offer: <Text style={{ color: colors.text, fontWeight: "700" }}>{formatZAR(sub.price)}</Text>
+              </Text>
+            ) : null}
             <Text style={styles.label}>Price (ZAR)</Text>
             <TextInput
               testID="price-input"
@@ -1355,13 +1447,29 @@ export default function VehicleDetail() {
               keyboardType="numeric"
               autoFocus
             />
-            <Text style={styles.label}>Notes (optional)</Text>
+            <Text style={styles.label}>Notes (optional, shown to dealer)</Text>
             <TextInput
               testID="notes-input"
-              style={[styles.priceInput, { height: 80 }]}
+              style={[styles.priceInput, { height: 60 }]}
               value={notesInput}
               onChangeText={setNotesInput}
               placeholder="e.g. Trade price offer valid 7 days"
+              placeholderTextColor={colors.textDisabled}
+              multiline
+            />
+            <Text style={styles.label}>
+              Change comment (optional — reason for {sub.status === "priced" ? "the update" : "this offer"})
+            </Text>
+            <TextInput
+              testID="change-comment-input"
+              style={[styles.priceInput, { height: 60 }]}
+              value={changeCommentInput}
+              onChangeText={setChangeCommentInput}
+              placeholder={
+                sub.status === "priced"
+                  ? "e.g. Adjusted for higher mileage; matched new market comps"
+                  : "e.g. Initial offer based on average trade condition"
+              }
               placeholderTextColor={colors.textDisabled}
               multiline
             />
@@ -1374,7 +1482,9 @@ export default function VehicleDetail() {
               {submittingPrice ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.confirmBtnText}>Send Offer</Text>
+                <Text style={styles.confirmBtnText}>
+                  {sub.status === "priced" ? "Update Offer" : "Send Offer"}
+                </Text>
               )}
             </TouchableOpacity>
           </View>
@@ -1831,6 +1941,81 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   pendingText: { color: colors.textSecondary, fontWeight: "700", letterSpacing: 0.5, fontSize: 13 },
+
+  // Price history log
+  priceHistoryBox: {
+    marginBottom: spacing.md,
+  },
+  priceHistoryRow: {
+    flexDirection: "row",
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: spacing.sm,
+  },
+  priceHistoryDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.text,
+    marginTop: 6,
+  },
+  priceHistoryHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  priceHistoryAction: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1.4,
+  },
+  priceHistoryDate: {
+    color: colors.textDisabled,
+    fontSize: 10,
+    fontFamily: fonts.mono,
+  },
+  priceHistoryPriceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 4,
+  },
+  priceHistoryOld: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontFamily: fonts.number,
+    fontVariant: ["tabular-nums"],
+    textDecorationLine: "line-through",
+  },
+  priceHistoryNew: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "800",
+    fontFamily: fonts.number,
+    fontVariant: ["tabular-nums"],
+  },
+  priceHistoryDelta: {
+    fontSize: 11,
+    fontWeight: "700",
+    fontFamily: fonts.number,
+    fontVariant: ["tabular-nums"],
+    marginLeft: 4,
+  },
+  priceHistoryComment: {
+    color: colors.text,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 2,
+  },
+  priceHistoryAdmin: {
+    color: colors.textDisabled,
+    fontSize: 10,
+    marginTop: 4,
+    fontStyle: "italic",
+  },
 
   // Declined state (dealer view)
   declinedBanner: {

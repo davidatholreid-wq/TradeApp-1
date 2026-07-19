@@ -349,6 +349,10 @@ class VehicleSubmission(BaseModel):
 class PriceOffer(BaseModel):
     price: float
     notes: Optional[str] = None
+    # Optional free-form comment attached to THIS price change (why the number
+    # moved). Stored in `price_history` for full auditability. If omitted, an
+    # auto-generated comment ("Initial offer" or "Price updated") is used.
+    change_comment: Optional[str] = None
 
 
 class DeclineOffer(BaseModel):
@@ -893,25 +897,53 @@ async def admin_price(sub_id: str, offer: PriceOffer, current: dict = Depends(re
     sub = await db.submissions.find_one({"id": sub_id})
     if not sub:
         raise HTTPException(404, "Submission not found")
+
+    prev_price = sub.get("price")
+    prev_notes = sub.get("price_notes")
+    is_update = sub.get("status") == "priced" and prev_price is not None
+
+    # Build the price-history entry so dealers + admins can see how / when /
+    # by whom the offer evolved over time.
+    admin_info = current.get("dealer_info") or {}
+    admin_label = " ".join(
+        [admin_info.get("first_name") or "", admin_info.get("last_name") or ""]
+    ).strip() or current.get("email") or "Admin"
+    default_comment = "Price updated" if is_update else "Initial offer"
+    history_entry = {
+        "id": str(uuid.uuid4()),
+        "action": "update" if is_update else "offer",
+        "previous_price": prev_price if is_update else None,
+        "new_price": offer.price,
+        "previous_notes": prev_notes if is_update else None,
+        "new_notes": offer.notes,
+        "comment": (offer.change_comment or "").strip() or default_comment,
+        "admin_id": current["id"],
+        "admin_name": admin_label,
+        "at": now_utc(),
+    }
     update = {
         "status": "priced",
         "price": offer.price,
         "price_notes": offer.notes,
         "priced_at": now_utc(),
     }
-    await db.submissions.update_one({"id": sub_id}, {"$set": update})
+    await db.submissions.update_one(
+        {"id": sub_id},
+        {"$set": update, "$push": {"price_history": history_entry}},
+    )
     try:
+        push_title = "Price Updated" if is_update else "Price Offer Received"
         await send_push(
             recipients=[sub["dealer_id"]],
             data={
-                "title": "Price Offer Received",
+                "title": push_title,
                 "message": f"Your {sub['year']} {sub['make_name']} {sub['model_name']} has been priced at R{offer.price:,.0f}",
                 "action_url": f"/vehicle/{sub_id}",
             },
         )
     except Exception as e:
         logger.warning(f"Push failed (non-blocking): {e}")
-    return {"status": "priced", "price": offer.price}
+    return {"status": "priced", "price": offer.price, "history_entry": history_entry}
 
 
 @api_router.post("/admin/submissions/{sub_id}/decline")

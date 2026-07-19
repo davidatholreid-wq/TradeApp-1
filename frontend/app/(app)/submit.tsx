@@ -372,14 +372,57 @@ export default function SubmitVehicle() {
   );
 
   const pickPhoto = async (key: PhotoKey) => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert("Permission required", "Photo library access is needed to attach images.");
-      return;
-    }
-    const res = await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.5, allowsEditing: true, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-    if (res.canceled || !res.assets?.[0]?.base64) return;
-    setPhotos((p) => ({ ...p, [key]: `data:image/jpeg;base64,${res.assets![0].base64}` }));
+    // Ask the user which source to use — camera or gallery. Uses native
+    // Alert (which maps to a proper ActionSheet on iOS and a dialog elsewhere).
+    Alert.alert(
+      "Add photo",
+      "Would you like to take a photo or choose one from your library?",
+      [
+        {
+          text: "Take Photo",
+          onPress: async () => {
+            const perm = await ImagePicker.requestCameraPermissionsAsync();
+            if (!perm.granted) {
+              Alert.alert(
+                "Camera permission needed",
+                "Enable camera access in Settings to take photos, or choose one from your library instead.",
+              );
+              return;
+            }
+            const res = await ImagePicker.launchCameraAsync({
+              base64: true,
+              quality: 0.5,
+              allowsEditing: true,
+              mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            });
+            if (res.canceled || !res.assets?.[0]?.base64) return;
+            setPhotos((p) => ({ ...p, [key]: `data:image/jpeg;base64,${res.assets![0].base64}` }));
+          },
+        },
+        {
+          text: "Choose from Library",
+          onPress: async () => {
+            const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (!perm.granted) {
+              Alert.alert(
+                "Photo library permission needed",
+                "Enable photo library access in Settings to pick an image.",
+              );
+              return;
+            }
+            const res = await ImagePicker.launchImageLibraryAsync({
+              base64: true,
+              quality: 0.5,
+              allowsEditing: true,
+              mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            });
+            if (res.canceled || !res.assets?.[0]?.base64) return;
+            setPhotos((p) => ({ ...p, [key]: `data:image/jpeg;base64,${res.assets![0].base64}` }));
+          },
+        },
+        { text: "Cancel", style: "cancel" },
+      ],
+    );
   };
 
   const addReconItem = () => setReconItems((r) => [...r, { label: "", amount: "" }]);
