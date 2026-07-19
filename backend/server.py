@@ -694,6 +694,156 @@ async def get_my_submissions(current: dict = Depends(get_current_user)):
     return {"submissions": visible}
 
 
+def _match_search(sub: dict, q: str) -> bool:
+    """Case-insensitive contains-match across reference, make, model, VIN."""
+    q = q.lower()
+    for field in ("reference", "make_name", "model_name", "vin"):
+        v = sub.get(field)
+        if v and q in str(v).lower():
+            return True
+    return False
+
+
+@api_router.get("/history")
+async def submission_history(
+    q: Optional[str] = None,
+    status: Optional[Literal["all", "pending", "priced", "declined"]] = "all",
+    current: dict = Depends(get_current_user),
+):
+    """Full submission history including archived records.
+
+    - Dealers see only their own submissions.
+    - Admins see submissions from every dealer.
+    - `q` searches (case-insensitive contains) across reference, make, model, VIN.
+    - `status` filters by workflow status (all|pending|priced|declined).
+    """
+    if current["role"] == "admin":
+        query: dict = {}
+    else:
+        query = {"dealer_id": current["id"]}
+    if status and status != "all":
+        query["status"] = status
+
+    subs = await db.submissions.find(query, {"_id": 0}).sort("created_at", -1).to_list(4000)
+
+    results = []
+    for s in subs:
+        s["bucket"] = compute_bucket(s)
+        if is_billable_available := is_billable(s):
+            s["billable"] = is_billable_available
+        photos = s.pop("photos", {}) or {}
+        front = photos.get("front") or None
+        s["front_photo"] = front if front and len(front) > 500 else None
+        if q and not _match_search(s, q):
+            continue
+        results.append(s)
+
+    # For admins, attach dealer email / name in each row for the search results.
+    if current["role"] == "admin" and results:
+        dealer_ids = list({s["dealer_id"] for s in results if s.get("dealer_id")})
+        dealers = await db.users.find(
+            {"id": {"$in": dealer_ids}},
+            {"_id": 0, "id": 1, "email": 1, "dealer_info": 1, "company_info": 1},
+        ).to_list(2000)
+        dmap = {d["id"]: d for d in dealers}
+        for s in results:
+            d = dmap.get(s.get("dealer_id"), {})
+            info = d.get("dealer_info") or {}
+            co = d.get("company_info") or {}
+            s["dealer_email"] = d.get("email")
+            s["dealer_name"] = f"{info.get('first_name', '')} {info.get('last_name', '')}".strip()
+            s["company_name"] = co.get("company_name") or ""
+
+    return {"submissions": results, "total": len(results)}
+
+
+# ============ Submission drafts ============
+class SubmissionDraft(BaseModel):
+    id: Optional[str] = None
+    label: Optional[str] = None
+    data: dict  # arbitrary partial form-state; validated when finalised
+
+
+@api_router.get("/drafts")
+async def list_drafts(current: dict = Depends(get_current_user)):
+    if current.get("role") == "admin":
+        # Admins do not have their own drafts to submit vehicles.
+        return {"drafts": []}
+    drafts = await db.submission_drafts.find(
+        {"dealer_id": current["id"]}, {"_id": 0}
+    ).sort("updated_at", -1).to_list(200)
+    return {"drafts": drafts}
+
+
+@api_router.get("/drafts/{draft_id}")
+async def get_draft(draft_id: str, current: dict = Depends(get_current_user)):
+    d = await db.submission_drafts.find_one(
+        {"id": draft_id, "dealer_id": current["id"]}, {"_id": 0}
+    )
+    if not d:
+        raise HTTPException(404, "Draft not found")
+    return {"draft": d}
+
+
+@api_router.post("/drafts")
+async def upsert_draft(payload: SubmissionDraft, current: dict = Depends(get_current_user)):
+    """Create or update a submission draft for the current dealer.
+
+    Drafts store the raw form state (partial fields, any subset of the final
+    SubmissionCreate schema plus a friendly label). They are NEVER exposed to
+    admins and never counted for billing. Deleting a draft is permanent.
+    """
+    if current.get("role") == "admin":
+        raise HTTPException(403, "Drafts are dealer-only")
+    now = now_utc()
+    if payload.id:
+        existing = await db.submission_drafts.find_one(
+            {"id": payload.id, "dealer_id": current["id"]}, {"_id": 0}
+        )
+        if not existing:
+            raise HTTPException(404, "Draft not found")
+        update = {
+            "data": payload.data,
+            "label": payload.label or existing.get("label"),
+            "updated_at": now,
+        }
+        await db.submission_drafts.update_one(
+            {"id": payload.id, "dealer_id": current["id"]}, {"$set": update}
+        )
+        return {"draft": {**existing, **update}}
+    # New draft — synthesize a friendly label from the vehicle bits if the
+    # client didn't provide one.
+    data = payload.data or {}
+    label = payload.label or " ".join(
+        str(x) for x in [
+            data.get("year_registered") or data.get("year_of_production") or data.get("year"),
+            data.get("make_name"),
+            data.get("model_name"),
+        ] if x
+    ) or "Untitled draft"
+    doc = {
+        "id": str(uuid.uuid4()),
+        "dealer_id": current["id"],
+        "data": data,
+        "label": label,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.submission_drafts.insert_one(doc)
+    doc.pop("_id", None)
+    return {"draft": doc}
+
+
+@api_router.delete("/drafts/{draft_id}")
+async def delete_draft(draft_id: str, current: dict = Depends(get_current_user)):
+    res = await db.submission_drafts.delete_one(
+        {"id": draft_id, "dealer_id": current["id"]}
+    )
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Draft not found")
+    return {"status": "deleted"}
+
+
 @api_router.get("/submissions/{sub_id}")
 async def get_submission(sub_id: str, current: dict = Depends(get_current_user)):
     sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})

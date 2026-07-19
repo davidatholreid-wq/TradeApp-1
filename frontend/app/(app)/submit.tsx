@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -14,7 +14,7 @@ import {
   Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { storage } from "@/src/utils/storage";
 import { SCAN_BUFFER_KEY, SCAN_PARSED_KEY } from "./scan";
@@ -24,7 +24,6 @@ import { colors, spacing, radius, fonts } from "@/src/theme";
 import { apiFetch } from "@/src/api";
 import WheelPicker from "@/src/components/WheelPicker";
 import MonthYearPicker, { formatIsoMonthYear } from "@/src/components/MonthYearPicker";
-import BrandLogo from "@/src/components/BrandLogo";
 import { decodeLicenseDisk, LicenseDiskInfo } from "@/src/utils/licenseDisk";
 
 type PhotoKey = "front" | "driver_side" | "passenger_side" | "rear" | "interior";
@@ -142,6 +141,178 @@ export default function SubmitVehicle() {
   const [error, setError] = useState<string | null>(null);
   const [billingConfirmOpen, setBillingConfirmOpen] = useState(false);
   const [billingAckChecked, setBillingAckChecked] = useState(false);
+
+  // Draft tracking — if the dealer is editing a saved draft, we keep the id so
+  // "Save to Drafts" upserts back into the same document.
+  const params = useLocalSearchParams<{ draft?: string }>();
+  const [loadedDraftId, setLoadedDraftId] = useState<string | null>(null);
+  const [savingDraft, setSavingDraft] = useState(false);
+
+  /**
+   * Wipe every editable field back to its initial state. Called after either
+   * confirming a hard reset OR after successfully saving-as-draft (so the form
+   * is fresh for the next vehicle).
+   */
+  const resetAll = useCallback(() => {
+    setMake(null);
+    setFuelType(null);
+    setYearOfProduction(null);
+    setTransmission(null);
+    setModel(null);
+    setDerivative(null);
+    setYearRegistered(null);
+    setRimSize(null);
+    setLicenseDisk(null);
+    setLicenseDiskInfo(null);
+    setColour(null);
+    setVin("TBC");
+    setEngineNo("TBC");
+    setMechanicalRating(null);
+    setCosmeticRating(null);
+    setInteriorRating(null);
+    setHistoryRating(null);
+    setWindscreen(null);
+    setServiceHistory(null);
+    setLastServiceDate("");
+    setLastServiceMileage("");
+    setPhotos({ front: "", driver_side: "", passenger_side: "", rear: "", interior: "" });
+    setMileage("");
+    setPaintEvidence(false);
+    setPaintQuality(null);
+    setAccidentDamage(false);
+    setAccidentTypes([]);
+    setReconItems([]);
+    setError(null);
+    setLoadedDraftId(null);
+  }, []);
+
+  /** Collect current form state into a plain object for draft persistence. */
+  const collectDraftPayload = useCallback(() => ({
+    make_name: make,
+    fuel_type: fuelType,
+    year_of_production: yearOfProduction,
+    transmission,
+    model_name: model,
+    derivative_name: derivative,
+    year_registered: yearRegistered,
+    rim_size: rimSize,
+    license_disk_data: licenseDisk,
+    colour,
+    vin,
+    engine_number: engineNo,
+    mechanical_condition: mechanicalRating,
+    cosmetic_condition: cosmeticRating,
+    interior_condition: interiorRating,
+    history_condition: historyRating,
+    windscreen_condition: windscreen,
+    service_history: serviceHistory,
+    last_service_date: lastServiceDate,
+    last_service_mileage: lastServiceMileage,
+    photos,
+    mileage,
+    paint_evidence: paintEvidence,
+    paint_quality: paintQuality,
+    accident_damage: accidentDamage,
+    accident_damage_types: accidentTypes,
+    recon_items: reconItems,
+  }), [make, fuelType, yearOfProduction, transmission, model, derivative, yearRegistered, rimSize, licenseDisk, colour, vin, engineNo, mechanicalRating, cosmeticRating, interiorRating, historyRating, windscreen, serviceHistory, lastServiceDate, lastServiceMileage, photos, mileage, paintEvidence, paintQuality, accidentDamage, accidentTypes, reconItems]);
+
+  /** Restore all form fields from a saved draft payload. */
+  const applyDraft = useCallback((d: any) => {
+    setMake(d.make_name ?? null);
+    setFuelType(d.fuel_type ?? null);
+    setYearOfProduction(d.year_of_production ?? null);
+    setTransmission(d.transmission ?? null);
+    setModel(d.model_name ?? null);
+    setDerivative(d.derivative_name ?? null);
+    setYearRegistered(d.year_registered ?? null);
+    setRimSize(d.rim_size ?? null);
+    setLicenseDisk(d.license_disk_data ?? null);
+    setColour(d.colour ?? null);
+    setVin(d.vin ?? "TBC");
+    setEngineNo(d.engine_number ?? "TBC");
+    setMechanicalRating(d.mechanical_condition ?? null);
+    setCosmeticRating(d.cosmetic_condition ?? null);
+    setInteriorRating(d.interior_condition ?? null);
+    setHistoryRating(d.history_condition ?? null);
+    setWindscreen(d.windscreen_condition ?? null);
+    setServiceHistory(d.service_history ?? null);
+    setLastServiceDate(d.last_service_date ?? "");
+    setLastServiceMileage(d.last_service_mileage ?? "");
+    if (d.photos && typeof d.photos === "object") {
+      setPhotos({
+        front: d.photos.front ?? "",
+        driver_side: d.photos.driver_side ?? "",
+        passenger_side: d.photos.passenger_side ?? "",
+        rear: d.photos.rear ?? "",
+        interior: d.photos.interior ?? "",
+      });
+    }
+    setMileage(d.mileage ?? "");
+    setPaintEvidence(!!d.paint_evidence);
+    setPaintQuality(d.paint_quality ?? null);
+    setAccidentDamage(!!d.accident_damage);
+    setAccidentTypes(Array.isArray(d.accident_damage_types) ? d.accident_damage_types : []);
+    setReconItems(Array.isArray(d.recon_items) ? d.recon_items : []);
+  }, []);
+
+  // Load draft when navigated to with ?draft=<id>. Runs once on mount / when id changes.
+  useEffect(() => {
+    const id = params?.draft;
+    if (!id || typeof id !== "string") return;
+    (async () => {
+      try {
+        const res = await apiFetch(`/api/drafts/${id}`);
+        if (res?.draft?.data) {
+          applyDraft(res.draft.data);
+          setLoadedDraftId(res.draft.id);
+        }
+      } catch (e: any) {
+        Alert.alert("Draft not found", "This draft may have been deleted.");
+      }
+    })();
+  }, [params?.draft, applyDraft]);
+
+  /** Save the current in-progress form as a draft and then reset the form. */
+  const saveAsDraft = useCallback(async () => {
+    setSavingDraft(true);
+    try {
+      const body: any = { data: collectDraftPayload() };
+      if (loadedDraftId) body.id = loadedDraftId;
+      await apiFetch(`/api/drafts`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      resetAll();
+      Alert.alert("Saved", "Your progress has been saved as a draft. Open it from your dashboard when you're ready to continue.");
+    } catch (e: any) {
+      Alert.alert("Could not save draft", e?.message || "Please try again.");
+    } finally {
+      setSavingDraft(false);
+    }
+  }, [collectDraftPayload, loadedDraftId, resetAll]);
+
+  /** Prompt: Reset (wipe) vs Save-to-Drafts vs Cancel. */
+  const handleResetPress = useCallback(() => {
+    // Native Alert prompt (works on iOS/Android, and RN Web maps to window.confirm
+    // for the primary action). We provide 3 options.
+    Alert.alert(
+      "Reset submission?",
+      "Would you like to save your progress as a draft or reset the form?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Save to Drafts",
+          onPress: saveAsDraft,
+        },
+        {
+          text: "Reset",
+          style: "destructive",
+          onPress: resetAll,
+        },
+      ],
+    );
+  }, [saveAsDraft, resetAll]);
 
   // Fetch options with current filters applied. Called before opening each wheel.
   const fetchOptions = useCallback(async (partial: Partial<Record<string, any>>) => {
@@ -274,6 +445,15 @@ export default function SubmitVehicle() {
           billing_accepted: true,
         }),
       });
+      // If this submission originated from a saved draft, delete the draft now
+      // that the vehicle is officially submitted to avoid clutter.
+      if (loadedDraftId) {
+        try {
+          await apiFetch(`/api/drafts/${loadedDraftId}`, { method: "DELETE" });
+        } catch {
+          /* non-blocking */
+        }
+      }
       router.replace("/(app)");
     } catch (e: any) { setError(e.message || "Failed to submit"); }
     finally { setSubmitting(false); }
@@ -351,8 +531,22 @@ export default function SubmitVehicle() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()}><Ionicons name="chevron-back" size={22} color={colors.text} /></TouchableOpacity>
-          <Text style={styles.headerTitle}>SUBMIT VEHICLE</Text>
-          <BrandLogo size="xs" />
+          <Text style={styles.headerTitle}>
+            {loadedDraftId ? "EDITING DRAFT" : "SUBMIT VEHICLE"}
+          </Text>
+          <TouchableOpacity
+            testID="reset-submission-button"
+            onPress={handleResetPress}
+            disabled={savingDraft}
+            style={{ padding: 6 }}
+            accessibilityLabel="Reset or save draft"
+          >
+            {savingDraft ? (
+              <ActivityIndicator color={colors.text} size="small" />
+            ) : (
+              <Ionicons name="refresh-outline" size={20} color={colors.text} />
+            )}
+          </TouchableOpacity>
         </View>
 
         <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + 40 }]} keyboardShouldPersistTaps="handled">

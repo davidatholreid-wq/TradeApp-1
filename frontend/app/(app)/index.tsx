@@ -40,6 +40,13 @@ type Submission = {
 
 type BucketCounts = { incoming: number; priced: number; archived: number };
 
+type Draft = {
+  id: string;
+  label: string;
+  updated_at: string;
+  data?: any;
+};
+
 export default function DashboardScreen() {
   const { user } = useAuth();
   const router = useRouter();
@@ -49,6 +56,8 @@ export default function DashboardScreen() {
   const [bucket, setBucket] = useState<"incoming" | "priced">("incoming");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [draftsExpanded, setDraftsExpanded] = useState(false);
   const isAdmin = user?.role === "admin";
 
   const load = useCallback(async () => {
@@ -57,6 +66,15 @@ export default function DashboardScreen() {
       const data = await apiFetch(path);
       const subs: Submission[] = data.submissions || [];
       setItems(subs);
+      if (!isAdmin) {
+        // Fetch dealer's drafts alongside their submissions.
+        try {
+          const dRes = await apiFetch("/api/drafts");
+          setDrafts(dRes.drafts || []);
+        } catch {
+          setDrafts([]);
+        }
+      }
       if (isAdmin) {
         if (data.counts) {
           setCounts(data.counts);
@@ -250,6 +268,69 @@ export default function DashboardScreen() {
         </View>
       ) : null}
 
+      {/* Drafts card — shown to dealers with in-progress submissions. Sits
+          above both the empty-state and the list so it's always accessible. */}
+      {!isAdmin && drafts.length > 0 ? (
+        <View style={styles.draftsCardWrap}>
+          <View style={styles.draftsCard} testID="drafts-card">
+            <TouchableOpacity
+              style={styles.draftsHeader}
+              onPress={() => setDraftsExpanded((v) => !v)}
+              testID="drafts-toggle"
+              activeOpacity={0.75}
+            >
+              <View style={styles.draftsBadge}>
+                <Ionicons name="document-outline" size={16} color={colors.text} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.draftsTitle}>Drafts ({drafts.length})</Text>
+                <Text style={styles.draftsSub}>
+                  In-progress vehicle submissions
+                </Text>
+              </View>
+              <Ionicons
+                name={draftsExpanded ? "chevron-up" : "chevron-down"}
+                size={18}
+                color={colors.textSecondary}
+              />
+            </TouchableOpacity>
+
+            {draftsExpanded ? (
+              <View style={styles.draftsList}>
+                {drafts.map((d) => (
+                  <View key={d.id} style={styles.draftRow}>
+                    <TouchableOpacity
+                      style={{ flex: 1, paddingVertical: 4 }}
+                      onPress={() => router.push(`/(app)/submit?draft=${d.id}` as any)}
+                      testID={`resume-draft-${d.id}`}
+                    >
+                      <Text style={styles.draftLabel}>{d.label}</Text>
+                      <Text style={styles.draftMeta}>
+                        Updated {new Date(d.updated_at).toLocaleString()}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.draftDeleteBtn}
+                      testID={`delete-draft-${d.id}`}
+                      onPress={async () => {
+                        try {
+                          await apiFetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+                          setDrafts((prev) => prev.filter((x) => x.id !== d.id));
+                        } catch {
+                          /* silent */
+                        }
+                      }}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={colors.danger} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
+
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator color={colors.primary} />
@@ -429,4 +510,71 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   emptyBtnText: { color: "#000", fontWeight: "800", letterSpacing: 0.5 },
+
+  // Drafts card (dealer dashboard header)
+  draftsCardWrap: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+  },
+  draftsCard: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    marginBottom: spacing.md,
+    overflow: "hidden",
+  },
+  draftsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  draftsBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  draftsTitle: {
+    color: colors.text,
+    fontWeight: "800",
+    fontSize: 14,
+    letterSpacing: 0.5,
+  },
+  draftsSub: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  draftsList: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingHorizontal: spacing.md,
+  },
+  draftRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  draftLabel: {
+    color: colors.text,
+    fontWeight: "700",
+    fontSize: 13,
+  },
+  draftMeta: {
+    color: colors.textDisabled,
+    fontSize: 11,
+    marginTop: 2,
+    fontFamily: fonts.mono,
+  },
+  draftDeleteBtn: {
+    padding: 6,
+  },
 });
