@@ -83,6 +83,16 @@ export default function AppLayout() {
           }}
         />
         <Tabs.Screen
+          name="rewards"
+          options={{
+            title: "Rewards",
+            // Dealers earn 1 point per billable valuation; admins view the
+            // fulfillment queue from the web dashboard, not this tab.
+            href: isDealer ? "/rewards" : null,
+            tabBarIcon: ({ color, size }) => <Ionicons name="gift" color={color} size={size} />,
+          }}
+        />
+        <Tabs.Screen
           name="profile"
           options={{
             title: "Profile",

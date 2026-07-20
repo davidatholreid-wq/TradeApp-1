@@ -1,0 +1,33 @@
+{
+  "summary": "Full end-to-end test of Fourbuy Rewards. Backend: 12/12 pytest tests passing in /app/backend/tests/test_rewards.py covering GET /api/rewards/me shape, award idempotency (via sub_id), no-award-outside-24h-SLA, redeem with insufficient balance (400), successful redemption (deducts 50 pts + creates pending redemption + email fallback), admin list + status filter, admin fulfill (double-fulfill blocked, balance unchanged, fulfill ledger row delta=0), admin reject (refunds 50 pts). Frontend: dealer login (minitest@example.com) → Rewards tab shows balance 50, redeem modal pre-fills login email, submitting closes modal, balance drops to 0, PENDING redemption card appears. Admin cockpit → Rewards cockpit view → Voucher Requests → fulfil-with-code modal → after Send the row leaves PENDING. Dealer re-login shows the redemption as FULFILLED with the voucher-code-<id> element rendering the exact code and admin note.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "dealer bottom tab bar", "issues": ["7 tabs squished on 390px viewport — the 'My Vehic…' label is truncated. Consider grouping or moving Rewards under Profile / History → non-blocking but tight on small phones."]}
+    ],
+    "react_native_issues": [
+      {"component": "web deprecation warnings", "issue": "'shadow*' style props are deprecated. Use 'boxShadow'. Also 'props.pointerEvents is deprecated' and 'Image: style.resizeMode is deprecated'. These are pre-existing warnings from other screens, not introduced by rewards.tsx. Reference: console output on load."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_rewards.py",
+    "/app/test_reports/pytest/rewards_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "get_user_reward_balance() iterates the entire reward_ledger for a user on every /rewards/me call (and again on redeem). Fine for current dealer volumes but should later be replaced with a cached running balance field or an aggregation pipeline once ledgers grow past a few thousand rows.",
+    "Idempotency for award relies on an application-level find_one({type:'earn', sub_id}) check, not a Mongo unique index. Two concurrent calls to /admin/submissions/{id}/price could race and insert two 'earn' rows. Consider adding a unique compound index on reward_ledger({type:1, sub_id:1}, {unique:true, partialFilterExpression:{type:'earn'}}) to enforce at DB level. Reference: /app/backend/server.py:230-243.",
+    "server.py is 3600+ lines — recommend splitting rewards routes/helpers into /app/backend/rewards.py once feature stabilises."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_rewards.py (new)"
+  ],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "100% (dealer redeem + admin fulfil + dealer fulfilment view)"},
+  "seed_data_creation": "Seeded 50 'earn' ledger entries for user minitest@example.com to exercise the redeem flow, then cleaned up (all ledger + redemptions for that user deleted at end of test).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Test file: /app/backend/tests/test_rewards.py. Run via: DB_NAME=autopricepro_db MONGO_URL=mongodb://localhost:27017 EXPO_BACKEND_URL=https://fourbuy-admin.preview.emergentagent.com pytest backend/tests/test_rewards.py -v. Tests register throwaway dealers (email prefixed test_rewards_*) and clean up after themselves. Frontend testIDs verified live: rewards-balance, rewards-redeem-btn, redeem-email-input, redeem-submit, cockpit-view-rewards, fulfill-<id>, voucher-code-input, admin-note-input, modal-submit, voucher-code-<redemption_id>. Note the frontend uses EXPO_PUBLIC_BACKEND_URL (not EXPO_BACKEND_URL) in .env for the ingress URL.",
+  "rca_of_issue": "Initial test failures were self-inflicted by outdated payload schema in the test's _submit_vehicle helper. The current /api/submissions endpoint requires make/model/derivative scalar strings + fuel_type + transmission + year_of_production + year_registered + the four condition pillars + windscreen_condition/service_history/paint_evidence + billing_accepted=true + a prior POST /api/agreement/accept. After patching the helper all 12 tests pass. No backend behaviour was changed."
+}

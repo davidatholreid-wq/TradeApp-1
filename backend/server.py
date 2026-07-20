@@ -151,6 +151,14 @@ ARCHIVE_AFTER_DAYS = 14
 BILLING_FEE_ZAR = 50.0
 BILLING_SLA_HOURS = 24
 
+# ============ Fourbuy Rewards ============
+# 1 point per submission that becomes billable. 50 points redeems for a
+# R500 Takealot voucher. Points are per USER (not per dealership).
+REWARD_POINT_LABEL = "Fourbuy Rewards"
+REWARD_POINTS_PER_VOUCHER = 50
+REWARD_VOUCHER_VALUE_ZAR = 500
+REWARD_VOUCHER_PROVIDER = "Takealot"
+
 # Vehicle report catalogue — dealers may purchase these against a submission's
 # VIN after an offer has been received. Cost is added to the dealer's monthly
 # billing (alongside the R50 valuation fee). Real APIs are wired up later; for
@@ -201,6 +209,75 @@ def is_billable(sub: dict) -> bool:
     if delta < timedelta(0):
         return False
     return delta <= timedelta(hours=BILLING_SLA_HOURS)
+
+
+# ============ Fourbuy Rewards helpers ============
+# Ledger-based points system. Every point delta (award or spend) is an event
+# in `reward_ledger` so we always have a full audit trail. The balance is the
+# net sum, computed on read (cheap for typical dealer volumes).
+
+async def award_reward_point_for_submission(sub: dict) -> None:
+    """Award 1 point to the submitter when their submission becomes billable.
+    Idempotent — safe to call multiple times for the same submission; the
+    `sub_id` unique index on the ledger prevents duplicate awards."""
+    if not is_billable(sub):
+        return
+    user_id = sub.get("submitted_by_user_id") or sub.get("dealer_id")
+    if not user_id:
+        return
+    sub_id = sub.get("id")
+    # Idempotency guard — check if an "earn" event already exists for this sub.
+    existing = await db.reward_ledger.find_one({"type": "earn", "sub_id": sub_id})
+    if existing:
+        return
+    doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "dealership_id": sub.get("dealership_id"),
+        "type": "earn",
+        "delta": 1,
+        "sub_id": sub_id,
+        "note": f"Billable valuation · {sub.get('reference') or sub_id[:8]}",
+        "at": now_utc(),
+    }
+    await db.reward_ledger.insert_one(doc)
+
+
+async def get_user_reward_balance(user_id: str) -> int:
+    """Sum of all ledger deltas for this user. Never returns negative."""
+    total = 0
+    async for e in db.reward_ledger.find({"user_id": user_id}, {"_id": 0, "delta": 1}):
+        total += int(e.get("delta") or 0)
+    return max(0, total)
+
+
+async def spend_points(user_id: str, points: int, redemption_id: str, note: str) -> None:
+    """Debit points from a user's balance. Called at Redeem-time so the same
+    user can't double-redeem before the admin actions the request."""
+    doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "type": "spend",
+        "delta": -abs(int(points)),
+        "redemption_id": redemption_id,
+        "note": note,
+        "at": now_utc(),
+    }
+    await db.reward_ledger.insert_one(doc)
+
+
+async def refund_points(user_id: str, points: int, redemption_id: str, note: str) -> None:
+    """Refund points when an admin REJECTS a redemption."""
+    doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "type": "refund",
+        "delta": abs(int(points)),
+        "redemption_id": redemption_id,
+        "note": note,
+        "at": now_utc(),
+    }
+    await db.reward_ledger.insert_one(doc)
 
 
 def compute_bucket(sub: dict) -> str:
@@ -1251,6 +1328,14 @@ async def admin_price(sub_id: str, offer: PriceOffer, current: dict = Depends(re
         {"id": sub_id},
         {"$set": update, "$push": {"price_history": history_entry}},
     )
+    # Award 1 Fourbuy Rewards point to the submitter if this priced offer
+    # lands within the SLA window (which is exactly the billing rule).
+    fresh_sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
+    if fresh_sub:
+        try:
+            await award_reward_point_for_submission(fresh_sub)
+        except Exception as e:
+            logger.warning("Reward point award failed (non-blocking): %s", e)
     try:
         push_title = "Price Updated" if is_update else "Price Offer Received"
         await send_push(
@@ -3139,6 +3224,219 @@ async def admin_billing(
             "amount_zar": total_zar,
         },
     }
+
+
+# ============ Fourbuy Rewards ============
+class RedeemRequest(BaseModel):
+    # Where the user wants the voucher emailed to. Defaults to their login email.
+    desired_email: Optional[EmailStr] = None
+
+
+class RedemptionActionRequest(BaseModel):
+    voucher_code: Optional[str] = None
+    admin_note: Optional[str] = None
+
+
+@api_router.get("/rewards/me")
+async def rewards_me(current: dict = Depends(get_current_user)):
+    """Dealer's own rewards summary: balance, next threshold, ledger and
+    redemption history."""
+    if current.get("role") != "dealer":
+        raise HTTPException(400, "Only dealer users have a rewards balance")
+    balance = await get_user_reward_balance(current["id"])
+    # Ledger — newest first, capped so we don't ship huge payloads.
+    ledger = await db.reward_ledger.find(
+        {"user_id": current["id"]},
+        {"_id": 0},
+    ).sort("at", -1).to_list(200)
+    redemptions = await db.reward_redemptions.find(
+        {"user_id": current["id"]},
+        {"_id": 0},
+    ).sort("requested_at", -1).to_list(200)
+    total_earned = sum(int(e.get("delta") or 0) for e in ledger if e.get("type") == "earn")
+    total_spent = sum(abs(int(e.get("delta") or 0)) for e in ledger if e.get("type") == "spend")
+    total_refunded = sum(int(e.get("delta") or 0) for e in ledger if e.get("type") == "refund")
+    return {
+        "label": REWARD_POINT_LABEL,
+        "balance": balance,
+        "points_per_voucher": REWARD_POINTS_PER_VOUCHER,
+        "voucher_value_zar": REWARD_VOUCHER_VALUE_ZAR,
+        "voucher_provider": REWARD_VOUCHER_PROVIDER,
+        "can_redeem": balance >= REWARD_POINTS_PER_VOUCHER,
+        "points_to_next_voucher": max(0, REWARD_POINTS_PER_VOUCHER - balance),
+        "totals": {
+            "earned": total_earned,
+            "spent": total_spent,
+            "refunded": total_refunded,
+        },
+        "ledger": ledger,
+        "redemptions": redemptions,
+    }
+
+
+@api_router.post("/rewards/redeem")
+async def rewards_redeem(payload: RedeemRequest, current: dict = Depends(get_current_user)):
+    """Dealer submits a voucher redemption. Points are debited immediately
+    (prevents double-redemption) — refunded if the admin later rejects."""
+    if current.get("role") != "dealer":
+        raise HTTPException(400, "Only dealer users can redeem")
+    balance = await get_user_reward_balance(current["id"])
+    if balance < REWARD_POINTS_PER_VOUCHER:
+        raise HTTPException(400, f"Not enough points — you have {balance} of {REWARD_POINTS_PER_VOUCHER} required")
+    desired_email = (payload.desired_email or current.get("email") or "").strip().lower()
+    if not desired_email:
+        raise HTTPException(400, "A delivery email is required")
+    redemption_id = str(uuid.uuid4())
+    info = current.get("dealer_info") or {}
+    doc = {
+        "id": redemption_id,
+        "user_id": current["id"],
+        "user_name": (f"{info.get('first_name','')} {info.get('last_name','')}".strip()) or None,
+        "user_email": current.get("email"),
+        "user_job_title": info.get("job_title"),
+        "dealership_id": current.get("dealership_id"),
+        "requested_email": desired_email,
+        "points_cost": REWARD_POINTS_PER_VOUCHER,
+        "voucher_value_zar": REWARD_VOUCHER_VALUE_ZAR,
+        "voucher_provider": REWARD_VOUCHER_PROVIDER,
+        "status": "pending",
+        "voucher_code": None,
+        "admin_note": None,
+        "actioned_by_admin_id": None,
+        "actioned_at": None,
+        "requested_at": now_utc(),
+    }
+    await db.reward_redemptions.insert_one(doc)
+    await spend_points(
+        current["id"], REWARD_POINTS_PER_VOUCHER, redemption_id,
+        f"Voucher redemption request → {desired_email}",
+    )
+    # Notify all admins so they can action promptly.
+    try:
+        admin_ids = [a["id"] async for a in db.users.find({"role": "admin"}, {"_id": 0, "id": 1})]
+        if admin_ids:
+            await send_push(
+                recipients=admin_ids,
+                data={
+                    "title": "New Voucher Request",
+                    "message": f"{doc['user_name'] or current.get('email')} redeemed for a R{REWARD_VOUCHER_VALUE_ZAR} {REWARD_VOUCHER_PROVIDER} voucher.",
+                    "action_url": "/admin/rewards",
+                },
+            )
+    except Exception as e:
+        logger.warning("Reward redemption push failed (non-blocking): %s", e)
+    doc.pop("_id", None)
+    fresh_balance = await get_user_reward_balance(current["id"])
+    return {"redemption": doc, "balance": fresh_balance}
+
+
+@api_router.get("/admin/reward-redemptions")
+async def admin_list_redemptions(
+    status: Optional[str] = None,
+    current: dict = Depends(require_admin),
+):
+    """Admin inbox — every voucher request across all dealerships. Filter
+    by status (pending | fulfilled | rejected) or omit for all."""
+    query: dict = {}
+    if status:
+        query["status"] = status
+    docs = await db.reward_redemptions.find(query, {"_id": 0}).sort("requested_at", -1).to_list(500)
+    pending = sum(1 for d in docs if d.get("status") == "pending")
+    return {
+        "redemptions": docs,
+        "pending_count": pending,
+        "voucher_value_zar": REWARD_VOUCHER_VALUE_ZAR,
+        "voucher_provider": REWARD_VOUCHER_PROVIDER,
+    }
+
+
+@api_router.post("/admin/reward-redemptions/{redemption_id}/fulfill")
+async def admin_fulfill_redemption(
+    redemption_id: str,
+    payload: RedemptionActionRequest,
+    current: dict = Depends(require_admin),
+):
+    r = await db.reward_redemptions.find_one({"id": redemption_id})
+    if not r:
+        raise HTTPException(404, "Redemption not found")
+    if r.get("status") != "pending":
+        raise HTTPException(400, f"Cannot fulfil a {r.get('status')} redemption")
+    code = (payload.voucher_code or "").strip()
+    if not code:
+        raise HTTPException(400, "voucher_code is required")
+    await db.reward_redemptions.update_one(
+        {"id": redemption_id},
+        {"$set": {
+            "status": "fulfilled",
+            "voucher_code": code,
+            "admin_note": (payload.admin_note or "").strip() or None,
+            "actioned_by_admin_id": current["id"],
+            "actioned_at": now_utc(),
+        }},
+    )
+    # Also log to the ledger for full auditability (no delta — informational).
+    await db.reward_ledger.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": r["user_id"],
+        "type": "fulfill",
+        "delta": 0,
+        "redemption_id": redemption_id,
+        "note": f"Voucher issued · code {code[:4]}…",
+        "at": now_utc(),
+    })
+    try:
+        await send_push(
+            recipients=[r["user_id"]],
+            data={
+                "title": "Voucher Ready",
+                "message": f"Your R{r.get('voucher_value_zar')} {r.get('voucher_provider')} voucher code is on the way.",
+                "action_url": "/rewards",
+            },
+        )
+    except Exception as e:
+        logger.warning("Fulfill push failed (non-blocking): %s", e)
+    fresh = await db.reward_redemptions.find_one({"id": redemption_id}, {"_id": 0})
+    return {"redemption": fresh}
+
+
+@api_router.post("/admin/reward-redemptions/{redemption_id}/reject")
+async def admin_reject_redemption(
+    redemption_id: str,
+    payload: RedemptionActionRequest,
+    current: dict = Depends(require_admin),
+):
+    r = await db.reward_redemptions.find_one({"id": redemption_id})
+    if not r:
+        raise HTTPException(404, "Redemption not found")
+    if r.get("status") != "pending":
+        raise HTTPException(400, f"Cannot reject a {r.get('status')} redemption")
+    reason = (payload.admin_note or "").strip() or "Rejected by admin"
+    await db.reward_redemptions.update_one(
+        {"id": redemption_id},
+        {"$set": {
+            "status": "rejected",
+            "admin_note": reason,
+            "actioned_by_admin_id": current["id"],
+            "actioned_at": now_utc(),
+        }},
+    )
+    await refund_points(
+        r["user_id"], r.get("points_cost") or REWARD_POINTS_PER_VOUCHER, redemption_id,
+        f"Refund · {reason}",
+    )
+    try:
+        await send_push(
+            recipients=[r["user_id"]],
+            data={
+                "title": "Voucher Request Rejected",
+                "message": f"Your points have been refunded. Reason: {reason}",
+                "action_url": "/rewards",
+            },
+        )
+    except Exception as e:
+        logger.warning("Reject push failed (non-blocking): %s", e)
+    fresh = await db.reward_redemptions.find_one({"id": redemption_id}, {"_id": 0})
+    return {"redemption": fresh}
 
 
 # ============ Health ============

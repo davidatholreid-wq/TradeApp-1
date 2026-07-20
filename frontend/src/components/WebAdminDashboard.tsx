@@ -16,6 +16,7 @@ import { apiFetch } from "@/src/api";
 import { buildWhatsappUrl, buildDealerMessage } from "@/src/utils/whatsapp";
 import BillingScreen from "@/app/(app)/billing";
 import DealersScreen from "@/app/(app)/dealers";
+import AdminRewardsScreen from "@/src/components/AdminRewardsScreen";
 import PhotoCarousel, { CarouselPhoto } from "@/src/components/PhotoCarousel";
 import ConditionRatingInfoModal from "@/src/components/ConditionRatingInfoModal";
 import { computeServiceGap, formatMonthsAgo, formatKm } from "@/src/utils/format";
@@ -122,7 +123,7 @@ function resolvePhoto(photos: Record<string, string> | undefined, key: string, f
 }
 
 type Bucket = "incoming" | "priced" | "archived";
-type CockpitView = "submissions" | "dealers" | "billing";
+type CockpitView = "submissions" | "dealers" | "billing" | "rewards";
 
 export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }) {
   const { width } = useWindowDimensions();
@@ -408,6 +409,16 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 Billing
               </Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              testID="cockpit-view-rewards"
+              style={[styles.viewBtn, view === "rewards" && styles.viewBtnActive]}
+              onPress={() => setView("rewards")}
+            >
+              <Ionicons name="gift" size={14} color={view === "rewards" ? "#000" : colors.text} />
+              <Text style={[styles.viewBtnText, view === "rewards" && styles.viewBtnTextActive]}>
+                Rewards
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
         <View style={styles.topbarRight}>
@@ -440,6 +451,10 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
       ) : view === "dealers" ? (
         <View style={{ flex: 1 }}>
           <DealersScreen />
+        </View>
+      ) : view === "rewards" ? (
+        <View style={{ flex: 1 }}>
+          <AdminRewardsScreen />
         </View>
       ) : (
       <View style={styles.body}>
