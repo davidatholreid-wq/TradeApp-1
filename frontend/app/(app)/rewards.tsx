@@ -18,6 +18,7 @@ import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { apiFetch } from "@/src/api";
 import { useAuth } from "@/src/context/AuthContext";
 import { colors, spacing, radius, fonts } from "@/src/theme";
+import { TakealotVoucherCard } from "@/src/components/TakealotVoucherCard";
 
 type Redemption = {
   id: string;
@@ -127,6 +128,13 @@ export default function RewardsScreen() {
           Earn 1 point for every billable valuation. Redeem {data.points_per_voucher} points for a
           R{data.voucher_value_zar} {data.voucher_provider} voucher.
         </Text>
+
+        {/* Voucher preview */}
+        <TakealotVoucherCard
+          value={data.voucher_value_zar}
+          pointsRequired={data.points_per_voucher}
+          unlocked={data.can_redeem}
+        />
 
         {/* Balance hero */}
         <View style={styles.hero}>

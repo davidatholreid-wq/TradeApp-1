@@ -240,7 +240,13 @@ async def award_reward_point_for_submission(sub: dict) -> None:
         "note": f"Billable valuation · {sub.get('reference') or sub_id[:8]}",
         "at": now_utc(),
     }
-    await db.reward_ledger.insert_one(doc)
+    try:
+        await db.reward_ledger.insert_one(doc)
+    except Exception as e:
+        # Partial unique index (type=earn, sub_id) blocks concurrent duplicates.
+        # Anything else we log and swallow — rewards must never break pricing.
+        if "duplicate" not in str(e).lower():
+            logger.warning("Reward award insert failed (non-blocking): %s", e)
 
 
 async def get_user_reward_balance(user_id: str) -> int:
@@ -3478,6 +3484,19 @@ async def seed_data():
     # Every legacy dealer user gets its own single-user Dealership. New signups
     # already create their own on register. This is safe to run every startup
     # because it only touches users/subs that don't yet have `dealership_id`.
+    # -------- Reward ledger indexes (2026-07) --------
+    # Partial unique index guards against concurrent duplicate awards for the
+    # same submission (belt-and-braces on top of the app-level idempotency
+    # check inside `award_reward_point_for_submission`).
+    try:
+        await db.reward_ledger.create_index(
+            [("sub_id", 1)],
+            unique=True,
+            partialFilterExpression={"type": "earn", "sub_id": {"$type": "string"}},
+            name="uniq_earn_sub_id",
+        )
+    except Exception as e:
+        logger.warning("reward_ledger index create failed (non-blocking): %s", e)
     async for u in db.users.find({"role": "dealer", "dealership_id": {"$in": [None, ""]}}, {"_id": 0}):
         await _ensure_dealership_for_user(u)
     # Back-fill submissions that pre-date the dealership_id field.
