@@ -35,6 +35,8 @@ type Dealer = {
   submission_count: number;
   billable_count?: number;
   billable_total_zar?: number;
+  reward_balance?: number;
+  reward_lifetime_earned?: number;
   profile_pic?: string | null;
   cover_photo?: string | null;
   created_at: string;
@@ -417,6 +419,19 @@ export default function Dealers() {
               <Ionicons name="cash-outline" size={13} color={colors.neon} />
               <Text style={[styles.metaText, { color: colors.neon }]}>
                 {item.billable_count} billable · R{item.billable_total_zar?.toFixed(2)}
+              </Text>
+            </View>
+          ) : null}
+          {(item.reward_balance || 0) > 0 || (item.reward_lifetime_earned || 0) > 0 ? (
+            <View style={styles.metaItem}>
+              <Ionicons name="ribbon-outline" size={13} color={colors.textSecondary} />
+              <Text style={styles.metaText}>
+                <Text style={{ color: colors.text, fontWeight: "700" }}>
+                  {item.reward_balance || 0} pts
+                </Text>
+                {(item.reward_lifetime_earned || 0) > 0
+                  ? ` · ${item.reward_lifetime_earned} lifetime`
+                  : ""}
               </Text>
             </View>
           ) : null}

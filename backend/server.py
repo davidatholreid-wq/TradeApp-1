@@ -2741,6 +2741,26 @@ async def admin_list_dealers(
     for d in dealers:
         ds = ds_map.get(d.get("dealership_id") or "")
         d["dealership"] = ds  # {id, name, active, ...} or None
+
+    # Reward balances — single ledger scan so this stays O(ledger) not O(dealers·ledger).
+    balances: dict[str, int] = {}
+    lifetime_earned: dict[str, int] = {}
+    async for e in db.reward_ledger.find(
+        {}, {"_id": 0, "user_id": 1, "delta": 1, "type": 1}
+    ):
+        uid = e.get("user_id")
+        if not uid:
+            continue
+        delta = int(e.get("delta") or 0)
+        balances[uid] = balances.get(uid, 0) + delta
+        # All-time earned counts positive earn/adjust events (bonus grants also
+        # add to lifetime; admin debits do NOT reduce it — lifetime is history).
+        if delta > 0 and e.get("type") in ("earn", "adjust"):
+            lifetime_earned[uid] = lifetime_earned.get(uid, 0) + delta
+    for d in dealers:
+        d["reward_balance"] = max(0, balances.get(d["id"], 0))
+        d["reward_lifetime_earned"] = lifetime_earned.get(d["id"], 0)
+
     return {"dealers": dealers, "fee_zar": BILLING_FEE_ZAR, "sla_hours": BILLING_SLA_HOURS}
 
 
@@ -3452,6 +3472,94 @@ async def admin_reject_redemption(
         logger.warning("Reject push failed (non-blocking): %s", e)
     fresh = await db.reward_redemptions.find_one({"id": redemption_id}, {"_id": 0})
     return {"redemption": fresh}
+
+
+@api_router.get("/admin/rewards/leaderboard")
+async def admin_rewards_leaderboard(
+    limit: int = 20,
+    current: dict = Depends(require_admin),
+):
+    """Rewards leaderboard.
+
+    Returns two sorted lists:
+      * `current` — current balance (net available points per user), descending.
+      * `all_time` — lifetime points ever earned (excludes admin debits so
+        prior earnings are preserved as history), descending.
+
+    Only users who have ever been in the ledger are returned so we don't
+    ship a huge zero-row payload.
+    """
+    limit = max(1, min(int(limit or 20), 100))
+
+    balances: dict[str, int] = {}
+    lifetime: dict[str, int] = {}
+    async for e in db.reward_ledger.find(
+        {}, {"_id": 0, "user_id": 1, "delta": 1, "type": 1}
+    ):
+        uid = e.get("user_id")
+        if not uid:
+            continue
+        delta = int(e.get("delta") or 0)
+        balances[uid] = balances.get(uid, 0) + delta
+        if delta > 0 and e.get("type") in ("earn", "adjust"):
+            lifetime[uid] = lifetime.get(uid, 0) + delta
+
+    uids = list({*balances.keys(), *lifetime.keys()})
+    if not uids:
+        return {"current": [], "all_time": [], "points_per_voucher": REWARD_POINTS_PER_VOUCHER}
+
+    users = await db.users.find(
+        {"id": {"$in": uids}, "role": "dealer"},
+        {"_id": 0, "password_hash": 0},
+    ).to_list(len(uids))
+    dealership_ids = list({u.get("dealership_id") for u in users if u.get("dealership_id")})
+    dealership_docs = await db.dealerships.find(
+        {"id": {"$in": dealership_ids}}, {"_id": 0, "id": 1, "name": 1}
+    ).to_list(len(dealership_ids)) if dealership_ids else []
+    d_by_id = {d["id"]: d for d in dealership_docs}
+
+    def _shape(u: dict) -> dict:
+        info = u.get("dealer_info") or {}
+        first = info.get("first_name") or ""
+        last = info.get("last_name") or ""
+        name = f"{first} {last}".strip() or (u.get("email") or "")
+        d = d_by_id.get(u.get("dealership_id") or "")
+        return {
+            "id": u["id"],
+            "email": u.get("email"),
+            "name": name,
+            "job_title": info.get("job_title"),
+            "dealership_id": u.get("dealership_id"),
+            "dealership_name": (d or {}).get("name"),
+            "balance": max(0, balances.get(u["id"], 0)),
+            "lifetime_earned": lifetime.get(u["id"], 0),
+        }
+
+    shaped = [_shape(u) for u in users]
+
+    current_sorted = sorted(shaped, key=lambda x: x["balance"], reverse=True)[:limit]
+    all_time_sorted = sorted(shaped, key=lambda x: x["lifetime_earned"], reverse=True)[:limit]
+
+    # Rank + trim zeroes off the tail so the board doesn't fill with empty rows.
+    def _rank(rows: list[dict], key: str) -> list[dict]:
+        out = []
+        rank = 0
+        prev_val: Optional[int] = None
+        for i, r in enumerate(rows, start=1):
+            val = r[key]
+            if val <= 0:
+                continue
+            if val != prev_val:
+                rank = i
+                prev_val = val
+            out.append({**r, "rank": rank})
+        return out
+
+    return {
+        "current": _rank(current_sorted, "balance"),
+        "all_time": _rank(all_time_sorted, "lifetime_earned"),
+        "points_per_voucher": REWARD_POINTS_PER_VOUCHER,
+    }
 
 
 @api_router.get("/admin/rewards/users")

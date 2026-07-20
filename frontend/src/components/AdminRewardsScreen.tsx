@@ -38,6 +38,23 @@ type RewardUser = {
   balance: number;
 };
 
+type LeaderRow = {
+  id: string;
+  name: string;
+  email: string;
+  dealership_name?: string | null;
+  job_title?: string | null;
+  balance: number;
+  lifetime_earned: number;
+  rank: number;
+};
+
+type Leaderboard = {
+  current: LeaderRow[];
+  all_time: LeaderRow[];
+  points_per_voucher: number;
+};
+
 export default function AdminRewardsScreen() {
   const [redemptions, setRedemptions] = useState<Redemption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,6 +74,24 @@ export default function AdminRewardsScreen() {
   const [grantReason, setGrantReason] = useState("");
   const [grantSubmitting, setGrantSubmitting] = useState(false);
 
+  // Leaderboard
+  const [leaderboard, setLeaderboard] = useState<Leaderboard | null>(null);
+  const [leaderTab, setLeaderTab] = useState<"current" | "all_time">("current");
+  const [leaderLoading, setLeaderLoading] = useState(true);
+
+  const loadLeaderboard = useCallback(async () => {
+    setLeaderLoading(true);
+    try {
+      const res = await apiFetch("/api/admin/rewards/leaderboard?limit=10");
+      setLeaderboard(res);
+    } catch (e: any) {
+      // Non-blocking — leaderboard is secondary to the request inbox.
+      console.warn("Leaderboard load failed:", e?.message);
+    } finally {
+      setLeaderLoading(false);
+    }
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -71,6 +106,7 @@ export default function AdminRewardsScreen() {
   }, [filter]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadLeaderboard(); }, [loadLeaderboard]);
 
   const openGrant = async () => {
     setGrantOpen(true);
@@ -114,6 +150,7 @@ export default function AdminRewardsScreen() {
         `${grantSelected.name} · new balance ${res.balance} pt${res.balance === 1 ? "" : "s"}.`,
       );
       setGrantOpen(false);
+      loadLeaderboard();
     } catch (e: any) {
       Alert.alert("Error", e?.message || "Grant failed");
     } finally {
@@ -149,6 +186,7 @@ export default function AdminRewardsScreen() {
       });
       setActionModal(null);
       await load();
+      loadLeaderboard();
     } catch (e: any) {
       Alert.alert("Error", e?.message || "Action failed");
     } finally {
@@ -175,6 +213,71 @@ export default function AdminRewardsScreen() {
             <Text style={[styles.tabText, filter === f && styles.tabTextActive]}>{f.toUpperCase()}</Text>
           </TouchableOpacity>
         ))}
+      </View>
+
+      {/* Leaderboard */}
+      <View style={styles.leaderCard} testID="rewards-leaderboard">
+        <View style={styles.leaderHead}>
+          <Ionicons name="trophy" size={16} color={colors.text} />
+          <Text style={styles.leaderTitle}>Leaderboard</Text>
+          <View style={styles.leaderTabs}>
+            {(["current", "all_time"] as const).map((t) => (
+              <TouchableOpacity
+                key={t}
+                onPress={() => setLeaderTab(t)}
+                style={[styles.leaderTab, leaderTab === t && styles.leaderTabActive]}
+                testID={`leader-tab-${t}`}
+              >
+                <Text style={[styles.leaderTabText, leaderTab === t && styles.leaderTabTextActive]}>
+                  {t === "current" ? "CURRENT" : "ALL TIME"}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+        {leaderLoading ? (
+          <ActivityIndicator style={{ marginVertical: spacing.md }} color={colors.primary} />
+        ) : (() => {
+          const rows = (leaderboard?.[leaderTab] || []) as LeaderRow[];
+          if (rows.length === 0) {
+            return <Text style={styles.leaderEmpty}>No dealers have earned points yet.</Text>;
+          }
+          return (
+            <View>
+              {rows.map((r) => {
+                const value = leaderTab === "current" ? r.balance : r.lifetime_earned;
+                const medal =
+                  r.rank === 1 ? "🥇" : r.rank === 2 ? "🥈" : r.rank === 3 ? "🥉" : "";
+                return (
+                  <View key={r.id} style={styles.leaderRow} testID={`leader-row-${r.id}`}>
+                    <View style={styles.leaderRank}>
+                      {medal ? (
+                        <Text style={styles.leaderMedal}>{medal}</Text>
+                      ) : (
+                        <Text style={styles.leaderRankNum}>{r.rank}</Text>
+                      )}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.leaderName} numberOfLines={1}>
+                        {r.name}
+                        {r.job_title ? (
+                          <Text style={styles.leaderJob}> · {r.job_title}</Text>
+                        ) : null}
+                      </Text>
+                      <Text style={styles.leaderMeta} numberOfLines={1}>
+                        {r.dealership_name || r.email}
+                      </Text>
+                    </View>
+                    <Text style={styles.leaderValue}>
+                      {value}
+                      <Text style={styles.leaderValueUnit}> pts</Text>
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          );
+        })()}
       </View>
 
       {loading ? (
@@ -573,4 +676,67 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
   },
   quickChipText: { color: colors.text, fontSize: 12, fontWeight: "700", fontFamily: fonts.mono },
+
+  // Leaderboard
+  leaderCard: {
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  leaderHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: spacing.sm,
+  },
+  leaderTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    flex: 1,
+  },
+  leaderTabs: {
+    flexDirection: "row",
+    gap: 4,
+    backgroundColor: colors.paper,
+    borderRadius: 999,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  leaderTab: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  leaderTabActive: { backgroundColor: colors.primary },
+  leaderTabText: { color: colors.textSecondary, fontSize: 10, fontWeight: "800", letterSpacing: 1 },
+  leaderTabTextActive: { color: "#000" },
+  leaderEmpty: { color: colors.textSecondary, fontSize: 12, textAlign: "center", paddingVertical: spacing.md },
+  leaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  leaderRank: { width: 28, alignItems: "center", justifyContent: "center" },
+  leaderMedal: { fontSize: 18 },
+  leaderRankNum: { color: colors.textSecondary, fontSize: 12, fontWeight: "800", fontFamily: fonts.mono },
+  leaderName: { color: colors.text, fontSize: 13, fontWeight: "700" },
+  leaderJob: { color: colors.textSecondary, fontWeight: "500", fontStyle: "italic" },
+  leaderMeta: { color: colors.textSecondary, fontSize: 11, marginTop: 1 },
+  leaderValue: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "800",
+    fontFamily: fonts.number,
+  },
+  leaderValueUnit: { color: colors.textSecondary, fontSize: 11, fontWeight: "700" },
 });
