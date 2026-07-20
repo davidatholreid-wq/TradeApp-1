@@ -125,9 +125,13 @@ export default function Login() {
 
             <View style={styles.linkRow}>
               <Ionicons name="information-circle-outline" size={14} color={colors.textSecondary} />
-              <Text style={[styles.linkText, { marginLeft: 6 }]}>
-                New dealer? Please contact your Fourbuy admin for an account.
-              </Text>
+              <Text style={[styles.linkText, { marginLeft: 6 }]}>New dealer? </Text>
+              <TouchableOpacity
+                testID="login-request-account-link"
+                onPress={() => router.push("/(auth)/register")}
+              >
+                <Text style={styles.linkAction}>Request access</Text>
+              </TouchableOpacity>
             </View>
 
             <View style={styles.hintBox}>

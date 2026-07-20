@@ -1,10 +1,13 @@
+import { useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  TextInput,
   Linking,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -12,24 +15,58 @@ import { Ionicons } from "@expo/vector-icons";
 import BrandLogo from "@/src/components/BrandLogo";
 import { colors, spacing, radius, fonts, BRAND } from "@/src/theme";
 
+// WhatsApp business number the invitation requests should route to.
+// Kept as a constant so it can be swapped without touching layout code.
+const WHATSAPP_NUMBER = "27848819073"; // ZA — country code without the "+"
+
 /**
  * Public dealer self-registration is disabled — every dealer account is
  * created by a Fourbuy administrator. This screen is kept in the router so
  * any existing bookmarks / QR codes still land somewhere friendly, and it
- * explains what the user should do next.
+ * gives the prospective dealer a one-tap WhatsApp button that pre-fills the
+ * request message with their dealership + contact name.
  */
 export default function RegisterInvitationOnly() {
   const router = useRouter();
+  const [dealership, setDealership] = useState("");
+  const [name, setName] = useState("");
 
-  const emailFourbuy = () => {
-    Linking.openURL(
-      "mailto:admin@fourbuy.co.za?subject=New%20dealer%20account%20request",
-    ).catch(() => {});
+  const sendOnWhatsApp = async () => {
+    const dealerClean = dealership.trim();
+    const nameClean = name.trim();
+    if (!dealerClean || !nameClean) {
+      Alert.alert(
+        "Fill in both fields",
+        "Please enter your dealership and your name so the Fourbuy team can help you quickly.",
+      );
+      return;
+    }
+    const message =
+      `Hi Fourbuy 👋\n\n` +
+      `I'd like to request a dealer account on the Fourbuy Car Buying Co. app.\n\n` +
+      `• Dealership: ${dealerClean}\n` +
+      `• My name: ${nameClean}\n\n` +
+      `Please let me know what you need from us to get set up. Thank you!`;
+    const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (!supported) {
+        // Fallback for platforms where wa.me isn't detected as openable.
+        await Linking.openURL(url);
+        return;
+      }
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert(
+        "Could not open WhatsApp",
+        "Please make sure WhatsApp is installed, or contact us on +27 84 881 9073.",
+      );
+    }
   };
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <View style={styles.logoWrap}>
           <BrandLogo size="lg" />
         </View>
@@ -49,33 +86,65 @@ export default function RegisterInvitationOnly() {
             <View style={styles.step}>
               <Text style={styles.stepIndex}>1</Text>
               <Text style={styles.stepText}>
-                Contact your Fourbuy admin (or email us) with your dealership
-                name, address, and the users you&apos;d like added.
+                Fill in your dealership and your name below.
               </Text>
             </View>
             <View style={styles.step}>
               <Text style={styles.stepIndex}>2</Text>
               <Text style={styles.stepText}>
-                We&apos;ll create your dealership and each team member&apos;s
-                login, and send you the credentials.
+                Tap the WhatsApp button — it opens a chat with the Fourbuy team
+                pre-filled with your details.
               </Text>
             </View>
             <View style={styles.step}>
               <Text style={styles.stepIndex}>3</Text>
               <Text style={styles.stepText}>
-                Sign in on this app and start submitting vehicles for valuation.
+                We&apos;ll set up your dealership and each user&apos;s login,
+                then send you the credentials on WhatsApp.
               </Text>
             </View>
           </View>
 
+          {/* Form */}
+          <View style={styles.formRow}>
+            <Text style={styles.label}>Dealership name</Text>
+            <TextInput
+              testID="register-dealership-input"
+              style={styles.input}
+              value={dealership}
+              onChangeText={setDealership}
+              placeholder="e.g. Hatfield Ford Bryanston"
+              placeholderTextColor={colors.textDisabled}
+              autoCapitalize="words"
+              returnKeyType="next"
+            />
+          </View>
+          <View style={styles.formRow}>
+            <Text style={styles.label}>Your name</Text>
+            <TextInput
+              testID="register-name-input"
+              style={styles.input}
+              value={name}
+              onChangeText={setName}
+              placeholder="e.g. John Smith"
+              placeholderTextColor={colors.textDisabled}
+              autoCapitalize="words"
+              returnKeyType="done"
+              onSubmitEditing={sendOnWhatsApp}
+            />
+          </View>
+
           <TouchableOpacity
-            testID="register-email-admin-btn"
+            testID="register-whatsapp-btn"
             style={styles.primaryBtn}
-            onPress={emailFourbuy}
+            onPress={sendOnWhatsApp}
           >
-            <Ionicons name="mail-outline" size={16} color="#000" />
-            <Text style={styles.primaryBtnText}>Email Fourbuy admin</Text>
+            <Ionicons name="logo-whatsapp" size={18} color="#000" />
+            <Text style={styles.primaryBtnText}>Request via WhatsApp</Text>
           </TouchableOpacity>
+          <Text style={styles.hint}>
+            Opens WhatsApp with a pre-filled message to +27 84 881 9073.
+          </Text>
 
           <TouchableOpacity
             testID="register-back-btn"
@@ -174,8 +243,32 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
   },
+  formRow: {
+    width: "100%",
+    marginBottom: spacing.sm,
+  },
+  label: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    marginBottom: 6,
+  },
+  input: {
+    width: "100%",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    backgroundColor: colors.paper,
+    color: colors.text,
+    fontSize: 14,
+  },
   primaryBtn: {
     width: "100%",
+    marginTop: spacing.sm,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -189,6 +282,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "800",
     letterSpacing: 1,
+  },
+  hint: {
+    marginTop: 8,
+    color: colors.textSecondary,
+    fontSize: 11,
+    textAlign: "center",
   },
   ghostBtn: {
     marginTop: spacing.md,
