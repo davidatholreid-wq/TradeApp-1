@@ -34,7 +34,7 @@ type Redemption = {
 };
 type LedgerEntry = {
   id: string;
-  type: "earn" | "spend" | "refund" | "fulfill";
+  type: "earn" | "spend" | "refund" | "fulfill" | "adjust";
   delta: number;
   note?: string;
   at: string;

@@ -27,6 +27,17 @@ type Redemption = {
   actioned_at?: string | null;
 };
 
+type RewardUser = {
+  id: string;
+  email: string;
+  name: string;
+  job_title?: string | null;
+  active: boolean;
+  dealership_id?: string | null;
+  dealership_name?: string | null;
+  balance: number;
+};
+
 export default function AdminRewardsScreen() {
   const [redemptions, setRedemptions] = useState<Redemption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,6 +46,16 @@ export default function AdminRewardsScreen() {
   const [voucherCode, setVoucherCode] = useState("");
   const [adminNote, setAdminNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // Bonus-points grant state
+  const [grantOpen, setGrantOpen] = useState(false);
+  const [grantUsers, setGrantUsers] = useState<RewardUser[]>([]);
+  const [grantLoading, setGrantLoading] = useState(false);
+  const [grantSearch, setGrantSearch] = useState("");
+  const [grantSelected, setGrantSelected] = useState<RewardUser | null>(null);
+  const [grantPoints, setGrantPoints] = useState("");
+  const [grantReason, setGrantReason] = useState("");
+  const [grantSubmitting, setGrantSubmitting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -50,6 +71,55 @@ export default function AdminRewardsScreen() {
   }, [filter]);
 
   useEffect(() => { load(); }, [load]);
+
+  const openGrant = async () => {
+    setGrantOpen(true);
+    setGrantSelected(null);
+    setGrantPoints("");
+    setGrantReason("");
+    setGrantSearch("");
+    setGrantLoading(true);
+    try {
+      const res = await apiFetch("/api/admin/rewards/users");
+      setGrantUsers(res.users || []);
+    } catch (e: any) {
+      Alert.alert("Error", e?.message || "Could not load dealer list");
+    } finally {
+      setGrantLoading(false);
+    }
+  };
+  const submitGrant = async () => {
+    if (!grantSelected) return;
+    const pts = parseInt(grantPoints, 10);
+    if (!pts || Number.isNaN(pts)) {
+      Alert.alert("Invalid points", "Enter a non-zero whole number (use a negative to debit).");
+      return;
+    }
+    if (!grantReason.trim()) {
+      Alert.alert("Reason required", "Please add a short reason for the adjustment — it's recorded in the audit log.");
+      return;
+    }
+    setGrantSubmitting(true);
+    try {
+      const res = await apiFetch("/api/admin/rewards/grant", {
+        method: "POST",
+        body: JSON.stringify({
+          user_id: grantSelected.id,
+          points: pts,
+          reason: grantReason.trim(),
+        }),
+      });
+      Alert.alert(
+        "Adjustment applied",
+        `${grantSelected.name} · new balance ${res.balance} pt${res.balance === 1 ? "" : "s"}.`,
+      );
+      setGrantOpen(false);
+    } catch (e: any) {
+      Alert.alert("Error", e?.message || "Grant failed");
+    } finally {
+      setGrantSubmitting(false);
+    }
+  };
 
   const openFulfill = (r: Redemption) => {
     setActionModal({ type: "fulfill", r });
@@ -89,8 +159,14 @@ export default function AdminRewardsScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.h1}>Voucher Requests</Text>
-        <Text style={styles.sub}>Fulfil each request by pasting the Takealot voucher code. Rejecting refunds the user&apos;s points.</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.h1}>Voucher Requests</Text>
+          <Text style={styles.sub}>Fulfil each request by pasting the Takealot voucher code. Rejecting refunds the user&apos;s points.</Text>
+        </View>
+        <TouchableOpacity testID="grant-bonus-btn" style={styles.grantBtn} onPress={openGrant}>
+          <Ionicons name="add-circle-outline" size={16} color="#000" />
+          <Text style={styles.grantBtnText}>Grant points</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.tabs}>
@@ -220,6 +296,145 @@ export default function AdminRewardsScreen() {
           </View>
         </View>
       ) : null}
+
+      {grantOpen ? (
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { maxHeight: "90%" }]}>
+            <Text style={styles.modalTitle}>Grant bonus points</Text>
+            <Text style={styles.modalSub}>
+              Credit or debit a dealer&apos;s reward balance. Adjustments are recorded in the audit ledger under your admin account.
+            </Text>
+
+            {grantSelected ? (
+              <View style={styles.selectedUserBox}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.userName}>{grantSelected.name}</Text>
+                  <Text style={styles.userEmail}>{grantSelected.email}</Text>
+                  {grantSelected.dealership_name ? (
+                    <Text style={styles.userEmail}>{grantSelected.dealership_name}</Text>
+                  ) : null}
+                </View>
+                <View style={{ alignItems: "flex-end" }}>
+                  <Text style={styles.balancePill}>{grantSelected.balance} pts</Text>
+                  <TouchableOpacity onPress={() => setGrantSelected(null)}>
+                    <Text style={styles.changeUserLink}>Change</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <>
+                <Text style={styles.modalLabel}>SELECT DEALER</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={grantSearch}
+                  onChangeText={setGrantSearch}
+                  placeholder="Search by name, email or dealership"
+                  placeholderTextColor={colors.textDisabled}
+                  autoCapitalize="none"
+                />
+                <ScrollView style={styles.userList} nestedScrollEnabled>
+                  {grantLoading ? (
+                    <ActivityIndicator style={{ marginVertical: spacing.md }} color={colors.primary} />
+                  ) : (
+                    grantUsers
+                      .filter((u) => {
+                        const q = grantSearch.trim().toLowerCase();
+                        if (!q) return true;
+                        return (
+                          u.name.toLowerCase().includes(q) ||
+                          (u.email || "").toLowerCase().includes(q) ||
+                          (u.dealership_name || "").toLowerCase().includes(q)
+                        );
+                      })
+                      .slice(0, 40)
+                      .map((u) => (
+                        <TouchableOpacity
+                          key={u.id}
+                          testID={`grant-pick-${u.id}`}
+                          style={styles.userRow}
+                          onPress={() => setGrantSelected(u)}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.userName}>{u.name}</Text>
+                            <Text style={styles.userEmail}>
+                              {u.email}
+                              {u.dealership_name ? ` · ${u.dealership_name}` : ""}
+                            </Text>
+                          </View>
+                          <Text style={styles.balancePill}>{u.balance} pts</Text>
+                        </TouchableOpacity>
+                      ))
+                  )}
+                </ScrollView>
+              </>
+            )}
+
+            {grantSelected ? (
+              <>
+                <Text style={styles.modalLabel}>POINTS (+ credit, – debit)</Text>
+                <TextInput
+                  testID="grant-points-input"
+                  style={styles.modalInput}
+                  value={grantPoints}
+                  onChangeText={setGrantPoints}
+                  keyboardType="numbers-and-punctuation"
+                  placeholder="50"
+                  placeholderTextColor={colors.textDisabled}
+                  editable={!grantSubmitting}
+                />
+                <View style={styles.quickRow}>
+                  {[10, 25, 50, -10].map((v) => (
+                    <TouchableOpacity
+                      key={v}
+                      style={styles.quickChip}
+                      onPress={() => setGrantPoints(String(v))}
+                    >
+                      <Text style={styles.quickChipText}>{v > 0 ? `+${v}` : v}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <Text style={styles.modalLabel}>REASON (audit log)</Text>
+                <TextInput
+                  testID="grant-reason-input"
+                  style={[styles.modalInput, { minHeight: 60 }]}
+                  value={grantReason}
+                  onChangeText={setGrantReason}
+                  multiline
+                  placeholder="Bonus for onboarding / correction / verification test…"
+                  placeholderTextColor={colors.textDisabled}
+                  editable={!grantSubmitting}
+                />
+              </>
+            ) : null}
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnGhost]}
+                onPress={() => setGrantOpen(false)}
+                disabled={grantSubmitting}
+              >
+                <Text style={styles.modalBtnGhostText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="grant-submit"
+                style={[
+                  styles.modalBtn,
+                  styles.modalBtnPrimary,
+                  (!grantSelected || !grantPoints.trim() || !grantReason.trim()) && { opacity: 0.4 },
+                ]}
+                onPress={submitGrant}
+                disabled={grantSubmitting || !grantSelected || !grantPoints.trim() || !grantReason.trim()}
+              >
+                {grantSubmitting ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <Text style={styles.modalBtnPrimaryText}>Apply</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -237,9 +452,19 @@ const statusTextStyles: any = {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg, padding: spacing.md },
-  header: { marginBottom: spacing.md },
+  header: { flexDirection: "row", alignItems: "flex-start", gap: spacing.md, marginBottom: spacing.md },
   h1: { color: colors.text, fontSize: 22, fontWeight: "800", letterSpacing: 0.4 },
   sub: { color: colors.textSecondary, fontSize: 13, marginTop: 4 },
+  grantBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: radius.sm,
+  },
+  grantBtnText: { color: "#000", fontWeight: "800", letterSpacing: 0.4, fontSize: 12 },
   tabs: { flexDirection: "row", gap: 4, marginBottom: spacing.md },
   tab: { paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card },
   tabActive: { backgroundColor: colors.primary, borderColor: colors.primary },
@@ -295,4 +520,57 @@ const styles = StyleSheet.create({
   modalBtnPrimaryText: { color: "#000", fontWeight: "800", letterSpacing: 1 },
   modalBtnDanger: { backgroundColor: colors.danger },
   modalBtnDangerText: { color: "#fff", fontWeight: "800", letterSpacing: 1 },
+
+  // Grant modal specifics
+  userList: {
+    maxHeight: 220,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    backgroundColor: colors.paper,
+    marginTop: 4,
+  },
+  userRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  balancePill: {
+    color: colors.text,
+    fontFamily: fonts.mono,
+    fontSize: 12,
+    fontWeight: "800",
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+  },
+  selectedUserBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    padding: spacing.md,
+    backgroundColor: colors.card,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    marginTop: 4,
+  },
+  changeUserLink: { color: colors.textSecondary, fontSize: 11, marginTop: 4, textDecorationLine: "underline" },
+  quickRow: { flexDirection: "row", gap: 6, marginTop: 6 },
+  quickChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    backgroundColor: colors.card,
+  },
+  quickChipText: { color: colors.text, fontSize: 12, fontWeight: "700", fontFamily: fonts.mono },
 });

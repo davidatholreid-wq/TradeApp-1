@@ -3243,6 +3243,15 @@ class RedemptionActionRequest(BaseModel):
     admin_note: Optional[str] = None
 
 
+class RewardGrantRequest(BaseModel):
+    """Admin adjustment to a user's reward balance. Positive `points` credits
+    the account, negative debits. `reason` is required and stored in the
+    ledger note so bonus/goodwill adjustments remain fully auditable."""
+    user_id: str
+    points: int
+    reason: str
+
+
 @api_router.get("/rewards/me")
 async def rewards_me(current: dict = Depends(get_current_user)):
     """Dealer's own rewards summary: balance, next threshold, ledger and
@@ -3443,6 +3452,99 @@ async def admin_reject_redemption(
         logger.warning("Reject push failed (non-blocking): %s", e)
     fresh = await db.reward_redemptions.find_one({"id": redemption_id}, {"_id": 0})
     return {"redemption": fresh}
+
+
+@api_router.get("/admin/rewards/users")
+async def admin_list_reward_users(current: dict = Depends(require_admin)):
+    """List all dealer users with their current reward balance. Powers the
+    admin "grant bonus points" picker."""
+    users = await db.users.find(
+        {"role": "dealer"},
+        {"_id": 0, "password_hash": 0},
+    ).to_list(1000)
+    # Bulk-sum ledger deltas so we don't do N round-trips.
+    balances: dict[str, int] = {}
+    async for e in db.reward_ledger.find({}, {"_id": 0, "user_id": 1, "delta": 1}):
+        uid = e.get("user_id")
+        if not uid:
+            continue
+        balances[uid] = balances.get(uid, 0) + int(e.get("delta") or 0)
+    dealership_ids = list({u.get("dealership_id") for u in users if u.get("dealership_id")})
+    dealership_docs = await db.dealerships.find(
+        {"id": {"$in": dealership_ids}}, {"_id": 0, "id": 1, "name": 1}
+    ).to_list(1000) if dealership_ids else []
+    d_by_id = {d["id"]: d for d in dealership_docs}
+    out = []
+    for u in users:
+        info = u.get("dealer_info") or {}
+        first = info.get("first_name") or ""
+        last = info.get("last_name") or ""
+        name = f"{first} {last}".strip() or (u.get("email") or "")
+        d = d_by_id.get(u.get("dealership_id") or "")
+        out.append({
+            "id": u["id"],
+            "email": u.get("email"),
+            "name": name,
+            "job_title": info.get("job_title"),
+            "active": u.get("active", True),
+            "dealership_id": u.get("dealership_id"),
+            "dealership_name": (d or {}).get("name"),
+            "balance": max(0, balances.get(u["id"], 0)),
+        })
+    out.sort(key=lambda x: (x["dealership_name"] or "", x["name"]))
+    return {"users": out, "points_per_voucher": REWARD_POINTS_PER_VOUCHER}
+
+
+@api_router.post("/admin/rewards/grant")
+async def admin_grant_reward_points(
+    payload: RewardGrantRequest,
+    current: dict = Depends(require_admin),
+):
+    """Admin credit / debit of a dealer's reward balance. Positive `points`
+    adds a bonus, negative removes. Everything is written to the ledger with
+    the admin's identity and reason so this stays fully auditable."""
+    reason = (payload.reason or "").strip()
+    if not reason:
+        raise HTTPException(400, "reason is required")
+    if payload.points == 0:
+        raise HTTPException(400, "points must be non-zero")
+    target = await db.users.find_one(
+        {"id": payload.user_id}, {"_id": 0, "password_hash": 0}
+    )
+    if not target:
+        raise HTTPException(404, "User not found")
+    if target.get("role") != "dealer":
+        raise HTTPException(400, "Bonus points can only be granted to dealer users")
+
+    # If it's a debit, guard against sending the balance below zero.
+    delta = int(payload.points)
+    if delta < 0:
+        current_balance = await get_user_reward_balance(payload.user_id)
+        if current_balance + delta < 0:
+            raise HTTPException(
+                400,
+                f"Cannot debit {abs(delta)} pts — user only has {current_balance} pt(s)",
+            )
+
+    doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": payload.user_id,
+        "dealership_id": target.get("dealership_id"),
+        "type": "adjust",
+        "delta": delta,
+        "note": f"Admin adjustment · {reason}",
+        "granted_by_admin_id": current["id"],
+        "granted_by_admin_email": current.get("email"),
+        "at": now_utc(),
+    }
+    await db.reward_ledger.insert_one(doc)
+    fresh_balance = await get_user_reward_balance(payload.user_id)
+    return {
+        "user_id": payload.user_id,
+        "delta": delta,
+        "balance": fresh_balance,
+        "reason": reason,
+    }
 
 
 # ============ Health ============
