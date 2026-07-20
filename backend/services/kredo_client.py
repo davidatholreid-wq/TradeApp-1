@@ -267,6 +267,29 @@ class KredoClient:
             },
         )
 
+    async def vin_history(
+        self,
+        vin: str,
+        *,
+        country: str = "za",
+        currency: str = "zar",
+    ) -> dict[str, Any]:
+        """Fetch the accident / claim history for a given VIN.
+
+        Kredo returns a nested structure at `claim-history.result.claim`;
+        callers should use `normalise_vin_history()` to flatten it into
+        the shape the UI expects.
+        """
+        return await self._post(
+            "/vinhistory",
+            {
+                "client_guid": self._guid(),
+                "vin": vin,
+                "country": country,
+                "currency": currency,
+            },
+        )
+
     async def aclose(self) -> None:
         await self._http.aclose()
 

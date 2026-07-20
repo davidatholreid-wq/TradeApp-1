@@ -3774,6 +3774,125 @@ async def kredo_value(
     return _parse_kredo_value(raw)
 
 
+# ---------- VIN History (accident data) ----------
+
+# Damage location keys we surface to the UI, in display order. The Kredo
+# response uses "Y" / null so we normalise to booleans.
+_DAMAGE_KEYS = [
+    "front",
+    "front-left",
+    "front-right",
+    "rear",
+    "rear-left",
+    "rear-right",
+    "side-left",
+    "side-right",
+    "roof",
+    "underbody",
+    "interior",
+    "mechanical",
+]
+
+
+def _normalise_vin_history(raw: dict) -> dict:
+    """Flatten Kredo's nested `claim-history` payload into a shape the app
+    can render directly."""
+    ch = (raw or {}).get("claim-history") or {}
+    result = ch.get("result") or {}
+    claims_raw = result.get("claim") or []
+    if isinstance(claims_raw, dict):
+        # Kredo sometimes returns a single object instead of a list.
+        claims_raw = [claims_raw]
+    claims: list[dict] = []
+    for c in claims_raw:
+        dmg = ((c.get("damage") or {}).get("general") or {})
+        glass = ((c.get("damage") or {}).get("glass") or {})
+        veh = c.get("vehicle") or {}
+        claims.append({
+            "id": c.get("@id"),
+            "accident_date": (c.get("claim") or {}).get("accident-date"),
+            "creation_date": c.get("creation"),
+            "country": c.get("country"),
+            "manufacturer": veh.get("car-manufacturer"),
+            "model": veh.get("car-model"),
+            "mileage_at_claim": veh.get("mileage"),
+            "first_registration": veh.get("first-registration"),
+            "damage_locations": [k for k in _DAMAGE_KEYS if dmg.get(k) == "Y"],
+            "glass_damage": bool(glass.get("front") == "Y"),
+        })
+    return {
+        "claim_count": len(claims),
+        "claims": claims,
+        "vin": ((ch.get("request") or {}).get("vin")),
+    }
+
+
+class KredoVinHistoryRequest(BaseModel):
+    vin: str
+    submission_id: Optional[str] = None
+    refresh: bool = False
+    cache_only: bool = False
+
+
+@api_router.post("/kredo/vin-history")
+async def kredo_vin_history(
+    payload: KredoVinHistoryRequest,
+    current: dict = Depends(require_admin),
+):
+    """Fetch (or return cached) Kredo VIN history for an admin-viewed submission.
+
+    Modes:
+    * `cache_only=True`  → return cached result if present, else `null`.
+      Never touches Kredo. Used to auto-populate the screen on mount.
+    * `refresh=False` (default) → return cached result if present; otherwise
+      call Kredo and cache the fresh response.
+    * `refresh=True` → always call Kredo and rewrite the cache.
+    """
+    vin = (payload.vin or "").strip().upper()
+    if not vin:
+        raise HTTPException(400, "vin is required")
+
+    if payload.submission_id:
+        sub = await db.submissions.find_one(
+            {"id": payload.submission_id}, {"_id": 0}
+        )
+        if not sub:
+            raise HTTPException(404, "Submission not found")
+        cached = ((sub.get("reports") or {}).get("kredo_vin_history") or None)
+        if cached and not payload.refresh:
+            return {
+                "result": cached.get("result"),
+                "cached_at": cached.get("fetched_at"),
+                "source": "cache",
+                "vin": vin,
+            }
+        if payload.cache_only:
+            return {"result": None, "cached_at": None, "source": "cache", "vin": vin}
+
+    try:
+        raw = await get_kredo_client().vin_history(vin)
+    except KredoAPIError as e:
+        raise _kredo_502(e) from e
+    normalised = _normalise_vin_history(raw)
+    now = now_utc()
+
+    if payload.submission_id:
+        await db.submissions.update_one(
+            {"id": payload.submission_id},
+            {"$set": {"reports.kredo_vin_history": {
+                "result": normalised,
+                "fetched_at": now,
+                "fetched_by_admin_id": current["id"],
+            }}},
+        )
+    return {
+        "result": normalised,
+        "cached_at": now,
+        "source": "kredo",
+        "vin": vin,
+    }
+
+
 # ============ Health (real) ============
 @api_router.get("/")
 async def root():

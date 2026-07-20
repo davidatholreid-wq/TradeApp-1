@@ -207,6 +207,50 @@ export default function VehicleDetail() {
   const [declineNote, setDeclineNote] = useState("");
   const [declining, setDeclining] = useState(false);
 
+  // Kredo VIN accident history (admin-only)
+  type KredoClaim = {
+    id: string;
+    accident_date: string | null;
+    creation_date: string | null;
+    country: string | null;
+    manufacturer: string | null;
+    model: string | null;
+    mileage_at_claim: string | null;
+    first_registration: string | null;
+    damage_locations: string[];
+    glass_damage: boolean;
+  };
+  type KredoHistory = {
+    result: { claim_count: number; claims: KredoClaim[] };
+    cached_at: string | null;
+    source: "kredo" | "cache";
+  };
+  const [kredoHistory, setKredoHistory] = useState<KredoHistory | null>(null);
+  const [kredoLoading, setKredoLoading] = useState(false);
+
+  const fetchKredoHistory = async (refresh = false) => {
+    if (!sub?.id || !sub.vin) return;
+    setKredoLoading(true);
+    try {
+      const r = await apiFetch("/api/kredo/vin-history", {
+        method: "POST",
+        body: JSON.stringify({
+          vin: sub.vin.trim().toUpperCase(),
+          submission_id: sub.id,
+          refresh,
+        }),
+      });
+      setKredoHistory(r as KredoHistory);
+    } catch (e: any) {
+      Alert.alert(
+        "Kredo VIN history",
+        e?.message || "Could not fetch accident history from Kredo.",
+      );
+    } finally {
+      setKredoLoading(false);
+    }
+  };
+
   useEffect(() => {
     (async () => {
       try {
@@ -220,6 +264,30 @@ export default function VehicleDetail() {
       }
     })();
   }, [id, router]);
+
+  // Auto-load cached Kredo VIN history for admins on mount. `cache_only`
+  // means we NEVER hit Kredo on page load — only surface a previously
+  // fetched result. The user has to click the button to make a fresh call.
+  useEffect(() => {
+    if (!isAdmin || !sub?.id || !sub.vin) return;
+    if (sub.vin.trim().toUpperCase() === "TBC") return;
+    (async () => {
+      try {
+        const r = await apiFetch("/api/kredo/vin-history", {
+          method: "POST",
+          body: JSON.stringify({
+            vin: sub.vin!.trim().toUpperCase(),
+            submission_id: sub.id,
+            cache_only: true,
+          }),
+        });
+        if (r?.result) setKredoHistory(r as KredoHistory);
+      } catch {
+        // Silent — the manual "Fetch" button remains available in the UI.
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin, sub?.id, sub?.vin]);
 
   // Auto-refresh whenever the screen regains focus (e.g. dealer navigates
   // back to this vehicle after an admin has posted a price offer). Without
@@ -1376,6 +1444,114 @@ export default function VehicleDetail() {
                   })}
               </>
             ) : null}
+          </View>
+        ) : null}
+
+        {/* Kredo VIN accident/claim history — admin-only, on-demand fetch. */}
+        {isAdmin && sub.vin && sub.vin.trim() && sub.vin.toUpperCase() !== "TBC" ? (
+          <View style={styles.reportsSection} testID="kredo-history-section">
+            <View style={styles.kredoHead}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sectionTitle}>Accident / Claim History</Text>
+                <Text style={styles.reportsHelp}>
+                  Kredo VIN history for {sub.vin}. Results are cached — refresh only if you need a fresh check.
+                </Text>
+              </View>
+              <TouchableOpacity
+                testID="kredo-history-fetch-btn"
+                style={styles.kredoFetchBtn}
+                onPress={() => fetchKredoHistory(!!kredoHistory)}
+                disabled={kredoLoading}
+              >
+                {kredoLoading ? (
+                  <ActivityIndicator color="#000" size="small" />
+                ) : (
+                  <>
+                    <Ionicons
+                      name={kredoHistory ? "refresh" : "search"}
+                      size={14}
+                      color="#000"
+                    />
+                    <Text style={styles.kredoFetchBtnText}>
+                      {kredoHistory ? "Refresh" : "Fetch"}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {!kredoHistory ? (
+              <View style={styles.kredoEmpty}>
+                <Ionicons name="alert-circle-outline" size={22} color={colors.textDisabled} />
+                <Text style={styles.kredoEmptyText}>
+                  No history fetched yet. Tap Fetch to check for insurance claims and accident records for this VIN.
+                </Text>
+              </View>
+            ) : kredoHistory.result.claim_count === 0 ? (
+              <View style={styles.kredoClean}>
+                <Ionicons name="checkmark-circle" size={22} color={colors.success} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.kredoCleanTitle}>No claims found</Text>
+                  <Text style={styles.kredoCleanSub}>
+                    Kredo has no insurance-claim records against this VIN.
+                    {kredoHistory.cached_at ? ` · Checked ${new Date(kredoHistory.cached_at).toLocaleString()}` : ""}
+                  </Text>
+                </View>
+              </View>
+            ) : (
+              <View>
+                <View style={styles.kredoCountBanner}>
+                  <Ionicons name="warning" size={16} color={colors.warning} />
+                  <Text style={styles.kredoCountText}>
+                    {kredoHistory.result.claim_count} claim{kredoHistory.result.claim_count === 1 ? "" : "s"} on record
+                  </Text>
+                  <Text style={styles.kredoSource}>
+                    {kredoHistory.source === "cache" ? "cached" : "live"}
+                    {kredoHistory.cached_at ? ` · ${new Date(kredoHistory.cached_at).toLocaleDateString()}` : ""}
+                  </Text>
+                </View>
+                {kredoHistory.result.claims.map((c) => (
+                  <View key={c.id} style={styles.claimCard}>
+                    <View style={styles.claimHead}>
+                      <Text style={styles.claimDate}>
+                        {c.accident_date || c.creation_date || "Unknown date"}
+                      </Text>
+                      {c.country ? <Text style={styles.claimCountry}>{c.country}</Text> : null}
+                    </View>
+                    {c.manufacturer || c.model ? (
+                      <Text style={styles.claimVehicle}>
+                        {[c.manufacturer, c.model].filter(Boolean).join(" · ")}
+                      </Text>
+                    ) : null}
+                    {c.mileage_at_claim ? (
+                      <Text style={styles.claimMeta}>
+                        {parseInt(c.mileage_at_claim, 10).toLocaleString("en-ZA")} km at claim
+                      </Text>
+                    ) : null}
+                    {c.damage_locations.length > 0 ? (
+                      <View style={styles.damageRow}>
+                        {c.damage_locations.map((d) => (
+                          <View key={d} style={styles.damageChip}>
+                            <Text style={styles.damageChipText}>{d.replace("-", " ").toUpperCase()}</Text>
+                          </View>
+                        ))}
+                        {c.glass_damage ? (
+                          <View style={[styles.damageChip, styles.damageChipGlass]}>
+                            <Ionicons name="glasses-outline" size={10} color="#000" />
+                            <Text style={[styles.damageChipText, { color: "#000" }]}>WINDSCREEN</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    ) : (
+                      <Text style={styles.claimMeta}>
+                        Claim record present but no specific damage location recorded.
+                      </Text>
+                    )}
+                    <Text style={styles.claimId}>Ref: {c.id}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
           </View>
         ) : null}
 
@@ -2655,6 +2831,116 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     flex: 1,
     lineHeight: 16,
+  },
+
+  // Kredo VIN accident history card
+  kredoHead: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  kredoFetchBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.sm,
+    minWidth: 84,
+    justifyContent: "center",
+  },
+  kredoFetchBtnText: { color: "#000", fontSize: 12, fontWeight: "800", letterSpacing: 0.5 },
+  kredoEmpty: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    backgroundColor: colors.paper,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderStyle: "dashed",
+    borderRadius: radius.sm,
+    padding: spacing.md,
+  },
+  kredoEmptyText: {
+    flex: 1,
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  kredoClean: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.paper,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    padding: spacing.md,
+  },
+  kredoCleanTitle: { color: colors.text, fontSize: 14, fontWeight: "800" },
+  kredoCleanSub: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
+  kredoCountBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: colors.paper,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    marginBottom: spacing.sm,
+  },
+  kredoCountText: { flex: 1, color: colors.text, fontSize: 13, fontWeight: "800", letterSpacing: 0.5 },
+  kredoSource: { color: colors.textSecondary, fontSize: 10, letterSpacing: 1, textTransform: "uppercase" },
+  claimCard: {
+    backgroundColor: colors.paper,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  claimHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 4,
+  },
+  claimDate: { color: colors.text, fontSize: 14, fontWeight: "800" },
+  claimCountry: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  claimVehicle: { color: colors.text, fontSize: 12, marginBottom: 2 },
+  claimMeta: { color: colors.textSecondary, fontSize: 11, marginBottom: 6 },
+  damageRow: { flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 4, marginBottom: 4 },
+  damageChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: colors.danger,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  damageChipGlass: { backgroundColor: colors.warning },
+  damageChipText: { color: "#fff", fontSize: 9, fontWeight: "800", letterSpacing: 0.5 },
+  claimId: {
+    color: colors.textDisabled,
+    fontSize: 10,
+    fontFamily: fonts.mono,
+    marginTop: 4,
   },
 
   // View Report button (delivered)
