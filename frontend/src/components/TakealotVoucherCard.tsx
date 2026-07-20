@@ -12,22 +12,21 @@ type Props = {
 };
 
 // Subtle brand-pattern icons scattered across the card background.
-// Kept very low-opacity so the R500 / wordmark stay crisp.
+// Rendered at very low opacity so the R500 / wordmark stay crisp.
 const PATTERN: {
   name: keyof typeof Ionicons.glyphMap;
   top: string;
   left: string;
   size: number;
 }[] = [
-  { name: "headset-outline", top: "8%", left: "78%", size: 18 },
-  { name: "heart-outline", top: "18%", left: "6%", size: 14 },
-  { name: "musical-notes-outline", top: "30%", left: "88%", size: 16 },
-  { name: "game-controller-outline", top: "42%", left: "4%", size: 18 },
-  { name: "cube-outline", top: "48%", left: "82%", size: 15 },
-  { name: "flame-outline", top: "62%", left: "10%", size: 14 },
-  { name: "gift-outline", top: "72%", left: "80%", size: 16 },
-  { name: "star-outline", top: "56%", left: "50%", size: 14 },
-  { name: "sparkles-outline", top: "22%", left: "40%", size: 14 },
+  { name: "headset-outline", top: "10%", left: "78%", size: 20 },
+  { name: "heart-outline", top: "22%", left: "8%", size: 16 },
+  { name: "musical-notes-outline", top: "38%", left: "88%", size: 18 },
+  { name: "game-controller-outline", top: "50%", left: "6%", size: 20 },
+  { name: "cube-outline", top: "56%", left: "82%", size: 16 },
+  { name: "flame-outline", top: "70%", left: "12%", size: 16 },
+  { name: "gift-outline", top: "76%", left: "78%", size: 18 },
+  { name: "sparkles-outline", top: "18%", left: "42%", size: 14 },
 ];
 
 export function TakealotVoucherCard({
@@ -38,13 +37,14 @@ export function TakealotVoucherCard({
 }: Props) {
   return (
     <View style={[styles.outer, style]}>
+      {/* Card body — dark charcoal for maximum R500 contrast */}
       <LinearGradient
-        colors={["#FFFFFF", "#F2F3F5"]}
+        colors={["#1F2937", "#0B1220"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.card}
       >
-        {/* Subtle icon pattern */}
+        {/* Icon pattern layer */}
         <View style={styles.pattern} pointerEvents="none">
           {PATTERN.map((p, i) => (
             <View
@@ -54,31 +54,66 @@ export function TakealotVoucherCard({
                 { top: p.top as any, left: p.left as any },
               ]}
             >
-              <Ionicons name={p.name} size={p.size} color="rgba(15,23,42,0.06)" />
+              <Ionicons name={p.name} size={p.size} color="rgba(255,255,255,0.06)" />
             </View>
           ))}
         </View>
 
-        {/* Brand row */}
-        <View style={styles.brandRow}>
-          <Text style={styles.brandWord}>takealot</Text>
-          <View style={styles.brandChip}>
-            <Text style={styles.brandChipText}>.com</Text>
+        {/* Diagonal gloss highlight — very subtle, gives the card a premium sheen */}
+        <LinearGradient
+          colors={[
+            "rgba(255,255,255,0)",
+            "rgba(255,255,255,0.06)",
+            "rgba(255,255,255,0)",
+          ]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.gloss}
+          pointerEvents="none"
+        />
+
+        {/* Top: brand + status pill */}
+        <View style={styles.topRow}>
+          <View style={styles.brandRow}>
+            <Text style={styles.brandWord}>takealot</Text>
+            <View style={styles.brandChip}>
+              <Text style={styles.brandChipText}>.com</Text>
+            </View>
+          </View>
+          <View
+            style={[
+              styles.statusPill,
+              unlocked ? styles.statusPillOn : styles.statusPillOff,
+            ]}
+          >
+            <Ionicons
+              name={unlocked ? "checkmark-circle" : "lock-closed"}
+              size={10}
+              color={unlocked ? "#0B1220" : "#F5F5F5"}
+            />
+            <Text
+              style={[
+                styles.statusPillText,
+                unlocked && styles.statusPillTextOn,
+              ]}
+            >
+              {unlocked ? "READY" : `${pointsRequired} PTS`}
+            </Text>
           </View>
         </View>
 
-        {/* Value */}
-        <View style={styles.valueBlock}>
-          <Text style={styles.value}>
-            R<Text style={styles.valueNum}>{value}</Text>
-          </Text>
-          <Text style={styles.subtitle}>GIFT VOUCHER</Text>
+        {/* Big value */}
+        <View style={styles.valueRow}>
+          <Text style={styles.currency}>R</Text>
+          <Text style={styles.value}>{value}</Text>
+          <View style={styles.valueRight}>
+            <Text style={styles.tag}>GIFT</Text>
+            <Text style={styles.tag}>VOUCHER</Text>
+          </View>
         </View>
 
-        {/* Decorative ribbon (bottom-left arc, faked with an oversized
-            rotated square with a large border radius) */}
-        <View style={styles.ribbon} pointerEvents="none" />
-        <View style={styles.ribbonShadow} pointerEvents="none" />
+        {/* Divider line */}
+        <View style={styles.divider} pointerEvents="none" />
 
         {/* Bottom band */}
         <View style={styles.footer}>
@@ -86,19 +121,13 @@ export function TakealotVoucherCard({
             <Ionicons name="ribbon-outline" size={12} color="#F5F5F5" />
             <Text style={styles.footerLabel}>FOURBUY REWARDS</Text>
           </View>
-          <Text
-            style={[
-              styles.footerStatus,
-              unlocked && styles.footerStatusOn,
-            ]}
-            numberOfLines={1}
-          >
-            {unlocked ? "READY TO REDEEM" : `UNLOCK AT ${pointsRequired} PTS`}
+          <Text style={styles.footerCode}>
+            NO • {String(value).padStart(4, "0")} • ZA
           </Text>
         </View>
       </LinearGradient>
 
-      {/* Ticket perforation notches */}
+      {/* Ticket perforation notches (cut-outs against the page bg) */}
       <View style={[styles.notch, styles.notchLeft]} />
       <View style={[styles.notch, styles.notchRight]} />
     </View>
@@ -117,15 +146,17 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
+    borderColor: "rgba(255,255,255,0.10)",
     overflow: "hidden",
-    padding: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
     // Soft luxury shadow
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 8,
   },
   pattern: {
     position: "absolute",
@@ -137,21 +168,34 @@ const styles = StyleSheet.create({
   patternIcon: {
     position: "absolute",
   },
+  gloss: {
+    position: "absolute",
+    top: -CARD_HEIGHT,
+    left: -60,
+    width: 160,
+    height: CARD_HEIGHT * 3,
+    transform: [{ rotate: "18deg" }],
+  },
+  topRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    zIndex: 3,
+  },
   brandRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    zIndex: 3,
   },
   brandWord: {
-    color: "#0F172A",
-    fontSize: 22,
+    color: "#F5F5F5",
+    fontSize: 20,
     fontWeight: "800",
-    letterSpacing: -0.5,
+    letterSpacing: -0.4,
     fontFamily: fonts.heading,
   },
   brandChip: {
-    backgroundColor: "#0F172A",
+    backgroundColor: "#F5F5F5",
     borderRadius: 999,
     paddingHorizontal: 6,
     paddingVertical: 2,
@@ -159,67 +203,88 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   brandChipText: {
-    color: "#FFFFFF",
+    color: "#0B1220",
     fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 0.2,
+    fontWeight: "800",
+    letterSpacing: 0.3,
   },
-  valueBlock: {
+  statusPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  statusPillOff: {
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderColor: "rgba(255,255,255,0.15)",
+  },
+  statusPillOn: {
+    backgroundColor: "#F5F5F5",
+    borderColor: "#F5F5F5",
+  },
+  statusPillText: {
+    color: "#F5F5F5",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1,
+  },
+  statusPillTextOn: {
+    color: "#0B1220",
+  },
+  valueRow: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
     marginTop: 6,
     zIndex: 3,
   },
-  value: {
-    color: "#0F172A",
-    fontSize: 44,
-    fontWeight: "900",
-    letterSpacing: -1.5,
+  currency: {
+    color: "#FFFFFF",
+    fontSize: 32,
+    fontWeight: "800",
+    letterSpacing: -1,
     fontFamily: fonts.number,
-    lineHeight: 46,
+    marginTop: -14, // sit slightly above the digits like a proper currency mark
+    marginRight: 2,
   },
-  valueNum: {
-    fontSize: 48,
+  value: {
+    color: "#FFFFFF",
+    fontSize: 72,
     fontWeight: "900",
+    letterSpacing: -3,
+    fontFamily: fonts.number,
+    lineHeight: 74,
+    // Subtle glow so the number pops off the dark card
+    textShadowColor: "rgba(255,255,255,0.25)",
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 12,
   },
-  subtitle: {
-    color: "#0F172A",
-    fontSize: 15,
+  valueRight: {
+    marginLeft: spacing.md,
+    alignItems: "flex-start",
+    justifyContent: "center",
+  },
+  tag: {
+    color: "#F5F5F5",
+    fontSize: 13,
     fontWeight: "800",
     letterSpacing: 3,
-    marginTop: 4,
+    lineHeight: 16,
   },
-  // Dark bottom band with a soft diagonal top edge (rotated dark rect
-  // creates the "ribbon" effect without SVG).
-  ribbon: {
-    position: "absolute",
-    left: -30,
-    right: -30,
-    bottom: -30,
-    height: 90,
-    backgroundColor: "#0F172A",
-    transform: [{ rotate: "-6deg" }],
-    zIndex: 1,
-  },
-  ribbonShadow: {
-    position: "absolute",
-    left: -30,
-    right: -30,
-    bottom: -20,
-    height: 90,
-    backgroundColor: "rgba(0,0,0,0.15)",
-    transform: [{ rotate: "-8deg" }],
-    zIndex: 0,
+  divider: {
+    height: 1,
+    backgroundColor: "rgba(255,255,255,0.10)",
+    marginBottom: 8,
+    zIndex: 3,
   },
   footer: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 10,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    zIndex: 4,
+    zIndex: 3,
   },
   footerLeft: {
     flexDirection: "row",
@@ -232,16 +297,14 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     letterSpacing: 1.4,
   },
-  footerStatus: {
-    color: "rgba(245,245,245,0.75)",
+  footerCode: {
+    color: "rgba(245,245,245,0.55)",
     fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 1.2,
+    fontWeight: "700",
+    letterSpacing: 1.4,
+    fontFamily: fonts.mono,
   },
-  footerStatusOn: {
-    color: "#FFFFFF",
-  },
-  // Ticket notches on the sides (mid-height circles cut into the card visually)
+  // Ticket notches on the sides — cut-outs against the page bg
   notch: {
     position: "absolute",
     top: CARD_HEIGHT / 2 - 10,
@@ -251,12 +314,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     zIndex: 5,
   },
-  notchLeft: {
-    left: -10,
-  },
-  notchRight: {
-    right: -10,
-  },
+  notchLeft: { left: -10 },
+  notchRight: { right: -10 },
 });
 
 export default TakealotVoucherCard;
