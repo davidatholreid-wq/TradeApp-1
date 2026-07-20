@@ -1,222 +1,213 @@
-import { useState } from "react";
 import {
   View,
   Text,
-  TextInput,
-  TouchableOpacity,
   StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
+  TouchableOpacity,
   ScrollView,
-  ActivityIndicator,
-  useWindowDimensions,
+  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Link, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import BrandLogo from "@/src/components/BrandLogo";
 import { colors, spacing, radius, fonts, BRAND } from "@/src/theme";
-import { useAuth } from "@/src/context/AuthContext";
 
-export default function Register() {
-  const { register } = useAuth();
+/**
+ * Public dealer self-registration is disabled — every dealer account is
+ * created by a Fourbuy administrator. This screen is kept in the router so
+ * any existing bookmarks / QR codes still land somewhere friendly, and it
+ * explains what the user should do next.
+ */
+export default function RegisterInvitationOnly() {
   const router = useRouter();
-  const { width } = useWindowDimensions();
-  const isWide = width >= 768;
-  const [form, setForm] = useState({
-    email: "",
-    password: "",
-    first_name: "",
-    last_name: "",
-    phone: "",
-    job_title: "",
-    company_name: "",
-    company_address: "",
-    company_reg_no: "",
-  });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const update = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }));
-
-  const handleRegister = async () => {
-    const required = ["email", "password", "first_name", "last_name", "phone", "company_name", "company_address"];
-    for (const k of required) {
-      if (!form[k as keyof typeof form].trim()) {
-        setError(`${k.replace("_", " ")} is required`);
-        return;
-      }
-    }
-    if (form.password.length < 6) {
-      setError("Password must be at least 6 characters");
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      await register({
-        email: form.email.trim(),
-        password: form.password,
-        dealer_info: {
-          first_name: form.first_name.trim(),
-          last_name: form.last_name.trim(),
-          phone: form.phone.trim(),
-          job_title: form.job_title.trim() || undefined,
-        },
-        company_info: {
-          company_name: form.company_name.trim(),
-          company_address: form.company_address.trim(),
-          company_reg_no: form.company_reg_no.trim() || undefined,
-        },
-      });
-      router.replace("/(app)");
-    } catch (e: any) {
-      setError(e.message || "Registration failed");
-    } finally {
-      setLoading(false);
-    }
+  const emailFourbuy = () => {
+    Linking.openURL(
+      "mailto:admin@fourbuy.co.za?subject=New%20dealer%20account%20request",
+    ).catch(() => {});
   };
-
-  const renderField = (label: string, key: keyof typeof form, opts: any = {}) => (
-    <View style={styles.field} key={key}>
-      <Text style={styles.label}>{label}</Text>
-      <TextInput
-        testID={`register-${key}-input`}
-        style={styles.input}
-        value={form[key]}
-        onChangeText={(t) => update(key, t)}
-        placeholderTextColor={colors.textDisabled}
-        {...opts}
-      />
-    </View>
-  );
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <View style={styles.header}>
-          <TouchableOpacity testID="register-back-button" onPress={() => router.back()} style={styles.backBtn}>
-            <Ionicons name="chevron-back" size={24} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Create Account</Text>
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <View style={styles.logoWrap}>
+          <BrandLogo size="lg" />
         </View>
-        <ScrollView
-          contentContainerStyle={[
-            styles.scroll,
-            isWide && styles.scrollWide,
-          ]}
-          keyboardShouldPersistTaps="handled"
-        >
-          <View style={[styles.card, isWide && styles.cardWide]}>
-          <Text style={styles.title}>Dealer Registration</Text>
-          <Text style={styles.subtitle}>Register your dealership with {BRAND.short}</Text>
 
-          <Text style={styles.sectionTitle}>Account</Text>
-          {renderField("Email", "email", { autoCapitalize: "none", keyboardType: "email-address" })}
-          {renderField("Password", "password", { secureTextEntry: true })}
+        <View style={styles.card}>
+          <View style={styles.iconWrap}>
+            <Ionicons name="lock-closed" size={26} color={colors.text} />
+          </View>
 
-          <Text style={styles.sectionTitle}>Personal Information</Text>
-          {renderField("First Name", "first_name")}
-          {renderField("Last Name", "last_name")}
-          {renderField("Phone", "phone", { keyboardType: "phone-pad" })}
-          {renderField("Job Title (optional)", "job_title")}
+          <Text style={styles.title}>Invitation only</Text>
+          <Text style={styles.sub}>
+            Fourbuy dealer accounts are created by a Fourbuy administrator so
+            we can verify each dealership before you go live.
+          </Text>
 
-          <Text style={styles.sectionTitle}>Company Information</Text>
-          {renderField("Company Name", "company_name")}
-          {renderField("Company Address", "company_address", { multiline: true })}
-          {renderField("Company Reg No. (optional)", "company_reg_no")}
-
-          {error ? (
-            <Text style={styles.error} testID="register-error">
-              {error}
-            </Text>
-          ) : null}
+          <View style={styles.stepsBox}>
+            <View style={styles.step}>
+              <Text style={styles.stepIndex}>1</Text>
+              <Text style={styles.stepText}>
+                Contact your Fourbuy admin (or email us) with your dealership
+                name, address, and the users you&apos;d like added.
+              </Text>
+            </View>
+            <View style={styles.step}>
+              <Text style={styles.stepIndex}>2</Text>
+              <Text style={styles.stepText}>
+                We&apos;ll create your dealership and each team member&apos;s
+                login, and send you the credentials.
+              </Text>
+            </View>
+            <View style={styles.step}>
+              <Text style={styles.stepIndex}>3</Text>
+              <Text style={styles.stepText}>
+                Sign in on this app and start submitting vehicles for valuation.
+              </Text>
+            </View>
+          </View>
 
           <TouchableOpacity
-            testID="register-submit-button"
-            style={[styles.primaryBtn, loading && styles.disabledBtn]}
-            onPress={handleRegister}
-            disabled={loading}
+            testID="register-email-admin-btn"
+            style={styles.primaryBtn}
+            onPress={emailFourbuy}
           >
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>Create Account</Text>}
+            <Ionicons name="mail-outline" size={16} color="#000" />
+            <Text style={styles.primaryBtnText}>Email Fourbuy admin</Text>
           </TouchableOpacity>
 
-          <View style={styles.linkRow}>
-            <Text style={styles.linkText}>Already registered? </Text>
-            <Link href="/(auth)/login" asChild>
-              <TouchableOpacity testID="go-to-login-link">
-                <Text style={styles.linkAction}>Sign in</Text>
-              </TouchableOpacity>
-            </Link>
-          </View>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+          <TouchableOpacity
+            testID="register-back-btn"
+            style={styles.ghostBtn}
+            onPress={() => router.replace("/(auth)/login")}
+          >
+            <Ionicons name="arrow-back" size={14} color={colors.text} />
+            <Text style={styles.ghostBtnText}>Back to sign in</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Text style={styles.footerTag}>{BRAND.tagline}</Text>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    flexDirection: "row",
+  scroll: {
+    padding: spacing.lg,
+    paddingBottom: spacing.xl,
     alignItems: "center",
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.paper,
   },
-  backBtn: { padding: spacing.xs, marginRight: spacing.sm },
-  headerTitle: { color: colors.text, fontSize: 17, fontWeight: "700" },
-  scroll: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
-  scrollWide: {
+  logoWrap: {
     alignItems: "center",
-    paddingVertical: spacing.xl,
+    marginTop: spacing.xl,
+    marginBottom: spacing.lg,
   },
-  card: { width: "100%" },
-  cardWide: {
-    maxWidth: 560,
+  card: {
     width: "100%",
-    backgroundColor: colors.paper,
+    maxWidth: 460,
+    backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.lg,
-    padding: spacing.xl,
+    padding: spacing.lg,
+    alignItems: "center",
   },
-  title: { color: colors.text, fontSize: 22, fontWeight: "800", fontFamily: fonts.heading, marginBottom: 4, letterSpacing: 2, textTransform: "uppercase" },
-  subtitle: { color: colors.textSecondary, fontSize: 14, marginBottom: spacing.lg },
-  sectionTitle: {
+  iconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.paper,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: spacing.md,
+  },
+  title: {
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+    fontFamily: fonts.heading,
+    marginBottom: 6,
+  },
+  sub: {
     color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    marginTop: spacing.md,
-    marginBottom: spacing.sm,
+    fontSize: 13,
+    textAlign: "center",
+    lineHeight: 19,
+    marginBottom: spacing.lg,
   },
-  field: { marginBottom: spacing.sm },
-  label: { color: colors.textSecondary, fontSize: 13, marginBottom: 6 },
-  input: {
-    backgroundColor: colors.inputBg,
+  stepsBox: {
+    width: "100%",
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  step: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.sm,
+    backgroundColor: colors.paper,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 14,
-    color: colors.text,
-    fontSize: 16,
-  },
-  error: { color: colors.danger, marginTop: spacing.sm, fontSize: 14 },
-  primaryBtn: {
-    backgroundColor: colors.primary,
     borderRadius: radius.sm,
-    paddingVertical: 16,
-    alignItems: "center",
-    marginTop: spacing.lg,
+    padding: spacing.md,
   },
-  disabledBtn: { opacity: 0.6 },
-  primaryBtnText: { color: "#000", fontWeight: "800", fontSize: 15, letterSpacing: 1.5, textTransform: "uppercase" },
-  linkRow: { flexDirection: "row", justifyContent: "center", marginTop: spacing.lg },
-  linkText: { color: colors.textSecondary },
-  linkAction: { color: colors.primary, fontWeight: "600" },
+  stepIndex: {
+    width: 22,
+    height: 22,
+    lineHeight: 22,
+    borderRadius: 11,
+    backgroundColor: colors.primary,
+    color: "#000",
+    fontWeight: "900",
+    textAlign: "center",
+    fontFamily: fonts.mono,
+    fontSize: 12,
+  },
+  stepText: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  primaryBtn: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: colors.primary,
+    paddingVertical: 14,
+    borderRadius: radius.sm,
+  },
+  primaryBtnText: {
+    color: "#000",
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 1,
+  },
+  ghostBtn: {
+    marginTop: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  ghostBtnText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
+  footerTag: {
+    marginTop: spacing.xl,
+    color: colors.textSecondary,
+    fontSize: 11,
+    letterSpacing: 2,
+    textTransform: "uppercase",
+  },
 });

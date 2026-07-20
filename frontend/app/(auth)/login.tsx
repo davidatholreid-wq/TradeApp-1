@@ -14,7 +14,8 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Link, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { colors, spacing, radius, fonts, BRAND } from "@/src/theme";
 import { useAuth } from "@/src/context/AuthContext";
 
@@ -123,12 +124,10 @@ export default function Login() {
             </TouchableOpacity>
 
             <View style={styles.linkRow}>
-              <Text style={styles.linkText}>New dealer? </Text>
-              <Link href="/(auth)/register" asChild>
-                <TouchableOpacity testID="go-to-register-link">
-                  <Text style={styles.linkAction}>Create account</Text>
-                </TouchableOpacity>
-              </Link>
+              <Ionicons name="information-circle-outline" size={14} color={colors.textSecondary} />
+              <Text style={[styles.linkText, { marginLeft: 6 }]}>
+                New dealer? Please contact your Fourbuy admin for an account.
+              </Text>
             </View>
 
             <View style={styles.hintBox}>

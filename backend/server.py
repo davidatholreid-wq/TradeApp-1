@@ -650,50 +650,22 @@ class ReportOrderCreate(BaseModel):
 
 # ============ Auth routes ============
 @api_router.post("/auth/register")
-async def register(payload: RegisterRequest):
-    existing = await db.users.find_one({"email": payload.email.lower()})
-    if existing:
-        raise HTTPException(409, "Email already registered")
-    # New signup — spin up a fresh Dealership and link the first user to it.
-    # Company info lives on the Dealership going forward (single source of
-    # truth); user-level `company_info` is kept for backwards compatibility.
-    dealership_id = str(uuid.uuid4())
-    await db.dealerships.insert_one({
-        "id": dealership_id,
-        "name": payload.company_info.company_name,
-        "address": payload.company_info.company_address,
-        "company_reg_no": payload.company_info.company_reg_no,
-        "vat_no": payload.company_info.vat_no,
-        "active": True,
-        "created_at": now_utc(),
-    })
-    user_id = str(uuid.uuid4())
-    user_doc = {
-        "id": user_id,
-        "email": payload.email.lower(),
-        "password_hash": hash_password(payload.password),
-        "role": "dealer",
-        "active": True,
-        "archived_at": None,
-        "agreement_accepted_at": None,
-        "dealer_info": payload.dealer_info.dict(),
-        "company_info": payload.company_info.dict(),
-        "dealership_id": dealership_id,
-        "created_at": now_utc(),
-    }
-    await db.users.insert_one(user_doc)
-    token = sign_token(user_id, payload.email.lower(), "dealer")
-    return {
-        "token": token,
-        "user": {
-            "id": user_id,
-            "email": payload.email.lower(),
-            "role": "dealer",
-            "dealer_info": payload.dealer_info.dict(),
-            "company_info": payload.company_info.dict(),
-            "dealership_id": dealership_id,
-        },
-    }
+async def register(payload: RegisterRequest):  # noqa: ARG001 - schema kept for client compatibility
+    """Public self-registration is disabled.
+
+    All dealer users must be created by a Fourbuy administrator through
+    `POST /api/admin/dealerships/{dealership_id}/users` (or by creating a new
+    dealership from the admin cockpit). Returning 403 here keeps the client
+    contract explicit while making it impossible for the public web form to
+    create accounts.
+    """
+    raise HTTPException(
+        status_code=403,
+        detail=(
+            "Dealer accounts are created by Fourbuy administrators. "
+            "Please contact your Fourbuy admin to be added to your dealership."
+        ),
+    )
 
 
 @api_router.post("/auth/login")
