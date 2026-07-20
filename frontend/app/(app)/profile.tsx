@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, TextInput, Alert } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useAuth } from "@/src/context/AuthContext";
@@ -6,29 +6,11 @@ import { colors, spacing, radius, fonts, BRAND } from "@/src/theme";
 import BrandLogo from "@/src/components/BrandLogo";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useState } from "react";
-import { apiFetch } from "@/src/api";
 
 export default function Profile() {
-  const { user, logout, refreshUser } = useAuth();
+  const { user, logout } = useAuth();
   const router = useRouter();
   const tabBarHeight = useBottomTabBarHeight();
-  const [editingJob, setEditingJob] = useState(false);
-  const [jobTitleDraft, setJobTitleDraft] = useState(user?.dealer_info?.job_title ?? "");
-  const [savingJob, setSavingJob] = useState(false);
-
-  const saveJobTitle = async () => {
-    setSavingJob(true);
-    try {
-      await apiFetch("/api/auth/me", { method: "PATCH", body: JSON.stringify({ job_title: jobTitleDraft.trim() }) });
-      if (refreshUser) await refreshUser();
-      setEditingJob(false);
-    } catch (e: any) {
-      Alert.alert("Error", e?.message || "Could not update job title");
-    } finally {
-      setSavingJob(false);
-    }
-  };
 
   const handleLogout = async () => {
     await logout();
@@ -90,63 +72,25 @@ export default function Profile() {
         {user.role === "dealer" ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Your role</Text>
-            {editingJob ? (
-              <View style={styles.jobEditRow}>
-                <TextInput
-                  testID="job-title-input"
-                  style={styles.jobInput}
-                  value={jobTitleDraft}
-                  onChangeText={setJobTitleDraft}
-                  placeholder="e.g. Sales Manager"
-                  placeholderTextColor={colors.textDisabled}
-                  autoFocus
-                  editable={!savingJob}
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Job Title</Text>
+              <View style={styles.rowValueGroup}>
+                <Text
+                  style={styles.rowValue}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {user.dealer_info?.job_title || (
+                    <Text style={{ color: colors.textDisabled }}>Not set</Text>
+                  )}
+                </Text>
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={14}
+                  color={colors.textDisabled}
                 />
-                <TouchableOpacity
-                  style={[styles.jobBtn, styles.jobBtnPrimary]}
-                  onPress={saveJobTitle}
-                  disabled={savingJob}
-                  testID="job-title-save"
-                >
-                  <Text style={styles.jobBtnPrimaryText}>{savingJob ? "…" : "Save"}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.jobBtn}
-                  onPress={() => {
-                    setEditingJob(false);
-                    setJobTitleDraft(user.dealer_info?.job_title ?? "");
-                  }}
-                  disabled={savingJob}
-                >
-                  <Text style={styles.jobBtnText}>Cancel</Text>
-                </TouchableOpacity>
               </View>
-            ) : (
-              <View style={styles.row}>
-                <Text style={styles.rowLabel}>Job Title</Text>
-                <View style={styles.rowValueGroup}>
-                  <Text
-                    style={styles.rowValue}
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
-                  >
-                    {user.dealer_info?.job_title || (
-                      <Text style={{ color: colors.textDisabled }}>Not set</Text>
-                    )}
-                  </Text>
-                  <TouchableOpacity
-                    testID="job-title-edit"
-                    hitSlop={8}
-                    onPress={() => {
-                      setJobTitleDraft(user.dealer_info?.job_title ?? "");
-                      setEditingJob(true);
-                    }}
-                  >
-                    <Ionicons name="pencil-outline" size={16} color={colors.textSecondary} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
+            </View>
           </View>
         ) : null}
 
@@ -170,12 +114,11 @@ export default function Profile() {
           </View>
         ) : null}
 
-        {user.role === "dealer" && !user.profile_pic && !user.cover_photo ? (
+        {user.role === "dealer" ? (
           <View style={styles.hintBox}>
             <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
             <Text style={styles.hintText}>
-              Your profile picture and cover photo are managed by Fourbuy. Contact us to update
-              your dealership branding.
+              Your profile details, job title, photos and dealership branding are managed by Fourbuy. Please contact your Fourbuy administrator to request any changes.
             </Text>
           </View>
         ) : null}

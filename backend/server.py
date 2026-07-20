@@ -762,21 +762,24 @@ class SelfProfileUpdate(BaseModel):
 
 @api_router.patch("/auth/me")
 async def update_me(
-    payload: SelfProfileUpdate,
+    payload: SelfProfileUpdate,  # noqa: ARG001 - kept for schema compatibility
     current: dict = Depends(get_current_user),
 ):
-    """Dealer users can update their own name / phone / job title."""
-    if current.get("role") != "dealer":
-        raise HTTPException(400, "Only dealer users may edit their profile here")
-    fields = payload.dict(exclude_none=True)
-    if not fields:
-        raise HTTPException(400, "No fields to update")
-    set_ops: dict = {}
-    for k, v in fields.items():
-        set_ops[f"dealer_info.{k}"] = v
-    await db.users.update_one({"id": current["id"]}, {"$set": set_ops})
-    fresh = await db.users.find_one({"id": current["id"]}, {"_id": 0, "password_hash": 0})
-    return {"user": fresh}
+    """Self-service profile editing is disabled.
+
+    Dealer profile fields (name, phone, job title, etc.) must be maintained
+    by a Fourbuy admin from Manage Dealers so that role, job title and
+    contact details are auditable. This endpoint returns 403 for every
+    caller to keep the client contract explicit.
+    """
+    _ = current  # touch to silence unused-var
+    raise HTTPException(
+        status_code=403,
+        detail=(
+            "Profile edits are managed by Fourbuy administrators. "
+            "Please contact your Fourbuy admin to update your details."
+        ),
+    )
 
 
 # ============ Billing agreement ============
