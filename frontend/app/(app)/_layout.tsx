@@ -101,6 +101,7 @@ export default function AppLayout() {
         />
         <Tabs.Screen name="vehicle/[id]" options={{ href: null }} />
         <Tabs.Screen name="scan" options={{ href: null }} />
+        <Tabs.Screen name="kredo-test" options={{ href: null }} />
       </Tabs>
       <AgreementModal />
     </View>

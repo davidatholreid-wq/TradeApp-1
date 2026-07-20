@@ -11,7 +11,7 @@ import jwt as pyjwt
 import httpx
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
-from typing import List, Optional, Literal
+from typing import Any, List, Optional, Literal
 from datetime import datetime, timezone, timedelta
 
 from emergentintegrations.llm.chat import LlmChat, UserMessage
@@ -3631,6 +3631,150 @@ async def admin_grant_reward_points(
 
 
 # ============ Health ============
+# ============ Kredo (Vehicle Values) ============
+# Server-side proxy to Kredo. All secrets stay in backend/.env — the client
+# only calls our own /api/kredo/* endpoints. See services/kredo_client.py.
+from services.kredo_client import get_kredo_client, KredoAPIError  # noqa: E402
+
+
+def _kredo_502(e: KredoAPIError) -> HTTPException:
+    """Map a KredoAPIError to a 502 with a safe, admin-visible detail."""
+    return HTTPException(
+        status_code=502,
+        detail={
+            "source": "kredo",
+            "message": str(e),
+            "upstream_status": e.upstream_status,
+            "upstream_body": e.upstream_body,
+        },
+    )
+
+
+def _parse_kredo_value(raw: dict) -> dict:
+    """Kredo's /value response nests the pricing JSON inside `data` as a
+    string. Parse it out and normalise the keys to camel-friendly ints
+    the frontend can use directly, and preserve the raw values for audit."""
+    import json as _json
+    body = raw.get("data")
+    parsed: dict = {}
+    if isinstance(body, str):
+        try:
+            parsed = _json.loads(body)
+        except _json.JSONDecodeError:
+            parsed = {}
+    elif isinstance(body, dict):
+        parsed = body
+    # Convert stringy prices to numbers where possible so the client can
+    # format them without extra parsing steps.
+    def _num(v: Any) -> Optional[float]:
+        try:
+            return float(v) if v not in (None, "", 0) else float(v) if v == 0 else None
+        except (TypeError, ValueError):
+            return None
+    return {
+        "make": parsed.get("make"),
+        "model": parsed.get("model"),
+        "variant": parsed.get("variant"),
+        "year": parsed.get("year"),
+        "new_price_zar": _num(parsed.get("truetrade_newPrice")),
+        "retail_price_zar": _num(parsed.get("truetrade_retailPrice")),
+        "market_price_zar": _num(parsed.get("truetrade_marketPrice")),
+        "adjusted_retail_zar": _num(parsed.get("truetrade_adjustedRetailPrice")),
+        "adjusted_trade_zar": _num(parsed.get("truetrade_adjustedTradePrice")),
+        # Kredo also returns a full PDF valuation of the vehicle. We
+        # forward it as-is (base64) so the client can offer it as an
+        # optional preview without an extra round-trip.
+        "pdf_base64": raw.get("file_base64"),
+    }
+
+
+@api_router.get("/kredo/makes")
+async def kredo_makes(current: dict = Depends(get_current_user)):
+    """Return the list of vehicle makes Kredo supports."""
+    _ = current
+    try:
+        raw = await get_kredo_client().makes()
+    except KredoAPIError as e:
+        raise _kredo_502(e) from e
+    return {"makes": raw.get("data") or [], "source": "kredo"}
+
+
+@api_router.get("/kredo/models")
+async def kredo_models(make: str, current: dict = Depends(get_current_user)):
+    if not make:
+        raise HTTPException(400, "make is required")
+    try:
+        raw = await get_kredo_client().models(make)
+    except KredoAPIError as e:
+        raise _kredo_502(e) from e
+    return {"models": raw.get("data") or [], "make": make, "source": "kredo"}
+
+
+@api_router.get("/kredo/years")
+async def kredo_years(make: str, model: str, current: dict = Depends(get_current_user)):
+    if not (make and model):
+        raise HTTPException(400, "make and model are required")
+    try:
+        raw = await get_kredo_client().years(make, model)
+    except KredoAPIError as e:
+        raise _kredo_502(e) from e
+    return {"years": raw.get("data") or [], "make": make, "model": model, "source": "kredo"}
+
+
+@api_router.get("/kredo/derivatives")
+async def kredo_derivatives(
+    make: str,
+    model: str,
+    year: str,
+    current: dict = Depends(get_current_user),
+):
+    if not (make and model and year):
+        raise HTTPException(400, "make, model and year are required")
+    try:
+        raw = await get_kredo_client().derivatives(make, model, year)
+    except KredoAPIError as e:
+        raise _kredo_502(e) from e
+    return {
+        "derivatives": raw.get("data") or [],
+        "make": make,
+        "model": model,
+        "year": year,
+        "source": "kredo",
+    }
+
+
+class KredoValueRequest(BaseModel):
+    make: str
+    model: str
+    year: str
+    derivative: str
+    mileage: int
+    # Kredo condition labels — kept as free-form string on the API so we
+    # can accept both "Excellent" and any other label Kredo introduces.
+    condition: str = "Good"
+
+
+@api_router.post("/kredo/value")
+async def kredo_value(
+    payload: KredoValueRequest,
+    current: dict = Depends(get_current_user),
+):
+    """Fetch a real Kredo valuation for a fully specified vehicle."""
+    try:
+        raw = await get_kredo_client().value(
+            make=payload.make,
+            model=payload.model,
+            year=payload.year,
+            derivative=payload.derivative,
+            mileage=payload.mileage,
+            condition=payload.condition,
+        )
+    except KredoAPIError as e:
+        raise _kredo_502(e) from e
+    return _parse_kredo_value(raw)
+
+
+# ============ Health (real) ============
 @api_router.get("/")
 async def root():
     return {"message": "Fourbuy Car Buying Co. API", "status": "ok"}
