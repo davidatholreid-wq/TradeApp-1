@@ -101,7 +101,15 @@ export default function AppLayout() {
         />
         <Tabs.Screen name="vehicle/[id]" options={{ href: null }} />
         <Tabs.Screen name="scan" options={{ href: null }} />
-        <Tabs.Screen name="kredo-test" options={{ href: null }} />
+        <Tabs.Screen
+          name="kredo-test"
+          options={{
+            title: "Kredo",
+            // Admin-only beta tool — hidden from dealers.
+            href: isAdmin ? "/kredo-test" : null,
+            tabBarIcon: ({ color, size }) => <Ionicons name="pricetag" color={color} size={size} />,
+          }}
+        />
       </Tabs>
       <AgreementModal />
     </View>

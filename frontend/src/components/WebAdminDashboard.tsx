@@ -16,6 +16,7 @@ import { apiFetch } from "@/src/api";
 import { buildWhatsappUrl, buildDealerMessage } from "@/src/utils/whatsapp";
 import BillingScreen from "@/app/(app)/billing";
 import DealersScreen from "@/app/(app)/dealers";
+import KredoTestScreen from "@/app/(app)/kredo-test";
 import AdminRewardsScreen from "@/src/components/AdminRewardsScreen";
 import PhotoCarousel, { CarouselPhoto } from "@/src/components/PhotoCarousel";
 import ConditionRatingInfoModal from "@/src/components/ConditionRatingInfoModal";
@@ -123,7 +124,7 @@ function resolvePhoto(photos: Record<string, string> | undefined, key: string, f
 }
 
 type Bucket = "incoming" | "priced" | "archived";
-type CockpitView = "submissions" | "dealers" | "billing" | "rewards";
+type CockpitView = "submissions" | "dealers" | "billing" | "rewards" | "kredo";
 
 export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }) {
   const { width } = useWindowDimensions();
@@ -419,6 +420,19 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 Rewards
               </Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              testID="cockpit-view-kredo"
+              style={[styles.viewBtn, view === "kredo" && styles.viewBtnActive]}
+              onPress={() => setView("kredo")}
+            >
+              <Ionicons name="pricetag" size={14} color={view === "kredo" ? "#000" : colors.text} />
+              <Text style={[styles.viewBtnText, view === "kredo" && styles.viewBtnTextActive]}>
+                Kredo
+              </Text>
+              <View style={styles.betaPill}>
+                <Text style={styles.betaPillText}>BETA</Text>
+              </View>
+            </TouchableOpacity>
           </View>
         </View>
         <View style={styles.topbarRight}>
@@ -455,6 +469,10 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
       ) : view === "rewards" ? (
         <View style={{ flex: 1 }}>
           <AdminRewardsScreen />
+        </View>
+      ) : view === "kredo" ? (
+        <View style={{ flex: 1 }}>
+          <KredoTestScreen />
         </View>
       ) : (
       <View style={styles.body}>
@@ -1282,6 +1300,19 @@ const styles = StyleSheet.create({
   viewBtnActive: { backgroundColor: colors.primary },
   viewBtnText: { color: colors.text, fontSize: 12, fontWeight: "700", letterSpacing: 0.5 },
   viewBtnTextActive: { color: "#000", fontWeight: "800" },
+  betaPill: {
+    backgroundColor: colors.warning,
+    borderRadius: 999,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    marginLeft: 4,
+  },
+  betaPillText: {
+    color: "#000",
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
   statPill: {
     paddingHorizontal: spacing.md,
     paddingVertical: 6,
