@@ -124,12 +124,19 @@ export default function Profile() {
             ) : (
               <View style={styles.row}>
                 <Text style={styles.rowLabel}>Job Title</Text>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
-                  <Text style={styles.rowValue}>
-                    {user.dealer_info?.job_title || <Text style={{ color: colors.textDisabled }}>Not set</Text>}
+                <View style={styles.rowValueGroup}>
+                  <Text
+                    style={styles.rowValue}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    {user.dealer_info?.job_title || (
+                      <Text style={{ color: colors.textDisabled }}>Not set</Text>
+                    )}
                   </Text>
                   <TouchableOpacity
                     testID="job-title-edit"
+                    hitSlop={8}
                     onPress={() => {
                       setJobTitleDraft(user.dealer_info?.job_title ?? "");
                       setEditingJob(true);
@@ -301,12 +308,19 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
+    alignItems: "center",
     paddingVertical: 8,
     gap: spacing.md,
   },
   rowLabel: { color: colors.textSecondary, fontSize: 13 },
   rowValue: { color: colors.text, fontSize: 14, flex: 1, textAlign: "right" },
+  rowValueGroup: {
+    flex: 1,
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
 
   hintBox: {
     marginHorizontal: spacing.lg,
