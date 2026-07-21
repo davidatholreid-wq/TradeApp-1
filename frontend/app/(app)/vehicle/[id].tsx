@@ -1656,7 +1656,7 @@ export default function VehicleDetail() {
                         <ActivityIndicator color={colors.text} size="small" />
                         <Text style={styles.reportOrderedBadgeText}>Ordered</Text>
                       </View>
-                    ) : !isAdmin ? (
+                    ) : (
                       <TouchableOpacity
                         testID="cartrust-order-btn"
                         style={[styles.orderBtn, cartrustLoading && styles.docBtnDisabled]}
@@ -1675,7 +1675,7 @@ export default function VehicleDetail() {
                           <Text style={styles.orderBtnText}>Order</Text>
                         )}
                       </TouchableOpacity>
-                    ) : null}
+                    )}
                   </View>
                 )}
               </>
