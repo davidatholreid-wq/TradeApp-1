@@ -1561,7 +1561,7 @@ export default function VehicleDetail() {
                               style={styles.viewReportBtn}
                               onPress={() => setViewingReport(existing || null)}
                             >
-                              <Ionicons name="eye-outline" size={16} color="#000" />
+                              <Ionicons name="eye-outline" size={16} color={colors.onPrimary} />
                               <Text style={styles.viewReportBtnText}>View</Text>
                             </TouchableOpacity>
                           ) : (
@@ -1580,7 +1580,7 @@ export default function VehicleDetail() {
                             disabled={busy}
                           >
                             {busy ? (
-                              <ActivityIndicator color="#000" size="small" />
+                              <ActivityIndicator color={colors.onPrimary} size="small" />
                             ) : (
                               <Text style={styles.orderBtnText}>Order</Text>
                             )}
@@ -1636,7 +1636,7 @@ export default function VehicleDetail() {
                         style={styles.viewReportBtn}
                         onPress={openCartrust}
                       >
-                        <Ionicons name="eye-outline" size={16} color="#000" />
+                        <Ionicons name="eye-outline" size={16} color={colors.onPrimary} />
                         <Text style={styles.viewReportBtnText}>View</Text>
                       </TouchableOpacity>
                     ) : cartrust?.status === "pending" ? (
@@ -1658,7 +1658,7 @@ export default function VehicleDetail() {
                         disabled={cartrustLoading}
                       >
                         {cartrustLoading ? (
-                          <ActivityIndicator color="#000" size="small" />
+                          <ActivityIndicator color={colors.onPrimary} size="small" />
                         ) : (
                           <Text style={styles.orderBtnText}>Order</Text>
                         )}
@@ -1692,13 +1692,13 @@ export default function VehicleDetail() {
                 disabled={kredoLoading}
               >
                 {kredoLoading ? (
-                  <ActivityIndicator color="#000" size="small" />
+                  <ActivityIndicator color={colors.onPrimary} size="small" />
                 ) : (
                   <>
                     <Ionicons
                       name={kredoHistory ? "refresh" : "search"}
                       size={14}
-                      color="#000"
+                      color={colors.onPrimary}
                     />
                     <Text style={styles.kredoFetchBtnText}>
                       {kredoHistory ? "Refresh" : "Fetch"}
@@ -1765,8 +1765,8 @@ export default function VehicleDetail() {
                         ))}
                         {c.glass_damage ? (
                           <View style={[styles.damageChip, styles.damageChipGlass]}>
-                            <Ionicons name="glasses-outline" size={10} color="#000" />
-                            <Text style={[styles.damageChipText, { color: "#000" }]}>WINDSCREEN</Text>
+                            <Ionicons name="glasses-outline" size={10} color={colors.onPrimary} />
+                            <Text style={[styles.damageChipText, { color: colors.onPrimary }]}>WINDSCREEN</Text>
                           </View>
                         ) : null}
                       </View>
@@ -1814,7 +1814,7 @@ export default function VehicleDetail() {
                   setPriceModal(true);
                 }}
               >
-                <Ionicons name="pricetag" size={18} color="#000" />
+                <Ionicons name="pricetag" size={18} color={colors.onPrimary} />
                 <Text style={styles.priceBtnText}>
                   {sub.status === "priced" ? "Update Price" : "Offer Price"}
                 </Text>
@@ -1985,7 +1985,7 @@ export default function VehicleDetail() {
                 disabled={declining}
               >
                 {declining ? (
-                  <ActivityIndicator color="#000" />
+                  <ActivityIndicator color={colors.onPrimary} />
                 ) : (
                   <Text style={styles.reportModalConfirmText}>Confirm Decline</Text>
                 )}
@@ -2057,7 +2057,7 @@ export default function VehicleDetail() {
                 disabled={!!orderingReportType}
               >
                 {orderingReportType ? (
-                  <ActivityIndicator color="#000" />
+                  <ActivityIndicator color={colors.onPrimary} />
                 ) : (
                   <Text style={styles.reportModalConfirmText}>
                     Accept & Order
@@ -2116,7 +2116,7 @@ export default function VehicleDetail() {
                 style={styles.reportPdfBtn}
                 onPress={() => viewingReport && handleOpenReportPdf(viewingReport.type)}
               >
-                <Ionicons name="document-text-outline" size={18} color="#000" />
+                <Ionicons name="document-text-outline" size={18} color={colors.onPrimary} />
                 <Text style={styles.reportPdfBtnText}>Open Full Report PDF</Text>
               </TouchableOpacity>
             ) : null}
@@ -2627,7 +2627,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     minWidth: 80,
     alignItems: "center",
   },
-  orderBtnText: { color: "#000", fontWeight: "800", letterSpacing: 1, fontSize: 12, textTransform: "uppercase" },
+  orderBtnText: { color: colors.onPrimary, fontWeight: "800", letterSpacing: 1, fontSize: 12, textTransform: "uppercase" },
 
   // Report confirmation modal
   reportModalBackdrop: {
@@ -2706,7 +2706,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     backgroundColor: colors.text,
     alignItems: "center",
   },
-  reportModalConfirmText: { color: "#000", fontWeight: "800", letterSpacing: 1, textTransform: "uppercase" },
+  reportModalConfirmText: { color: colors.onPrimary, fontWeight: "800", letterSpacing: 1, textTransform: "uppercase" },
 
 
   titleBox: { marginBottom: spacing.md },
@@ -2991,7 +2991,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     borderRadius: radius.sm,
     paddingVertical: 14,
   },
-  priceBtnText: { color: "#000", fontWeight: "800", fontSize: 15, letterSpacing: 0.4 },
+  priceBtnText: { color: colors.onPrimary, fontWeight: "800", fontSize: 15, letterSpacing: 0.4 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
   modalSheet: {
     backgroundColor: colors.paper,
@@ -3024,7 +3024,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     borderRadius: radius.sm,
     alignItems: "center",
   },
-  confirmBtnText: { color: "#000", fontWeight: "800", fontSize: 15, letterSpacing: 0.4 },
+  confirmBtnText: { color: colors.onPrimary, fontWeight: "800", fontSize: 15, letterSpacing: 0.4 },
 
   // Admin "no reports yet" hint
   adminNoReports: {
@@ -3109,7 +3109,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   statusPillOk: { backgroundColor: colors.success, borderColor: colors.success },
   statusPillText: { fontSize: 9, fontWeight: "800", letterSpacing: 1 },
   statusPillTextPending: { color: colors.warning },
-  statusPillTextOk: { color: "#000" },
+  statusPillTextOk: { color: colors.onPrimary },
   reportStatusRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 },
   reportStatusMeta: { color: colors.textSecondary, fontSize: 11, flex: 1 },
   viewReportBtn: {
@@ -3121,7 +3121,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     paddingVertical: 8,
     borderRadius: radius.sm,
   },
-  viewReportBtnText: { color: "#000", fontSize: 12, fontWeight: "800", letterSpacing: 0.5 },
+  viewReportBtnText: { color: colors.onPrimary, fontSize: 12, fontWeight: "800", letterSpacing: 0.5 },
   reportOrderedBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -3153,7 +3153,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     minWidth: 84,
     justifyContent: "center",
   },
-  kredoFetchBtnText: { color: "#000", fontSize: 12, fontWeight: "800", letterSpacing: 0.5 },
+  kredoFetchBtnText: { color: colors.onPrimary, fontSize: 12, fontWeight: "800", letterSpacing: 0.5 },
   kredoEmpty: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -3280,7 +3280,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     borderRadius: radius.sm,
     paddingVertical: 12,
   },
-  cartrustViewBtnText: { color: "#000", fontWeight: "800", fontSize: 13, letterSpacing: 0.5 },
+  cartrustViewBtnText: { color: colors.onPrimary, fontWeight: "800", fontSize: 13, letterSpacing: 0.5 },
 
   // View Report button (delivered)
   viewReportBtn: {
@@ -3294,7 +3294,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     justifyContent: "center",
   },
   viewReportBtnText: {
-    color: "#000",
+    color: colors.onPrimary,
     fontWeight: "800",
     letterSpacing: 1,
     fontSize: 12,
@@ -3408,7 +3408,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     borderRadius: radius.sm,
   },
   reportPdfBtnText: {
-    color: "#000",
+    color: colors.onPrimary,
     fontWeight: "800",
     letterSpacing: 1,
     marginLeft: 6,

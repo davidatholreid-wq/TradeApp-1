@@ -201,10 +201,10 @@ export default function DealerPhotosModal({ dealer, onClose, onSaved }: Props) {
               disabled={!dirty || saving}
             >
               {saving ? (
-                <ActivityIndicator color="#000" />
+                <ActivityIndicator color={colors.onPrimary} />
               ) : (
                 <>
-                  <Ionicons name="checkmark" size={16} color="#000" />
+                  <Ionicons name="checkmark" size={16} color={colors.onPrimary} />
                   <Text style={styles.saveText}>Save Photos</Text>
                 </>
               )}
@@ -318,5 +318,5 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     borderRadius: radius.md,
     backgroundColor: colors.primary,
   },
-  saveText: { color: "#000", fontWeight: "800", letterSpacing: 1 },
+  saveText: { color: colors.onPrimary, fontWeight: "800", letterSpacing: 1 },
 });

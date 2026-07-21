@@ -286,7 +286,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     backgroundColor: colors.paper,
   },
   jobBtnPrimary: { backgroundColor: colors.text, borderColor: colors.text },
-  jobBtnPrimaryText: { color: "#fff", fontWeight: "700" },
+  jobBtnPrimaryText: { color: colors.onPrimary, fontWeight: "700" },
   jobBtnText: { color: colors.text, fontWeight: "600" },
   roleBadge: {
     marginTop: spacing.sm,

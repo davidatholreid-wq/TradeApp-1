@@ -388,7 +388,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
               style={[styles.viewBtn, view === "submissions" && styles.viewBtnActive]}
               onPress={() => setView("submissions")}
             >
-              <Ionicons name="list" size={14} color={view === "submissions" ? "#000" : colors.text} />
+              <Ionicons name="list" size={14} color={view === "submissions" ? colors.onPrimary : colors.text} />
               <Text style={[styles.viewBtnText, view === "submissions" && styles.viewBtnTextActive]}>
                 Submissions
               </Text>
@@ -398,7 +398,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
               style={[styles.viewBtn, view === "dealers" && styles.viewBtnActive]}
               onPress={() => setView("dealers")}
             >
-              <Ionicons name="people" size={14} color={view === "dealers" ? "#000" : colors.text} />
+              <Ionicons name="people" size={14} color={view === "dealers" ? colors.onPrimary : colors.text} />
               <Text style={[styles.viewBtnText, view === "dealers" && styles.viewBtnTextActive]}>
                 Dealers
               </Text>
@@ -408,7 +408,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
               style={[styles.viewBtn, view === "billing" && styles.viewBtnActive]}
               onPress={() => setView("billing")}
             >
-              <Ionicons name="cash" size={14} color={view === "billing" ? "#000" : colors.text} />
+              <Ionicons name="cash" size={14} color={view === "billing" ? colors.onPrimary : colors.text} />
               <Text style={[styles.viewBtnText, view === "billing" && styles.viewBtnTextActive]}>
                 Billing
               </Text>
@@ -418,7 +418,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
               style={[styles.viewBtn, view === "rewards" && styles.viewBtnActive]}
               onPress={() => setView("rewards")}
             >
-              <Ionicons name="gift" size={14} color={view === "rewards" ? "#000" : colors.text} />
+              <Ionicons name="gift" size={14} color={view === "rewards" ? colors.onPrimary : colors.text} />
               <Text style={[styles.viewBtnText, view === "rewards" && styles.viewBtnTextActive]}>
                 Rewards
               </Text>
@@ -428,7 +428,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
               style={[styles.viewBtn, view === "kredo" && styles.viewBtnActive]}
               onPress={() => setView("kredo")}
             >
-              <Ionicons name="pricetag" size={14} color={view === "kredo" ? "#000" : colors.text} />
+              <Ionicons name="pricetag" size={14} color={view === "kredo" ? colors.onPrimary : colors.text} />
               <Text style={[styles.viewBtnText, view === "kredo" && styles.viewBtnTextActive]}>
                 Kredo
               </Text>
@@ -1306,7 +1306,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
   viewBtnActive: { backgroundColor: colors.primary },
   viewBtnText: { color: colors.text, fontSize: 12, fontWeight: "700", letterSpacing: 0.5 },
-  viewBtnTextActive: { color: "#000", fontWeight: "800" },
+  viewBtnTextActive: { color: colors.onPrimary, fontWeight: "800" },
   betaPill: {
     backgroundColor: colors.warning,
     borderRadius: 999,
@@ -1315,7 +1315,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     marginLeft: 4,
   },
   betaPillText: {
-    color: "#000",
+    color: colors.onPrimary,
     fontSize: 9,
     fontWeight: "900",
     letterSpacing: 0.5,
@@ -1383,7 +1383,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
   chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { color: colors.textSecondary, fontSize: 11, fontWeight: "700", letterSpacing: 1 },
-  chipTextActive: { color: "#000", fontWeight: "800" },
+  chipTextActive: { color: colors.onPrimary, fontWeight: "800" },
   chipBadge: {
     minWidth: 22,
     paddingHorizontal: 6,
@@ -1392,7 +1392,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     backgroundColor: colors.border,
     alignItems: "center",
   },
-  chipBadgeActive: { backgroundColor: "#000" },
+  chipBadgeActive: { backgroundColor: colors.onPrimary },
   chipBadgeText: { color: colors.text, fontSize: 10, fontWeight: "800" },
   chipBadgeTextActive: { color: colors.neon },
   emptyList: { color: colors.textSecondary, textAlign: "center", marginTop: 40 },
@@ -1731,7 +1731,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     borderRadius: radius.sm,
     minWidth: 140,
   },
-  sendBtnText: { color: "#000", fontWeight: "800", fontSize: 14, letterSpacing: 0.3 },
+  sendBtnText: { color: colors.onPrimary, fontWeight: "800", fontSize: 14, letterSpacing: 0.3 },
   notesInput: {
     marginTop: spacing.sm,
     backgroundColor: colors.inputBg,

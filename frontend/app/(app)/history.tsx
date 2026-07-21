@@ -350,7 +350,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.5,
   },
-  chipTextActive: { color: "#000" },
+  chipTextActive: { color: colors.onPrimary },
   resultsCount: {
     marginTop: spacing.sm,
     color: colors.textDisabled,

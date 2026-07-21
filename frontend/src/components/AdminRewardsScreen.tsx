@@ -207,7 +207,7 @@ export default function AdminRewardsScreen() {
           <Text style={styles.sub}>Fulfil each request by pasting the Takealot voucher code. Rejecting refunds the user&apos;s points.</Text>
         </View>
         <TouchableOpacity testID="grant-bonus-btn" style={styles.grantBtn} onPress={openGrant}>
-          <Ionicons name="add-circle-outline" size={16} color="#000" />
+          <Ionicons name="add-circle-outline" size={16} color={colors.onPrimary} />
           <Text style={styles.grantBtnText}>Grant points</Text>
         </TouchableOpacity>
       </View>
@@ -336,7 +336,7 @@ export default function AdminRewardsScreen() {
                     style={[styles.actionBtn, styles.fulfillBtn]}
                     onPress={() => openFulfill(r)}
                   >
-                    <Ionicons name="checkmark-circle" size={16} color="#000" />
+                    <Ionicons name="checkmark-circle" size={16} color={colors.onPrimary} />
                     <Text style={styles.fulfillBtnText}>Fulfil with code</Text>
                   </TouchableOpacity>
                 </View>
@@ -394,7 +394,7 @@ export default function AdminRewardsScreen() {
                 onPress={submit}
                 disabled={submitting}
               >
-                {submitting ? <ActivityIndicator color="#000" /> : (
+                {submitting ? <ActivityIndicator color={colors.onPrimary} /> : (
                   <Text style={actionModal.type === "fulfill" ? styles.modalBtnPrimaryText : styles.modalBtnDangerText}>
                     {actionModal.type === "fulfill" ? "Send" : "Reject"}
                   </Text>
@@ -534,7 +534,7 @@ export default function AdminRewardsScreen() {
                 disabled={grantSubmitting || !grantSelected || !grantPoints.trim() || !grantReason.trim()}
               >
                 {grantSubmitting ? (
-                  <ActivityIndicator color="#000" />
+                  <ActivityIndicator color={colors.onPrimary} />
                 ) : (
                   <Text style={styles.modalBtnPrimaryText}>Apply</Text>
                 )}
@@ -572,12 +572,12 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     paddingVertical: 10,
     borderRadius: radius.sm,
   },
-  grantBtnText: { color: "#000", fontWeight: "800", letterSpacing: 0.4, fontSize: 12 },
+  grantBtnText: { color: colors.onPrimary, fontWeight: "800", letterSpacing: 0.4, fontSize: 12 },
   tabs: { flexDirection: "row", gap: 4, marginBottom: spacing.md },
   tab: { paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card },
   tabActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   tabText: { color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 1 },
-  tabTextActive: { color: "#000" },
+  tabTextActive: { color: colors.onPrimary },
   empty: { color: colors.textSecondary, textAlign: "center", padding: spacing.xl },
   list: { gap: 8 },
   card: { backgroundColor: colors.card, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md },
@@ -601,7 +601,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   rejectBtn: { borderColor: colors.danger, backgroundColor: colors.danger + "12" },
   rejectBtnText: { color: colors.danger, fontWeight: "700" },
   fulfillBtn: { backgroundColor: colors.primary, borderColor: colors.primary },
-  fulfillBtnText: { color: "#000", fontWeight: "800", letterSpacing: 0.4 },
+  fulfillBtnText: { color: colors.onPrimary, fontWeight: "800", letterSpacing: 0.4 },
 
   // Modal (overlays)
   modalBackdrop: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.55)", alignItems: "center", justifyContent: "center", padding: spacing.md },
@@ -625,7 +625,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   modalBtnGhost: { borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card },
   modalBtnGhostText: { color: colors.textSecondary, fontWeight: "700" },
   modalBtnPrimary: { backgroundColor: colors.primary },
-  modalBtnPrimaryText: { color: "#000", fontWeight: "800", letterSpacing: 1 },
+  modalBtnPrimaryText: { color: colors.onPrimary, fontWeight: "800", letterSpacing: 1 },
   modalBtnDanger: { backgroundColor: colors.danger },
   modalBtnDangerText: { color: "#fff", fontWeight: "800", letterSpacing: 1 },
 
@@ -721,7 +721,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
   leaderTabActive: { backgroundColor: colors.primary },
   leaderTabText: { color: colors.textSecondary, fontSize: 10, fontWeight: "800", letterSpacing: 1 },
-  leaderTabTextActive: { color: "#000" },
+  leaderTabTextActive: { color: colors.onPrimary },
   leaderEmpty: { color: colors.textSecondary, fontSize: 12, textAlign: "center", paddingVertical: spacing.md },
   leaderRow: {
     flexDirection: "row",

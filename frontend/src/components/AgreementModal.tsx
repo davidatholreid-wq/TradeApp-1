@@ -109,10 +109,10 @@ export default function AgreementModal() {
               activeOpacity={0.85}
             >
               {submitting ? (
-                <ActivityIndicator color="#000" />
+                <ActivityIndicator color={colors.onPrimary} />
               ) : (
                 <>
-                  <Ionicons name="checkmark" size={18} color="#000" />
+                  <Ionicons name="checkmark" size={18} color={colors.onPrimary} />
                   <Text style={styles.acceptText}>I Accept</Text>
                 </>
               )}
@@ -206,5 +206,5 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
       ? { shadowColor: colors.neon, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.6, shadowRadius: 8 }
       : {}),
   },
-  acceptText: { color: "#000", fontWeight: "800", fontSize: 14, letterSpacing: 1, textTransform: "uppercase" },
+  acceptText: { color: colors.onPrimary, fontWeight: "800", fontSize: 14, letterSpacing: 1, textTransform: "uppercase" },
 });
