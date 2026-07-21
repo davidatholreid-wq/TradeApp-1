@@ -1,0 +1,54 @@
+{
+  "summary": "Iteration 25 re-verifies the two HIGH bugs from iteration_24. BUG 2 (Alert.alert on web) is FULLY FIXED — confirmAsync helper uses window.confirm on web; both Set Offer Price and Delete Vehicle now show a browser confirm dialog. Playwright dialog handler confirmed: Cancel branch does NOT hit /api/admin/submissions/{id}/price or DELETE; Accept branch hits POST /api/admin/submissions/{id}/price and flips status to priced. BUG 1 (CarTrust admin visibility) is ONLY PARTIALLY FIXED — the outer guard was removed so the cartrust-card row now renders for admins (row title 'Kredo CarTrust Vehicle Report' + 'R200' cost visible), but the inner button block at vehicle/[id].tsx:1659 still reads `!isAdmin ? (<Order button/>) : null`, so admins still cannot see or tap the Order button when no cartrust exists yet. Scan across all 13 priced admin submissions: several show the CarTrust row with just 'Kredo CarTrust Vehicle Report R200' and NO Order button (cartrust null + admin) — this matches the code but breaks the P0 requirement 'Admins should now see the CarTrust row ... AND an Order button when no report exists yet'. Regression: dealer view of own submission (FB-000102 seeded and torn down) shows no Submitted By card, no admin-pricing-inline, no offer-price-button, no delete-vehicle-button — correctly gated. Backend regression: 5/5 pytest tests pass — POST /api/admin/submissions/{id}/price still persists price + price_history + priced_at; POST /api/kredo/cartrust/order returns 401 without bearer, 404 unknown sub, 400 missing VIN, and 200-or-Kredo-4xx with VIN.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "vehicle/[id].tsx — CarTrust Order button still hidden from admin",
+        "issue": "BUG 1 is only partially fixed. The outer guard `{(!isAdmin || cartrust) ? ...}` was removed so the row (testID cartrust-card) now renders for admins. However the button ladder at line 1659 still reads `... : !isAdmin ? (<TouchableOpacity testID=\"cartrust-order-btn\">Order</TouchableOpacity>) : null`, so admins never see the Order CTA when cartrust is null. Verified by iterating over all 13 priced submissions as admin — subs with cartrust=null show only the row title + R200 cost, no Order button; subs with cartrust=pending show the 'Ordered' spinner. Fix: change line 1659 to always render the Order button (or, if a shared report-confirm modal is desired for admins too, wire the admin branch to setConfirmReport as well). Reference: /app/frontend/app/(app)/vehicle/[id].tsx:1659",
+        "testID": "cartrust-order-btn",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Admin → CarTrust order via UI",
+        "issue": "End-to-end 'Admin taps Order → shared report-confirm modal → POST /api/kredo/cartrust/order' still cannot be exercised from the UI because the Order button is not rendered for admins (see UI bug above). Backend endpoint itself is verified via pytest (test_iteration_24.py 5/5 pass) — the correct URL is /api/kredo/cartrust/order and it is auth-protected + 400s on missing VIN + 404s on unknown submission.",
+        "affected_testIDs": ["cartrust-card", "cartrust-order-btn"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "web deprecation warnings (pre-existing)",
+        "issue": "'shadow*' style props are deprecated (use 'boxShadow'), and 'props.pointerEvents is deprecated' — unchanged from iteration_23/24; not introduced by this iteration."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_24.py",
+    "/app/test_reports/pytest/iteration_25.xml"
+  ],
+  "action_items": [
+    "Complete BUG 1 fix in /app/frontend/app/(app)/vehicle/[id].tsx line 1659: the terminal branch `: !isAdmin ? (<Order TouchableOpacity>) : null` must become `: (<Order TouchableOpacity>)` so admins also see the Order CTA when cartrust is null. Ensure the admin onPress path lands on the shared report-confirm modal (setConfirmReport({type: 'kredo_cartrust', ...})) so the confirmed order fires POST /api/kredo/cartrust/order (verified backend endpoint), not the legacy mock report-order endpoint.",
+    "(Optional) When the above is fixed, do a quick e2e run picking any admin sub with cartrust=null (e.g. FB-000094, FB-000073, FB-000074 on this environment) and confirm the network call goes to /api/kredo/cartrust/order."
+  ],
+  "critical_code_review_comments": [
+    "vehicle/[id].tsx is still 3431 lines — same >700-line file-size flag as prior iterations. Split into ./components/vehicle/{PriceModal,CartrustCard,VinReports,KredoHistory,MarketAnalysis}.tsx.",
+    "confirmAsync at line 191 correctly branches Platform.OS==='web' → window.confirm — clean, cross-platform. Consider extracting into /app/frontend/src/utils/confirm.ts so other screens (dealer archive, price reset, dealer suspension etc.) can reuse it and not re-hit the same react-native-web Alert issue.",
+    "The CarTrust button-ladder at line 1645-1678 mixes completed/pending/order states with an admin gate — refactor into a small pure component whose props are (cartrust, isAdmin, onOrderPress) so the states are easier to reason about and covers the admin-can-order case explicitly."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (5/5 pytest)",
+    "frontend": "75% — BUG 2 fully verified (price cancel/accept + delete cancel dialogs behave correctly on web). Dealer regression verified. BUG 1 only partially fixed — cartrust-card row renders for admin but the Order button is still gated on !isAdmin, so admins still cannot initiate the order from the UI."
+  },
+  "seed_data_creation": "Created ephemeral incoming submission FB-000102 (id 9636b332-bb51-44b0-9751-301dae643fc5) via minitest@example.com to exercise the admin price + delete confirm dialogs, then hard-deleted it via DELETE /api/admin/submissions/{id}. No persistent data left behind.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The only remaining blocker is line 1659 in /app/frontend/app/(app)/vehicle/[id].tsx — flip the `!isAdmin ? <Order/> : null` terminal branch to always render the Order button (admins were meant to be included in this fix, per iteration_25 request). BUG 2 verification pattern that works on Playwright: attach `page.on('dialog', d => asyncio.create_task(d.accept()))` (or `d.dismiss()` for cancel) BEFORE clicking the trigger. Backend regression command: `EXPO_BACKEND_URL=https://fourbuy-admin.preview.emergentagent.com pytest /app/backend/tests/test_iteration_24.py -v`. Credentials: admin@fourbuy.co.za/admin123, minitest@example.com/Mini1234!. To retest the CarTrust admin flow once fixed, seed an incoming submission WITH a VIN (see _create_test_submission(with_vin=True) helper in test_iteration_24.py) so the CarTrust row and Order button are reachable; then attach dialog handler and expect POST /api/kredo/cartrust/order.",
+  "rca_of_issue": "BUG 1 partial fix: E1 removed the OUTER conditional `{(!isAdmin || cartrust) ? ...}` around the cartrust-card <View>, which lets admins see the row. However the INNER button ladder (line 1645-1678) has three arms — completed → View, pending → Ordered badge, else `!isAdmin ? <Order/> : null`. The admin gate in the else arm remained, so the row now renders for admins but the actionable button never does. Correct fix: drop the `!isAdmin` check on the terminal arm so both admin and dealer see the Order button when no cartrust exists (the shared report-confirm modal + POST /api/kredo/cartrust/order handles the actual dispatch regardless of role). BUG 2: confirmed fully fixed — confirmAsync helper works as designed, uses window.confirm on web, and both Cancel and OK branches wire through correctly to /api/admin/submissions/{id}/price and DELETE /api/admin/submissions/{id}."
+}

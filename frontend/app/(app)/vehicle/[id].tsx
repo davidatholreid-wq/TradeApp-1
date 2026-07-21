@@ -179,6 +179,31 @@ function resolvePhoto(photos: Record<string, string>, key: string, fallback?: st
   return photos?.[key] || (fallback ? photos?.[fallback] : "") || "";
 }
 
+/**
+ * Cross-platform "OK / Cancel" confirmation.
+ *
+ * `Alert.alert(title, msg, buttons)` renders the buttons natively on iOS/
+ * Android, but the react-native-web implementation shows the message and
+ * silently drops the buttons — so on the web preview the user has no way to
+ * confirm or cancel. This helper falls back to `window.confirm` on web so
+ * flows like admin pricing/deletion/report ordering still work there.
+ */
+function confirmAsync(title: string, message: string, confirmLabel = "Confirm"): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (Platform.OS === "web") {
+      const combined = title ? `${title}\n\n${message}` : message;
+      // eslint-disable-next-line no-alert
+      const ok = typeof window !== "undefined" && window.confirm(combined);
+      resolve(ok);
+      return;
+    }
+    Alert.alert(title, message, [
+      { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+      { text: confirmLabel, style: "default", onPress: () => resolve(true) },
+    ]);
+  });
+}
+
 export default function VehicleDetail() {
   const colors = useThemeColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -434,43 +459,37 @@ export default function VehicleDetail() {
       return;
     }
     // Two-step confirmation: the "Confirm Price" button in the modal is
-    // the FIRST step; this Alert.alert is the explicit final confirmation
+    // the FIRST step; this final confirmation is the explicit second step
     // so admins can't accidentally submit a wrong number.
     const vehicleLabel = `${sub?.year ?? ""} ${sub?.make_name ?? ""} ${sub?.model_name ?? ""}`.trim();
-    Alert.alert(
+    const ok = await confirmAsync(
       "Confirm price",
       `Offer ${formatZAR(price)} for ${vehicleLabel}?\n\nThis will be shown to the dealer immediately.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Confirm price",
-          style: "default",
-          onPress: async () => {
-            setSubmittingPrice(true);
-            try {
-              await apiFetch(`/api/admin/submissions/${id}/price`, {
-                method: "POST",
-                body: JSON.stringify({
-                  price,
-                  notes: notesInput.trim() || null,
-                  change_comment: changeCommentInput.trim() || null,
-                }),
-              });
-              const refreshed = await apiFetch(`/api/submissions/${id}`);
-              setSub(refreshed.submission);
-              setPriceModal(false);
-              setPriceInput("");
-              setNotesInput("");
-              setChangeCommentInput("");
-            } catch (e: any) {
-              Alert.alert("Error", e.message);
-            } finally {
-              setSubmittingPrice(false);
-            }
-          },
-        },
-      ],
+      "Confirm price",
     );
+    if (!ok) return;
+
+    setSubmittingPrice(true);
+    try {
+      await apiFetch(`/api/admin/submissions/${id}/price`, {
+        method: "POST",
+        body: JSON.stringify({
+          price,
+          notes: notesInput.trim() || null,
+          change_comment: changeCommentInput.trim() || null,
+        }),
+      });
+      const refreshed = await apiFetch(`/api/submissions/${id}`);
+      setSub(refreshed.submission);
+      setPriceModal(false);
+      setPriceInput("");
+      setNotesInput("");
+      setChangeCommentInput("");
+    } catch (e: any) {
+      Alert.alert("Error", e.message);
+    } finally {
+      setSubmittingPrice(false);
+    }
   };
 
   const handleDeclineOffer = async () => {
@@ -682,30 +701,23 @@ export default function VehicleDetail() {
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!sub) return;
-    Alert.alert(
+    const ok = await confirmAsync(
       "Delete Vehicle",
       `Permanently remove ${sub.reference ?? "this submission"}? This cannot be undone.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            setDeleting(true);
-            try {
-              await apiFetch(`/api/admin/submissions/${id}`, { method: "DELETE" });
-              router.back();
-            } catch (e: any) {
-              Alert.alert("Error", e.message);
-            } finally {
-              setDeleting(false);
-            }
-          },
-        },
-      ]
+      "Delete",
     );
+    if (!ok) return;
+    setDeleting(true);
+    try {
+      await apiFetch(`/api/admin/submissions/${id}`, { method: "DELETE" });
+      router.back();
+    } catch (e: any) {
+      Alert.alert("Error", e.message);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   if (loading || !sub) {
@@ -1592,9 +1604,9 @@ export default function VehicleDetail() {
 
                 {/* Kredo CarTrust report — treated like any other VIN-linked
                     report, but with its own async pending/completed flow
-                    (see orderCartrust / cartrust state above). Hidden for
-                    admins unless the dealer has already ordered it. */}
-                {(!isAdmin || cartrust) ? (
+                    (see orderCartrust / cartrust state above). Available to
+                    both admins and dealers; admins can order/refresh. */}
+                {(
                   <View style={styles.reportCard} testID="cartrust-card">
                     <View style={{ flex: 1, marginRight: spacing.sm }}>
                       <Text style={styles.reportName}>{REPORT_CATALOG.kredo_cartrust.name}</Text>
@@ -1665,7 +1677,7 @@ export default function VehicleDetail() {
                       </TouchableOpacity>
                     ) : null}
                   </View>
-                ) : null}
+                )}
               </>
             ) : null}
           </View>
