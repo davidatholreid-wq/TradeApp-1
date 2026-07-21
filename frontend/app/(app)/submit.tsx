@@ -20,7 +20,8 @@ import { storage } from "@/src/utils/storage";
 import { SCAN_BUFFER_KEY, SCAN_PARSED_KEY } from "./scan";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { colors, spacing, radius, fonts } from "@/src/theme";
+import { spacing, radius, fonts } from "@/src/theme";
+import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { apiFetch } from "@/src/api";
 import WheelPicker from "@/src/components/WheelPicker";
 import MonthYearPicker, { formatIsoMonthYear } from "@/src/components/MonthYearPicker";
@@ -60,7 +61,7 @@ type AccidentDamageType = typeof ACCIDENT_DAMAGE_OPTIONS[number];
 
 // Colour-code a 1-10 condition rating: 1-3 red, 4-6 yellow, 7-10 green.
 // Kept muted so it plays well with the strict monochrome theme.
-const ratingColor = (n: number | null): string => {
+const ratingColor = (n: number | null, colors: Palette): string => {
   if (n == null || n <= 0) return colors.border;
   if (n <= 3) return "#C0392B"; // red
   if (n <= 6) return "#D4AC0D"; // yellow
@@ -79,6 +80,8 @@ type WheelField =
   | "windscreen_condition" | "service_history";
 
 export default function SubmitVehicle() {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const router = useRouter();
   const tabBarHeight = useBottomTabBarHeight();
 
@@ -562,7 +565,7 @@ export default function SubmitVehicle() {
   );
 
   const RatingDots = ({ value, onChange }: { value: number | null; onChange: (n: number) => void }) => {
-    const activeColor = ratingColor(value);
+    const activeColor = ratingColor(value, colors);
     return (
       <View style={styles.dotsRow}>
         {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
@@ -732,8 +735,8 @@ export default function SubmitVehicle() {
 
           <View style={styles.ratingHeader}>
             <Text style={styles.ratingTitle}>Mechanical Health</Text>
-            <View style={[styles.ratingBadge, { borderColor: ratingColor(mechanicalRating) }]}>
-              <Text style={[styles.ratingBadgeText, { color: ratingColor(mechanicalRating) }]}>
+            <View style={[styles.ratingBadge, { borderColor: ratingColor(mechanicalRating, colors) }]}>
+              <Text style={[styles.ratingBadgeText, { color: ratingColor(mechanicalRating, colors) }]}>
                 {mechanicalRating != null ? `${mechanicalRating}/10 · ${ratingLabelFor(mechanicalRating)}` : "Not rated"}
               </Text>
             </View>
@@ -742,8 +745,8 @@ export default function SubmitVehicle() {
 
           <View style={styles.ratingHeader}>
             <Text style={styles.ratingTitle}>Cosmetic Appearance</Text>
-            <View style={[styles.ratingBadge, { borderColor: ratingColor(cosmeticRating) }]}>
-              <Text style={[styles.ratingBadgeText, { color: ratingColor(cosmeticRating) }]}>
+            <View style={[styles.ratingBadge, { borderColor: ratingColor(cosmeticRating, colors) }]}>
+              <Text style={[styles.ratingBadgeText, { color: ratingColor(cosmeticRating, colors) }]}>
                 {cosmeticRating != null ? `${cosmeticRating}/10 · ${ratingLabelFor(cosmeticRating)}` : "Not rated"}
               </Text>
             </View>
@@ -752,8 +755,8 @@ export default function SubmitVehicle() {
 
           <View style={styles.ratingHeader}>
             <Text style={styles.ratingTitle}>Interior Condition</Text>
-            <View style={[styles.ratingBadge, { borderColor: ratingColor(interiorRating) }]}>
-              <Text style={[styles.ratingBadgeText, { color: ratingColor(interiorRating) }]}>
+            <View style={[styles.ratingBadge, { borderColor: ratingColor(interiorRating, colors) }]}>
+              <Text style={[styles.ratingBadgeText, { color: ratingColor(interiorRating, colors) }]}>
                 {interiorRating != null ? `${interiorRating}/10 · ${ratingLabelFor(interiorRating)}` : "Not rated"}
               </Text>
             </View>
@@ -762,8 +765,8 @@ export default function SubmitVehicle() {
 
           <View style={styles.ratingHeader}>
             <Text style={styles.ratingTitle}>General Condition</Text>
-            <View style={[styles.ratingBadge, { borderColor: ratingColor(historyRating) }]}>
-              <Text style={[styles.ratingBadgeText, { color: ratingColor(historyRating) }]}>
+            <View style={[styles.ratingBadge, { borderColor: ratingColor(historyRating, colors) }]}>
+              <Text style={[styles.ratingBadgeText, { color: ratingColor(historyRating, colors) }]}>
                 {historyRating != null ? `${historyRating}/10 · ${ratingLabelFor(historyRating)}` : "Not rated"}
               </Text>
             </View>
@@ -825,7 +828,7 @@ export default function SubmitVehicle() {
             }}
             testID="toggle-paint"
           >
-            <View style={[styles.checkbox, paintEvidence && styles.checkboxOn]}>{paintEvidence ? <Ionicons name="checkmark" size={14} color="#000" /> : null}</View>
+            <View style={[styles.checkbox, paintEvidence && styles.checkboxOn]}>{paintEvidence ? <Ionicons name="checkmark" size={14} color={colors.onPrimary} /> : null}</View>
             <Text style={styles.checkText}>Evidence of paint work</Text>
           </TouchableOpacity>
           {paintEvidence ? (
@@ -860,7 +863,7 @@ export default function SubmitVehicle() {
             }}
             testID="toggle-accident"
           >
-            <View style={[styles.checkbox, accidentDamage && styles.checkboxOn]}>{accidentDamage ? <Ionicons name="checkmark" size={14} color="#000" /> : null}</View>
+            <View style={[styles.checkbox, accidentDamage && styles.checkboxOn]}>{accidentDamage ? <Ionicons name="checkmark" size={14} color={colors.onPrimary} /> : null}</View>
             <Text style={styles.checkText}>Evidence of previous accident damage</Text>
           </TouchableOpacity>
           {accidentDamage ? (
@@ -880,7 +883,7 @@ export default function SubmitVehicle() {
                     }}
                   >
                     <View style={[styles.checkbox, on && styles.checkboxOn]}>
-                      {on ? <Ionicons name="checkmark" size={14} color="#000" /> : null}
+                      {on ? <Ionicons name="checkmark" size={14} color={colors.onPrimary} /> : null}
                     </View>
                     <Text style={styles.checkText}>{opt}</Text>
                   </TouchableOpacity>
@@ -926,7 +929,7 @@ export default function SubmitVehicle() {
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <TouchableOpacity style={[styles.submitBtn, submitting && styles.submitBtnDisabled]} onPress={handleSubmit} disabled={submitting} testID="submit-button">
-            {submitting ? <ActivityIndicator color="#000" /> : (<><Ionicons name="paper-plane" size={18} color="#000" /><Text style={styles.submitBtnText}>Submit for Pricing</Text></>)}
+            {submitting ? <ActivityIndicator color={colors.onPrimary} /> : (<><Ionicons name="paper-plane" size={18} color={colors.onPrimary} /><Text style={styles.submitBtnText}>Submit for Pricing</Text></>)}
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -964,14 +967,14 @@ export default function SubmitVehicle() {
               </View>
               <Text style={styles.billNote}>No fee if Fourbuy does not return a price within 24 hours.</Text>
               <TouchableOpacity testID="billing-confirm-check" style={styles.billCheckRow} onPress={() => setBillingAckChecked((v) => !v)}>
-                <View style={[styles.checkbox, billingAckChecked && styles.checkboxOn]}>{billingAckChecked ? <Ionicons name="checkmark" size={14} color="#000" /> : null}</View>
+                <View style={[styles.checkbox, billingAckChecked && styles.checkboxOn]}>{billingAckChecked ? <Ionicons name="checkmark" size={14} color={colors.onPrimary} /> : null}</View>
                 <Text style={styles.checkText}>I agree to the R50 fee for this submission.</Text>
               </TouchableOpacity>
             </View>
             <View style={styles.billFooter}>
               <TouchableOpacity style={styles.billCancel} onPress={() => { setBillingConfirmOpen(false); setBillingAckChecked(false); }} testID="billing-confirm-cancel"><Text style={styles.billCancelText}>Cancel</Text></TouchableOpacity>
               <TouchableOpacity style={[styles.billOk, !billingAckChecked && { opacity: 0.4 }]} disabled={!billingAckChecked} onPress={() => { setBillingAckChecked(false); performSubmit(); }} testID="billing-confirm-submit">
-                <Ionicons name="paper-plane" size={16} color="#000" />
+                <Ionicons name="paper-plane" size={16} color={colors.onPrimary} />
                 <Text style={styles.billOkText}>Confirm & Submit</Text>
               </TouchableOpacity>
             </View>
@@ -982,7 +985,7 @@ export default function SubmitVehicle() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.md, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.paper },
   headerTitle: { color: colors.text, fontSize: 17, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 0.3 },
@@ -1067,7 +1070,7 @@ const styles = StyleSheet.create({
   dot: { flex: 1, height: 30, borderRadius: 6, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center", backgroundColor: colors.card },
   dotActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   dotText: { color: colors.textSecondary, fontSize: 11, fontWeight: "700" },
-  dotTextActive: { color: "#000", fontWeight: "800" },
+  dotTextActive: { color: colors.onPrimary, fontWeight: "800" },
 
   // Sub-panels revealed when Paint/Accident checkboxes are ticked
   subPanel: {
@@ -1108,7 +1111,7 @@ const styles = StyleSheet.create({
   },
   pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   pillText: { color: colors.textSecondary, fontSize: 13, fontWeight: "700", letterSpacing: 0.2 },
-  pillTextActive: { color: "#000", fontWeight: "800" },
+  pillTextActive: { color: colors.onPrimary, fontWeight: "800" },
 
   // Date picker trigger button (styled like a text input for consistency)
   dateBtn: {
@@ -1153,7 +1156,7 @@ const styles = StyleSheet.create({
   error: { color: colors.danger, fontSize: 13, marginTop: spacing.sm, textAlign: "center" },
   submitBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: spacing.lg, paddingVertical: 14, backgroundColor: colors.primary, borderRadius: radius.md },
   submitBtnDisabled: { opacity: 0.6 },
-  submitBtnText: { color: "#000", fontWeight: "800", fontSize: 15, letterSpacing: 1.5, textTransform: "uppercase" },
+  submitBtnText: { color: colors.onPrimary, fontWeight: "800", fontSize: 15, letterSpacing: 1.5, textTransform: "uppercase" },
 
   billBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", justifyContent: "center", alignItems: "center", padding: spacing.lg },
   billCard: { width: "100%", maxWidth: 440, backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.borderLight, overflow: "hidden" },
@@ -1168,5 +1171,5 @@ const styles = StyleSheet.create({
   billCancel: { flex: 1, paddingVertical: 12, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, alignItems: "center", backgroundColor: colors.card },
   billCancelText: { color: colors.textSecondary, fontWeight: "700" },
   billOk: { flex: 2, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12, borderRadius: radius.md, backgroundColor: colors.primary },
-  billOkText: { color: "#000", fontWeight: "800", letterSpacing: 1, textTransform: "uppercase" },
+  billOkText: { color: colors.onPrimary, fontWeight: "800", letterSpacing: 1, textTransform: "uppercase" },
 });

@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, ActivityIndicator, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, radius, fonts, BRAND } from "@/src/theme";
+import { spacing, radius, fonts, BRAND } from "@/src/theme";
+import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { apiFetch } from "@/src/api";
 import { useAuth } from "@/src/context/AuthContext";
 
@@ -13,6 +14,8 @@ import { useAuth } from "@/src/context/AuthContext";
  * mutated so the modal never shows again for that session.
  */
 export default function AgreementModal() {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { user, markAgreementAccepted, logout } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -121,7 +124,7 @@ export default function AgreementModal() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.85)",

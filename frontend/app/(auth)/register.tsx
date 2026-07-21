@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -13,7 +13,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import BrandLogo from "@/src/components/BrandLogo";
-import { colors, spacing, radius, fonts, BRAND } from "@/src/theme";
+import { spacing, radius, fonts, BRAND } from "@/src/theme";
+import { darkPalette, type Palette } from "@/src/theme/ThemeContext";
 
 // WhatsApp business number the invitation requests should route to.
 // Kept as a constant so it can be swapped without touching layout code.
@@ -27,6 +28,8 @@ const WHATSAPP_NUMBER = "27848819073"; // ZA — country code without the "+"
  * request message with their dealership + contact name.
  */
 export default function RegisterInvitationOnly() {
+  const colors = darkPalette;
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const router = useRouter();
   const [dealership, setDealership] = useState("");
   const [name, setName] = useState("");
@@ -162,7 +165,7 @@ export default function RegisterInvitationOnly() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   scroll: {
     padding: spacing.lg,

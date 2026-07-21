@@ -1,13 +1,18 @@
+import { useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useAuth } from "@/src/context/AuthContext";
-import { colors, spacing, radius, fonts, BRAND } from "@/src/theme";
+import { spacing, radius, fonts, BRAND } from "@/src/theme";
+import { useThemeColors, useTheme, type Palette } from "@/src/theme/ThemeContext";
 import BrandLogo from "@/src/components/BrandLogo";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
 export default function Profile() {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { mode, toggle } = useTheme();
   const { user, logout } = useAuth();
   const router = useRouter();
   const tabBarHeight = useBottomTabBarHeight();
@@ -123,6 +128,69 @@ export default function Profile() {
           </View>
         ) : null}
 
+        {/* Appearance / theme toggle */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Appearance</Text>
+          <View style={styles.themeRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.themeLabel}>Theme</Text>
+              <Text style={styles.themeSub}>
+                {mode === "dark"
+                  ? "Night mode is on — dark backgrounds, light text."
+                  : "Day mode is on — light backgrounds, dark text."}
+              </Text>
+            </View>
+            <View style={styles.themeToggleGroup}>
+              <TouchableOpacity
+                testID="theme-toggle-dark"
+                onPress={() => { if (mode !== "dark") toggle(); }}
+                style={[
+                  styles.themeToggleBtn,
+                  mode === "dark" && styles.themeToggleBtnActive,
+                ]}
+                accessibilityLabel="Enable dark (night) mode"
+              >
+                <Ionicons
+                  name="moon"
+                  size={16}
+                  color={mode === "dark" ? colors.onPrimary : colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.themeToggleText,
+                    mode === "dark" && styles.themeToggleTextActive,
+                  ]}
+                >
+                  Night
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="theme-toggle-light"
+                onPress={() => { if (mode !== "light") toggle(); }}
+                style={[
+                  styles.themeToggleBtn,
+                  mode === "light" && styles.themeToggleBtnActive,
+                ]}
+                accessibilityLabel="Enable light (day) mode"
+              >
+                <Ionicons
+                  name="sunny"
+                  size={16}
+                  color={mode === "light" ? colors.onPrimary : colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.themeToggleText,
+                    mode === "light" && styles.themeToggleTextActive,
+                  ]}
+                >
+                  Day
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
         <TouchableOpacity
           testID="logout-button"
           style={styles.logoutBtn}
@@ -136,7 +204,7 @@ export default function Profile() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   header: {
     flexDirection: "row",
@@ -279,6 +347,44 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   hintText: { color: colors.textSecondary, fontSize: 12, flex: 1, lineHeight: 17 },
+
+  // Appearance / theme toggle
+  themeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  themeLabel: { color: colors.text, fontSize: 14, fontWeight: "700", letterSpacing: 0.2 },
+  themeSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2, lineHeight: 16 },
+  themeToggleGroup: {
+    flexDirection: "row",
+    backgroundColor: colors.paper,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    padding: 3,
+    gap: 2,
+  },
+  themeToggleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+  },
+  themeToggleBtnActive: {
+    backgroundColor: colors.primary,
+  },
+  themeToggleText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+  },
+  themeToggleTextActive: {
+    color: colors.onPrimary,
+  },
 
   logoutBtn: {
     marginHorizontal: spacing.lg,

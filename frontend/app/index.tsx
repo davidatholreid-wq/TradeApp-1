@@ -1,7 +1,11 @@
+import { useMemo } from "react";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
-import { colors } from "@/src/theme";
+
+import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 
 export default function Index() {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.container} testID="splash-screen">
       <ActivityIndicator size="large" color={colors.primary} />
@@ -9,7 +13,7 @@ export default function Index() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.bg,

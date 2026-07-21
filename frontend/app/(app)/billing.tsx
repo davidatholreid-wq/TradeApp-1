@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -12,7 +12,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeTabBarHeight } from "@/src/utils/useSafeTabBarHeight";
-import { colors, spacing, radius, fonts } from "@/src/theme";
+import { spacing, radius, fonts } from "@/src/theme";
+import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { apiFetch } from "@/src/api";
 import { useAuth } from "@/src/context/AuthContext";
 
@@ -111,6 +112,8 @@ function monthLabel(ym: string): string {
 }
 
 export default function BillingScreen() {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const tabBarHeight = useSafeTabBarHeight();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -522,7 +525,7 @@ export default function BillingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   header: {
     paddingHorizontal: spacing.lg,

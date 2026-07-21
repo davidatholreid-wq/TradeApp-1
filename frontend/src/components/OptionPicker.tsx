@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -10,7 +10,8 @@ import {
   Pressable,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, radius } from "@/src/theme";
+import { spacing, radius } from "@/src/theme";
+import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 
 export type Option = { id: string; name: string };
 
@@ -25,6 +26,8 @@ type Props = {
 };
 
 export default function OptionPicker({ visible, title, options, onClose, onSelect, loading, testID }: Props) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [query, setQuery] = useState("");
   const filtered = options.filter((o) => o.name.toLowerCase().includes(query.toLowerCase()));
 
@@ -80,7 +83,7 @@ export default function OptionPicker({ visible, title, options, onClose, onSelec
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   overlay: { flex: 1, justifyContent: "flex-end" },
   backdrop: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.6)" },
   sheet: {

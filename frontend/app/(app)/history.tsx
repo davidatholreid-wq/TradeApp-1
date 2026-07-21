@@ -13,7 +13,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { colors, spacing, radius, fonts } from "@/src/theme";
+import { spacing, radius, fonts } from "@/src/theme";
+import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { apiFetch } from "@/src/api";
 import { useAuth } from "@/src/context/AuthContext";
 import { formatZAR } from "@/src/utils/format";
@@ -63,6 +64,8 @@ const STATUS_OPTIONS = [
 type StatusKey = (typeof STATUS_OPTIONS)[number]["key"];
 
 export default function HistoryScreen() {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const router = useRouter();
   const { user } = useAuth();
   const tabBarHeight = useBottomTabBarHeight();
@@ -291,7 +294,7 @@ export default function HistoryScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   header: {
     paddingHorizontal: spacing.lg,

@@ -7,7 +7,7 @@
  *
  * Route: /(app)/kredo-test  (admin-only)
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -22,7 +22,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { apiFetch } from "@/src/api";
 import { useAuth } from "@/src/context/AuthContext";
-import { colors, spacing, radius, fonts } from "@/src/theme";
+import { spacing, radius, fonts } from "@/src/theme";
+import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { Redirect } from "expo-router";
 
 type ValueResult = {
@@ -44,6 +45,8 @@ function fmt(v: number | null | undefined): string {
 }
 
 export default function KredoTest() {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { user } = useAuth();
   const [makes, setMakes] = useState<string[]>([]);
   const [make, setMake] = useState<string | null>(null);
@@ -201,9 +204,9 @@ export default function KredoTest() {
               onPress={getValue}
               disabled={loading}
             >
-              {loading ? <ActivityIndicator color="#000" /> : (
+              {loading ? <ActivityIndicator color={colors.onPrimary} /> : (
                 <>
-                  <Ionicons name="calculator" size={16} color="#000" />
+                  <Ionicons name="calculator" size={16} color={colors.onPrimary} />
                   <Text style={styles.primaryBtnText}>Get Kredo valuation</Text>
                 </>
               )}
@@ -248,6 +251,8 @@ function Section({
   selected: string | null;
   onSelect: (v: string) => void;
 }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.card}>
       <Text style={styles.cardTitle}>{title}</Text>
@@ -268,15 +273,17 @@ function Section({
 }
 
 function PriceBox({ label, value, highlight }: { label: string; value: number | null | undefined; highlight?: boolean }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={[styles.priceBox, highlight && styles.priceBoxHi]}>
-      <Text style={[styles.priceLabel, highlight && { color: "#000" }]}>{label}</Text>
-      <Text style={[styles.priceValue, highlight && { color: "#000" }]}>{fmt(value)}</Text>
+      <Text style={[styles.priceLabel, highlight && { color: colors.onPrimary }]}>{label}</Text>
+      <Text style={[styles.priceValue, highlight && { color: colors.onPrimary }]}>{fmt(value)}</Text>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   scroll: { padding: spacing.md, paddingBottom: spacing.xxl },
   h1: { color: colors.text, fontSize: 22, fontWeight: "800" },
@@ -303,13 +310,13 @@ const styles = StyleSheet.create({
   chip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.paper },
   chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { color: colors.text, fontSize: 12 },
-  chipTextActive: { color: "#000", fontWeight: "800" },
+  chipTextActive: { color: colors.onPrimary, fontWeight: "800" },
   primaryBtn: {
     marginTop: spacing.sm,
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
     backgroundColor: colors.primary, borderRadius: radius.sm, paddingVertical: 14,
   },
-  primaryBtnText: { color: "#000", fontWeight: "800", fontSize: 13, letterSpacing: 1 },
+  primaryBtnText: { color: colors.onPrimary, fontWeight: "800", fontSize: 13, letterSpacing: 1 },
   resultCard: {
     backgroundColor: colors.card,
     borderRadius: radius.md,

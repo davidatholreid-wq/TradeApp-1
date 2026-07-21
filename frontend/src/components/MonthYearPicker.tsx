@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -9,7 +9,8 @@ import {
   Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, radius, fonts } from "@/src/theme";
+import { spacing, radius, fonts } from "@/src/theme";
+import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -45,6 +46,8 @@ export default function MonthYearPicker({
   maxYear,
   title = "Last Service Date",
 }: Props) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const nowYear = new Date().getFullYear();
   const yMin = minYear ?? nowYear - 25;
   const yMax = maxYear ?? nowYear;
@@ -214,7 +217,7 @@ export function formatIsoMonthYear(v: string | null | undefined): string {
   return `${MONTHS[p.month]} ${p.year}`;
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.65)", justifyContent: "flex-end" },
   sheet: {
     backgroundColor: colors.paper,

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -12,7 +12,8 @@ import {
   Pressable,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, radius, fonts } from "@/src/theme";
+import { spacing, radius, fonts } from "@/src/theme";
+import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 
 export type CarouselPhoto = { uri: string; label: string };
 
@@ -26,6 +27,8 @@ type Props = {
 // Fullscreen swipeable photo carousel with monochrome chrome — used on both
 // the mobile admin detail view and the desktop cockpit.
 export default function PhotoCarousel({ photos, initialIndex, visible, onClose }: Props) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { width, height } = useWindowDimensions();
   const scrollRef = useRef<ScrollView | null>(null);
   const [index, setIndex] = useState(initialIndex);
@@ -160,7 +163,7 @@ export default function PhotoCarousel({ photos, initialIndex, visible, onClose }
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   root: { flex: 1, backgroundColor: "rgba(0,0,0,0.97)" },
   topBar: {
     flexDirection: "row",

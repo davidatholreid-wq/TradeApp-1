@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -13,7 +13,8 @@ import {
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, radius, fonts } from "@/src/theme";
+import { spacing, radius, fonts } from "@/src/theme";
+import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { apiFetch } from "@/src/api";
 
 export type DealerPhotoTarget = {
@@ -33,6 +34,8 @@ type Props = {
 // profile picture and cover photo. Photos are base64-encoded and posted to
 // POST /api/admin/dealers/{id}/photos. Empty string clears a photo.
 export default function DealerPhotosModal({ dealer, onClose, onSaved }: Props) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [profilePic, setProfilePic] = useState<string | null | undefined>(undefined);
   const [coverPhoto, setCoverPhoto] = useState<string | null | undefined>(undefined);
   const [dirty, setDirty] = useState(false);
@@ -213,7 +216,7 @@ export default function DealerPhotosModal({ dealer, onClose, onSaved }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", justifyContent: "flex-end" },
   card: {
     backgroundColor: colors.card,

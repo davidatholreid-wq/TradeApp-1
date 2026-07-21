@@ -1,8 +1,9 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { View, Text, StyleSheet, ViewStyle } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, radius, spacing, fonts } from "@/src/theme";
+import { radius, spacing, fonts } from "@/src/theme";
+import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 
 type Props = {
   value?: number;
@@ -35,6 +36,8 @@ export function TakealotVoucherCard({
   unlocked = false,
   style,
 }: Props) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={[styles.outer, style]}>
       {/* Card body — dark charcoal for maximum R500 contrast */}
@@ -136,7 +139,7 @@ export function TakealotVoucherCard({
 
 const CARD_HEIGHT = 200;
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   outer: {
     width: "100%",
     height: CARD_HEIGHT,

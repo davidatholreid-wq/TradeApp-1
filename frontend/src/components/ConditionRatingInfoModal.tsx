@@ -1,6 +1,8 @@
+import { useMemo } from "react";
 import { Modal, View, Text, ScrollView, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, radius, fonts } from "@/src/theme";
+import { spacing, radius, fonts } from "@/src/theme";
+import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 
 type Props = {
   visible: boolean;
@@ -109,6 +111,8 @@ const SCALE: { score: number; label: string; body: string }[] = [
 ];
 
 export default function ConditionRatingInfoModal({ visible, onClose }: Props) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.backdrop}>
@@ -174,7 +178,7 @@ export default function ConditionRatingInfoModal({ visible, onClose }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.8)", justifyContent: "flex-end" },
   sheet: {
     backgroundColor: colors.paper,

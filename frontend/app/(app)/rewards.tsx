@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -17,7 +17,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { apiFetch } from "@/src/api";
 import { useAuth } from "@/src/context/AuthContext";
-import { colors, spacing, radius, fonts } from "@/src/theme";
+import { spacing, radius, fonts } from "@/src/theme";
+import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { TakealotVoucherCard } from "@/src/components/TakealotVoucherCard";
 
 type Redemption = {
@@ -53,6 +54,8 @@ type RewardsSummary = {
 };
 
 export default function RewardsScreen() {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { user } = useAuth();
   const tabBarHeight = useBottomTabBarHeight();
   const [data, setData] = useState<RewardsSummary | null>(null);
@@ -114,6 +117,8 @@ export default function RewardsScreen() {
   }
 
   const progress = Math.min(1, data.balance / data.points_per_voucher);
+  const statusStyles = buildStatusStyles(colors);
+  const statusTextStyles = buildStatusTextStyles(colors);
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -270,7 +275,7 @@ export default function RewardsScreen() {
                 onPress={submitRedeem}
                 disabled={redeemSubmitting}
               >
-                {redeemSubmitting ? <ActivityIndicator color="#000" /> : <Text style={styles.modalBtnPrimaryText}>Confirm</Text>}
+                {redeemSubmitting ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={styles.modalBtnPrimaryText}>Confirm</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -281,6 +286,8 @@ export default function RewardsScreen() {
 }
 
 function Stat({ label, value }: { label: string; value: number }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.statCard}>
       <Text style={styles.statLabel}>{label}</Text>
@@ -289,18 +296,18 @@ function Stat({ label, value }: { label: string; value: number }) {
   );
 }
 
-const statusStyles: any = {
+const buildStatusStyles = (colors: Palette) => ({
   pending: { backgroundColor: colors.warning + "22", borderColor: colors.warning },
   fulfilled: { backgroundColor: colors.success + "22", borderColor: colors.success },
   rejected: { backgroundColor: colors.danger + "22", borderColor: colors.danger },
-};
-const statusTextStyles: any = {
+} as Record<string, any>);
+const buildStatusTextStyles = (colors: Palette) => ({
   pending: { color: colors.warning },
   fulfilled: { color: colors.success },
   rejected: { color: colors.danger },
-};
+} as Record<string, any>);
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   scroll: { padding: spacing.md, gap: spacing.md },
   h1: { color: colors.text, fontSize: 24, fontWeight: "800", letterSpacing: 0.5, fontFamily: fonts.heading },
@@ -331,7 +338,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   redeemBtnDisabled: { backgroundColor: colors.border },
-  redeemBtnText: { color: "#000", fontWeight: "800", letterSpacing: 1 },
+  redeemBtnText: { color: colors.onPrimary, fontWeight: "800", letterSpacing: 1 },
   statsRow: { flexDirection: "row", gap: spacing.sm },
   statCard: { flex: 1, backgroundColor: colors.card, padding: spacing.md, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, alignItems: "center" },
   statLabel: { color: colors.textSecondary, fontSize: 10, fontWeight: "800", letterSpacing: 1 },
@@ -379,5 +386,5 @@ const styles = StyleSheet.create({
   modalBtnGhost: { borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card },
   modalBtnGhostText: { color: colors.textSecondary, fontWeight: "700" },
   modalBtnPrimary: { backgroundColor: colors.primary },
-  modalBtnPrimaryText: { color: "#000", fontWeight: "800", letterSpacing: 1 },
+  modalBtnPrimaryText: { color: colors.onPrimary, fontWeight: "800", letterSpacing: 1 },
 });

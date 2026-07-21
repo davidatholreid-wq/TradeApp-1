@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -16,10 +16,13 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, radius, fonts, BRAND } from "@/src/theme";
+import { spacing, radius, fonts, BRAND } from "@/src/theme";
+import { darkPalette, type Palette } from "@/src/theme/ThemeContext";
 import { useAuth } from "@/src/context/AuthContext";
 
 export default function Login() {
+  const colors = darkPalette;
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { login } = useAuth();
   const router = useRouter();
   const { width } = useWindowDimensions();
@@ -120,7 +123,7 @@ export default function Login() {
               onPress={handleLogin}
               disabled={loading}
             >
-              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>Sign In</Text>}
+              {loading ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={styles.primaryBtnText}>Sign In</Text>}
             </TouchableOpacity>
 
             <View style={styles.linkRow}>
@@ -148,7 +151,7 @@ export default function Login() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   bg: { flex: 1, backgroundColor: colors.bg },
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(10,10,10,0.7)" },
   safe: { flex: 1 },
@@ -222,7 +225,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   disabledBtn: { opacity: 0.6 },
-  primaryBtnText: { color: "#000", fontWeight: "800", fontSize: 15, letterSpacing: 1.5, textTransform: "uppercase" },
+  primaryBtnText: { color: colors.onPrimary, fontWeight: "800", fontSize: 15, letterSpacing: 1.5, textTransform: "uppercase" },
   linkRow: { flexDirection: "row", justifyContent: "center", marginTop: spacing.lg },
   linkText: { color: colors.textSecondary },
   linkAction: { color: colors.primary, fontWeight: "700" },

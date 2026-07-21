@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -9,7 +9,8 @@ import {
   NativeSyntheticEvent,
   NativeScrollEvent,
 } from "react-native";
-import { colors, spacing, radius, fonts } from "@/src/theme";
+import { spacing, radius, fonts } from "@/src/theme";
+import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 
 const ITEM_HEIGHT = 44;
 const VISIBLE = 5; // rows visible; center = selected
@@ -43,6 +44,8 @@ export default function WheelPicker<T extends string | number>({
   formatter,
   testID,
 }: Props<T>) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const scrollRef = useRef<ScrollView>(null);
   const [current, setCurrent] = useState<T | null>(value ?? options[0] ?? null);
 
@@ -136,7 +139,7 @@ export default function WheelPicker<T extends string | number>({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", justifyContent: "flex-end" },
   card: {
     backgroundColor: colors.card,

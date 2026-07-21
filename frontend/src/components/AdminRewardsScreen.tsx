@@ -3,11 +3,12 @@
  * `view === "rewards"`. Lists every voucher request across all dealerships
  * with Fulfil / Reject actions.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { apiFetch } from "@/src/api";
-import { colors, spacing, radius, fonts } from "@/src/theme";
+import { spacing, radius, fonts } from "@/src/theme";
+import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 
 type Redemption = {
   id: string;
@@ -56,6 +57,10 @@ type Leaderboard = {
 };
 
 export default function AdminRewardsScreen() {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const statusStyles = buildStatusStyles(colors);
+  const statusTextStyles = buildStatusTextStyles(colors);
   const [redemptions, setRedemptions] = useState<Redemption[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"pending" | "fulfilled" | "rejected" | "all">("pending");
@@ -542,18 +547,18 @@ export default function AdminRewardsScreen() {
   );
 }
 
-const statusStyles: any = {
+const buildStatusStyles = (colors: Palette) => ({
   pending: { backgroundColor: colors.warning + "22", borderColor: colors.warning },
   fulfilled: { backgroundColor: colors.success + "22", borderColor: colors.success },
   rejected: { backgroundColor: colors.danger + "22", borderColor: colors.danger },
-};
-const statusTextStyles: any = {
+} as Record<string, any>);
+const buildStatusTextStyles = (colors: Palette) => ({
   pending: { color: colors.warning },
   fulfilled: { color: colors.success },
   rejected: { color: colors.danger },
-};
+} as Record<string, any>);
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg, padding: spacing.md },
   header: { flexDirection: "row", alignItems: "flex-start", gap: spacing.md, marginBottom: spacing.md },
   h1: { color: colors.text, fontSize: 22, fontWeight: "800", letterSpacing: 0.4 },

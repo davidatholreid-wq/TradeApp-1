@@ -9,6 +9,7 @@ import { StatusBar } from "expo-status-bar";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { AuthProvider, useAuth } from "@/src/context/AuthContext";
+import { ThemeProvider, useTheme } from "@/src/theme/ThemeContext";
 
 LogBox.ignoreAllLogs(true);
 
@@ -40,6 +41,7 @@ function RootNavigation() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const segments = useSegments();
+  const { colors } = useTheme();
 
   useEffect(() => {
     if (loading) return;
@@ -53,7 +55,12 @@ function RootNavigation() {
     }
   }, [user, loading, segments, router]);
 
-  return <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: "#000000" } }} />;
+  return <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }} />;
+}
+
+function ThemedStatusBar() {
+  const { mode } = useTheme();
+  return <StatusBar style={mode === "dark" ? "light" : "dark"} />;
 }
 
 export default function RootLayout() {
@@ -112,10 +119,12 @@ export default function RootLayout() {
   // fall back to Unicode boxes until the ttf files arrive, then re-render.
   return (
     <SafeAreaProvider>
-      <StatusBar style="light" />
-      <AuthProvider>
-        <RootNavigation />
-      </AuthProvider>
+      <ThemeProvider>
+        <ThemedStatusBar />
+        <AuthProvider>
+          <RootNavigation />
+        </AuthProvider>
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }

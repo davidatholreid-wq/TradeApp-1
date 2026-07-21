@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -13,7 +13,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { colors, spacing, radius, fonts } from "@/src/theme";
+import { spacing, radius, fonts } from "@/src/theme";
+import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { useAuth } from "@/src/context/AuthContext";
 import { apiFetch } from "@/src/api";
 import BrandLogo from "@/src/components/BrandLogo";
@@ -50,6 +51,8 @@ type Draft = {
 };
 
 export default function DashboardScreen() {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { user } = useAuth();
   const router = useRouter();
   const tabBarHeight = useBottomTabBarHeight();
@@ -253,7 +256,7 @@ export default function DashboardScreen() {
             style={styles.newBtn}
             onPress={() => router.push("/(app)/submit" as any)}
           >
-            <Ionicons name="add" size={20} color="#000" />
+            <Ionicons name="add" size={20} color={colors.onPrimary} />
             <Text style={styles.newBtnText}>New</Text>
           </TouchableOpacity>
         ) : null}
@@ -390,7 +393,7 @@ export default function DashboardScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   brandStrip: {
     paddingHorizontal: spacing.lg,
@@ -420,7 +423,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: radius.sm,
   },
-  newBtnText: { color: "#000", fontWeight: "800", letterSpacing: 0.5 },
+  newBtnText: { color: colors.onPrimary, fontWeight: "800", letterSpacing: 0.5 },
 
   silosRow: {
     flexDirection: "row",
@@ -459,7 +462,7 @@ const styles = StyleSheet.create({
   },
   siloBadgeActive: { backgroundColor: colors.neon },
   siloBadgeText: { color: colors.text, fontSize: 11, fontWeight: "800" },
-  siloBadgeTextActive: { color: "#000" },
+  siloBadgeTextActive: { color: colors.onPrimary },
   list: { padding: spacing.md, paddingBottom: spacing.xl },
   card: {
     backgroundColor: colors.card,
@@ -524,7 +527,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: radius.sm,
   },
-  emptyBtnText: { color: "#000", fontWeight: "800", letterSpacing: 0.5 },
+  emptyBtnText: { color: colors.onPrimary, fontWeight: "800", letterSpacing: 0.5 },
 
   // Drafts card (dealer dashboard header)
   draftsCardWrap: {

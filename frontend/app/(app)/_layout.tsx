@@ -1,12 +1,14 @@
 import { Tabs, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Platform, useWindowDimensions, View } from "react-native";
-import { colors } from "@/src/theme";
+
+import { useThemeColors } from "@/src/theme/ThemeContext";
 import { useAuth } from "@/src/context/AuthContext";
 import WebAdminDashboard from "@/src/components/WebAdminDashboard";
 import AgreementModal from "@/src/components/AgreementModal";
 
 export default function AppLayout() {
+  const colors = useThemeColors();
   const { user, logout } = useAuth();
   const router = useRouter();
   const { width } = useWindowDimensions();

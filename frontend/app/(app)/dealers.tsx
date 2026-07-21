@@ -19,7 +19,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { BottomTabBarHeightContext } from "@react-navigation/bottom-tabs";
-import { colors, spacing, radius, fonts } from "@/src/theme";
+import { spacing, radius, fonts } from "@/src/theme";
+import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { apiFetch } from "@/src/api";
 import DealerPhotosModal from "@/src/components/DealerPhotosModal";
 import BrandLogo from "@/src/components/BrandLogo";
@@ -50,6 +51,8 @@ type Dealer = {
 };
 
 export default function Dealers() {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   // Safe fallback for when this screen is embedded in the web admin cockpit
   // (which is outside a bottom-tab navigator).
   const tabBarHeight = useContext(BottomTabBarHeightContext) ?? 0;
@@ -749,7 +752,7 @@ export default function Dealers() {
                 disabled={inviteSubmitting}
               >
                 {inviteSubmitting ? (
-                  <ActivityIndicator color="#000" />
+                  <ActivityIndicator color={colors.onPrimary} />
                 ) : (
                   <Text style={styles.modalBtnPrimaryText}>Add User</Text>
                 )}
@@ -798,6 +801,8 @@ function EditDealerModal({
   onClose: () => void;
   onSaved: (fresh: Dealer) => void;
 }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
@@ -881,10 +886,10 @@ function EditDealerModal({
               disabled={saving}
             >
               {saving ? (
-                <ActivityIndicator color="#000" />
+                <ActivityIndicator color={colors.onPrimary} />
               ) : (
                 <>
-                  <Ionicons name="checkmark" size={16} color="#000" />
+                  <Ionicons name="checkmark" size={16} color={colors.onPrimary} />
                   <Text style={styles.modalSaveText}>Save</Text>
                 </>
               )}
@@ -909,6 +914,8 @@ function Field({
   testID?: string;
   placeholder?: string;
 }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View>
       <Text style={styles.fieldLabel}>{label.toUpperCase()}</Text>
@@ -921,7 +928,7 @@ function Field({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   header: {
     paddingHorizontal: spacing.lg,
@@ -947,7 +954,7 @@ const styles = StyleSheet.create({
   },
   archTglActive: { backgroundColor: colors.neon, borderColor: colors.neon },
   archTglText: { color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 1 },
-  archTglTextActive: { color: "#000" },
+  archTglTextActive: { color: colors.onPrimary },
   list: { padding: spacing.md, paddingBottom: spacing.xl },
   card: {
     backgroundColor: colors.card,
@@ -1094,7 +1101,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     backgroundColor: colors.primary,
   },
-  modalSaveText: { color: "#000", fontWeight: "800", letterSpacing: 1 },
+  modalSaveText: { color: colors.onPrimary, fontWeight: "800", letterSpacing: 1 },
 
   // Add-team-member modal
   modalHint: { color: colors.textSecondary, fontSize: 12, paddingHorizontal: spacing.md, paddingBottom: spacing.sm },
@@ -1116,7 +1123,7 @@ const styles = StyleSheet.create({
   modalBtnGhost: { borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card },
   modalBtnGhostText: { color: colors.textSecondary, fontWeight: "700" },
   modalBtnPrimary: { backgroundColor: colors.primary },
-  modalBtnPrimaryText: { color: "#000", fontWeight: "800", letterSpacing: 1 },
+  modalBtnPrimaryText: { color: colors.onPrimary, fontWeight: "800", letterSpacing: 1 },
 
   // Dealer row extras
   jobTitleText: { color: colors.textSecondary, fontSize: 12, marginTop: 2, fontStyle: "italic", letterSpacing: 0.2 },

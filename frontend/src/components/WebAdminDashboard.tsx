@@ -11,7 +11,8 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, radius, fonts, BRAND } from "@/src/theme";
+import { spacing, radius, fonts, BRAND } from "@/src/theme";
+import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { apiFetch } from "@/src/api";
 import { buildWhatsappUrl, buildDealerMessage } from "@/src/utils/whatsapp";
 import BillingScreen from "@/app/(app)/billing";
@@ -127,6 +128,8 @@ type Bucket = "incoming" | "priced" | "archived";
 type CockpitView = "submissions" | "dealers" | "billing" | "rewards" | "kredo";
 
 export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { width } = useWindowDimensions();
   const [view, setView] = useState<CockpitView>("submissions");
   const [subs, setSubs] = useState<Submission[]>([]);
@@ -1213,6 +1216,8 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
 }
 
 function HeroPill({ label, value }: { label: string; value?: number }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.heroPill}>
       <Text style={styles.heroPillLabel}>{label}</Text>
@@ -1234,6 +1239,8 @@ function DetailRow({
   last?: boolean;
   mono?: boolean;
 }) {
+  const themeColors = useThemeColors();
+  const styles = useMemo(() => makeStyles(themeColors), [themeColors]);
   return (
     <View style={[styles.detailRow, last && { borderBottomWidth: 0 }]}>
       <Text style={styles.detailRowLabel}>{label}:</Text>
@@ -1258,7 +1265,7 @@ function SpecCell(_props: { label: string; value: string; color?: string }) {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const __SpecCellUnused = SpecCell;
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   topbar: {
     flexDirection: "row",

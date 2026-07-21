@@ -2,41 +2,30 @@
 // Monochrome luxury: pure black, white and grey — no colour accents.
 // Headings use the same system font as the body, uppercase with wide letter
 // spacing for a clean editorial feel.
+//
+// Runtime theming (dark ↔ light) lives in `./theme/ThemeContext`. Screens/
+// components that support the toggle should call `useThemeColors()` and
+// recompute their `StyleSheet` inside a `useMemo`. The static `colors`
+// export below is the DARK palette and remains available as a fallback for
+// modules that haven't been migrated yet.
 import { Platform } from "react-native";
+import { darkPalette } from "./theme/ThemeContext";
 
-export const colors = {
-  // Backgrounds — true black base, subtly elevated cards
-  bg: "#000000",
-  paper: "#0A0A0A",
-  card: "#111111",
-  cardElev: "#161616",
+export {
+  ThemeProvider,
+  useTheme,
+  useThemeColors,
+  useThemeMode,
+  darkPalette,
+  lightPalette,
+} from "./theme/ThemeContext";
+export type { Palette, ThemeMode } from "./theme/ThemeContext";
 
-  // Borders / dividers
-  border: "#222222",
-  borderLight: "#2C2C2C",
+// Backwards-compatible static export — points at the dark palette (the
+// original design). New/refactored code should prefer `useThemeColors()`.
+export const colors = darkPalette;
 
-  // Primary/accent — pure white (was fluorescent cyan)
-  primary: "#FFFFFF",
-  primaryDark: "#D9D9D9",
-  neon: "#FFFFFF",   // alias — used for "highlighted" borders (now just white)
-  glow: "#FFFFFF",   // alias — for shadowColor (now just white)
-  accent: "#FFFFFF",
-
-  // Functional colors — kept greyscale/muted to preserve the mono aesthetic
-  warning: "#8E8E93",     // "pending" indicators — now a neutral grey
-  success: "#FFFFFF",     // "priced" indicators — now white
-  danger: "#FF4D6D",      // destructive actions only — kept as a pale red
-
-  // Text — high contrast on true black
-  text: "#F5F5F5",
-  textSecondary: "#8E8E93",
-  textDisabled: "#48484A",
-
-  // Inputs
-  inputBg: "#0E0E0E",
-};
-
-export const spacing = { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 };
+export const spacing = { xs: 4, sm: 8, md: 16, lg: 24, xl: 32, xxl: 48 };
 
 export const radius = { sm: 6, md: 10, lg: 16, pill: 999 };
 

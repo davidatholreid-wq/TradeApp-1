@@ -21,7 +21,8 @@ import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
-import { colors, spacing, radius, fonts } from "@/src/theme";
+import { spacing, radius, fonts } from "@/src/theme";
+import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { apiFetch } from "@/src/api";
 import { storage } from "@/src/utils/storage";
 import { TOKEN_KEY } from "@/src/api";
@@ -179,6 +180,8 @@ function resolvePhoto(photos: Record<string, string>, key: string, fallback?: st
 }
 
 export default function VehicleDetail() {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
@@ -2137,6 +2140,8 @@ function DetailRow({
   last?: boolean;
   mono?: boolean;
 }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={[styles.detailRow, last && { borderBottomWidth: 0 }]}>
       <Text style={styles.detailRowLabel}>{label}:</Text>
@@ -2155,6 +2160,8 @@ function DetailRow({
 }
 
 function HeroPill({ label, value }: { label: string; value?: number }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.heroPill}>
       <Text style={styles.heroPillLabel}>{label}</Text>
@@ -2169,6 +2176,8 @@ function HeroPill({ label, value }: { label: string; value?: number }) {
  * rows. Arrays are rendered as bulleted lists, nested objects as sub-rows.
  */
 function ReportResultBody({ data }: { data: Record<string, any> }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const summary = data.summary as string | undefined;
   const sections = data.sections as
     | Record<string, Record<string, any> | any[]>
@@ -2211,7 +2220,7 @@ function ReportResultBody({ data }: { data: Record<string, any> }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg },
   header: {

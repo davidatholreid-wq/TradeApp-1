@@ -1,5 +1,7 @@
+import { useMemo } from "react";
 import { Image, StyleSheet, View, StyleProp, ViewStyle, ImageStyle } from "react-native";
 import { BRAND } from "@/src/theme";
+import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 
 type Props = {
   /**
@@ -30,6 +32,8 @@ const ASPECT = 617 / 215;
 // insertion in the app routed through this component so a future rebrand is
 // a one-file change.
 export default function BrandLogo({ size = "md", style, containerStyle, testID }: Props) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const h = HEIGHTS[size];
   return (
     <View style={[styles.wrap, containerStyle]} testID={testID ?? "brand-logo"}>
@@ -43,6 +47,6 @@ export default function BrandLogo({ size = "md", style, containerStyle, testID }
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   wrap: { alignItems: "center", justifyContent: "center" },
 });
