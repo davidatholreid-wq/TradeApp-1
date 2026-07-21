@@ -545,6 +545,13 @@ class VehicleSubmission(BaseModel):
     derivative: str
     year_registered: int
 
+    # Optional: full manufacture-year range for the selected variant from the
+    # Kredo flatfile. Included when the client resolves it at submission time.
+    variant_manufacture_range: Optional[dict] = None
+    # True iff `year_registered > variant_manufacture_range.max` — the vehicle
+    # was registered after this variant was discontinued.
+    registered_after_discontinued: Optional[bool] = None
+
     # Auto-filled from the license disc scan (may be "TBC")
     colour: str
     vin: Optional[str] = "TBC"
@@ -823,6 +830,7 @@ async def vehicle_options(
     year_of_production: Optional[int] = None,
     transmission: Optional[str] = None,
     model: Optional[str] = None,
+    derivative: Optional[str] = None,
 ):
     """Progressive filter over the seeded Disk Drive-shaped vehicle spec DB.
 
@@ -830,6 +838,10 @@ async def vehicle_options(
     every other field. The mobile submit form uses this to eliminate options
     as the dealer moves through the wheel-picker sequence:
     Make → Fuel Type → Year → Transmission → Model → Derivative.
+
+    `derivative` is an optional post-selection filter used by the client to
+    look up the full manufacture-year range of a single variant so we can
+    warn when the registration year falls outside it.
     """
     query: dict = {}
     if make:
@@ -842,6 +854,8 @@ async def vehicle_options(
         query["transmission"] = transmission
     if model:
         query["model"] = model
+    if derivative:
+        query["derivative"] = derivative
 
     rows = await db.vehicle_specs.find(query, {"_id": 0}).to_list(50000)
 
@@ -946,6 +960,10 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         "transmission": payload.transmission,
         "year": payload.year_registered,  # keep legacy alias
         "year_registered": payload.year_registered,
+        # Kredo manufacture-range context so admins can see the discrepancy
+        # on the pricing screen without recomputing.
+        "variant_manufacture_range": payload.variant_manufacture_range,
+        "registered_after_discontinued": bool(payload.registered_after_discontinued),
         # Identity
         "vin": payload.vin or "TBC",
         "engine_number": payload.engine_number or "TBC",

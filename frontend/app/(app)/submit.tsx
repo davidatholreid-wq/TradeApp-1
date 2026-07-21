@@ -131,6 +131,12 @@ export default function SubmitVehicle() {
   const [wheelField, setWheelField] = useState<WheelField | null>(null);
   const [options, setOptions] = useState<{ makes: string[]; fuel_types: string[]; years: number[]; transmissions: string[]; models: string[]; derivatives: string[] }>({ makes: [], fuel_types: [], years: [], transmissions: [], models: [], derivatives: [] });
 
+  // Full manufacture-year range for the currently-selected variant. We look
+  // it up once the derivative is chosen so we can flag registration years
+  // that fall outside the years the variant was actually built (i.e. the
+  // vehicle was registered after the model was discontinued).
+  const [variantYearRange, setVariantYearRange] = useState<{ min: number; max: number } | null>(null);
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [billingConfirmOpen, setBillingConfirmOpen] = useState(false);
@@ -258,7 +264,7 @@ export default function SubmitVehicle() {
           applyDraft(res.draft.data);
           setLoadedDraftId(res.draft.id);
         }
-      } catch (e: any) {
+      } catch {
         Alert.alert("Draft not found", "This draft may have been deleted.");
       }
     })();
@@ -325,6 +331,37 @@ export default function SubmitVehicle() {
       derivatives: data.derivatives || [],
     });
   }, [make, fuelType, yearOfProduction, transmission, model]);
+
+  // Whenever a full make/model/derivative triple is available, fetch the
+  // manufacture-year range for that variant (unfiltered by year) so we can
+  // warn the user when the registration year falls outside the years the
+  // variant was actually built (i.e. registered after the model was
+  // discontinued).
+  useEffect(() => {
+    let cancelled = false;
+    if (!make || !model || !derivative) {
+      setVariantYearRange(null);
+      return;
+    }
+    (async () => {
+      const params = new URLSearchParams();
+      params.set("make", make);
+      params.set("model", model);
+      params.set("derivative", derivative);
+      try {
+        const data = await apiFetch(`/api/vehicles/options?${params.toString()}`);
+        const years: number[] = (data.years || []) as number[];
+        if (!cancelled && years.length > 0) {
+          setVariantYearRange({ min: Math.min(...years), max: Math.max(...years) });
+        } else if (!cancelled) {
+          setVariantYearRange(null);
+        }
+      } catch {
+        if (!cancelled) setVariantYearRange(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [make, model, derivative]);
 
   const openWheel = async (field: WheelField) => {
     // For the discrete pickers, we don't need to hit the API.
@@ -435,6 +472,9 @@ export default function SubmitVehicle() {
   const validate = (): string | null => {
     if (!make || !fuelType || !yearOfProduction || !transmission || !model || !derivative) return "Please complete all vehicle spec fields.";
     if (!yearRegistered) return "Please choose year registered.";
+    if (variantYearRange && yearRegistered < variantYearRange.min) {
+      return `Registration year cannot be earlier than ${variantYearRange.min} — the first year this variant was built.`;
+    }
     if (!mileage || isNaN(parseInt(mileage))) return "Enter mileage.";
     // If no VIN from scan and no manual colour picked → force colour.
     if ((!vin || vin === "TBC") && !colour) return "Please pick a colour (or scan the license disc).";
@@ -468,6 +508,14 @@ export default function SubmitVehicle() {
         body: JSON.stringify({
           make, fuel_type: fuelType, year_of_production: yearOfProduction, transmission,
           model, derivative, year_registered: yearRegistered,
+          // Kredo manufacture range for the selected variant + whether the
+          // registration year falls after the model was discontinued. Kept
+          // as an explicit field so admins can see the discrepancy on the
+          // pricing screen without recomputing.
+          variant_manufacture_range: variantYearRange,
+          registered_after_discontinued: !!(
+            variantYearRange && yearRegistered && yearRegistered > variantYearRange.max
+          ),
           colour: colour || (licenseDiskInfo?.colour ?? "TBC"),
           vin: vin || "TBC", engine_number: engineNo || "TBC",
           license_disk_data: licenseDisk,
@@ -548,8 +596,14 @@ export default function SubmitVehicle() {
       case "year_registered": {
         const yrs: number[] = [];
         const now = new Date().getFullYear();
+        // Registered year must be >= year of production, up to next year.
+        // Kredo's flatfile only lists the years a variant was actually built,
+        // so we always allow at least a couple of years after the discontinuation
+        // year — vehicles are commonly registered a year or two after they roll
+        // off the production line.
         const start = yearOfProduction ?? (now - 10);
-        for (let y = start; y <= now + 1; y++) yrs.push(y);
+        const end = now + 1;
+        for (let y = start; y <= end; y++) yrs.push(y);
         return { title: "Year Registered", options: yrs, value: yearRegistered, onSelect: setYearRegistered };
       }
       case "colour": return { title: "Colour", options: COLOURS, value: colour, onSelect: setColour };
@@ -594,6 +648,40 @@ export default function SubmitVehicle() {
           <Field label="Model" value={model} onPress={() => transmission ? openWheel("model") : setError("Choose Transmission first")} testID="pick-model" />
           <Field label="Derivative" value={derivative} onPress={() => model ? openWheel("derivative") : setError("Choose Model first")} testID="pick-deriv" />
           <Field label="Year Registered" value={yearRegistered?.toString() ?? null} onPress={() => openWheel("year_registered")} testID="pick-yr-reg" />
+          {(() => {
+            // Show a contextual notice about registration year vs the
+            // variant's actual manufacture range from Kredo.
+            if (!yearRegistered || !variantYearRange) return null;
+            const { min, max } = variantYearRange;
+            if (yearRegistered < min) {
+              return (
+                <View style={styles.regNoticeErr} testID="reg-notice-before-manuf">
+                  <Ionicons name="close-circle" size={14} color={colors.danger} />
+                  <Text style={styles.regNoticeErrText}>
+                    This variant was first manufactured in {min}. Registration in {yearRegistered} isn&apos;t possible for this model.
+                  </Text>
+                </View>
+              );
+            }
+            if (yearRegistered > max) {
+              return (
+                <View style={styles.regNoticeWarn} testID="reg-notice-post-discontinued">
+                  <Ionicons name="alert-circle" size={14} color={colors.warning} />
+                  <Text style={styles.regNoticeWarnText}>
+                    This variant was discontinued after {max}. Your vehicle is registered in {yearRegistered} — you can still submit, but Fourbuy will use {max} as the reference model year for valuation.
+                  </Text>
+                </View>
+              );
+            }
+            return (
+              <View style={styles.regNoticeOk} testID="reg-notice-ok">
+                <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+                <Text style={styles.regNoticeOkText}>
+                  Manufactured {min}–{max}. Registration year matches.
+                </Text>
+              </View>
+            );
+          })()}
 
           <Text style={styles.sectionTitle}>IDENTITY</Text>
           <TouchableOpacity testID="scan-license-disk-button" style={styles.scanBtn} onPress={() => router.push({ pathname: "/(app)/scan", params: { returnPath: "submit" } } as any)}>
@@ -900,6 +988,45 @@ const styles = StyleSheet.create({
   headerTitle: { color: colors.text, fontSize: 17, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 0.3 },
   scroll: { padding: spacing.md, gap: spacing.sm },
   sectionTitle: { color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 2, marginTop: spacing.md, marginBottom: 4, textTransform: "uppercase" },
+  regNoticeWarn: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    marginTop: 6,
+    marginBottom: 4,
+    padding: 10,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    backgroundColor: colors.paper,
+  },
+  regNoticeWarnText: { flex: 1, color: colors.warning, fontSize: 11, lineHeight: 16, fontWeight: "700" },
+  regNoticeErr: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    marginTop: 6,
+    marginBottom: 4,
+    padding: 10,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.danger,
+    backgroundColor: colors.paper,
+  },
+  regNoticeErrText: { flex: 1, color: colors.danger, fontSize: 11, lineHeight: 16, fontWeight: "700" },
+  regNoticeOk: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 6,
+    marginBottom: 4,
+    padding: 8,
+    borderRadius: radius.sm,
+    backgroundColor: colors.paper,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  regNoticeOkText: { flex: 1, color: colors.textSecondary, fontSize: 11, lineHeight: 15 },
   sectionHint: { color: colors.textSecondary, fontSize: 12, marginBottom: spacing.sm, fontStyle: "italic" },
 
   field: { flexDirection: "row", alignItems: "center", backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: 14, marginBottom: 8 },

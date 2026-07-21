@@ -56,6 +56,8 @@ type Submission = {
   year_of_production?: number;
   transmission?: string;
   year_registered?: number;
+  variant_manufacture_range?: { min: number; max: number } | null;
+  registered_after_discontinued?: boolean;
   mileage: number;
   year: number;
   factory_warranty?: boolean;
@@ -672,6 +674,14 @@ export default function VehicleDetail() {
 
         {/* Vehicle Details — vertical spec list, easy to scan top-to-bottom */}
         <Text style={styles.sectionTitle}>Vehicle Details</Text>
+        {sub.registered_after_discontinued && sub.variant_manufacture_range ? (
+          <View style={styles.discontinuedBanner} testID="discontinued-banner">
+            <Ionicons name="alert-circle" size={16} color={colors.warning} />
+            <Text style={styles.discontinuedBannerText}>
+              Registered {sub.year_registered ?? sub.year} · this variant was discontinued after {sub.variant_manufacture_range.max}. Kredo valuation reference uses year model {sub.year_of_production ?? sub.variant_manufacture_range.max}.
+            </Text>
+          </View>
+        ) : null}
         <View style={styles.detailsList}>
           <DetailRow label="Year Registered" value={String(sub.year_registered ?? sub.year)} />
           <DetailRow label="Make" value={sub.make_name} />
@@ -2831,6 +2841,26 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     flex: 1,
     lineHeight: 16,
+  },
+
+  // Registered-after-discontinued banner on vehicle detail
+  discontinuedBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    backgroundColor: colors.paper,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    padding: spacing.sm + 2,
+    marginBottom: spacing.sm,
+  },
+  discontinuedBannerText: {
+    flex: 1,
+    color: colors.warning,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "700",
   },
 
   // Kredo VIN accident history card
