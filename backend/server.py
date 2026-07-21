@@ -843,7 +843,7 @@ async def vehicle_options(
     if model:
         query["model"] = model
 
-    rows = await db.vehicle_specs.find(query, {"_id": 0}).to_list(20000)
+    rows = await db.vehicle_specs.find(query, {"_id": 0}).to_list(50000)
 
     def distinct_sorted(key: str, numeric: bool = False):
         vals = sorted({r[key] for r in rows if r.get(key) is not None}, reverse=numeric)
@@ -4050,18 +4050,53 @@ async def seed_data():
                     })
         logger.info("Seeded vehicle database")
 
-    # Seed the flat vehicle_specs collection (Disk Drive-shaped) if empty.
-    if await db.vehicle_specs.count_documents({}) == 0:
-        try:
+    # Seed the flat vehicle_specs collection. Prefer the Kredo flatfile
+    # (`vehicle_specs_kredo.json`) when present — it's the real vehicle
+    # dictionary. Fall back to the small mock seed otherwise.
+    #
+    # We tag every inserted row with `spec_source` so we can safely
+    # replace the mock seed with the Kredo dataset at startup without
+    # touching production dealer submissions.
+    from pathlib import Path
+
+    kredo_specs_path = Path(__file__).with_name("vehicle_specs_kredo.json")
+
+    async def _reseed_from_kredo() -> None:
+        import json as _json
+        with open(kredo_specs_path) as f:
+            rows = _json.load(f)
+        # Wipe any previous seed (mock or old Kredo) so we don't leave
+        # duplicate variants around when the flatfile is refreshed.
+        await db.vehicle_specs.delete_many({})
+        for r in rows:
+            r["id"] = str(uuid.uuid4())
+            r["spec_source"] = "kredo"
+        # Batched insert — 22k rows in one call is fine, but chunk to keep
+        # the wire payload sensible.
+        BATCH = 2000
+        for i in range(0, len(rows), BATCH):
+            await db.vehicle_specs.insert_many(rows[i:i + BATCH])
+        logger.info(f"Seeded {len(rows)} vehicle_specs rows from Kredo flatfile")
+
+    try:
+        if kredo_specs_path.exists():
+            # Only re-seed when the collection is empty OR the existing
+            # data is from the mock (spec_source != "kredo").
+            existing_kredo = await db.vehicle_specs.count_documents({"spec_source": "kredo"})
+            total = await db.vehicle_specs.count_documents({})
+            if total == 0 or existing_kredo == 0:
+                await _reseed_from_kredo()
+        elif await db.vehicle_specs.count_documents({}) == 0:
             from vehicle_specs_seed import expand_specs
             rows = expand_specs()
             if rows:
                 for r in rows:
                     r["id"] = str(uuid.uuid4())
+                    r["spec_source"] = "mock"
                 await db.vehicle_specs.insert_many(rows)
-                logger.info(f"Seeded {len(rows)} vehicle spec rows")
-        except Exception as e:
-            logger.warning(f"vehicle_specs seed failed: {e}")
+                logger.info(f"Seeded {len(rows)} mock vehicle spec rows")
+    except Exception as e:
+        logger.warning(f"vehicle_specs seed failed: {e}")
 
 
 @app.on_event("shutdown")
