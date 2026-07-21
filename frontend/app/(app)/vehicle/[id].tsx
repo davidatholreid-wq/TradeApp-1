@@ -179,6 +179,28 @@ function resolvePhoto(photos: Record<string, string>, key: string, fallback?: st
   return photos?.[key] || (fallback ? photos?.[fallback] : "") || "";
 }
 
+/** Format a Kredo market-value amount in R with no decimals. */
+function formatMV(v: number | null | undefined): string {
+  if (v == null || Number.isNaN(v) || v === 0) return "—";
+  return `R${Number(v).toLocaleString("en-ZA", { maximumFractionDigits: 0 })}`;
+}
+
+/** Compact "fetched X ago" label for the Kredo market-values footer. */
+function formatFetched(iso: string | Date | null | undefined): string {
+  if (!iso) return "";
+  try {
+    const d = typeof iso === "string" ? new Date(iso) : iso;
+    if (Number.isNaN(d.getTime())) return "";
+    const diffSec = Math.max(0, (Date.now() - d.getTime()) / 1000);
+    if (diffSec < 60) return "just now";
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)} min ago`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} hr ago`;
+    return d.toLocaleDateString("en-ZA");
+  } catch {
+    return "";
+  }
+}
+
 /**
  * Cross-platform "OK / Cancel" confirmation.
  *
@@ -233,6 +255,30 @@ export default function VehicleDetail() {
   >(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [viewingReport, setViewingReport] = useState<ReportOrder | null>(null);
+  // Kredo market values (new list / M&M / trade / retail) — cached on the
+  // submission document. `marketValues` mirrors `sub.market_values` so the
+  // refresh CTA can flip the panel to a "loading" state without waiting
+  // for the whole GET to re-fetch.
+  const [marketValuesLoading, setMarketValuesLoading] = useState(false);
+
+  // Kredo market values snapshot mirrored off the submission. `null` means
+  // the endpoint hasn't returned yet (initial fetch pending).
+  const marketValues: any = (sub as any)?.market_values ?? null;
+
+  const refreshMarketValues = async () => {
+    if (!id || marketValuesLoading) return;
+    setMarketValuesLoading(true);
+    try {
+      const r = await apiFetch(`/api/submissions/${id}/market-values/refresh`, {
+        method: "POST",
+      });
+      setSub((prev) => (prev ? { ...prev, market_values: r.market_values } : prev));
+    } catch (e: any) {
+      Alert.alert("Refresh failed", e?.message || "Could not refresh market values.");
+    } finally {
+      setMarketValuesLoading(false);
+    }
+  };
   const [declineModal, setDeclineModal] = useState(false);
   const [declineNote, setDeclineNote] = useState("");
   const [declining, setDeclining] = useState(false);
@@ -1806,6 +1852,97 @@ export default function VehicleDetail() {
         {/* Admin pricing actions — moved from the floating footer down to
             the bottom of the scroll content per user request, so admins
             scroll through the full submission before making an offer. */}
+
+        {/* Kredo Vehicle Values — new list, M&M code, trade + retail. Cached
+            per-submission on first view; both admins and dealers can refresh. */}
+        <Text style={styles.sectionTitle}>Market Values</Text>
+        <View style={styles.marketValuesCard} testID="market-values-card">
+          {marketValues?.status === "ok" ? (
+            <>
+              <View style={styles.marketRow}>
+                <Text style={styles.marketLabel}>New List Price</Text>
+                <Text style={styles.marketValue} testID="mv-new-list">
+                  {formatMV(marketValues.new_list_price_zar)}
+                </Text>
+              </View>
+              <View style={styles.marketRow}>
+                <Text style={styles.marketLabel}>M&M Code</Text>
+                <View style={{ alignItems: "flex-end" }}>
+                  <Text
+                    style={[styles.marketValue, { fontFamily: fonts.mono, letterSpacing: 0.5 }]}
+                    testID="mv-mm-code"
+                  >
+                    {marketValues.mm_code || "—"}
+                  </Text>
+                  {!marketValues.mm_code ? (
+                    <Text style={styles.marketHint}>Not returned by Kredo Vehicle Values</Text>
+                  ) : null}
+                </View>
+              </View>
+              <View style={styles.marketRow}>
+                <Text style={styles.marketLabel}>Trade Value</Text>
+                <Text style={styles.marketValue} testID="mv-trade">
+                  {formatMV(marketValues.trade_price_zar)}
+                </Text>
+              </View>
+              <View style={[styles.marketRow, { borderBottomWidth: 0 }]}>
+                <Text style={styles.marketLabel}>Retail Value</Text>
+                <Text style={styles.marketValue} testID="mv-retail">
+                  {formatMV(marketValues.retail_price_zar)}
+                </Text>
+              </View>
+              <View style={styles.marketFooter}>
+                <Text style={styles.marketFooterText}>
+                  Source: Kredo Vehicle Values
+                  {marketValues.fetched_at ? ` · ${formatFetched(marketValues.fetched_at)}` : ""}
+                </Text>
+                <TouchableOpacity
+                  testID="market-values-refresh"
+                  onPress={refreshMarketValues}
+                  disabled={marketValuesLoading}
+                  style={[styles.marketRefreshBtn, marketValuesLoading && styles.docBtnDisabled]}
+                >
+                  {marketValuesLoading ? (
+                    <ActivityIndicator size="small" color={colors.text} />
+                  ) : (
+                    <>
+                      <Ionicons name="refresh" size={14} color={colors.text} />
+                      <Text style={styles.marketRefreshText}>Refresh</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </>
+          ) : marketValues?.status === "error" ? (
+            <View style={styles.marketErrorBox}>
+              <Ionicons name="alert-circle-outline" size={18} color={colors.warning} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.marketErrorText}>Could not fetch market values.</Text>
+                <Text style={styles.marketErrorDetail} numberOfLines={3}>
+                  {marketValues.error || "The Kredo Vehicle Values lookup failed."}
+                </Text>
+              </View>
+              <TouchableOpacity
+                testID="market-values-retry"
+                onPress={refreshMarketValues}
+                disabled={marketValuesLoading}
+                style={[styles.marketRefreshBtn, marketValuesLoading && styles.docBtnDisabled]}
+              >
+                {marketValuesLoading ? (
+                  <ActivityIndicator size="small" color={colors.text} />
+                ) : (
+                  <Text style={styles.marketRefreshText}>Retry</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.marketLoadingBox}>
+              <ActivityIndicator size="small" color={colors.text} />
+              <Text style={styles.marketLoadingText}>Fetching from Kredo…</Text>
+            </View>
+          )}
+        </View>
+
         {isAdmin ? (
           <>
             <Text style={styles.sectionTitle}>Admin Pricing</Text>
@@ -3086,6 +3223,104 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     padding: spacing.md,
     gap: spacing.sm,
     marginBottom: spacing.lg,
+  },
+
+  // Kredo Vehicle Values card — new list price, M&M code, trade + retail.
+  marketValuesCard: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  marketRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: spacing.sm + 2,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  marketLabel: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+  },
+  marketValue: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+  marketFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingTop: spacing.sm + 2,
+    gap: spacing.sm,
+  },
+  marketFooterText: {
+    flex: 1,
+    color: colors.textSecondary,
+    fontSize: 11,
+    letterSpacing: 0.3,
+  },
+  marketRefreshBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+    minWidth: 84,
+    justifyContent: "center",
+  },
+  marketRefreshText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
+  marketLoadingBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+  },
+  marketLoadingText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+  },
+  marketErrorBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.sm + 2,
+  },
+  marketErrorText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  marketErrorDetail: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  marketHint: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontStyle: "italic",
+    marginTop: 2,
+    letterSpacing: 0.3,
   },
   adminCurrentPrice: {
     backgroundColor: colors.paper,

@@ -1255,12 +1255,40 @@ async def get_submission(sub_id: str, current: dict = Depends(get_current_user))
     if current["role"] != "admin" and compute_bucket(sub) == "archived":
         raise HTTPException(404, "Submission not found")
     sub["bucket"] = compute_bucket(sub)
+    # Lazy-fetch + cache Kredo market values (new list / retail / trade /
+    # M&M code) — this only calls Kredo the FIRST time an admin or dealer
+    # opens the submission; subsequent GETs are instant. Errors are
+    # captured on the submission document so the UI can render them.
+    try:
+        await _ensure_market_values(sub)
+    except Exception as e:  # ultra-defensive; helper already swallows errors
+        logging.warning("market_values lookup crashed for %s: %s", sub_id, e)
     # Attach report orders (dealer-visible list of ordered VIN reports).
     reports = await db.report_orders.find(
         {"submission_id": sub_id}, {"_id": 0}
     ).sort("ordered_at", -1).to_list(50)
     sub["report_orders"] = reports
     return {"submission": sub}
+
+
+@api_router.post("/submissions/{sub_id}/market-values/refresh")
+async def refresh_market_values(sub_id: str, current: dict = Depends(get_current_user)):
+    """Force a re-fetch of the cached Kredo Vehicle Values for a submission.
+
+    Available to both admins and the submitting dealer (via
+    `_can_access_submission`). Clears the cached snapshot first so the
+    lazy-fetch helper actually re-hits Kredo instead of returning the old
+    cached values or the recent-error backoff.
+    """
+    sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+    if not await _can_access_submission(sub, current):
+        raise HTTPException(403, "Not authorized")
+    await db.submissions.update_one({"id": sub_id}, {"$unset": {"market_values": ""}})
+    sub.pop("market_values", None)
+    mv = await _ensure_market_values(sub)
+    return {"market_values": mv}
 
 
 @api_router.get("/admin/submissions")
@@ -3668,6 +3696,124 @@ def _kredo_502(e: KredoAPIError) -> HTTPException:
     )
 
 
+def _select_kredo_model_by_year(candidates: list[str], year: int) -> Optional[str]:
+    """Kredo's model list bakes production year ranges into the name, e.g.
+    `HILUX 2005 - 2016`, `HILUX 2016 ON`. Pick the candidate whose range
+    contains the given `year`, else fall back to the first candidate."""
+    import re
+    for m in candidates:
+        range_match = re.search(r"(\d{4})\s*-\s*(\d{4})", m)
+        if range_match:
+            start, end = int(range_match.group(1)), int(range_match.group(2))
+            if start <= year <= end:
+                return m
+        on_match = re.search(r"(\d{4})\s+ON\b", m, re.IGNORECASE)
+        if on_match:
+            start = int(on_match.group(1))
+            if year >= start:
+                return m
+    return candidates[0] if candidates else None
+
+
+async def _resolve_kredo_identifiers(sub: dict) -> tuple[str, str, str, str]:
+    """Map our internal (make_name, model_name, derivative_name, year) onto
+    the exact identifiers Kredo Vehicle Values expects.
+
+    Kredo uses ALL-CAPS make + year-ranged model names (e.g. `HILUX 2016
+    ON`) + derivatives that carry the model prefix (e.g. `HILUX 2.4 GD-6
+    RAIDER 4X4 A/T P/U D/C`). Submissions created through the flatfile
+    picker already carry those Kredo-shaped strings; older submissions
+    with simplified names need a best-effort resolve.
+
+    Raises `ValueError` with a human-readable message if we can't match.
+    """
+    import re
+    from difflib import SequenceMatcher
+
+    make = (sub.get("make_name") or "").strip()
+    model = (sub.get("model_name") or "").strip()
+    derivative = (sub.get("derivative_name") or "").strip()
+    year_raw = sub.get("year_of_production")
+    if not (make and model and derivative and year_raw):
+        raise ValueError("Missing vehicle fields required for a market lookup.")
+    try:
+        year = int(year_raw)
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"Bad year: {year_raw}") from e
+
+    kc = get_kredo_client()
+    k_make = make.upper()
+
+    # Model — try direct case-insensitive match, then look for models that
+    # start with our name (with a year range appended), then substring.
+    r = await kc.models(k_make)
+    kredo_models: list[str] = r.get("data") or []
+    if not kredo_models:
+        raise ValueError(f"Kredo has no models for make '{k_make}'.")
+
+    upper_model = model.upper()
+    direct = [m for m in kredo_models if m.upper() == upper_model]
+    if direct:
+        k_model = direct[0]
+    else:
+        prefixed = [m for m in kredo_models if m.upper().startswith(upper_model + " ")]
+        substring = [m for m in kredo_models if upper_model in m.upper()]
+        candidates = prefixed or substring
+        if not candidates:
+            raise ValueError(f"Kredo has no model matching '{model}' for {k_make}.")
+        k_model = _select_kredo_model_by_year(candidates, year) or candidates[0]
+
+    # Year sanity — Kredo's `years` list is authoritative.
+    r = await kc.years(k_make, k_model)
+    kredo_years = {int(y) for y in (r.get("data") or []) if str(y).strip().isdigit()}
+    if kredo_years and year not in kredo_years:
+        raise ValueError(f"Kredo does not have year {year} for {k_make} {k_model}.")
+
+    # Derivative — try exact, then strip the Kredo model prefix and compare,
+    # then fall back to a similarity match.
+    r = await kc.derivatives(make=k_make, model=k_model, year=str(year))
+    kredo_derivs: list[str] = r.get("data") or []
+    if not kredo_derivs:
+        raise ValueError(f"Kredo has no derivatives for {k_make} {k_model} {year}.")
+
+    upper_deriv = derivative.upper().strip()
+    direct_d = [d for d in kredo_derivs if d.upper().strip() == upper_deriv]
+    if direct_d:
+        return k_make, k_model, str(year), direct_d[0]
+
+    model_prefix = k_model.split(" ")[0]  # e.g. "HILUX"
+    def _strip(d: str) -> str:
+        s = d.upper()
+        if s.startswith(model_prefix + " "):
+            s = s[len(model_prefix) + 1:]
+        return re.sub(r"\s+", " ", s).strip()
+
+    stripped = [(d, _strip(d)) for d in kredo_derivs]
+    exact_stripped = [d for d, s in stripped if s == upper_deriv]
+    if exact_stripped:
+        return k_make, k_model, str(year), exact_stripped[0]
+
+    scored = sorted(
+        ((d, SequenceMatcher(None, s, upper_deriv).ratio()) for d, s in stripped),
+        key=lambda x: x[1],
+        reverse=True,
+    )
+    best_d, best_score = scored[0]
+    # We're lenient here — older submissions used simplified derivative
+    # names (e.g. "2.4 GD-6 SR") that don't line up perfectly with Kredo's
+    # verbose format (e.g. "HILUX 2.4 GD-6 RB SR P/U D/C"). Anything at or
+    # above 0.55 is a plausible match; the resolved identifier is echoed
+    # in the cached market_values so admins can audit the choice.
+    if best_score >= 0.55:
+        return k_make, k_model, str(year), best_d
+
+    raise ValueError(
+        f"Could not match derivative '{derivative}' to any Kredo derivative "
+        f"for {k_make} {k_model} {year}. Best match: '{best_d}' "
+        f"({int(best_score * 100)}%)."
+    )
+
+
 def _parse_kredo_value(raw: dict) -> dict:
     """Kredo's /value response nests the pricing JSON inside `data` as a
     string. Parse it out and normalise the keys to camel-friendly ints
@@ -3689,11 +3835,32 @@ def _parse_kredo_value(raw: dict) -> dict:
             return float(v) if v not in (None, "", 0) else float(v) if v == 0 else None
         except (TypeError, ValueError):
             return None
+
+    # M&M code (Mead & McGrouther) — the SA trade's canonical vehicle
+    # identifier. Kredo has varied the key name across responses, so try
+    # a handful of plausible spellings before giving up.
+    def _mm(*candidates: str) -> Optional[str]:
+        for k in candidates:
+            v = parsed.get(k)
+            if v not in (None, "", 0, "0"):
+                return str(v).strip() or None
+        return None
+
+    mm_code = _mm(
+        "truetrade_mmCode",
+        "mmCode",
+        "mm_code",
+        "MMCode",
+        "MM_Code",
+        "truetrade_mm_code",
+    )
+
     return {
         "make": parsed.get("make"),
         "model": parsed.get("model"),
         "variant": parsed.get("variant"),
         "year": parsed.get("year"),
+        "mm_code": mm_code,
         "new_price_zar": _num(parsed.get("truetrade_newPrice")),
         "retail_price_zar": _num(parsed.get("truetrade_retailPrice")),
         "market_price_zar": _num(parsed.get("truetrade_marketPrice")),
@@ -3704,6 +3871,102 @@ def _parse_kredo_value(raw: dict) -> dict:
         # optional preview without an extra round-trip.
         "pdf_base64": raw.get("file_base64"),
     }
+
+
+async def _ensure_market_values(sub: dict) -> dict:
+    """Lazily populate a submission's cached Kredo Vehicle Values.
+
+    Called from every GET /submissions/{id}. If we've already got a
+    successful cached fetch, returns immediately. If the last attempt
+    errored recently we back off for 60s so we don't spam Kredo.
+
+    Never raises — errors are captured in the cached document so the UI
+    can render them, and the endpoint the caller was serving stays fast.
+    """
+    existing = sub.get("market_values") or {}
+    # Already have a good snapshot.
+    if isinstance(existing, dict) and existing.get("status") == "ok":
+        return existing
+
+    # Back off on recent failure (60s).
+    last_at = existing.get("fetched_at") if isinstance(existing, dict) else None
+    if existing.get("status") == "error" and isinstance(last_at, datetime):
+        try:
+            age = (now_utc() - last_at).total_seconds()
+            if age < 60:
+                return existing
+        except Exception:
+            pass
+
+    make = (sub.get("make_name") or "").strip()
+    model = (sub.get("model_name") or "").strip()
+    year = sub.get("year_of_production")
+    derivative = (sub.get("derivative_name") or "").strip()
+    mileage = sub.get("mileage") or 0
+
+    if not (make and model and year and derivative):
+        mv = {
+            "status": "error",
+            "error": "Missing vehicle fields required for a market lookup.",
+            "fetched_at": now_utc(),
+        }
+        await db.submissions.update_one({"id": sub["id"]}, {"$set": {"market_values": mv}})
+        sub["market_values"] = mv
+        return mv
+
+    try:
+        # Resolve our internal vehicle names into Kredo's exact identifiers
+        # (uppercase make, year-ranged model, model-prefixed derivative).
+        k_make, k_model, k_year, k_derivative = await _resolve_kredo_identifiers(sub)
+        raw = await get_kredo_client().value(
+            make=k_make,
+            model=k_model,
+            year=k_year,
+            derivative=k_derivative,
+            mileage=int(mileage),
+            condition="clean",
+        )
+        parsed = _parse_kredo_value(raw)
+        mv = {
+            "status": "ok",
+            "new_list_price_zar": parsed.get("new_price_zar"),
+            "retail_price_zar": parsed.get("retail_price_zar"),
+            "trade_price_zar": parsed.get("adjusted_trade_zar"),
+            "adjusted_retail_zar": parsed.get("adjusted_retail_zar"),
+            "market_price_zar": parsed.get("market_price_zar"),
+            "mm_code": parsed.get("mm_code"),
+            "fetched_at": now_utc(),
+            "source": "kredo_vehicle_values",
+            "input_condition": "clean",
+            "input_mileage": int(mileage),
+            # Audit — remember which Kredo identifiers we resolved to so a
+            # QA-er can trace mismatches without re-running the resolver.
+            "resolved_make": k_make,
+            "resolved_model": k_model,
+            "resolved_year": k_year,
+            "resolved_derivative": k_derivative,
+        }
+    except ValueError as e:
+        mv = {
+            "status": "error",
+            "error": str(e)[:240],
+            "fetched_at": now_utc(),
+        }
+    except KredoAPIError as e:
+        mv = {
+            "status": "error",
+            "error": str(e)[:240],
+            "fetched_at": now_utc(),
+        }
+    except Exception as e:  # noqa: BLE001 — always log & cache, never break the caller
+        mv = {
+            "status": "error",
+            "error": f"Unexpected market-value lookup error: {e}"[:240],
+            "fetched_at": now_utc(),
+        }
+    await db.submissions.update_one({"id": sub["id"]}, {"$set": {"market_values": mv}})
+    sub["market_values"] = mv
+    return mv
 
 
 @api_router.get("/kredo/makes")
