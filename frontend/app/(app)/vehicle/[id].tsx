@@ -230,6 +230,20 @@ export default function VehicleDetail() {
   const [kredoHistory, setKredoHistory] = useState<KredoHistory | null>(null);
   const [kredoLoading, setKredoLoading] = useState(false);
 
+  // Kredo CarTrust PDF (async report, order + webhook + Cloudinary hosted)
+  type CartrustReport = {
+    status: "pending" | "completed" | "failed";
+    ordered_at?: string | null;
+    completed_at?: string | null;
+    failed_at?: string | null;
+    ordered_by_email?: string | null;
+    pdf_url?: string | null;
+    cost_zar?: number | null;
+    error?: string | null;
+  };
+  const [cartrust, setCartrust] = useState<CartrustReport | null>(null);
+  const [cartrustLoading, setCartrustLoading] = useState(false);
+
   const fetchKredoHistory = async (refresh = false) => {
     if (!sub?.id || !sub.vin) return;
     setKredoLoading(true);
@@ -290,6 +304,59 @@ export default function VehicleDetail() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin, sub?.id, sub?.vin]);
+
+  // Load CarTrust status on mount (dealer + admin), then poll while pending.
+  const loadCartrustStatus = async () => {
+    if (!sub?.id) return;
+    try {
+      const r = await apiFetch(`/api/kredo/cartrust/status/${sub.id}`);
+      setCartrust((r?.report as CartrustReport | null) || null);
+    } catch {
+      // Silent
+    }
+  };
+
+  useEffect(() => {
+    if (!sub?.id) return;
+    loadCartrustStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sub?.id]);
+
+  useEffect(() => {
+    if (!sub?.id || cartrust?.status !== "pending") return;
+    const t = setInterval(loadCartrustStatus, 8000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sub?.id, cartrust?.status]);
+
+  const orderCartrust = async () => {
+    if (!sub?.id) return;
+    setCartrustLoading(true);
+    try {
+      const r = await apiFetch("/api/kredo/cartrust/order", {
+        method: "POST",
+        body: JSON.stringify({ submission_id: sub.id }),
+      });
+      setCartrust((r?.report as CartrustReport | null) || null);
+      Alert.alert(
+        "CarTrust ordered",
+        "Kredo is preparing your report. This can take a few minutes — we'll notify you here when it's ready.",
+      );
+    } catch (e: any) {
+      Alert.alert("CarTrust order failed", e?.message || "Could not place the order.");
+    } finally {
+      setCartrustLoading(false);
+    }
+  };
+
+  const openCartrust = async () => {
+    if (!cartrust?.pdf_url) return;
+    try {
+      await WebBrowser.openBrowserAsync(cartrust.pdf_url);
+    } catch (e: any) {
+      Alert.alert("Could not open PDF", e?.message || String(e));
+    }
+  };
 
   // Auto-refresh whenever the screen regains focus (e.g. dealer navigates
   // back to this vehicle after an admin has posted a price offer). Without
@@ -1454,6 +1521,85 @@ export default function VehicleDetail() {
                   })}
               </>
             ) : null}
+          </View>
+        ) : null}
+
+        {/* CarTrust PDF report — dealer + admin can order, both can view the PDF once ready. */}
+        {sub.vin && sub.vin.trim() && sub.vin.toUpperCase() !== "TBC" ? (
+          <View style={styles.reportsSection} testID="cartrust-section">
+            <View style={styles.kredoHead}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sectionTitle}>CarTrust Vehicle Report</Text>
+                <Text style={styles.reportsHelp}>
+                  Full vehicle-history PDF report by Kredo (assessments, ownership, claims). Delivery is asynchronous — typically ready within a few minutes.
+                </Text>
+              </View>
+              {!cartrust || cartrust.status === "failed" ? (
+                <TouchableOpacity
+                  testID="cartrust-order-btn"
+                  style={styles.kredoFetchBtn}
+                  onPress={orderCartrust}
+                  disabled={cartrustLoading}
+                >
+                  {cartrustLoading ? (
+                    <ActivityIndicator color="#000" size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name="document-text" size={14} color="#000" />
+                      <Text style={styles.kredoFetchBtnText}>Order</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            {!cartrust ? (
+              <View style={styles.kredoEmpty}>
+                <Ionicons name="document-text-outline" size={22} color={colors.textDisabled} />
+                <Text style={styles.kredoEmptyText}>
+                  No CarTrust report ordered yet. Tap Order to request a Kredo report for this VIN.
+                </Text>
+              </View>
+            ) : cartrust.status === "pending" ? (
+              <View style={styles.cartrustPending}>
+                <ActivityIndicator color={colors.primary} size="small" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cartrustPendingTitle}>Kredo is preparing your report…</Text>
+                  <Text style={styles.cartrustPendingSub}>
+                    Ordered {cartrust.ordered_at ? new Date(cartrust.ordered_at).toLocaleString() : ""}. This page will update automatically when the PDF is ready.
+                  </Text>
+                </View>
+              </View>
+            ) : cartrust.status === "completed" ? (
+              <View>
+                <View style={styles.cartrustReady}>
+                  <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cartrustReadyTitle}>Report ready</Text>
+                    <Text style={styles.cartrustReadySub}>
+                      {cartrust.completed_at
+                        ? `Completed ${new Date(cartrust.completed_at).toLocaleString()}`
+                        : "Report available"}
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  testID="cartrust-view-btn"
+                  style={styles.cartrustViewBtn}
+                  onPress={openCartrust}
+                >
+                  <Ionicons name="open-outline" size={16} color="#000" />
+                  <Text style={styles.cartrustViewBtnText}>View CarTrust PDF</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.kredoEmpty}>
+                <Ionicons name="alert-circle" size={20} color={colors.danger} />
+                <Text style={[styles.kredoEmptyText, { color: colors.danger }]}>
+                  Report failed. {cartrust.error || "Please try ordering again."}
+                </Text>
+              </View>
+            )}
           </View>
         ) : null}
 
@@ -2972,6 +3118,43 @@ const styles = StyleSheet.create({
     fontFamily: fonts.mono,
     marginTop: 4,
   },
+
+  // CarTrust PDF report states
+  cartrustPending: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.paper,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    padding: spacing.md,
+  },
+  cartrustPendingTitle: { color: colors.text, fontSize: 13, fontWeight: "800" },
+  cartrustPendingSub: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
+  cartrustReady: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.paper,
+    borderWidth: 1,
+    borderColor: colors.success,
+    borderRadius: radius.sm,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  cartrustReadyTitle: { color: colors.text, fontSize: 14, fontWeight: "800" },
+  cartrustReadySub: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
+  cartrustViewBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: colors.primary,
+    borderRadius: radius.sm,
+    paddingVertical: 12,
+  },
+  cartrustViewBtnText: { color: "#000", fontWeight: "800", fontSize: 13, letterSpacing: 0.5 },
 
   // View Report button (delivered)
   viewReportBtn: {

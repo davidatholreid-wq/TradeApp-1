@@ -290,6 +290,42 @@ class KredoClient:
             },
         )
 
+    async def order_cartrust_pdf(
+        self,
+        *,
+        requester_name: str,
+        requester_surname: str,
+        requester_email: str,
+        requester_phone: str,
+        vin: str,
+        registration_number: str,
+        mileage: int,
+        vehicle_condition: str,
+        service_history: str = "",
+    ) -> dict[str, Any]:
+        """Order a CarTrust vehicle-history PDF report.
+
+        This is an async operation on Kredo's side — the sync response is
+        just an acknowledgement. Kredo will POST to our configured callback
+        URL when the PDF is ready, with a 15-min presigned `download_url`
+        the server must fetch before it expires.
+        """
+        return await self._post(
+            "/public/cartrust_pdf",
+            {
+                "client_guid": self._guid(),
+                "requester_name": requester_name,
+                "requester_surname": requester_surname,
+                "requester_email": requester_email,
+                "requester_phone": requester_phone,
+                "vin": vin,
+                "RegistrationNumber": registration_number,
+                "mileage": str(mileage),
+                "vehicle_condition": vehicle_condition,
+                "serviceHistory": service_history or "",
+            },
+        )
+
     async def aclose(self) -> None:
         await self._http.aclose()
 

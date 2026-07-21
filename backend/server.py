@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Query, Request
 from fastapi.responses import Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -3909,6 +3909,312 @@ async def kredo_vin_history(
         "source": "kredo",
         "vin": vin,
     }
+
+
+# ---------- CarTrust PDF (async, webhook) ----------
+
+import hmac as _hmac  # noqa: E402
+import hashlib as _hashlib  # noqa: E402
+import base64 as _base64  # noqa: E402
+import json as _json  # noqa: E402
+import httpx as _httpx  # noqa: E402
+
+CARTRUST_COST_ZAR = float(os.environ.get("CARTRUST_COST_ZAR", "0"))
+CARTRUST_HMAC_HEADER = os.environ.get("KREDO_CARTRUST_HMAC_HEADER", "x-kredo-signature")
+
+
+def _condition_label_from_score(score: Optional[int]) -> str:
+    """Map our 1-10 condition score to a Kredo `vehicle_condition` label
+    (per the docs: Excellent / Very Good / Good / Fair / Poor)."""
+    if score is None:
+        return "Good"
+    try:
+        s = int(score)
+    except (TypeError, ValueError):
+        return "Good"
+    if s >= 9:
+        return "Excellent"
+    if s >= 7:
+        return "Very Good"
+    if s >= 5:
+        return "Good"
+    if s >= 3:
+        return "Fair"
+    return "Poor"
+
+
+def _extract_plate_from_license_disk(sub: dict) -> Optional[str]:
+    """Best-effort extract of the SA number plate from a submission.
+
+    Submissions store the raw license-disc scan string in `license_disk_data`
+    as `%`-separated tokens; we look for the first token that matches a
+    generic SA plate pattern (letters+digits+optional letters, 5-10 chars).
+    Falls back to `sub.license_plate` / `sub.plate` if those top-level
+    fields ever get set explicitly.
+    """
+    import re as _re
+    top = (
+        sub.get("license_plate")
+        or sub.get("licence_no")
+        or sub.get("plate")
+    )
+    if top:
+        return str(top).strip().upper().replace(" ", "")
+    raw = sub.get("license_disk_data")
+    if not isinstance(raw, str):
+        return None
+    # Plate pattern: 2-3 letters, 1-6 digits, 0-4 letters. Rejects pure-
+    # numeric tokens and the 12-char alnum disc number.
+    pat = _re.compile(r"^[A-Z]{2,3}[0-9]{2,6}[A-Z]{0,4}$")
+    tokens = [t.strip().upper() for t in raw.split("%") if t.strip()]
+    for tok in tokens:
+        # Skip the disc-number token (typically 12 alnum chars, all-caps).
+        if len(tok) == 12 and tok.isalnum():
+            continue
+        if pat.match(tok):
+            return tok
+    return None
+
+
+class KredoCartrustOrderRequest(BaseModel):
+    submission_id: str
+
+
+@api_router.post("/kredo/cartrust/order")
+async def kredo_cartrust_order(
+    payload: KredoCartrustOrderRequest,
+    current: dict = Depends(get_current_user),
+):
+    """Order a CarTrust PDF report for a submission.
+
+    Dealer users may only order for their own submissions; admins may order
+    for any. Kredo processes the request asynchronously and will POST to
+    `/api/kredo/cartrust/callback` when the PDF is ready.
+    """
+    sub = await db.submissions.find_one({"id": payload.submission_id}, {"_id": 0})
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+    # Access control — admins can order any, dealers only their own dealership.
+    if current.get("role") != "admin":
+        if sub.get("dealership_id") != current.get("dealership_id"):
+            raise HTTPException(403, "You cannot order a report for another dealership")
+
+    vin = (sub.get("vin") or "").strip().upper()
+    if not vin or vin == "TBC":
+        raise HTTPException(400, "Submission does not have a valid VIN")
+
+    # Guard: don't re-order if we already have a pending or completed report.
+    existing = ((sub.get("reports") or {}).get("kredo_cartrust") or None)
+    if existing and existing.get("status") in ("pending", "completed"):
+        return {"status": existing.get("status"), "report": existing}
+
+    dealer_info = current.get("dealer_info") or {}
+    licence_no = _extract_plate_from_license_disk(sub)
+    if not licence_no:
+        raise HTTPException(
+            400,
+            "Registration number could not be determined for this submission. "
+            "Kredo CarTrust requires the license plate — please re-scan the license disc.",
+        )
+
+    # Use the strongest condition rating we have available — cosmetic tends
+    # to be what buyers care about for a history report.
+    condition_label = _condition_label_from_score(
+        sub.get("cosmetic_condition") or sub.get("condition")
+    )
+
+    try:
+        raw = await get_kredo_client().order_cartrust_pdf(
+            requester_name=(dealer_info.get("first_name") or current.get("email") or "Dealer"),
+            requester_surname=(dealer_info.get("last_name") or "User"),
+            requester_email=current.get("email") or "noreply@fourbuy.co.za",
+            requester_phone=(dealer_info.get("phone") or "0000000000"),
+            vin=vin,
+            registration_number=(licence_no or ""),
+            mileage=int(sub.get("mileage") or 0),
+            vehicle_condition=condition_label,
+            service_history=str(sub.get("service_history") or ""),
+        )
+    except KredoAPIError as e:
+        raise _kredo_502(e) from e
+
+    now = now_utc()
+    record = {
+        "status": "pending",
+        "ordered_at": now,
+        "ordered_by_id": current["id"],
+        "ordered_by_email": current.get("email"),
+        "ack": raw,  # Kredo's sync acknowledgement (order id, etc.)
+        "vin": vin,
+        "cost_zar": CARTRUST_COST_ZAR,
+    }
+    await db.submissions.update_one(
+        {"id": payload.submission_id},
+        {"$set": {"reports.kredo_cartrust": record}},
+    )
+    return {"status": "pending", "report": record}
+
+
+@api_router.get("/kredo/cartrust/status/{submission_id}")
+async def kredo_cartrust_status(
+    submission_id: str,
+    current: dict = Depends(get_current_user),
+):
+    """Poll the current CarTrust order status for a submission."""
+    sub = await db.submissions.find_one({"id": submission_id}, {"_id": 0})
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+    if current.get("role") != "admin":
+        if sub.get("dealership_id") != current.get("dealership_id"):
+            raise HTTPException(403, "You cannot view a report for another dealership")
+    report = ((sub.get("reports") or {}).get("kredo_cartrust") or None)
+    if not report:
+        return {"status": "not_ordered", "report": None}
+    return {"status": report.get("status", "unknown"), "report": report}
+
+
+def _verify_cartrust_signature(body: bytes, provided_signature: str) -> bool:
+    """Verify the HMAC-SHA256 signature Kredo sends on callback POSTs.
+
+    Shared secret is the Kredo API key (confirmed by the vendor).
+    Accepts hex-encoded or base64-encoded signatures with optional
+    "sha256=" prefix, which are the two schemes commonly used.
+    """
+    secret = os.environ["KREDO_API_KEY"].encode("utf-8")
+    mac = _hmac.new(secret, body, _hashlib.sha256)
+    hex_sig = mac.hexdigest()
+    b64_sig = _base64.b64encode(mac.digest()).decode("ascii")
+    provided = (provided_signature or "").strip()
+    if provided.lower().startswith("sha256="):
+        provided = provided.split("=", 1)[1].strip()
+    if not provided:
+        # No signature sent at all — reject unless explicitly disabled via env.
+        return os.environ.get("KREDO_CARTRUST_SKIP_HMAC") == "1"
+    return (
+        _hmac.compare_digest(provided.lower(), hex_sig)
+        or _hmac.compare_digest(provided, b64_sig)
+    )
+
+
+async def _fetch_and_host_cartrust_pdf(
+    submission_id: str, download_url: str
+) -> Optional[str]:
+    """Fetch the presigned CarTrust PDF and re-host on Cloudinary.
+
+    The Kredo URL expires in 15 minutes, so we must snapshot it immediately
+    into permanent storage. Returns the Cloudinary secure URL, or None if
+    Cloudinary isn't configured (in which case the caller stores the raw
+    URL for a best-effort read-through).
+    """
+    async with _httpx.AsyncClient(timeout=60.0) as http:
+        r = await http.get(download_url)
+        r.raise_for_status()
+        pdf_bytes = r.content
+    if not CLOUDINARY_ENABLED:
+        return None
+    # Upload as `raw` (PDFs). Use the submission id as public_id for stable
+    # URLs and to overwrite if the report is re-ordered.
+    b64 = _base64.b64encode(pdf_bytes).decode("ascii")
+    data_url = f"data:application/pdf;base64,{b64}"
+    res = cloudinary.uploader.upload(
+        data_url,
+        folder=f"fourbuy/submissions/{submission_id}",
+        public_id="cartrust_pdf",
+        resource_type="raw",
+        overwrite=True,
+        format="pdf",
+    )
+    return res.get("secure_url")
+
+
+@api_router.post("/kredo/cartrust/callback")
+async def kredo_cartrust_callback(request: Request):
+    """Webhook receiver for Kredo CarTrust PDF completions.
+
+    Kredo POSTs here with an HMAC-signed body containing the presigned
+    `download_url` (15-min TTL). We verify the signature, fetch the PDF,
+    re-host it on Cloudinary for permanence, and mark the submission's
+    report record as completed.
+
+    NOTE: this endpoint is intentionally unauthenticated (no Bearer). It
+    is protected by the HMAC signature only.
+    """
+    body = await request.body()
+    provided = request.headers.get(CARTRUST_HMAC_HEADER) or request.headers.get(
+        CARTRUST_HMAC_HEADER.title()
+    ) or ""
+    if not _verify_cartrust_signature(body, provided):
+        logger.warning("cartrust_callback: HMAC verification failed")
+        raise HTTPException(status_code=401, detail="signature verification failed")
+
+    try:
+        payload = _json.loads(body.decode("utf-8"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON body") from None
+
+    # The docs describe the callback as containing at minimum:
+    #   { "vin": ..., "download_url": ..., "client_guid": ..., "status": ... }
+    # We tolerate different top-level keys defensively.
+    vin = (payload.get("vin") or "").strip().upper()
+    download_url = (
+        payload.get("download_url")
+        or payload.get("downloadUrl")
+        or payload.get("url")
+    )
+    kredo_status = (payload.get("status") or "completed").lower()
+
+    # Locate the submission by the pending order (VIN + status=pending).
+    sub = await db.submissions.find_one(
+        {"vin": vin, "reports.kredo_cartrust.status": "pending"}, {"_id": 0, "id": 1}
+    )
+    if not sub:
+        # Fallback: any submission with a pending kredo_cartrust order that
+        # matches the client_guid on the ack.
+        client_guid = payload.get("client_guid") or payload.get("clientGuid")
+        if client_guid:
+            sub = await db.submissions.find_one(
+                {"reports.kredo_cartrust.ack.client_guid": client_guid},
+                {"_id": 0, "id": 1},
+            )
+    if not sub:
+        logger.warning("cartrust_callback: no matching submission for vin=%s", vin)
+        return {"ok": True, "matched": False}
+
+    sub_id = sub["id"]
+    now = now_utc()
+
+    if kredo_status in ("failed", "error", "rejected"):
+        await db.submissions.update_one(
+            {"id": sub_id},
+            {"$set": {
+                "reports.kredo_cartrust.status": "failed",
+                "reports.kredo_cartrust.failed_at": now,
+                "reports.kredo_cartrust.error": payload.get("error") or payload.get("message"),
+            }},
+        )
+        return {"ok": True, "matched": True, "status": "failed"}
+
+    hosted_url: Optional[str] = None
+    fetch_error: Optional[str] = None
+    if download_url:
+        try:
+            hosted_url = await _fetch_and_host_cartrust_pdf(sub_id, download_url)
+        except Exception as e:
+            fetch_error = f"{type(e).__name__}: {e}"
+            logger.exception("cartrust_callback: fetch/host failed")
+
+    await db.submissions.update_one(
+        {"id": sub_id},
+        {"$set": {
+            "reports.kredo_cartrust.status": "completed" if (hosted_url or download_url) else "failed",
+            "reports.kredo_cartrust.completed_at": now,
+            "reports.kredo_cartrust.pdf_url": hosted_url or download_url,
+            "reports.kredo_cartrust.hosted_on_cloudinary": bool(hosted_url),
+            "reports.kredo_cartrust.callback_payload": payload,
+            "reports.kredo_cartrust.fetch_error": fetch_error,
+        }},
+    )
+    return {"ok": True, "matched": True, "status": "completed"}
 
 
 # ============ Health (real) ============
