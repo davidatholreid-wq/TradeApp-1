@@ -388,36 +388,105 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.6"
-  test_sequence: 16
+  version: "1.7"
+  test_sequence: 17
   run_ui: true
 
 test_plan:
   current_focus:
-    - "Rim size + AI tyre replacement estimate on admin pricing view"
+    - "Vehicle detail UI reorganisation — Submitted By at top, CarTrust in reports at R200, price at bottom with 2-step confirm"
+    - "Runtime dark/light theme toggle (Profile → Appearance)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
+frontend_new_tasks:
+  - task: "Vehicle detail UI reorganisation (P0)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/(app)/vehicle/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Reorganised admin vehicle detail:
+          1. "Submitted By" block (dealer name, dealership, email, phone + WhatsApp
+             "Contact on WhatsApp" button) moved to the TOP of the detail page,
+             above the vehicle title. Dealer view does NOT render this block.
+          2. CarTrust report moved from its own standalone card into the "Order a
+             VIN-Linked Report" section as one of the report catalog entries,
+             priced at R200. It uses `REPORT_CATALOG.kredo_cartrust.cost_zar = 200`.
+             When ordered via the shared "Order a report" confirmation modal, the
+             `kredo_cartrust` type is dispatched to `orderCartrust()` (NOT the
+             legacy mock report-order handler).
+          3. Admin price-offer action moved to the BOTTOM of the scroll page
+             (inline, not floating). Entering a price now shows a two-step
+             confirmation: (a) tap "Set Offer Price" → confirmation Alert with
+             the formatted price → tap "Confirm" → actual API call
+             POST /api/admin/submissions/{id}/price. Cancel dismisses without
+             persisting.
+          4. Dealer view still sees CarTrust card + status pill, ordered/completed
+             flow, but not admin-only pricing controls.
+
+  - task: "Runtime dark/light theme toggle (P1)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/theme/ThemeContext.tsx, /app/frontend/app/(app)/profile.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Added ThemeProvider with dark (default) + light palettes and
+          AsyncStorage persistence (key: fourbuy.themeMode). Refactored 24
+          screens/components to consume `useThemeColors()` and rebuild their
+          StyleSheet inside `useMemo` so toggling reactively re-styles the
+          whole app without a reload. Toggle UI is on Profile → Appearance
+          as a Night/Day pill switch (testIDs `theme-toggle-dark`,
+          `theme-toggle-light`). Login and Register are locked to dark by
+          design (hero background). Camera scan screen also locked to dark.
+          Semantic tokens introduced: `onPrimary`, `onDanger`, `overlay` —
+          used to keep button labels visible when the primary background
+          flips from white to black in light mode. Verified in-browser that
+          toggling flips the entire app, persists across reload, and back-
+          toggles cleanly.
+
 agent_communication:
   - agent: "main"
     message: |
-      Round of admin-panel/dealer-photos work complete. Backend + frontend both changed.
-      Backend added: DealerPhotoUpload model, POST /api/admin/dealers/{id}/photos and
-      GET /api/admin/dealers/{id}. /api/auth/login response now includes profile_pic +
-      cover_photo. Frontend: new PhotoCarousel (fullscreen swipe modal),
-      DealerPhotosModal (admin upload), rewritten vehicle/[id].tsx and updated
-      WebAdminDashboard detail column with hero average condition + new sections,
-      redesigned profile.tsx banner.
-  - agent: "testing"
-    message: |
-      Iteration 15 — Rim Size + AI Tyre Estimate PASS. Backend 20/20
-      (bounds 12-26, admin-only, real GPT-5.2 happy path with BMW 3 Series
-      320i M-Sport 2020 rim=18 returning tyre_spec 225/45 R18, set-of-four
-      R11k-R25k, brands Bridgestone/Michelin/Continental, medium
-      confidence, cache overwrite on refresh). Frontend mobile submit has
-      RIM SIZE wheel picker 13"-22". Desktop cockpit renders full
-      TYRE REPLACEMENT ESTIMATE card with big total, ranges, brands,
-      REFRESH cycle. Zero bugs, zero regressions on dealer/admin/market
-      analysis endpoints. Report: /app/test_reports/iteration_15.json.
+      Round complete: vehicle detail reorganisation (P0) + runtime dark/light
+      theme toggle (P1) + button-label semantic fixes for day mode.
+
+      Please verify:
+      1. Admin vehicle detail (any priced or incoming submission):
+         a. Submitted By card is TOP-most under the header (name, dealership,
+            email, phone, "Contact on WhatsApp" button) — admin only.
+         b. Scroll to the reports section: CarTrust appears as a row inside
+            "Order a VIN-Linked Report" at R200 (not as its own separate card).
+         c. Ordering CarTrust from the modal should hit POST
+            /api/kredo/cartrust/order and return an ack (real Kredo — may 500
+            if VIN/plate invalid for their test data, that's expected).
+         d. Scroll to the bottom: admin "Set Offer Price" input + button.
+            Tapping the button with a valid price opens a two-step Alert
+            confirm — Cancel does NOT hit the API; Confirm calls
+            POST /api/admin/submissions/{id}/price.
+         e. Dealer login (minitest@example.com / Mini1234!) must NOT see
+            the Submitted By card, the "Set Offer Price" panel, or any admin
+            pricing controls. Dealer CAN see CarTrust status if ordered.
+      2. Theme toggle: log in as any user → Profile → Appearance → tap Day
+         → verify no button labels are invisible, no white-on-white text,
+         all interactive elements remain readable. Reload → mode persists.
+
+      Backend surface hasn't changed for this round; just re-verify
+      /api/kredo/cartrust/order returns 200 or documented error, and
+      /api/admin/submissions/{id}/price still records offer + history.
+
+metadata_pre_v17:
+  created_by: "main_agent"
+  version: "1.6"
 
