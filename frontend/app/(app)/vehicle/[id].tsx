@@ -430,27 +430,44 @@ export default function VehicleDetail() {
       Alert.alert("Invalid price", "Please enter a valid price");
       return;
     }
-    setSubmittingPrice(true);
-    try {
-      await apiFetch(`/api/admin/submissions/${id}/price`, {
-        method: "POST",
-        body: JSON.stringify({
-          price,
-          notes: notesInput.trim() || null,
-          change_comment: changeCommentInput.trim() || null,
-        }),
-      });
-      const refreshed = await apiFetch(`/api/submissions/${id}`);
-      setSub(refreshed.submission);
-      setPriceModal(false);
-      setPriceInput("");
-      setNotesInput("");
-      setChangeCommentInput("");
-    } catch (e: any) {
-      Alert.alert("Error", e.message);
-    } finally {
-      setSubmittingPrice(false);
-    }
+    // Two-step confirmation: the "Confirm Price" button in the modal is
+    // the FIRST step; this Alert.alert is the explicit final confirmation
+    // so admins can't accidentally submit a wrong number.
+    const vehicleLabel = `${sub?.year ?? ""} ${sub?.make_name ?? ""} ${sub?.model_name ?? ""}`.trim();
+    Alert.alert(
+      "Confirm price",
+      `Offer ${formatZAR(price)} for ${vehicleLabel}?\n\nThis will be shown to the dealer immediately.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Confirm price",
+          style: "default",
+          onPress: async () => {
+            setSubmittingPrice(true);
+            try {
+              await apiFetch(`/api/admin/submissions/${id}/price`, {
+                method: "POST",
+                body: JSON.stringify({
+                  price,
+                  notes: notesInput.trim() || null,
+                  change_comment: changeCommentInput.trim() || null,
+                }),
+              });
+              const refreshed = await apiFetch(`/api/submissions/${id}`);
+              setSub(refreshed.submission);
+              setPriceModal(false);
+              setPriceInput("");
+              setNotesInput("");
+              setChangeCommentInput("");
+            } catch (e: any) {
+              Alert.alert("Error", e.message);
+            } finally {
+              setSubmittingPrice(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const handleDeclineOffer = async () => {
@@ -499,12 +516,13 @@ export default function VehicleDetail() {
   };
 
   const REPORT_CATALOG: Record<
-    ReportOrder["type"],
+    ReportOrder["type"] | "kredo_cartrust",
     { name: string; cost_zar: number }
   > = {
     lightstone_verification: { name: "Lightstone Vehicle Verification Report", cost_zar: 100 },
     lightstone_repair: { name: "Lightstone Vehicle Repair History Report", cost_zar: 50 },
     car_vertical: { name: "Car Vertical Report", cost_zar: 200 },
+    kredo_cartrust: { name: "Kredo CarTrust Vehicle Report", cost_zar: 200 },
   };
 
   const orderedReportTypes = useMemo(
@@ -514,6 +532,13 @@ export default function VehicleDetail() {
 
   const submitReportOrder = async () => {
     if (!sub || !confirmReport) return;
+    // Kredo CarTrust has its own async flow — route through orderCartrust()
+    // instead of the standard /reports POST.
+    if ((confirmReport.type as string) === "kredo_cartrust") {
+      setConfirmReport(null);
+      await orderCartrust();
+      return;
+    }
     setOrderingReportType(confirmReport.type);
     try {
       const res = await apiFetch(`/api/submissions/${id}/reports`, {
@@ -730,6 +755,48 @@ export default function VehicleDetail() {
               {sub.submitted_at ? ` · ${(sub.submitted_at || "").slice(0, 10)}` : ""}
             </Text>
           </View>
+        ) : null}
+
+        {/* Submitted By — admin view of the dealer contact card with
+            direct WhatsApp button. Kept at the TOP of the page so admins
+            can reach out immediately when reviewing a submission. */}
+        {isAdmin && sub.dealer_name ? (
+          <>
+            <Text style={styles.sectionTitle}>Submitted By</Text>
+            <View style={styles.dealerBox}>
+              <Text style={styles.dealerName}>{sub.dealer_name}</Text>
+              <Text style={styles.dealerCompany}>{sub.company_name}</Text>
+              <Text style={styles.dealerEmail}>{sub.dealer_email}</Text>
+              {sub.dealer_phone ? (
+                <Text style={styles.dealerEmail}>{sub.dealer_phone}</Text>
+              ) : null}
+              {sub.dealer_phone ? (
+                <TouchableOpacity
+                  testID="whatsapp-dealer-button"
+                  style={styles.whatsappBtn}
+                  onPress={() => {
+                    const url = buildWhatsappUrl(
+                      sub.dealer_phone!,
+                      buildDealerMessage({
+                        dealerFirstName: sub.dealer_first_name,
+                        reference: sub.reference,
+                        year: sub.year,
+                        make: sub.make_name,
+                        model: sub.model_name,
+                        derivative: sub.derivative_name,
+                        price: sub.price,
+                        priceNotes: sub.price_notes,
+                      })
+                    );
+                    Linking.openURL(url);
+                  }}
+                >
+                  <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
+                  <Text style={styles.whatsappBtnText}>Contact on WhatsApp</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </>
         ) : null}
 
         {/* Title */}
@@ -1519,89 +1586,91 @@ export default function VehicleDetail() {
                       </View>
                     );
                   })}
+
+                {/* Kredo CarTrust report — treated like any other VIN-linked
+                    report, but with its own async pending/completed flow
+                    (see orderCartrust / cartrust state above). Hidden for
+                    admins unless the dealer has already ordered it. */}
+                {(!isAdmin || cartrust) ? (
+                  <View style={styles.reportCard} testID="cartrust-card">
+                    <View style={{ flex: 1, marginRight: spacing.sm }}>
+                      <Text style={styles.reportName}>{REPORT_CATALOG.kredo_cartrust.name}</Text>
+                      <Text style={styles.reportCost}>R{REPORT_CATALOG.kredo_cartrust.cost_zar.toFixed(0)}</Text>
+                      {cartrust ? (
+                        <View style={styles.reportStatusRow}>
+                          <View
+                            style={[
+                              styles.statusPill,
+                              cartrust.status === "completed"
+                                ? styles.statusPillOk
+                                : styles.statusPillPending,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.statusPillText,
+                                cartrust.status === "completed"
+                                  ? styles.statusPillTextOk
+                                  : styles.statusPillTextPending,
+                              ]}
+                            >
+                              {cartrust.status.toUpperCase()}
+                            </Text>
+                          </View>
+                          <Text style={styles.reportStatusMeta}>
+                            {cartrust.status === "pending"
+                              ? "Kredo is preparing your report…"
+                              : cartrust.status === "completed"
+                              ? "Ready to view"
+                              : (cartrust.error || "Please try again")}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    {cartrust?.status === "completed" && cartrust.pdf_url ? (
+                      <TouchableOpacity
+                        testID="cartrust-view-btn"
+                        style={styles.viewReportBtn}
+                        onPress={openCartrust}
+                      >
+                        <Ionicons name="eye-outline" size={16} color="#000" />
+                        <Text style={styles.viewReportBtnText}>View</Text>
+                      </TouchableOpacity>
+                    ) : cartrust?.status === "pending" ? (
+                      <View style={styles.reportOrderedBadge}>
+                        <ActivityIndicator color={colors.text} size="small" />
+                        <Text style={styles.reportOrderedBadgeText}>Ordered</Text>
+                      </View>
+                    ) : !isAdmin ? (
+                      <TouchableOpacity
+                        testID="cartrust-order-btn"
+                        style={[styles.orderBtn, cartrustLoading && styles.docBtnDisabled]}
+                        onPress={() =>
+                          setConfirmReport({
+                            type: "kredo_cartrust" as ReportOrder["type"],
+                            name: REPORT_CATALOG.kredo_cartrust.name,
+                            cost_zar: REPORT_CATALOG.kredo_cartrust.cost_zar,
+                          })
+                        }
+                        disabled={cartrustLoading}
+                      >
+                        {cartrustLoading ? (
+                          <ActivityIndicator color="#000" size="small" />
+                        ) : (
+                          <Text style={styles.orderBtnText}>Order</Text>
+                        )}
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                ) : null}
               </>
             ) : null}
           </View>
         ) : null}
 
-        {/* CarTrust PDF report — dealer + admin can order, both can view the PDF once ready. */}
-        {sub.vin && sub.vin.trim() && sub.vin.toUpperCase() !== "TBC" ? (
-          <View style={styles.reportsSection} testID="cartrust-section">
-            <View style={styles.kredoHead}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.sectionTitle}>CarTrust Vehicle Report</Text>
-                <Text style={styles.reportsHelp}>
-                  Full vehicle-history PDF report by Kredo (assessments, ownership, claims). Delivery is asynchronous — typically ready within a few minutes.
-                </Text>
-              </View>
-              {!cartrust || cartrust.status === "failed" ? (
-                <TouchableOpacity
-                  testID="cartrust-order-btn"
-                  style={styles.kredoFetchBtn}
-                  onPress={orderCartrust}
-                  disabled={cartrustLoading}
-                >
-                  {cartrustLoading ? (
-                    <ActivityIndicator color="#000" size="small" />
-                  ) : (
-                    <>
-                      <Ionicons name="document-text" size={14} color="#000" />
-                      <Text style={styles.kredoFetchBtnText}>Order</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              ) : null}
-            </View>
-
-            {!cartrust ? (
-              <View style={styles.kredoEmpty}>
-                <Ionicons name="document-text-outline" size={22} color={colors.textDisabled} />
-                <Text style={styles.kredoEmptyText}>
-                  No CarTrust report ordered yet. Tap Order to request a Kredo report for this VIN.
-                </Text>
-              </View>
-            ) : cartrust.status === "pending" ? (
-              <View style={styles.cartrustPending}>
-                <ActivityIndicator color={colors.primary} size="small" />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.cartrustPendingTitle}>Kredo is preparing your report…</Text>
-                  <Text style={styles.cartrustPendingSub}>
-                    Ordered {cartrust.ordered_at ? new Date(cartrust.ordered_at).toLocaleString() : ""}. This page will update automatically when the PDF is ready.
-                  </Text>
-                </View>
-              </View>
-            ) : cartrust.status === "completed" ? (
-              <View>
-                <View style={styles.cartrustReady}>
-                  <Ionicons name="checkmark-circle" size={20} color={colors.success} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.cartrustReadyTitle}>Report ready</Text>
-                    <Text style={styles.cartrustReadySub}>
-                      {cartrust.completed_at
-                        ? `Completed ${new Date(cartrust.completed_at).toLocaleString()}`
-                        : "Report available"}
-                    </Text>
-                  </View>
-                </View>
-                <TouchableOpacity
-                  testID="cartrust-view-btn"
-                  style={styles.cartrustViewBtn}
-                  onPress={openCartrust}
-                >
-                  <Ionicons name="open-outline" size={16} color="#000" />
-                  <Text style={styles.cartrustViewBtnText}>View CarTrust PDF</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <View style={styles.kredoEmpty}>
-                <Ionicons name="alert-circle" size={20} color={colors.danger} />
-                <Text style={[styles.kredoEmptyText, { color: colors.danger }]}>
-                  Report failed. {cartrust.error || "Please try ordering again."}
-                </Text>
-              </View>
-            )}
-          </View>
-        ) : null}
+        {/* CarTrust PDF ordering is now rendered inline in the "Order a
+            VIN-Linked Report" section above — the standalone card was
+            removed at the user's request. */}
 
         {/* Kredo VIN accident/claim history — admin-only, on-demand fetch. */}
         {isAdmin && sub.vin && sub.vin.trim() && sub.vin.toUpperCase() !== "TBC" ? (
@@ -1713,38 +1782,57 @@ export default function VehicleDetail() {
 
         {/* Dealer info for admin */}
         {isAdmin && sub.dealer_name ? (
+          // Submitted By is rendered near the top of the page (right after
+          // the reference badge). Keeping this placeholder here so the
+          // component tree remains stable during future edits.
+          null
+        ) : null}
+
+        {/* Admin pricing actions — moved from the floating footer down to
+            the bottom of the scroll content per user request, so admins
+            scroll through the full submission before making an offer. */}
+        {isAdmin ? (
           <>
-            <Text style={styles.sectionTitle}>Submitted By</Text>
-            <View style={styles.dealerBox}>
-              <Text style={styles.dealerName}>{sub.dealer_name}</Text>
-              <Text style={styles.dealerCompany}>{sub.company_name}</Text>
-              <Text style={styles.dealerEmail}>{sub.dealer_email}</Text>
-              {sub.dealer_phone ? (
-                <Text style={styles.dealerEmail}>{sub.dealer_phone}</Text>
+            <Text style={styles.sectionTitle}>Admin Pricing</Text>
+            <View style={styles.adminActionBox} testID="admin-pricing-inline">
+              {sub.status === "priced" && sub.price != null ? (
+                <View style={styles.adminCurrentPrice}>
+                  <Text style={styles.adminCurrentPriceLabel}>CURRENT OFFER</Text>
+                  <Text style={styles.adminCurrentPriceValue}>{formatZAR(sub.price)}</Text>
+                </View>
               ) : null}
-              {sub.dealer_phone ? (
+              <TouchableOpacity
+                testID="offer-price-button"
+                style={styles.priceBtn}
+                onPress={() => {
+                  setPriceInput(sub.price ? String(sub.price) : "");
+                  setNotesInput(sub.price_notes || "");
+                  setChangeCommentInput("");
+                  setPriceModal(true);
+                }}
+              >
+                <Ionicons name="pricetag" size={18} color="#000" />
+                <Text style={styles.priceBtnText}>
+                  {sub.status === "priced" ? "Update Price" : "Offer Price"}
+                </Text>
+              </TouchableOpacity>
+              {sub.status !== "priced" ? (
                 <TouchableOpacity
-                  testID="whatsapp-dealer-button"
-                  style={styles.whatsappBtn}
-                  onPress={() => {
-                    const url = buildWhatsappUrl(
-                      sub.dealer_phone!,
-                      buildDealerMessage({
-                        dealerFirstName: sub.dealer_first_name,
-                        reference: sub.reference,
-                        year: sub.year,
-                        make: sub.make_name,
-                        model: sub.model_name,
-                        derivative: sub.derivative_name,
-                        price: sub.price,
-                        priceNotes: sub.price_notes,
-                      })
-                    );
-                    Linking.openURL(url);
-                  }}
+                  testID="decline-offer-button"
+                  style={styles.declineBtn}
+                  onPress={() => setDeclineModal(true)}
+                  disabled={declining}
                 >
-                  <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
-                  <Text style={styles.whatsappBtnText}>Contact on WhatsApp</Text>
+                  {declining ? (
+                    <ActivityIndicator color={colors.text} />
+                  ) : (
+                    <>
+                      <Ionicons name="close-circle-outline" size={18} color={colors.text} />
+                      <Text style={styles.declineBtnText}>
+                        {sub.status === "declined" ? "Declined" : "Cannot Offer"}
+                      </Text>
+                    </>
+                  )}
                 </TouchableOpacity>
               ) : null}
             </View>
@@ -1752,49 +1840,8 @@ export default function VehicleDetail() {
         ) : null}
       </ScrollView>
 
-      {/* Admin action footer — Price + Cannot Offer */}
-      {isAdmin ? (
-        <View style={styles.footer}>
-          <TouchableOpacity
-            testID="offer-price-button"
-            style={[styles.priceBtn, { flex: 1 }]}
-            onPress={() => {
-              setPriceInput(sub.price ? String(sub.price) : "");
-              setNotesInput(sub.price_notes || "");
-              setChangeCommentInput("");
-              setPriceModal(true);
-            }}
-          >
-            <Ionicons name="pricetag" size={18} color="#000" />
-            <Text style={styles.priceBtnText}>
-              {sub.status === "priced" ? "Update Price" : "Offer Price"}
-            </Text>
-          </TouchableOpacity>
-
-          {/* Only show "Cannot Offer" while the submission has NOT been priced.
-              Once priced, admins should update or void the offer via the
-              existing flow rather than declining. */}
-          {sub.status !== "priced" ? (
-            <TouchableOpacity
-              testID="decline-offer-button"
-              style={styles.declineBtn}
-              onPress={() => setDeclineModal(true)}
-              disabled={declining}
-            >
-              {declining ? (
-                <ActivityIndicator color={colors.text} />
-              ) : (
-                <>
-                  <Ionicons name="close-circle-outline" size={18} color={colors.text} />
-                  <Text style={styles.declineBtnText}>
-                    {sub.status === "declined" ? "Declined" : "Cannot Offer"}
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
-          ) : null}
-        </View>
-      ) : null}
+      {/* Floating footer removed — pricing is now inline at the bottom
+          of the scroll content. */}
 
       {/* Price modal */}
       <Modal visible={priceModal} transparent animationType="slide" onRequestClose={() => setPriceModal(false)}>
@@ -1864,7 +1911,7 @@ export default function VehicleDetail() {
                 <ActivityIndicator color="#fff" />
               ) : (
                 <Text style={styles.confirmBtnText}>
-                  {sub.status === "priced" ? "Update Offer" : "Send Offer"}
+                  {sub.status === "priced" ? "Confirm Update" : "Confirm Price"}
                 </Text>
               )}
             </TouchableOpacity>
@@ -3008,6 +3055,76 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     fontWeight: "700",
   },
+
+  // Inline admin pricing block at the bottom of the scroll content.
+  adminActionBox: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  adminCurrentPrice: {
+    backgroundColor: colors.paper,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.sm + 2,
+    marginBottom: spacing.xs,
+  },
+  adminCurrentPriceLabel: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1.5,
+  },
+  adminCurrentPriceValue: {
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+    marginTop: 2,
+    fontFamily: fonts.number,
+  },
+
+  // Status pill used inside a report card for CarTrust pending/completed
+  statusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  statusPillPending: { backgroundColor: colors.paper, borderColor: colors.warning },
+  statusPillOk: { backgroundColor: colors.success, borderColor: colors.success },
+  statusPillText: { fontSize: 9, fontWeight: "800", letterSpacing: 1 },
+  statusPillTextPending: { color: colors.warning },
+  statusPillTextOk: { color: "#000" },
+  reportStatusRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 },
+  reportStatusMeta: { color: colors.textSecondary, fontSize: 11, flex: 1 },
+  viewReportBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.sm,
+  },
+  viewReportBtnText: { color: "#000", fontSize: 12, fontWeight: "800", letterSpacing: 0.5 },
+  reportOrderedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+  },
+  reportOrderedBadgeText: { color: colors.text, fontSize: 11, fontWeight: "800", letterSpacing: 0.5 },
 
   // Kredo VIN accident history card
   kredoHead: {
