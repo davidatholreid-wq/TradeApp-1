@@ -35,10 +35,15 @@ type Redemption = {
 };
 type LedgerEntry = {
   id: string;
-  type: "earn" | "spend" | "refund" | "fulfill" | "adjust";
+  type: "earn" | "spend" | "refund" | "fulfill" | "adjust" | "referral_earn";
   delta: number;
   note?: string;
   at: string;
+  // Present only on `referral_earn` rows — the reference number of the
+  // referee's submission that triggered the bonus. Deliberately no car
+  // details so we don't leak between dealerships.
+  referral_of_reference?: string | null;
+  referral_of_user_id?: string | null;
 };
 type RewardsSummary = {
   label: string;
@@ -213,21 +218,40 @@ export default function RewardsScreen() {
         {data.ledger.length > 0 ? (
           <>
             <Text style={styles.sectionTitle}>Points activity</Text>
-            {data.ledger.slice(0, 30).map((e) => (
-              <View key={e.id} style={styles.ledgerRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.ledgerNote}>{e.note || e.type}</Text>
-                  <Text style={styles.ledgerDate}>{e.at.slice(0, 10)}</Text>
+            {data.ledger.slice(0, 30).map((e) => {
+              // Referral rows get a distinct look + never leak vehicle
+              // details — only the reference number of the referee's
+              // priced submission.
+              const isReferral = e.type === "referral_earn";
+              const referralLabel = isReferral
+                ? `Referred point · ${e.referral_of_reference || "—"}`
+                : null;
+              return (
+                <View key={e.id} style={styles.ledgerRow}>
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.ledgerNoteRow}>
+                      {isReferral ? (
+                        <View style={styles.ledgerReferralPill}>
+                          <Ionicons name="ribbon" size={10} color={colors.text} />
+                          <Text style={styles.ledgerReferralText}>REFERRAL</Text>
+                        </View>
+                      ) : null}
+                      <Text style={styles.ledgerNote} numberOfLines={1}>
+                        {referralLabel || e.note || e.type}
+                      </Text>
+                    </View>
+                    <Text style={styles.ledgerDate}>{e.at.slice(0, 10)}</Text>
+                  </View>
+                  <Text style={[
+                    styles.ledgerDelta,
+                    e.delta > 0 && { color: colors.success },
+                    e.delta < 0 && { color: colors.danger },
+                  ]}>
+                    {e.delta > 0 ? "+" : ""}{e.delta} pt
+                  </Text>
                 </View>
-                <Text style={[
-                  styles.ledgerDelta,
-                  e.delta > 0 && { color: colors.success },
-                  e.delta < 0 && { color: colors.danger },
-                ]}>
-                  {e.delta > 0 ? "+" : ""}{e.delta} pt
-                </Text>
-              </View>
-            ))}
+              );
+            })}
           </>
         ) : (
           <Text style={styles.emptyText}>No activity yet — earn your first point when your next valuation is priced within 24 hours.</Text>
@@ -357,7 +381,25 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   voucherNote: { color: colors.textSecondary, fontSize: 12, marginTop: 4, fontStyle: "italic" },
   rejectNote: { color: colors.danger, fontSize: 12, marginTop: 6, fontStyle: "italic" },
   ledgerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border },
-  ledgerNote: { color: colors.text, fontSize: 13 },
+  ledgerNote: { color: colors.text, fontSize: 13, flexShrink: 1 },
+  ledgerNoteRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  ledgerReferralPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  ledgerReferralText: {
+    color: colors.text,
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.6,
+  },
   ledgerDate: { color: colors.textDisabled, fontSize: 11, marginTop: 2 },
   ledgerDelta: { color: colors.text, fontFamily: fonts.mono, fontSize: 14, fontWeight: "800" },
   emptyText: { color: colors.textSecondary, fontSize: 12, textAlign: "center", padding: spacing.lg },

@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image } from "react-native";
+import { useMemo, useState } from "react";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Share, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useAuth } from "@/src/context/AuthContext";
@@ -16,6 +16,56 @@ export default function Profile() {
   const { user, logout } = useAuth();
   const router = useRouter();
   const tabBarHeight = useBottomTabBarHeight();
+  const [sharing, setSharing] = useState(false);
+
+  // Referral code is auto-generated for every dealer at account creation
+  // (and lazily on /auth/me for accounts that pre-date the feature). It's
+  // a lifetime code — the same one for the entire duration of the account.
+  const referralCode: string | null = (user as any)?.referral_code ?? null;
+
+  const buildShareUrl = (code: string): string => {
+    // In dev we rely on the packager proxy URL; in production this becomes
+    // the deployed domain (rewritten by Publish). Either way the /register
+    // route accepts a `ref` query param to prefill the referrer name.
+    const base =
+      (process.env as any).EXPO_PUBLIC_BACKEND_URL ||
+      "https://fourbuy-admin.preview.emergentagent.com";
+    return `${base.replace(/\/$/, "")}/register?ref=${encodeURIComponent(code)}`;
+  };
+
+  const handleShare = async () => {
+    if (!referralCode || sharing) return;
+    setSharing(true);
+    try {
+      const url = buildShareUrl(referralCode);
+      const message =
+        `Join Fourbuy Car Buying Co. — the vehicle valuation app for dealers.\n\n` +
+        `Use my referral code when you sign up:  ${referralCode}\n\n` +
+        `${url}`;
+      // React Native's cross-platform Share API — falls back to the OS
+      // share sheet on native and copy-to-clipboard on web (Share is a
+      // no-op there, so we also copy manually).
+      if (Platform.OS === "web") {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const nav: any = (globalThis as any).navigator;
+          if (nav?.share) {
+            await nav.share({ title: "Fourbuy Car Buying Co.", text: message, url });
+          } else if (nav?.clipboard?.writeText) {
+            await nav.clipboard.writeText(message);
+            // eslint-disable-next-line no-alert
+            (globalThis as any).alert?.("Referral message copied to clipboard.");
+          }
+        } catch {
+          /* user cancelled — no-op */
+        }
+      } else {
+        await Share.share({ message, url, title: "Fourbuy Car Buying Co." });
+      }
+    } finally {
+      setSharing(false);
+    }
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -125,6 +175,36 @@ export default function Profile() {
             <Text style={styles.hintText}>
               Your profile details, job title, photos and dealership branding are managed by Fourbuy. Please contact your Fourbuy administrator to request any changes.
             </Text>
+          </View>
+        ) : null}
+
+        {/* Share Fourbuy — dealer-only referral code + native share sheet.
+            Every referred dealer earns THEIR referrer a matching Fourbuy
+            Reward point for every point they earn — indefinitely. */}
+        {user.role === "dealer" && referralCode ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Share Fourbuy</Text>
+            <Text style={styles.hintText}>
+              Invite another dealer to Fourbuy. When they&apos;re onboarded and earn a Fourbuy Rewards point, you earn one too — for the lifetime of their account.
+            </Text>
+            <View style={styles.referralCodeRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.referralCodeLabel}>YOUR REFERRAL CODE</Text>
+                <Text style={styles.referralCodeValue} selectable testID="referral-code-value">
+                  {referralCode}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={handleShare}
+                style={styles.shareBtn}
+                testID="share-fourbuy-btn"
+                disabled={sharing}
+                accessibilityLabel="Share Fourbuy with a dealer"
+              >
+                <Ionicons name="share-outline" size={16} color={colors.onPrimary} />
+                <Text style={styles.shareBtnText}>Share</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         ) : null}
 
@@ -347,6 +427,47 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     marginBottom: spacing.md,
   },
   hintText: { color: colors.textSecondary, fontSize: 12, flex: 1, lineHeight: 17 },
+
+  // Referral / share card
+  referralCodeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  referralCodeLabel: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+  },
+  referralCodeValue: {
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: "800",
+    letterSpacing: 3,
+    fontFamily: fonts.mono,
+    marginTop: 4,
+  },
+  shareBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primary,
+  },
+  shareBtnText: {
+    color: colors.onPrimary,
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+  },
 
   // Appearance / theme toggle
   themeRow: {

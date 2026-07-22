@@ -1,0 +1,42 @@
+{
+  "summary": "Tested the SA ID + Referral Code + Referral Rewards feature set. Backend: 12/12 tests pass (SA ID validation with Luhn+DoB, referral code auto-gen, referred_by linking, public lookup endpoint, minitest lazy code allocation, full referral reward flow with idempotency, no car detail leak, totals.referred field). Frontend: Profile Share-Fourbuy card renders with correct code + share button for minitest dealer; /register?ref=<valid-code> renders REFERRED BY banner with dealer name + dealership; /register with no ref hides banner. NOTE: user-provided 'valid' SA ID 9202204720082 is NOT actually Luhn-valid — correct check digit for that prefix is 3 (9202204720083). Tests use corrected value.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/admin/dealerships/{id}/users", "issue": "Missing sa_id_number returns 422 (FastAPI/Pydantic default) instead of 400. Not blocking — client already validates client-side — but if E1 wants uniform 400 responses, add explicit validator on the Pydantic model."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "app/(auth)/register.tsx", "issue": "REFERRED BY banner is shown even for UNKNOWN referral codes — falls back to 'a Fourbuy dealer' with the (invalid) code echoed as 'Code: ZZZZZZ'. Spec required 'banner is absent (no crash)' for unknown codes. No crash — but the banner should be hidden until /api/referral/lookup succeeds. Fix: only render the banner when `referrer` state is populated (i.e. after successful lookup) OR remove the referralCode fallback so an invalid code shows nothing.", "testID": "referred-by-banner", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_referral_and_sa_id.py",
+    "/app/test_reports/pytest/iteration_32.xml"
+  ],
+  "action_items": [
+    "Update spec docs / product wording — SA ID 9202204720082 is NOT Luhn-valid; use 9202204720083 (or 8501015009086) in any future test fixtures or user-facing examples.",
+    "Decide the intended behaviour of /register?ref=<unknown>: currently the REFERRED BY banner still renders with 'a Fourbuy dealer' fallback text. Original spec said banner should be absent. If we keep it, remove the 'Code: XXXXXX' echo so users don't think an invalid code is accepted; if we drop it, gate the banner on the lookup response.",
+    "(Optional polish) On the admin invite modal, translate the raw server SA-ID error to the same field-level error UX. Currently the modal shows the server's full text — that's fine but a `sa_id_number` field-level indicator would be a nicer touch.",
+    "(Optional) Consider adding an explicit Pydantic validator on AdminInviteUserRequest.sa_id_number to return 400 instead of 422 for missing values so the API contract is uniform.",
+    "test_rewards.py is broken because /auth/register now returns 403 (dealer register is disabled). Not caused by this feature; consider migrating that suite to admin-invite like test_referral_and_sa_id.py."
+  ],
+  "critical_code_review_comments": [
+    "backend/server.py is 4917 lines — well over the 700-line guideline. Splitting into routers (auth, submissions, admin, rewards, referrals) will make future iterations much safer.",
+    "award_reward_point_for_submission relies on the partial unique index (type=referral_earn, sub_id) for concurrent-double-price safety — verified working. Ledger row deliberately excludes make/model/derivative/colour — confirmed no leak.",
+    "referral_lookup properly hides email + user id — only returns name + dealership. Good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_referral_and_sa_id.py (new)"
+  ],
+  "success_rate": {"backend": "100% (12/12 new suite pass)", "frontend": "~85% — Profile card + banner-with-valid-code work; banner-with-unknown-code is a spec deviation (banner should be absent)"},
+  "seed_data_creation": "Created several TEST_-prefixed dealers under Ford Bryanston (5b5cd0c6-3f06-45c4-8067-52c40f0c92bf) plus one submission via the referee. All flagged TEST_ so admin can bulk-clean if desired. minitest@example.com now has a persisted referral_code (F5MY89 at time of test) — lazily created and safe to keep.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "test_referral_and_sa_id.py is the canonical suite for this feature. Use SA IDs 9202204720083, 8501015009086, 9001010000007 for Luhn-valid, and 9202204720081 for invalid Luhn, 9902324720085 for invalid date. Ford Bryanston id: 5b5cd0c6-3f06-45c4-8067-52c40f0c92bf. minitest referral code changes if DB is reset — re-derive via /auth/me first.",
+  "rca_of_issue": "Only real issue found: /register?ref=<unknown> shows the REFERRED BY banner because the JSX gates on the URL param, not on the lookup result — the setReferrer(...) call in the useEffect never fires for unknown codes but the banner renders regardless. Fix at /app/frontend/app/(auth)/register.tsx line ~122: change `{referralCode ? (` to `{referralCode && referrer ? (` (or add a `lookupOk` state). No back-end change needed."
+}

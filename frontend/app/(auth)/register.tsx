@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,11 +10,12 @@ import {
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import BrandLogo from "@/src/components/BrandLogo";
 import { spacing, radius, fonts, BRAND } from "@/src/theme";
 import { darkPalette, type Palette } from "@/src/theme/ThemeContext";
+import { apiFetch } from "@/src/api";
 
 // WhatsApp business number the invitation requests should route to.
 // Kept as a constant so it can be swapped without touching layout code.
@@ -31,8 +32,33 @@ export default function RegisterInvitationOnly() {
   const colors = darkPalette;
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const router = useRouter();
+  const params = useLocalSearchParams<{ ref?: string }>();
   const [dealership, setDealership] = useState("");
   const [name, setName] = useState("");
+  // Referral param arriving via a shared /register?ref=CODE link.
+  const referralCode = (Array.isArray(params.ref) ? params.ref[0] : params.ref)?.toString().trim().toUpperCase() || null;
+  const [referrer, setReferrer] = useState<{ name: string; dealership?: string | null } | null>(null);
+
+  // Look up the referrer via the public /api/referral/lookup endpoint so
+  // we can render a friendly "Referred by …" line at the top of the
+  // invitation form. Silent-fail on unknown/invalid codes.
+  useEffect(() => {
+    if (!referralCode) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await apiFetch(`/api/referral/lookup?code=${encodeURIComponent(referralCode)}`);
+        if (!cancelled && r?.referrer_name) {
+          setReferrer({ name: r.referrer_name, dealership: r.referrer_dealership });
+        }
+      } catch {
+        /* unknown code — quietly ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [referralCode]);
 
   const sendOnWhatsApp = async () => {
     const dealerClean = dealership.trim();
@@ -44,12 +70,16 @@ export default function RegisterInvitationOnly() {
       );
       return;
     }
+    const referralLine = referralCode
+      ? `• Referral code: ${referralCode}${referrer?.name ? ` (from ${referrer.name})` : ""}\n`
+      : "";
     const message =
       `Hi Fourbuy 👋\n\n` +
       `I'd like to request a dealer account on the Fourbuy Car Buying Co. app.\n\n` +
       `• Dealership: ${dealerClean}\n` +
-      `• My name: ${nameClean}\n\n` +
-      `Please let me know what you need from us to get set up. Thank you!`;
+      `• My name: ${nameClean}\n` +
+      referralLine +
+      `\nPlease let me know what you need from us to get set up. Thank you!`;
     const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
     try {
       const supported = await Linking.canOpenURL(url);
@@ -84,6 +114,24 @@ export default function RegisterInvitationOnly() {
             Fourbuy dealer accounts are created by a Fourbuy administrator so
             we can verify each dealership before you go live.
           </Text>
+
+          {/* Referred-by banner — only shown when a valid /?ref=CODE code
+              is present in the URL. Tells the prospect (and the admin who
+              later opens the WhatsApp message) exactly which dealer sent
+              them, so the accounts can be linked and rewards paid out. */}
+          {referralCode ? (
+            <View style={styles.referralBanner} testID="referred-by-banner">
+              <Ionicons name="ribbon" size={16} color={colors.text} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.referralBannerLabel}>REFERRED BY</Text>
+                <Text style={styles.referralBannerName}>
+                  {referrer?.name || "a Fourbuy dealer"}
+                  {referrer?.dealership ? `  ·  ${referrer.dealership}` : ""}
+                </Text>
+                <Text style={styles.referralBannerCode}>Code: {referralCode}</Text>
+              </View>
+            </View>
+          ) : null}
 
           <View style={styles.stepsBox}>
             <View style={styles.step}>
@@ -311,5 +359,37 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     fontSize: 11,
     letterSpacing: 2,
     textTransform: "uppercase",
+  },
+  // "Referred by …" banner shown when the invitation screen is opened
+  // via a /register?ref=CODE share link.
+  referralBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  referralBannerLabel: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+  },
+  referralBannerName: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "800",
+    marginTop: 2,
+  },
+  referralBannerCode: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
+    fontFamily: fonts.mono,
+    letterSpacing: 1,
   },
 });

@@ -220,34 +220,67 @@ def is_billable(sub: dict) -> bool:
 async def award_reward_point_for_submission(sub: dict) -> None:
     """Award 1 point to the submitter when their submission becomes billable.
     Idempotent — safe to call multiple times for the same submission; the
-    `sub_id` unique index on the ledger prevents duplicate awards."""
+    `sub_id` unique index on the ledger prevents duplicate awards.
+
+    ALSO awards a matching 1 point to the submitter's referrer (if any),
+    using a `referral_of_user_id` + `referral_of_reference` tag so the
+    Rewards screen can render it as "Referred point from FB-000XXX" — no
+    car details, no dealership leaks between accounts.
+    """
     if not is_billable(sub):
         return
     user_id = sub.get("submitted_by_user_id") or sub.get("dealer_id")
     if not user_id:
         return
     sub_id = sub.get("id")
+    reference = sub.get("reference") or (sub_id[:8] if sub_id else "?")
     # Idempotency guard — check if an "earn" event already exists for this sub.
     existing = await db.reward_ledger.find_one({"type": "earn", "sub_id": sub_id})
-    if existing:
+    if not existing:
+        doc = {
+            "id": str(uuid.uuid4()),
+            "user_id": user_id,
+            "dealership_id": sub.get("dealership_id"),
+            "type": "earn",
+            "delta": 1,
+            "sub_id": sub_id,
+            "note": f"Billable valuation · {reference}",
+            "at": now_utc(),
+        }
+        try:
+            await db.reward_ledger.insert_one(doc)
+        except Exception as e:
+            # Partial unique index (type=earn, sub_id) blocks concurrent duplicates.
+            # Anything else we log and swallow — rewards must never break pricing.
+            if "duplicate" not in str(e).lower():
+                logger.warning("Reward award insert failed (non-blocking): %s", e)
+
+    # Mirror the point onto the submitter's referrer (if they have one).
+    submitter = await db.users.find_one({"id": user_id}, {"_id": 0, "referred_by_user_id": 1})
+    referrer_id = (submitter or {}).get("referred_by_user_id")
+    if not referrer_id:
         return
-    doc = {
+    # Idempotency on the referrer side — one referral point per submission.
+    existing_ref = await db.reward_ledger.find_one({"type": "referral_earn", "sub_id": sub_id})
+    if existing_ref:
+        return
+    ref_doc = {
         "id": str(uuid.uuid4()),
-        "user_id": user_id,
-        "dealership_id": sub.get("dealership_id"),
-        "type": "earn",
+        "user_id": referrer_id,
+        "type": "referral_earn",
         "delta": 1,
         "sub_id": sub_id,
-        "note": f"Billable valuation · {sub.get('reference') or sub_id[:8]}",
+        # Deliberately NO car details — only the reference number.
+        "referral_of_reference": reference,
+        "referral_of_user_id": user_id,
+        "note": f"Referred point · {reference}",
         "at": now_utc(),
     }
     try:
-        await db.reward_ledger.insert_one(doc)
+        await db.reward_ledger.insert_one(ref_doc)
     except Exception as e:
-        # Partial unique index (type=earn, sub_id) blocks concurrent duplicates.
-        # Anything else we log and swallow — rewards must never break pricing.
         if "duplicate" not in str(e).lower():
-            logger.warning("Reward award insert failed (non-blocking): %s", e)
+            logger.warning("Referral point insert failed (non-blocking): %s", e)
 
 
 async def get_user_reward_balance(user_id: str) -> int:
@@ -462,6 +495,13 @@ class AdminInviteUserRequest(BaseModel):
     password: str
     dealer_info: DealerInfo
     active: bool = True
+    # South African ID Number — required for every new dealer account so we
+    # have a verifiable identity for compliance / billing purposes.
+    sa_id_number: str
+    # Optional referral code — if the new dealer applied via another
+    # dealer's referral link, admin keys the code here and we link the
+    # accounts so the referrer earns matching Fourbuy Rewards points.
+    referred_by_code: Optional[str] = None
 
 
 class DealershipUpdate(BaseModel):
@@ -721,6 +761,15 @@ async def login(payload: LoginRequest):
 async def me(current: dict = Depends(get_current_user)):
     # Include billing-related fields that the client uses to gate flows.
     current["active"] = current.get("active", True)
+    # Lazily assign a lifetime referral code to any dealer that doesn't
+    # already have one (covers users created before referral codes were
+    # introduced). Admins do NOT get a code — referrals are dealer-only.
+    if current.get("role") == "dealer" and not current.get("referral_code"):
+        async def _code_exists(c: str) -> bool:
+            return (await db.users.count_documents({"referral_code": c})) > 0
+        code = await allocate_unique_code(_code_exists)
+        await db.users.update_one({"id": current["id"]}, {"$set": {"referral_code": code}})
+        current["referral_code"] = code
     # Enrich with dealership info so the client can render "Submitted by
     # …" chips and a "Team" screen without a second round-trip.
     if current.get("role") == "dealer":
@@ -731,6 +780,38 @@ async def me(current: dict = Depends(get_current_user)):
             if dship:
                 current["dealership"] = dship
     return {"user": current}
+
+
+@api_router.get("/referral/lookup")
+async def referral_lookup(code: str):
+    """PUBLIC endpoint — no auth required. Given a referral code, return
+    a minimal safe payload the register/invitation screen can use to
+    render "Referred by <name>" for a prospective dealer arriving via a
+    shared link. Returns 404 for unknown codes."""
+    normalised = (code or "").strip().upper()
+    if not normalised:
+        raise HTTPException(400, "Referral code required.")
+    user = await db.users.find_one(
+        {"referral_code": normalised, "role": "dealer"},
+        {"_id": 0, "id": 1, "dealer_info": 1, "dealership_id": 1},
+    )
+    if not user:
+        raise HTTPException(404, "Referral code not found.")
+    dship = None
+    if user.get("dealership_id"):
+        dship = await db.dealerships.find_one(
+            {"id": user["dealership_id"]}, {"_id": 0, "name": 1}
+        )
+    info = user.get("dealer_info") or {}
+    first = (info.get("first_name") or "").strip()
+    last = (info.get("last_name") or "").strip()
+    name = (first + " " + last).strip() or "a Fourbuy dealer"
+    return {
+        "code": normalised,
+        "referrer_name": name,
+        "referrer_first_name": first or None,
+        "referrer_dealership": (dship or {}).get("name"),
+    }
 
 
 class SelfProfileUpdate(BaseModel):
@@ -2745,10 +2826,36 @@ async def admin_add_user_to_dealership(
     existing = await db.users.find_one({"email": payload.email.lower()})
     if existing:
         raise HTTPException(409, "Email already registered")
+
+    # SA ID — 13 digits + valid date of birth + Luhn checksum.
+    ok, msg = validate_sa_id(payload.sa_id_number)
+    if not ok:
+        raise HTTPException(400, msg)
+    sa_id_clean = "".join(ch for ch in payload.sa_id_number if ch.isdigit())
+
+    # Referred-by lookup — if the admin keyed a code from another dealer's
+    # share link, look up the referrer so we can persist the link. We only
+    # accept lifetime codes attached to an *active* dealer.
+    referred_by_user_id: Optional[str] = None
+    referred_by_code_clean: Optional[str] = None
+    if payload.referred_by_code:
+        code = payload.referred_by_code.strip().upper()
+        if code:
+            referrer = await db.users.find_one(
+                {"referral_code": code, "role": "dealer"}, {"_id": 0, "id": 1}
+            )
+            if not referrer:
+                raise HTTPException(400, f"Referral code '{code}' does not match any dealer.")
+            referred_by_user_id = referrer["id"]
+            referred_by_code_clean = code
+
+    # Lifetime referral code for the new user.
+    async def _code_exists(c: str) -> bool:
+        return (await db.users.count_documents({"referral_code": c})) > 0
+
+    referral_code = await allocate_unique_code(_code_exists)
+
     user_id = str(uuid.uuid4())
-    # Denormalise the dealership's company info onto the user so any legacy
-    # code paths still work — the dealership doc is the source of truth
-    # going forward.
     user_doc = {
         "id": user_id,
         "email": payload.email.lower(),
@@ -2758,6 +2865,10 @@ async def admin_add_user_to_dealership(
         "archived_at": None,
         "agreement_accepted_at": None,
         "dealer_info": payload.dealer_info.dict(),
+        "sa_id_number": sa_id_clean,
+        "referral_code": referral_code,
+        "referred_by_user_id": referred_by_user_id,
+        "referred_by_code": referred_by_code_clean,
         "company_info": {
             "company_name": d.get("name") or "",
             "company_address": d.get("address") or "",
@@ -3355,9 +3466,10 @@ async def rewards_me(current: dict = Depends(get_current_user)):
         {"user_id": current["id"]},
         {"_id": 0},
     ).sort("requested_at", -1).to_list(200)
-    total_earned = sum(int(e.get("delta") or 0) for e in ledger if e.get("type") == "earn")
+    total_earned = sum(int(e.get("delta") or 0) for e in ledger if e.get("type") in ("earn", "referral_earn"))
     total_spent = sum(abs(int(e.get("delta") or 0)) for e in ledger if e.get("type") == "spend")
     total_refunded = sum(int(e.get("delta") or 0) for e in ledger if e.get("type") == "refund")
+    total_referred = sum(int(e.get("delta") or 0) for e in ledger if e.get("type") == "referral_earn")
     return {
         "label": REWARD_POINT_LABEL,
         "balance": balance,
@@ -3370,6 +3482,7 @@ async def rewards_me(current: dict = Depends(get_current_user)):
             "earned": total_earned,
             "spent": total_spent,
             "refunded": total_refunded,
+            "referred": total_referred,
         },
         "ledger": ledger,
         "redemptions": redemptions,
@@ -3727,6 +3840,8 @@ async def admin_grant_reward_points(
 # Server-side proxy to Kredo. All secrets stay in backend/.env — the client
 # only calls our own /api/kredo/* endpoints. See services/kredo_client.py.
 from services.kredo_client import get_kredo_client, KredoAPIError  # noqa: E402
+from services.sa_id import validate_sa_id  # noqa: E402
+from services.referral import allocate_unique_code  # noqa: E402
 
 
 def _kredo_502(e: KredoAPIError) -> HTTPException:
@@ -4610,6 +4725,27 @@ async def seed_data():
         )
     except Exception as e:
         logger.warning("reward_ledger index create failed (non-blocking): %s", e)
+    # Referral-earn idempotency — one bonus point per submission per referrer.
+    try:
+        await db.reward_ledger.create_index(
+            [("sub_id", 1)],
+            unique=True,
+            partialFilterExpression={"type": "referral_earn", "sub_id": {"$type": "string"}},
+            name="uniq_referral_earn_sub_id",
+        )
+    except Exception as e:
+        logger.warning("reward_ledger referral index create failed (non-blocking): %s", e)
+    # Lifetime referral codes must be unique per dealer. Sparse so
+    # admins / legacy users without a code don't fight the index.
+    try:
+        await db.users.create_index(
+            [("referral_code", 1)],
+            unique=True,
+            sparse=True,
+            name="uniq_referral_code",
+        )
+    except Exception as e:
+        logger.warning("users referral_code index create failed (non-blocking): %s", e)
     async for u in db.users.find({"role": "dealer", "dealership_id": {"$in": [None, ""]}}, {"_id": 0}):
         await _ensure_dealership_for_user(u)
     # Back-fill submissions that pre-date the dealership_id field.

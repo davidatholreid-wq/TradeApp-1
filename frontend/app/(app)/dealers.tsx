@@ -67,13 +67,13 @@ export default function Dealers() {
   const [busyId, setBusyId] = useState<string | null>(null);
   // Add-user-to-dealership modal state
   const [invitingDealership, setInvitingDealership] = useState<{ id: string; name: string } | null>(null);
-  const [inviteForm, setInviteForm] = useState({ first_name: "", last_name: "", phone: "", job_title: "", email: "", password: "" });
+  const [inviteForm, setInviteForm] = useState({ first_name: "", last_name: "", phone: "", job_title: "", email: "", password: "", sa_id_number: "", referred_by_code: "" });
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
 
   const submitInvite = async () => {
     if (!invitingDealership) return;
-    for (const [k, label] of [["first_name", "First name"], ["last_name", "Last name"], ["email", "Email"], ["password", "Password"]] as const) {
+    for (const [k, label] of [["first_name", "First name"], ["last_name", "Last name"], ["email", "Email"], ["password", "Password"], ["sa_id_number", "SA ID Number"]] as const) {
       if (!inviteForm[k].trim()) {
         setInviteError(`${label} is required`);
         return;
@@ -81,6 +81,11 @@ export default function Dealers() {
     }
     if (inviteForm.password.length < 6) {
       setInviteError("Password must be at least 6 characters");
+      return;
+    }
+    const digits = inviteForm.sa_id_number.replace(/\D+/g, "");
+    if (digits.length !== 13) {
+      setInviteError("SA ID Number must be 13 digits");
       return;
     }
     setInviteSubmitting(true);
@@ -97,11 +102,13 @@ export default function Dealers() {
             phone: inviteForm.phone.trim(),
             job_title: inviteForm.job_title.trim() || undefined,
           },
+          sa_id_number: digits,
+          referred_by_code: inviteForm.referred_by_code.trim().toUpperCase() || null,
           active: true,
         }),
       });
       setInvitingDealership(null);
-      setInviteForm({ first_name: "", last_name: "", phone: "", job_title: "", email: "", password: "" });
+      setInviteForm({ first_name: "", last_name: "", phone: "", job_title: "", email: "", password: "", sa_id_number: "", referred_by_code: "" });
       load(showArchived);
     } catch (e: any) {
       setInviteError(e?.message || "Failed to add user");
@@ -715,8 +722,10 @@ export default function Dealers() {
               ["Last Name", "last_name"],
               ["Phone", "phone"],
               ["Job Title (optional)", "job_title"],
+              ["SA ID Number", "sa_id_number"],
               ["Email", "email"],
               ["Password (min 6 chars)", "password"],
+              ["Referred By (optional code)", "referred_by_code"],
             ].map(([label, key]) => (
               <View key={key} style={styles.modalField}>
                 <Text style={styles.modalLabel}>{label}</Text>
@@ -724,10 +733,11 @@ export default function Dealers() {
                   style={styles.modalInput}
                   value={(inviteForm as any)[key]}
                   onChangeText={(v) => setInviteForm((f) => ({ ...f, [key]: v }))}
-                  autoCapitalize={key === "email" ? "none" : "words"}
-                  keyboardType={key === "email" ? "email-address" : key === "phone" ? "phone-pad" : "default"}
+                  autoCapitalize={key === "email" || key === "referred_by_code" ? "characters" : key === "sa_id_number" ? "none" : "words"}
+                  keyboardType={key === "email" ? "email-address" : key === "phone" ? "phone-pad" : key === "sa_id_number" ? "number-pad" : "default"}
                   secureTextEntry={key === "password"}
-                  placeholder={label}
+                  maxLength={key === "sa_id_number" ? 13 : key === "referred_by_code" ? 6 : undefined}
+                  placeholder={key === "referred_by_code" ? "e.g. A7X9K2" : key === "sa_id_number" ? "13 digits" : label}
                   placeholderTextColor={colors.textDisabled}
                   testID={`invite-${key}`}
                 />
