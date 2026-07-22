@@ -70,8 +70,8 @@ export default function RegisterInvitationOnly() {
       );
       return;
     }
-    const referralLine = referralCode
-      ? `• Referral code: ${referralCode}${referrer?.name ? ` (from ${referrer.name})` : ""}\n`
+    const referralLine = referralCode && referrer
+      ? `• Referral code: ${referralCode} (from ${referrer.name})\n`
       : "";
     const message =
       `Hi Fourbuy 👋\n\n` +
