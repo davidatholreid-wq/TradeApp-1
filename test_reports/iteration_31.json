@@ -1,0 +1,33 @@
+{
+  "summary": "Frontend-only verification of the LICENSE DISK DATA section fix in WebAdminDashboard.tsx (:1357-1400). PASS. On the wide-viewport admin cockpit (1440x900) FB-000105 (Ford Bryanston / Audi Q5, Zelda Visagie) now renders the section as decoded label/value ROWS instead of a raw '%FRD1E%%...' style dump. Rendered rows: LICENCE NO / KP88ZKGP, REGISTER NO / HLG153K, MAKE / AUDI, MODEL / AU 426 - Q5, DESCRIPTION / Station wagon / Stasiewa, VIN / WAUZZZFY1J2198086, ENGINE NO / DES006948, EXPIRES / 2027-05-31, DISC NO / 4024048FLJ90. Values are monospace, right-aligned, and rows have a thin border between them (matches the design brief). Uppercase-label styling on web vs title-case on mobile is intentional (styles.diskDecodedLabel uses textTransform:uppercase to match the boxTitle convention used by every other cockpit section). Colour row is correctly OMITTED because the decoder didn't find a known colour token in the raw string (filter drops empty values). Cross-checked mobile viewport (390x844) for the same submission — mobile lists the identical 9 field names in the identical order (Licence No, Register No, Make, Model, Description, VIN, Engine No, Expires, Disc No) with the identical values, confirming full parity. Fallback path (`visible.length === 0` -> raw monospace dump) was not exercised end-to-end because every preview sub with license_disk_data decodes successfully; the fallback code at :1379-1385 is a trivial safety net that reproduces the pre-fix behaviour verbatim so it is a safe no-op. REGRESSION: MARKET VALUES tile (NEW LIST PRICE R565 000, M&M CODE 4054306, TRADE R293 393, RETAIL R343 390 + LOCKED AT VALUATION pill), VIN-LINKED REPORTS (Lightstone Verification / Lightstone Repair with DELIVERED pills), and OFFER HISTORY (R 200 000 / Initial offer / Fourbuy Admin 2026/07/22, 10:01:28) all still render correctly on the same submission. Section ordering (MARKET VALUES -> VIN-LINKED REPORTS -> LICENSE DISK DATA -> OFFER HISTORY) is preserved. ACCIDENT / CLAIM HISTORY not re-verified on desktop screenshot capture (below the fold in the captured shot) but is confirmed present via mobile view of the same sub (kredo_vin_history.status=ok, 2 claims on record), and the render condition in WebAdminDashboard.tsx:1337 is unchanged.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/tmp/04_license_desktop.png (FB-000105 web cockpit — LICENSE DISK DATA rendered as 9 label/value rows, monospace right-aligned)",
+    "/tmp/M3_mobile_license.png (FB-000105 mobile detail — License Disk Data with identical 9 rows for parity comparison)",
+    "/tmp/03_fb105_selected.png (top-of-detail regression: FB-000105 selection state and vehicle-details section intact)"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "WebAdminDashboard.tsx is now 2188 lines (was 2125 in iteration_30, 2112 in iteration_29). File continues to grow with each read-only section addition — well past the 700-line guideline. Recommend a follow-up refactor extracting the right-hand detail column into SubmissionDetailPanel (and each of the 5 read-only cards into small sub-components). Non-blocking; carried over.",
+    "The decoded license-disk row shape is now duplicated in two places: WebAdminDashboard.tsx:1366-1377 and app/(app)/vehicle/[id].tsx:1118-1129 use the exact same rows array. When (not if) the label list changes, both sites need to be kept in sync. Consider hoisting a `getLicenseDiskRows(info: LicenseDiskInfo)` helper into /app/frontend/src/utils/licenseDisk.ts so mobile + web share one source of truth."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "not tested (frontend-only request)",
+    "frontend": "100% — fix verified on FB-000105, mobile parity confirmed, no regression across the 4 other read-only sections or the cockpit tabs."
+  },
+  "seed_data_creation": "None. Reused FB-000105 (Audi Q5, id 2500341e-9a21-42fa-97c2-30dcbdbd53c9), which has license_disk_data populated with a real SA disc payload that decodes cleanly.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The LICENSE DISK DATA fix in WebAdminDashboard.tsx :1357-1400 uses the same decodeLicenseDisk helper as the mobile screen and mirrors its row structure exactly. Best fixture for future re-tests is still FB-000105 (id 2500341e-9a21-42fa-97c2-30dcbdbd53c9) — its disc string decodes to 9 populated fields (no colour). If a future test needs to exercise the raw-dump fallback branch, seed a sub with license_disk_data='%%foo%%bar%%' or similar (no VIN pattern, no ISO date, no colour word, no known make); the decoder will return zero fields and the JSX falls back to <Text style={styles.diskData}>{raw}</Text>. Duplication caveat: the rows array is copy-pasted from app/(app)/vehicle/[id].tsx — if the label list is changed on one side and not the other, only that side will visibly update.",
+  "rca_of_issue": "N/A — feature request, not a bug fix. The visual fix simply swaps the raw <Text style={styles.diskData}>{selected.license_disk_data}</Text> dump for a decoded row rendering built on top of the mobile helper. Implementation: import decodeLicenseDisk from @/src/utils/licenseDisk, run it inside an IIFE, filter rows by !!value, and render each surviving row inside styles.diskDecodedRow. Fallback preserves the original raw-string dump when decoding yields zero fields — mirrors mobile behaviour at app/(app)/vehicle/[id].tsx:1111-1116."
+}

@@ -13,6 +13,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { spacing, radius, fonts, BRAND } from "@/src/theme";
 import { useThemeColors, useThemeMode, type Palette } from "@/src/theme/ThemeContext";
+import { decodeLicenseDisk } from "@/src/utils/licenseDisk";
 import { apiFetch } from "@/src/api";
 import { buildWhatsappUrl, buildDealerMessage } from "@/src/utils/whatsapp";
 import BillingScreen from "@/app/(app)/billing";
@@ -1354,12 +1355,47 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
               ) : null}
 
               {/* ================= LICENSE DISK DATA ================= */}
+              {/* Decoded into labelled rows (matches mobile). If the raw
+                  string can't be decoded we fall back to a monospace dump
+                  so nothing is lost. */}
               {selected.license_disk_data ? (
                 <View style={styles.analysisBox}>
                   <Text style={styles.boxTitle}>LICENSE DISK DATA</Text>
-                  <Text style={styles.diskData} selectable>
-                    {selected.license_disk_data}
-                  </Text>
+                  {(() => {
+                    const info = decodeLicenseDisk(selected.license_disk_data!);
+                    const rows: [string, string | undefined][] = [
+                      ["Licence No", info.licenceNo],
+                      ["Register No", info.vehicleRegisterNo],
+                      ["Make", info.make],
+                      ["Model", info.model],
+                      ["Colour", info.colour],
+                      ["Description", info.vehicleDescription],
+                      ["VIN", info.vin],
+                      ["Engine No", info.engineNo],
+                      ["Expires", info.expiryDate],
+                      ["Disc No", info.licenceDiscNo],
+                    ];
+                    const visible = rows.filter(([, v]) => !!v);
+                    if (visible.length === 0) {
+                      return (
+                        <Text style={styles.diskData} selectable>
+                          {selected.license_disk_data}
+                        </Text>
+                      );
+                    }
+                    return (
+                      <View style={{ marginTop: spacing.sm }}>
+                        {visible.map(([label, value]) => (
+                          <View key={label} style={styles.diskDecodedRow}>
+                            <Text style={styles.diskDecodedLabel}>{label}</Text>
+                            <Text style={styles.diskDecodedValue} selectable>
+                              {value}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    );
+                  })()}
                 </View>
               ) : null}
 
@@ -2069,13 +2105,39 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     letterSpacing: 0.6,
   },
 
-  // === LICENSE DISK RAW DATA ===
+  // === LICENSE DISK RAW DATA (fallback when we can't decode) ===
   diskData: {
     color: colors.text,
     fontSize: 12,
     fontFamily: fonts.mono,
     lineHeight: 17,
     marginTop: spacing.sm,
+  },
+  // Decoded license-disk rows — mirrors the mobile look.
+  diskDecodedRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    paddingVertical: spacing.xs + 2,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: spacing.md,
+  },
+  diskDecodedLabel: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    width: 128,
+  },
+  diskDecodedValue: {
+    color: colors.text,
+    fontSize: 13,
+    fontFamily: fonts.mono,
+    letterSpacing: 0.3,
+    flex: 1,
+    textAlign: "right",
   },
 
   // === OFFER HISTORY entries ===
