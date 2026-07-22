@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import asyncio
 import logging
 import uuid
 import bcrypt
@@ -1287,7 +1288,7 @@ async def refresh_market_values(sub_id: str, current: dict = Depends(get_current
         raise HTTPException(403, "Not authorized")
     await db.submissions.update_one({"id": sub_id}, {"$unset": {"market_values": ""}})
     sub.pop("market_values", None)
-    mv = await _ensure_market_values(sub)
+    mv = await _ensure_market_values(sub, background=True)
     return {"market_values": mv}
 
 
@@ -3873,12 +3874,16 @@ def _parse_kredo_value(raw: dict) -> dict:
     }
 
 
-async def _ensure_market_values(sub: dict) -> dict:
+async def _ensure_market_values(sub: dict, *, background: bool = False) -> dict:
     """Lazily populate a submission's cached Kredo Vehicle Values.
 
     Called from every GET /submissions/{id}. If we've already got a
     successful cached fetch, returns immediately. If the last attempt
-    errored recently we back off for 60s so we don't spam Kredo.
+    errored recently we back off for 60s so we don't spam Kredo. If
+    the value hasn't been fetched yet we set a `loading` placeholder,
+    kick off the real fetch as a background task, and return the
+    placeholder so the caller can respond fast — the frontend will
+    poll until `status` transitions to `ok` or `error`.
 
     Never raises — errors are captured in the cached document so the UI
     can render them, and the endpoint the caller was serving stays fast.
@@ -3887,6 +3892,15 @@ async def _ensure_market_values(sub: dict) -> dict:
     # Already have a good snapshot.
     if isinstance(existing, dict) and existing.get("status") == "ok":
         return existing
+
+    # If a fetch is currently in-flight (loading placeholder recently set),
+    # don't kick off another one.
+    if isinstance(existing, dict) and existing.get("status") == "loading":
+        last_at = existing.get("fetched_at")
+        if isinstance(last_at, datetime):
+            age = (now_utc() - last_at).total_seconds()
+            if age < 90:
+                return existing
 
     # Back off on recent failure (60s).
     last_at = existing.get("fetched_at") if isinstance(existing, dict) else None
@@ -3898,26 +3912,56 @@ async def _ensure_market_values(sub: dict) -> dict:
         except Exception:
             pass
 
-    make = (sub.get("make_name") or "").strip()
-    model = (sub.get("model_name") or "").strip()
-    year = sub.get("year_of_production")
-    derivative = (sub.get("derivative_name") or "").strip()
+    # Set a loading placeholder immediately.
+    placeholder = {
+        "status": "loading",
+        "fetched_at": now_utc(),
+    }
+    await db.submissions.update_one({"id": sub["id"]}, {"$set": {"market_values": placeholder}})
+    sub["market_values"] = placeholder
+
+    # Kick off the real Kredo fetch as a background task so the caller
+    # returns fast. The frontend polls GET /submissions/{id} until the
+    # status transitions out of "loading".
+    if not background:
+        asyncio.create_task(_run_market_values_fetch(sub["id"]))
+        return placeholder
+
+    # `background=True` code path — run synchronously (used by the
+    # manual refresh endpoint so we can return the fresh result inline).
+    return await _run_market_values_fetch(sub["id"])
+
+
+async def _run_market_values_fetch(sub_id: str) -> dict:
+    """The real Kredo Vehicle Values fetch. Reads the current submission
+    fresh from Mongo so concurrent updates don't clobber each other,
+    resolves the Kredo identifiers, hits `/value`, joins the flatfile row
+    for M&M code + new_list_price, and writes the result back onto the
+    submission. Always returns the persisted `market_values` dict."""
+    sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
+    if not sub:
+        return {"status": "error", "error": "Submission not found", "fetched_at": now_utc()}
+
     mileage = sub.get("mileage") or 0
-
-    if not (make and model and year and derivative):
-        mv = {
-            "status": "error",
-            "error": "Missing vehicle fields required for a market lookup.",
-            "fetched_at": now_utc(),
-        }
-        await db.submissions.update_one({"id": sub["id"]}, {"$set": {"market_values": mv}})
-        sub["market_values"] = mv
-        return mv
-
     try:
-        # Resolve our internal vehicle names into Kredo's exact identifiers
-        # (uppercase make, year-ranged model, model-prefixed derivative).
         k_make, k_model, k_year, k_derivative = await _resolve_kredo_identifiers(sub)
+
+        # Flatfile lookup for M&M code + canonical new list price. Kredo's
+        # Vehicle Values endpoint does not return `mm_code`, so this is
+        # the only place it comes from.
+        flat = await db.vehicle_specs.find_one(
+            {
+                "make": {"$regex": f"^{sub.get('make_name', '')}$", "$options": "i"},
+                "model": k_model,
+                "derivative": k_derivative,
+                "year_of_production": int(k_year),
+                "spec_source": "kredo",
+            },
+            {"_id": 0, "mm_code": 1, "new_list_price_zar": 1},
+        )
+        flat_mm = (flat or {}).get("mm_code")
+        flat_new = (flat or {}).get("new_list_price_zar")
+
         raw = await get_kredo_client().value(
             make=k_make,
             model=k_model,
@@ -3929,43 +3973,32 @@ async def _ensure_market_values(sub: dict) -> dict:
         parsed = _parse_kredo_value(raw)
         mv = {
             "status": "ok",
-            "new_list_price_zar": parsed.get("new_price_zar"),
+            "new_list_price_zar": flat_new if flat_new is not None else parsed.get("new_price_zar"),
             "retail_price_zar": parsed.get("retail_price_zar"),
             "trade_price_zar": parsed.get("adjusted_trade_zar"),
             "adjusted_retail_zar": parsed.get("adjusted_retail_zar"),
             "market_price_zar": parsed.get("market_price_zar"),
-            "mm_code": parsed.get("mm_code"),
+            "mm_code": flat_mm or parsed.get("mm_code"),
             "fetched_at": now_utc(),
             "source": "kredo_vehicle_values",
             "input_condition": "clean",
             "input_mileage": int(mileage),
-            # Audit — remember which Kredo identifiers we resolved to so a
-            # QA-er can trace mismatches without re-running the resolver.
             "resolved_make": k_make,
             "resolved_model": k_model,
             "resolved_year": k_year,
             "resolved_derivative": k_derivative,
         }
     except ValueError as e:
-        mv = {
-            "status": "error",
-            "error": str(e)[:240],
-            "fetched_at": now_utc(),
-        }
+        mv = {"status": "error", "error": str(e)[:240], "fetched_at": now_utc()}
     except KredoAPIError as e:
-        mv = {
-            "status": "error",
-            "error": str(e)[:240],
-            "fetched_at": now_utc(),
-        }
-    except Exception as e:  # noqa: BLE001 — always log & cache, never break the caller
+        mv = {"status": "error", "error": str(e)[:240], "fetched_at": now_utc()}
+    except Exception as e:  # noqa: BLE001
         mv = {
             "status": "error",
             "error": f"Unexpected market-value lookup error: {e}"[:240],
             "fetched_at": now_utc(),
         }
-    await db.submissions.update_one({"id": sub["id"]}, {"$set": {"market_values": mv}})
-    sub["market_values"] = mv
+    await db.submissions.update_one({"id": sub_id}, {"$set": {"market_values": mv}})
     return mv
 
 
@@ -4667,11 +4700,22 @@ async def seed_data():
 
     try:
         if kredo_specs_path.exists():
-            # Only re-seed when the collection is empty OR the existing
-            # data is from the mock (spec_source != "kredo").
+            # Re-seed when:
+            #  a) collection is empty, OR
+            #  b) it has non-Kredo (mock) rows, OR
+            #  c) it has Kredo rows but they were imported before we started
+            #     preserving `mm_code` on each variant.
             existing_kredo = await db.vehicle_specs.count_documents({"spec_source": "kredo"})
             total = await db.vehicle_specs.count_documents({})
-            if total == 0 or existing_kredo == 0:
+            needs_mm = False
+            if existing_kredo:
+                # Peek at a row to see if the new mm_code field is populated.
+                probe = await db.vehicle_specs.find_one(
+                    {"spec_source": "kredo"}, {"mm_code": 1, "_id": 0}
+                )
+                if not probe or "mm_code" not in probe:
+                    needs_mm = True
+            if total == 0 or existing_kredo == 0 or needs_mm:
                 await _reseed_from_kredo()
         elif await db.vehicle_specs.count_documents({}) == 0:
             from vehicle_specs_seed import expand_specs

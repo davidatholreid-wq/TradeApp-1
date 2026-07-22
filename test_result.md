@@ -388,9 +388,114 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.7"
-  test_sequence: 17
+  version: "1.8"
+  test_sequence: 27
   run_ui: true
+
+test_plan:
+  current_focus:
+    - "Market Values card (Kredo Vehicle Values + flatfile M&M code) on vehicle detail"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+frontend_new_tasks_1_8:
+  - task: "Market Values card on vehicle detail (P0)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/(app)/vehicle/[id].tsx, /app/backend/server.py, /app/backend/scripts/import_kredo_flatfile.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Rendered a new "Market Values" card on the vehicle detail page,
+          just above the Admin Pricing block. Visible to both admin AND
+          dealer for every submission. Fields shown:
+            - New List Price  (from flatfile row, canonical publication price)
+            - M&M Code        (from flatfile row — Kredo Vehicle Values API
+                                does NOT return this)
+            - Trade Value     (from Kredo Vehicle Values `truetrade_adjustedTradePrice`)
+            - Retail Value    (from Kredo Vehicle Values `truetrade_retailPrice`)
+          plus a "Source: Kredo Vehicle Values · <ago>" footer + Refresh
+          button (testID `market-values-refresh` / `market-values-retry`).
+
+          Backend additions:
+            - `_resolve_kredo_identifiers()` — maps our internal
+              (make/model/derivative/year) onto Kredo Vehicle Values' exact
+              identifiers (UPPERCASE make, year-ranged model like
+              "HILUX 2016 ON", model-prefixed derivative). Includes fuzzy
+              match at ≥ 0.55 SequenceMatcher for OLD submissions that
+              used simplified names.
+            - `_ensure_market_values(sub, background=False)` — lazy fetch
+              helper. Sets `{status:"loading"}` placeholder immediately
+              and spawns an `asyncio.create_task` background fetch so
+              GET /submissions/{id} returns fast. Frontend polls every 3s
+              until `status` transitions to `ok` or `error`. Backs off for
+              60s on error, 90s on stale "loading" placeholder.
+            - `_run_market_values_fetch()` — the real Kredo call: resolves
+              identifiers, joins vehicle_specs for mm_code + new_list_price,
+              calls Kredo /value for retail/trade, writes result to sub.
+            - `POST /api/submissions/{id}/market-values/refresh` — forced
+              re-fetch, used by the Refresh button.
+            - `_parse_kredo_value()` extended with mm_code candidate keys
+              (fallback only — Kredo doesn't currently return it).
+
+          Flatfile re-import:
+            - `/app/backend/scripts/import_kredo_flatfile.py` — re-runs the
+              conversion from the user-provided Excel and now preserves
+              `mm_code` per variant. Filter still limited to
+              Audi/BMW/Ford/Toyota. 22,729 variants seeded.
+            - Startup seed logic now detects flatfile rows without
+              `mm_code` and re-seeds automatically.
+
+          Verified on FB-000093 (Toyota / Hilux / 2.4 GD-6 SR / 2020):
+            - Resolver picked `TOYOTA / HILUX 2016 ON / 2020 / HILUX 2.4
+              GD-6 RB SR P/U D/C` (fuzzy).
+            - Flatfile: mm_code=60039244, new_list_price_zar=476900.
+            - Kredo: trade=R348,672, retail=R362,348.
+            - Card renders all four values, timestamp, refresh button.
+
+  - task: "Kredo Vehicle Values resolver (P1)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          `_resolve_kredo_identifiers()` maps our internal vehicle names
+          onto Kredo Vehicle Values' expected UPPERCASE + year-ranged
+          model + model-prefixed derivative format. Handles direct match,
+          prefix match, substring match, year-range selection ("2005-2016",
+          "2016 ON"), and derivative fuzzy match (SequenceMatcher ≥ 0.55).
+
+agent_communication:
+  - agent: "main"
+    message: |
+      Market Values card is live. Please verify:
+
+      1. Open any submission as ADMIN — the "Market Values" card renders
+         just above "Admin Pricing". First open triggers "Fetching from
+         Kredo…" for ~10-15s, then auto-updates with the four values.
+         Refresh button forces a re-fetch.
+      2. Same submission opened as the DEALER who submitted it — card is
+         also visible, same four values, same Refresh button.
+      3. The M&M Code comes from the flatfile snapshot (22,729 variants
+         for Audi/BMW/Ford/Toyota). If a submission's derivative can't be
+         matched, the card shows an error message + Retry.
+      4. Backend regression: existing endpoints (`/api/submissions`,
+         `/api/admin/submissions/{id}/price`, `/api/kredo/cartrust/order`)
+         still work.
+
+metadata_pre_v18:
+  created_by: "main_agent"
+  version: "1.7"
 
 test_plan:
   current_focus:

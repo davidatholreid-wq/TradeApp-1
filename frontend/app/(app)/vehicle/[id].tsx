@@ -265,6 +265,37 @@ export default function VehicleDetail() {
   // the endpoint hasn't returned yet (initial fetch pending).
   const marketValues: any = (sub as any)?.market_values ?? null;
 
+  // While the backend is still fetching Kredo values, quietly re-poll the
+  // submission every 3s so the card transitions from "Fetching…" → the
+  // real values without the user having to tap Refresh.
+  useEffect(() => {
+    if (!id) return;
+    if (!marketValues || marketValues.status !== "loading") return;
+    let cancelled = false;
+    let attempts = 0;
+    const poll = async () => {
+      while (!cancelled && attempts < 20) {
+        attempts += 1;
+        await new Promise((r) => setTimeout(r, 3000));
+        if (cancelled) return;
+        try {
+          const r = await apiFetch(`/api/submissions/${id}`);
+          const mv = r?.submission?.market_values;
+          if (mv && mv.status !== "loading") {
+            setSub((prev) => (prev ? { ...prev, market_values: mv } : prev));
+            return;
+          }
+        } catch {
+          // ignore — try again next tick
+        }
+      }
+    };
+    poll();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, marketValues?.status]);
+
   const refreshMarketValues = async () => {
     if (!id || marketValuesLoading) return;
     setMarketValuesLoading(true);
