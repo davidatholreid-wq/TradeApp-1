@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import re
 import asyncio
 import logging
 import uuid
@@ -510,6 +511,17 @@ class DealershipUpdate(BaseModel):
     company_reg_no: Optional[str] = None
     vat_no: Optional[str] = None
     active: Optional[bool] = None
+
+
+class DealershipCreate(BaseModel):
+    """Admin creates a brand-new dealership from the admin cockpit. Only
+    `name` is truly required — the rest are optional metadata that we can
+    fill in later via PATCH /admin/dealerships/{id}."""
+    name: str
+    address: Optional[str] = ""
+    company_reg_no: Optional[str] = None
+    vat_no: Optional[str] = None
+    active: bool = True
 
 
 async def _ensure_dealership_for_user(user: dict) -> str:
@@ -2768,6 +2780,45 @@ async def admin_list_dealerships(current: dict = Depends(require_admin)):
         d["billable_count"] = billable
         d["billable_total_zar"] = round(billable * BILLING_FEE_ZAR, 2)
     return {"dealerships": dships, "fee_zar": BILLING_FEE_ZAR}
+
+
+@api_router.post("/admin/dealerships")
+async def admin_create_dealership(
+    payload: DealershipCreate,
+    current: dict = Depends(require_admin),
+):
+    """Create a brand-new empty dealership. The admin can then attach users
+    to it via POST /api/admin/dealerships/{id}/users. Name must be unique
+    (case-insensitive) to avoid accidental duplicates from the UI."""
+    name = (payload.name or "").strip()
+    if not name:
+        raise HTTPException(400, "Dealership name is required.")
+    # Case-insensitive duplicate check
+    dup = await db.dealerships.find_one({"name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}})
+    if dup:
+        raise HTTPException(409, f"A dealership named '{dup['name']}' already exists.")
+
+    dealership_id = str(uuid.uuid4())
+    doc = {
+        "id": dealership_id,
+        "name": name,
+        "address": (payload.address or "").strip(),
+        "company_reg_no": (payload.company_reg_no or None),
+        "vat_no": (payload.vat_no or None),
+        "active": bool(payload.active),
+        "created_at": now_utc(),
+        "created_by_admin_id": current["id"],
+    }
+    await db.dealerships.insert_one(doc)
+    logger.info("Admin %s created dealership %s (%s)", current.get("email"), dealership_id, name)
+    doc.pop("_id", None)
+    # Return a payload consistent with the list endpoint so the client can
+    # optimistically prepend the row without a re-fetch.
+    doc["user_count"] = 0
+    doc["submission_count"] = 0
+    doc["billable_count"] = 0
+    doc["billable_total_zar"] = 0.0
+    return {"dealership": doc}
 
 
 @api_router.get("/admin/dealerships/{dealership_id}")

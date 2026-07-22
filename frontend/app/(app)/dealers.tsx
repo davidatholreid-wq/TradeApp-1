@@ -70,6 +70,46 @@ export default function Dealers() {
   const [inviteForm, setInviteForm] = useState({ first_name: "", last_name: "", phone: "", job_title: "", email: "", password: "", sa_id_number: "", referred_by_code: "" });
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
+  // Create-new-dealership modal state (admin-only quick onboarding)
+  const [creatingDealership, setCreatingDealership] = useState(false);
+  const [newDealershipForm, setNewDealershipForm] = useState({ name: "", address: "", company_reg_no: "", vat_no: "" });
+  const [newDealershipSubmitting, setNewDealershipSubmitting] = useState(false);
+  const [newDealershipError, setNewDealershipError] = useState<string | null>(null);
+
+  const submitCreateDealership = async () => {
+    const name = newDealershipForm.name.trim();
+    if (!name) {
+      setNewDealershipError("Dealership name is required");
+      return;
+    }
+    setNewDealershipSubmitting(true);
+    setNewDealershipError(null);
+    try {
+      const res = await apiFetch(`/api/admin/dealerships`, {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          address: newDealershipForm.address.trim(),
+          company_reg_no: newDealershipForm.company_reg_no.trim() || undefined,
+          vat_no: newDealershipForm.vat_no.trim() || undefined,
+        }),
+      });
+      const created = res?.dealership;
+      // Close the create modal and immediately open the Add-User modal for the
+      // brand-new dealership so the admin can complete the onboarding in one flow.
+      setCreatingDealership(false);
+      setNewDealershipForm({ name: "", address: "", company_reg_no: "", vat_no: "" });
+      // Refresh the dealers list so the empty dealership header appears too.
+      await load(showArchived);
+      if (created?.id) {
+        setInvitingDealership({ id: created.id, name: created.name });
+      }
+    } catch (e: any) {
+      setNewDealershipError(e?.message || "Failed to create dealership");
+    } finally {
+      setNewDealershipSubmitting(false);
+    }
+  };
 
   const submitInvite = async () => {
     if (!invitingDealership) return;
@@ -575,6 +615,18 @@ export default function Dealers() {
         </View>
         <View style={styles.headerActions}>
           <TouchableOpacity
+            testID="dealers-new-dealership-btn"
+            onPress={() => {
+              setNewDealershipError(null);
+              setNewDealershipForm({ name: "", address: "", company_reg_no: "", vat_no: "" });
+              setCreatingDealership(true);
+            }}
+            style={[styles.archTgl, styles.newDealershipBtn]}
+          >
+            <Ionicons name="add-circle" size={14} color="#000" />
+            <Text style={[styles.archTglText, styles.archTglTextActive]}>New Dealership</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             testID="dealers-toggle-archived"
             onPress={() => {
               setLoading(true);
@@ -772,6 +824,73 @@ export default function Dealers() {
         </View>
       </Modal>
 
+      {/* Create-new-dealership modal — admin-only quick onboarding. On success
+          we immediately open the Add-User modal for the freshly-created
+          dealership so the whole "new dealership + first user" flow feels
+          like a single step. */}
+      <Modal
+        visible={creatingDealership}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setCreatingDealership(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>New Dealership</Text>
+              <TouchableOpacity onPress={() => setCreatingDealership(false)} testID="new-dealership-close">
+                <Ionicons name="close" size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalHint}>
+              Create a new dealership record. You&apos;ll be prompted to add its first
+              user immediately after.
+            </Text>
+            {[
+              ["Dealership Name", "name", "e.g. Hatfield Ford Bryanston"],
+              ["Address (optional)", "address", "e.g. 123 Main Rd, Bryanston"],
+              ["Company Reg No (optional)", "company_reg_no", "e.g. 2020/123456/07"],
+              ["VAT No (optional)", "vat_no", "e.g. 4520123456"],
+            ].map(([label, key, placeholder]) => (
+              <View key={key} style={styles.modalField}>
+                <Text style={styles.modalLabel}>{label}</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={(newDealershipForm as any)[key]}
+                  onChangeText={(v) => setNewDealershipForm((f) => ({ ...f, [key]: v }))}
+                  autoCapitalize={key === "name" || key === "address" ? "words" : "characters"}
+                  placeholder={placeholder}
+                  placeholderTextColor={colors.textDisabled}
+                  testID={`new-dealership-${key}`}
+                />
+              </View>
+            ))}
+            {newDealershipError ? <Text style={styles.modalError}>{newDealershipError}</Text> : null}
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnGhost]}
+                onPress={() => setCreatingDealership(false)}
+                disabled={newDealershipSubmitting}
+              >
+                <Text style={styles.modalBtnGhostText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="new-dealership-submit"
+                style={[styles.modalBtn, styles.modalBtnPrimary]}
+                onPress={submitCreateDealership}
+                disabled={newDealershipSubmitting}
+              >
+                {newDealershipSubmitting ? (
+                  <ActivityIndicator color={colors.onPrimary} />
+                ) : (
+                  <Text style={styles.modalBtnPrimaryText}>Create &amp; Add User</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <DealerPhotosModal
         dealer={
           photoTarget
@@ -950,7 +1069,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   headerTitle: { color: colors.text, fontSize: 22, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 0.3 },
   headerRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   headerSub: { color: colors.textSecondary, fontSize: 13, marginTop: 4, letterSpacing: 0.1 },
-  headerActions: { flexDirection: "row", marginTop: spacing.sm },
+  headerActions: { flexDirection: "row", marginTop: spacing.sm, gap: spacing.sm, flexWrap: "wrap" },
   archTgl: {
     flexDirection: "row",
     alignItems: "center",
@@ -965,6 +1084,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   archTglActive: { backgroundColor: colors.neon, borderColor: colors.neon },
   archTglText: { color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 1 },
   archTglTextActive: { color: colors.onPrimary },
+  newDealershipBtn: { backgroundColor: colors.neon, borderColor: colors.neon },
   list: { padding: spacing.md, paddingBottom: spacing.xl },
   card: {
     backgroundColor: colors.card,
