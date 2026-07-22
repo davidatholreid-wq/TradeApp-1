@@ -125,6 +125,7 @@ type SubmissionFull = Submission & {
   report_orders?: {
     id: string;
     type: string;
+    name?: string;
     status?: string;
     ordered_at?: string;
     completed_at?: string | null;
@@ -141,12 +142,18 @@ type SubmissionFull = Submission & {
   } | null;
 
   // Full offer history — every price change with timestamp + notes.
+  // Field names match the backend `price_history[]` schema.
   price_history?: {
-    price: number;
-    priced_at?: string;
-    notes?: string | null;
-    change_comment?: string | null;
-    admin_email?: string | null;
+    id?: string;
+    action?: "offer" | "update";
+    previous_price?: number | null;
+    new_price: number;
+    previous_notes?: string | null;
+    new_notes?: string | null;
+    comment?: string | null;
+    admin_id?: string | null;
+    admin_name?: string | null;
+    at?: string;
   }[];
 };
 
@@ -1305,7 +1312,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                   {selected.report_orders.map((r) => (
                     <View key={r.id} style={styles.reportRow}>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.reportName}>{formatReportName(r.type)}</Text>
+                        <Text style={styles.reportName}>{r.name || formatReportName(r.type)}</Text>
                         <Text style={styles.reportMeta}>
                           {r.ordered_at ? `Ordered ${new Date(r.ordered_at).toLocaleString("en-ZA")}` : ""}
                           {r.cost_zar != null ? `  ·  ${fmtZar(r.cost_zar)}` : ""}
@@ -1361,22 +1368,29 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 <View style={styles.analysisBox}>
                   <Text style={styles.boxTitle}>OFFER HISTORY</Text>
                   {selected.price_history.map((p, i) => (
-                    <View key={i} style={styles.offerRow}>
+                    <View key={p.id || i} style={styles.offerRow}>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.offerPrice}>{fmtZar(p.price)}</Text>
-                        {p.change_comment ? (
-                          <Text style={styles.offerNote}>{p.change_comment}</Text>
+                        <Text style={styles.offerPrice}>
+                          {fmtZar(p.new_price)}
+                          {p.previous_price != null ? (
+                            <Text style={styles.offerNote}>
+                              {"   was "}{fmtZar(p.previous_price)}
+                            </Text>
+                          ) : null}
+                        </Text>
+                        {p.comment ? (
+                          <Text style={styles.offerNote}>{p.comment}</Text>
                         ) : null}
-                        {p.notes ? (
-                          <Text style={styles.offerNote}>{p.notes}</Text>
+                        {p.new_notes ? (
+                          <Text style={styles.offerNote}>{p.new_notes}</Text>
                         ) : null}
                       </View>
                       <View>
                         <Text style={styles.offerMeta}>
-                          {p.priced_at ? new Date(p.priced_at).toLocaleString("en-ZA") : "—"}
+                          {p.at ? new Date(p.at).toLocaleString("en-ZA") : "—"}
                         </Text>
-                        {p.admin_email ? (
-                          <Text style={styles.offerMeta}>{p.admin_email}</Text>
+                        {p.admin_name ? (
+                          <Text style={styles.offerMeta}>{p.admin_name}</Text>
                         ) : null}
                       </View>
                     </View>

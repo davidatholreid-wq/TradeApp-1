@@ -1,0 +1,32 @@
+{
+  "summary": "Frontend-only re-verification of the two iteration_29 fixes on WebAdminDashboard.tsx at 1440x900. Both flagged issues are FIXED. (1) OFFER HISTORY now reads the correct backend price_history schema (new_price, previous_price, comment, new_notes, at, admin_name). Verified on FB-000105 (1 entry, previous_price=null) -> 'R 200 000 / Initial offer / 2026/07/22, 10:01:28 / Fourbuy Admin' with no dashes; and on FB-000090 (3 entries with was-branches) -> 'R 60 000 / Initial offer', 'R 65 000  was R 60 000 / Price updated', 'R 70 000  was R 65 000 / Price updated', each with timestamp and admin_name on the right column. (2) VIN-LINKED REPORTS row title now uses r.name first: 'Lightstone Vehicle Verification Report' and 'Lightstone Vehicle Repair History Report' render correctly (lightstone_verification / lightstone_repair slugs no longer leak). A third report on FB-000090 (type=carvertical) renders 'Car Vertical Report' from the backend r.name value. Section ordering (MARKET VALUES -> VIN-LINKED REPORTS -> LICENSE DISK DATA -> OFFER HISTORY) is preserved. Regression pass: MARKET VALUES tile (LOCKED AT VALUATION pill + all four values) and LICENSE DISK DATA render on both subs; ACCIDENT/CLAIM HISTORY intentionally not re-exercised (no seeded kredo_vin_history.status=ok sub per iteration_29 note). Dealers, Billing, Rewards, Kredo tabs all functional; INCOMING(0)/PRICED(9)/ARCHIVED(1) buckets filter correctly.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/tmp/06_fb105_bottom.png (FB-000105: R 200 000 offer with proper meta, both VIN reports with proper names)",
+    "/tmp/07_fb090_bottom.png (FB-000090: 3 price_history rows including two 'was R xxx' branches + Lightstone Repair + Car Vertical VIN reports)",
+    "/tmp/tab_dealers.png, /tmp/tab_billing.png, /tmp/tab_rewards.png, /tmp/tab_kredo.png (regression on cockpit tabs)"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "WebAdminDashboard.tsx is 2125 lines -- still well past the 700-line guideline. Consider splitting the right-hand detail column into a dedicated component (SubmissionDetailPanel) in a follow-up refactor. (Non-blocking; carried over from iteration_29.)"
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "not tested (frontend-only request)",
+    "frontend": "100% -- both re-verified defects fixed; no regressions across the 4 other cockpit tabs or the other read-only sections."
+  },
+  "seed_data_creation": "None. Reused preview data. FB-000105 (id 2500341e...) for the single-entry OFFER HISTORY + 2 lightstone report_orders case. FB-000090 (id d5f5799d...) for the 3-entry OFFER HISTORY (with two was-branches) + Lightstone Repair + CarVertical report_orders case.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Fix pass PASS. WebAdminDashboard.tsx OFFER HISTORY now consumes the backend PriceHistoryEntry schema (new_price/previous_price/comment/new_notes/at/admin_name) and VIN-LINKED REPORTS prefers r.name from the backend. Best fixtures for future re-tests: FB-000105 (Audi Q5, single price_history + 2 report_orders, license_disk_data present, market_values.status=ok) and FB-000090 (Ford Figo, 3 price_history entries covering the previous_price 'was' branch + 2 report_orders). No sub in preview has kredo_vin_history.status=ok, so ACCIDENT/CLAIM HISTORY still needs seed data to be exercised end-to-end.",
+  "rca_of_issue": "N/A -- both defects from iteration_29 are resolved. The type declaration at WebAdminDashboard.tsx:143-158 now uses {id, action, previous_price, new_price, previous_notes, new_notes, comment, admin_id, admin_name, at}, matching the backend response exactly. The JSX at :1367-1399 renders fmtZar(p.new_price), optional 'was Rxxx' when previous_price is present, p.comment and p.new_notes as sub-lines, and p.at + p.admin_name in the right column. For VIN-LINKED REPORTS, :1315 now reads r.name || formatReportName(r.type), which lets the backend's pre-formatted human title win."
+}
