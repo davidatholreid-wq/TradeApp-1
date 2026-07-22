@@ -71,7 +71,7 @@ export default function RegisterInvitationOnly() {
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <View style={styles.logoWrap}>
-          <BrandLogo size="lg" />
+          <BrandLogo size="lg" variant="dark" />
         </View>
 
         <View style={styles.card}>

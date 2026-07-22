@@ -1,0 +1,34 @@
+{
+  "summary": "Regression fix VERIFIED. The Register (Invitation only) screen now correctly shows the white-on-dark wordmark (logo-fourbuy.png) in BOTH themeMode='light' and themeMode='dark' — confirmed by inspecting the rendered <img> src on both runs. The new `variant` prop on BrandLogo (default 'auto'; register passes variant='dark') successfully overrides the ThemeContext-driven variant selection so a persisted Day-mode preference no longer bleeds the dark-on-white logo onto the dark-locked register hero. Auto swap on non-locked screens still works: Home shows logo-fourbuy-light.png in Day mode and logo-fourbuy.png in Night mode. Login screen (raw <Image source={BRAND.logo}/>) remains on the dark logo in both modes. No side-effects observed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/screenshots/it27_register_light.png",
+    "/app/test_reports/screenshots/it27_register_dark.png",
+    "/app/test_reports/screenshots/it27_login_dark.png",
+    "/app/test_reports/screenshots/it27_home_light.png",
+    "/app/test_reports/screenshots/it27_home_dark.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Minor (unchanged from iter_26): makeStyles(colors) in BrandLogo.tsx still accepts a `colors` palette but the resulting stylesheet only references `alignItems/justifyContent`. The palette dependency is unused and causes an unnecessary re-memoization whenever the theme mode flips. Consider dropping the argument (or keeping it only if you plan to color the wrapper). Not blocking."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (frontend-only request)", "frontend": "100%"},
+  "seed_data_creation": "None — used existing dealer minitest@example.com / Mini1234!.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Register logo regression fix confirmed working. Detection method: read the rendered <img src> inside [data-testid=\"brand-logo\"]. Expected 'logo-fourbuy.png' on register in both themeMode values (both got it). On other screens (Home), auto variant continues to swap between 'logo-fourbuy.png' (dark bg) and 'logo-fourbuy-light.png' (light bg) with the themeMode toggle. No further work required for this fix.",
+  "test_matrix": {
+    "register_themeMode_light": {"expected_asset": "logo-fourbuy.png", "actual_asset": "logo-fourbuy.png", "status": "PASS"},
+    "register_themeMode_dark":  {"expected_asset": "logo-fourbuy.png", "actual_asset": "logo-fourbuy.png", "status": "PASS"},
+    "login_themeMode_any":      {"expected_asset": "logo-fourbuy.png", "actual_asset": "logo-fourbuy.png", "status": "PASS"},
+    "home_themeMode_light":     {"expected_asset": "logo-fourbuy-light.png", "actual_asset": "logo-fourbuy-light.png", "status": "PASS"},
+    "home_themeMode_dark":      {"expected_asset": "logo-fourbuy.png", "actual_asset": "logo-fourbuy.png", "status": "PASS"}
+  }
+}

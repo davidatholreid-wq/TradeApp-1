@@ -12,6 +12,13 @@ type Props = {
   style?: StyleProp<ImageStyle>;
   containerStyle?: StyleProp<ViewStyle>;
   testID?: string;
+  /**
+   * Override the automatic light/dark variant. Set `variant="dark"` on a
+   * screen that's locked to a dark background regardless of the app's
+   * theme mode (e.g. the login / register hero splash). Defaults to
+   * following the active theme via `useTheme()`.
+   */
+  variant?: "auto" | "dark" | "light";
 };
 
 const HEIGHTS: Record<NonNullable<Props["size"]>, number> = {
@@ -31,13 +38,17 @@ const ASPECT = 617 / 215;
 // Single source of truth for rendering the Fourbuy wordmark. Keep every logo
 // insertion in the app routed through this component so a future rebrand is
 // a one-file change.
-export default function BrandLogo({ size = "md", style, containerStyle, testID }: Props) {
+export default function BrandLogo({ size = "md", style, containerStyle, testID, variant = "auto" }: Props) {
   const { colors, mode } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const h = HEIGHTS[size];
   // Use the dark-on-white wordmark in day mode so it reads cleanly against
   // the light background. Dark mode stays with the white wordmark on black.
-  const src = mode === "light" ? BRAND.logoLight : BRAND.logo;
+  // Callers can force a specific variant (e.g. `variant="dark"` on screens
+  // that are always dark, like the login/register hero) to override the
+  // automatic theme-driven choice.
+  const effectiveMode = variant === "auto" ? mode : variant;
+  const src = effectiveMode === "light" ? BRAND.logoLight : BRAND.logo;
   return (
     <View style={[styles.wrap, containerStyle]} testID={testID ?? "brand-logo"}>
       <Image
