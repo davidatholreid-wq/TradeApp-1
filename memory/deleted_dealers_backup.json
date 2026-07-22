@@ -1,0 +1,2577 @@
+{
+  "snapshotted_at": "2026-07-22T19:42:34.860203Z",
+  "kept_dealership_ids": [
+    "3e18c809-2803-4124-aeaa-9b0bc9cd3998",
+    "5b5cd0c6-3f06-45c4-8067-52c40f0c92bf"
+  ],
+  "dealerships": [
+    {
+      "id": "a3a12600-6065-414d-81e9-fdf75245501b",
+      "name": "TEST_Photo Motors",
+      "address": "1 Photo Lane, JHB",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-19T20:31:05.611411+00:00"
+    },
+    {
+      "id": "5016c8f8-3a84-4d24-bd05-aa3864099794",
+      "name": "TEST_SEED_PHOTO",
+      "address": "Test",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-19T20:31:05.612119+00:00"
+    },
+    {
+      "id": "5cdc9d54-0665-48c6-a2cf-5e29cd734c08",
+      "name": "TEST_Photo Motors",
+      "address": "1 Photo Lane, JHB",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-19T20:31:05.616599+00:00"
+    },
+    {
+      "id": "976015db-b8c0-4fce-b74c-85d1a094b3f1",
+      "name": "TEST_SubmitUx Motors",
+      "address": "1 Test Rd, Johannesburg",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-19T20:31:05.617169+00:00"
+    },
+    {
+      "id": "9add693a-0a7d-491e-81a1-51362967af28",
+      "name": "TEST_Photo Motors",
+      "address": "1 Photo Lane, JHB",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-19T20:31:05.617683+00:00"
+    },
+    {
+      "id": "2d08335b-954a-462b-9b7d-d93cf06c1d7d",
+      "name": "TEST_Pillars Motors",
+      "address": "1 Pillar Rd, Johannesburg",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-19T20:31:05.618149+00:00"
+    },
+    {
+      "id": "e37a080a-f660-45f7-ac66-c7bb85c96ac6",
+      "name": "TEST_Photo Motors",
+      "address": "1 Photo Lane, JHB",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-19T20:31:05.618647+00:00"
+    },
+    {
+      "id": "2558216d-5164-479d-bf34-19e993ebcbf3",
+      "name": "TEST_Photo Motors",
+      "address": "1 Photo Lane, JHB",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-19T20:31:05.619105+00:00"
+    },
+    {
+      "id": "fd12fe79-56a9-4267-8c4a-ca7a76c4c8f6",
+      "name": "Colour Test Motors",
+      "address": "1 Test St, Johannesburg",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-19T20:31:05.619569+00:00",
+      "updated_at": "2026-07-19T22:43:52.759899+00:00"
+    },
+    {
+      "id": "6c722e1a-4115-4bd1-bb70-0ef2ed7909e0",
+      "name": "TEST Reg Motors",
+      "address": "1 Test Street, JHB",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-19T20:54:17.773994+00:00"
+    },
+    {
+      "id": "8d54e3ec-2656-4c64-9d1a-34e7711ab56b",
+      "name": "TEST Motors",
+      "address": "1 Test Street, JHB",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-19T20:54:18.001264+00:00"
+    },
+    {
+      "id": "02d0338c-555e-48a5-b9ca-c6ed14798334",
+      "name": "TEST Add-User Motors",
+      "address": "1 Test Street, JHB",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-19T20:54:18.765717+00:00"
+    },
+    {
+      "id": "62d0f6e6-21c1-4d1c-b65e-2590f75d5567",
+      "name": "TEST E2E Motors",
+      "address": "1 Test Street, JHB",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-19T20:54:19.130224+00:00"
+    },
+    {
+      "id": "5972f6c4-c924-4c2f-9016-01acf87cc4ba",
+      "name": "TEST Reg Motors",
+      "address": "1 Test Street, JHB",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-19T20:54:34.273343+00:00"
+    },
+    {
+      "id": "3b882f8c-b9f6-4362-bdc9-8121221dda00",
+      "name": "TEST Motors",
+      "address": "1 Test Street, JHB",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-19T20:54:34.558564+00:00"
+    },
+    {
+      "id": "f5d1775d-a356-4f05-836e-1aa6bcc2eaff",
+      "name": "TEST Add-User Motors",
+      "address": "1 Test Street, JHB",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-19T20:54:35.188726+00:00",
+      "updated_at": "2026-07-21T21:05:29.760613+00:00"
+    },
+    {
+      "id": "11591369-b420-47f3-8285-6be9459168e6",
+      "name": "TEST E2E Motors",
+      "address": "1 Test Street, JHB",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-19T20:54:35.699356+00:00"
+    },
+    {
+      "id": "255fb254-7148-4f6c-bff2-85bef18ac667",
+      "name": "TEST UI Motors",
+      "address": "1 UI St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-19T20:56:50.957509+00:00"
+    },
+    {
+      "id": "2df5461b-3d48-44e7-a9e1-4c09b4337313",
+      "name": "TEST Cascade Motors",
+      "address": "1 Test St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-19T21:13:07.627220+00:00",
+      "updated_at": "2026-07-19T21:13:08.868452+00:00"
+    },
+    {
+      "id": "06cb1206-ced6-44bc-9ee9-00195ee40dd5",
+      "name": "TEST Arc Motors",
+      "address": "1 Test St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": false,
+      "created_at": "2026-07-19T21:13:09.635922+00:00",
+      "updated_at": "2026-07-19T21:13:10.112887+00:00"
+    },
+    {
+      "id": "3789040e-17f1-42f3-a214-ee451cf2fec8",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:11:27.610616+00:00"
+    },
+    {
+      "id": "ad3a858c-d6eb-4d73-baf5-7e6c460b12f5",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:11:27.980049+00:00"
+    },
+    {
+      "id": "c92b77c6-e7ce-441d-950d-e55eebb06d3f",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:11:28.348468+00:00"
+    },
+    {
+      "id": "fc96e654-13a7-49eb-9c8c-4f017d7be30b",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:11:28.680332+00:00"
+    },
+    {
+      "id": "ca6fdf0c-4e65-495a-8044-a5995e5bc564",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:11:28.836462+00:00"
+    },
+    {
+      "id": "8f273b12-a234-4242-a458-198128f0fac3",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:11:29.191767+00:00"
+    },
+    {
+      "id": "7b4a148d-deba-457f-8ccd-1e10f4104ec4",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:11:29.357544+00:00"
+    },
+    {
+      "id": "cbc2eca5-9016-4b7c-b1c1-4397da250f2c",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:11:29.683677+00:00"
+    },
+    {
+      "id": "335f9f55-a8e7-4279-af55-9c8d20ab8fdb",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:11:30.083694+00:00"
+    },
+    {
+      "id": "52fa855b-db53-4d10-bffd-e98910036355",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:12:23.391094+00:00"
+    },
+    {
+      "id": "6180c044-fa19-4a45-98b2-534302cb1b1a",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:12:23.787408+00:00"
+    },
+    {
+      "id": "a5dc4f4b-0f9e-4c8c-9cbc-59ecc39191c8",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:12:24.215778+00:00"
+    },
+    {
+      "id": "e6a33dab-6c82-41bd-a4bb-f31441a8d9d8",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:12:24.641807+00:00"
+    },
+    {
+      "id": "279bc305-32fe-42ac-8417-a1c3bd889732",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:12:24.829616+00:00"
+    },
+    {
+      "id": "b4c4c142-faac-4c78-b059-fa87e5fedad7",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:12:25.269727+00:00"
+    },
+    {
+      "id": "e6a17318-8701-4506-ac41-46fb1bdf3575",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:12:25.577676+00:00"
+    },
+    {
+      "id": "0ccf6769-4012-4810-b9ea-72104be9206a",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:12:26.017804+00:00"
+    },
+    {
+      "id": "2af9dcc0-b248-4c82-8260-dc016e00f5a5",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:12:26.532621+00:00"
+    },
+    {
+      "id": "03852511-11b1-4ded-8603-c7a757448d4d",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:12:40.782670+00:00"
+    },
+    {
+      "id": "415c2870-292a-464d-b811-9fe5b0d85714",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:12:41.096090+00:00"
+    },
+    {
+      "id": "e6491eeb-a489-4235-916c-382505a1e193",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:12:41.563591+00:00"
+    },
+    {
+      "id": "d58210ec-b33f-40c1-be94-b376ed177a52",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:12:41.952059+00:00"
+    },
+    {
+      "id": "cfb80bb5-5698-48ed-9b91-4555541d13be",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:12:42.113844+00:00"
+    },
+    {
+      "id": "71fef0cf-97e3-4762-aa96-4328f48834bb",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:12:42.440802+00:00"
+    },
+    {
+      "id": "f4205e7b-7675-43f2-bffc-5f06110da410",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:12:42.624568+00:00"
+    },
+    {
+      "id": "f1556478-fdec-4ef8-b0be-55005d9a49c4",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:12:42.930131+00:00"
+    },
+    {
+      "id": "938227bf-24cd-4513-9dab-babbffa87bfe",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:12:43.335739+00:00"
+    },
+    {
+      "id": "cebe92b8-eee3-4ab8-82f6-24cf1d8d14b7",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:12:59.974851+00:00"
+    },
+    {
+      "id": "c5ad3242-ddde-4413-b626-b949b6c9739d",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:13:00.328706+00:00"
+    },
+    {
+      "id": "54867521-426f-47ce-9989-d00e4db17041",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:13:01.048304+00:00"
+    },
+    {
+      "id": "6a26fbb9-b4ad-47af-9b58-135c06e3e8e3",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:13:01.622271+00:00"
+    },
+    {
+      "id": "3a916184-24e9-4d2c-94ff-73a9b2e3599e",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:13:01.797308+00:00"
+    },
+    {
+      "id": "abe03ab5-aacf-458c-aa6d-778832a7a376",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:13:02.098137+00:00"
+    },
+    {
+      "id": "28262e2b-1fec-47df-af7d-c7f0d9be8ae7",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:13:02.302139+00:00"
+    },
+    {
+      "id": "235bedd6-86a5-4724-a44b-69d058f7d82a",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:13:02.666667+00:00"
+    },
+    {
+      "id": "2855b04a-325b-4d19-9444-929b02492791",
+      "name": "TEST_Rewards Motors",
+      "address": "1 Point St",
+      "company_reg_no": null,
+      "vat_no": null,
+      "active": true,
+      "created_at": "2026-07-20T18:13:03.099761+00:00"
+    }
+  ],
+  "users": [
+    {
+      "id": "7bcda497-db6f-4205-ad0c-de9e1095d25f",
+      "email": "photo_dealer_4daec7f5@example.com",
+      "password_hash": "$2b$10$aAyLZV0v.SVIs9Xn.CAG/.IRNtE70I4YzOLqB4qtBWNJHE0yMO4im",
+      "role": "dealer",
+      "active": false,
+      "archived_at": "2026-07-16T20:47:21.016173+00:00",
+      "agreement_accepted_at": "2026-07-16T18:40:00.930164+00:00",
+      "dealer_info": {
+        "first_name": "Photo",
+        "last_name": "Tester",
+        "phone": "0810000001",
+        "id_number": null
+      },
+      "company_info": {
+        "company_name": "TEST_Photo Motors",
+        "company_address": "1 Photo Lane, JHB",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "created_at": "2026-07-16T18:39:59.049880+00:00",
+      "cover_photo": "data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+      "profile_pic": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+      "dealership_id": "a3a12600-6065-414d-81e9-fdf75245501b"
+    },
+    {
+      "id": "e23e1327-0086-4091-8714-5a586cca35f8",
+      "email": "seed_photo_488f91@example.com",
+      "password_hash": "$2b$10$0vL2DMgy9nkkAHwf1bOGuOBlsk.NGkhncvfi81xT9c1uFNkJAHwaK",
+      "role": "dealer",
+      "active": false,
+      "archived_at": "2026-07-16T18:56:50.235530+00:00",
+      "agreement_accepted_at": "2026-07-16T18:40:36.113706+00:00",
+      "dealer_info": {
+        "first_name": "Seed",
+        "last_name": "Photo",
+        "phone": "0821112222",
+        "id_number": null
+      },
+      "company_info": {
+        "company_name": "TEST_SEED_PHOTO",
+        "company_address": "Test",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "created_at": "2026-07-16T18:40:35.947123+00:00",
+      "cover_photo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+      "profile_pic": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+      "dealership_id": "5016c8f8-3a84-4d24-bd05-aa3864099794"
+    },
+    {
+      "id": "b050b3a5-cb75-4149-87ce-a9d5d5c46654",
+      "email": "photo_dealer_d340262d@example.com",
+      "password_hash": "$2b$10$fJnDGWG/ZY7UFyOt68rfLuPWUCDYVEjDeJxBpazV6uo6NAAQ3ewYy",
+      "role": "dealer",
+      "active": false,
+      "archived_at": "2026-07-16T20:47:20.906189+00:00",
+      "agreement_accepted_at": "2026-07-16T19:27:42.609478+00:00",
+      "dealer_info": {
+        "first_name": "Photo",
+        "last_name": "Tester",
+        "phone": "0810000001",
+        "id_number": null
+      },
+      "company_info": {
+        "company_name": "TEST_Photo Motors",
+        "company_address": "1 Photo Lane, JHB",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "created_at": "2026-07-16T19:27:40.822664+00:00",
+      "cover_photo": "data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+      "profile_pic": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+      "dealership_id": "5cdc9d54-0665-48c6-a2cf-5e29cd734c08"
+    },
+    {
+      "id": "7903f63b-261b-419d-90d5-97e924c1e8fd",
+      "email": "submit_ux_839d7406@example.com",
+      "password_hash": "$2b$10$RyRSzYZ3.RZog6GMPF3h1uB1J8cOdgiyTlNE6yl7p8FgJWOj8GaYi",
+      "role": "dealer",
+      "active": false,
+      "archived_at": "2026-07-16T20:37:03.958440+00:00",
+      "agreement_accepted_at": "2026-07-16T20:03:46.265446+00:00",
+      "dealer_info": {
+        "first_name": "Test",
+        "last_name": "Dealer",
+        "phone": "0821234567",
+        "id_number": "9001010000000"
+      },
+      "company_info": {
+        "company_name": "TEST_SubmitUx Motors",
+        "company_address": "1 Test Rd, Johannesburg",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "created_at": "2026-07-16T20:03:46.206819+00:00",
+      "dealership_id": "976015db-b8c0-4fce-b74c-85d1a094b3f1"
+    },
+    {
+      "id": "8a7742ce-220b-43cc-be19-a0eec9dfaf75",
+      "email": "photo_dealer_70af222f@example.com",
+      "password_hash": "$2b$10$owwOqVt3Fo2gsYgP8kEsUei5X.EkvQu/ICh.wlg.FQv44QwPIjBc6",
+      "role": "dealer",
+      "active": false,
+      "archived_at": "2026-07-16T20:47:20.798866+00:00",
+      "agreement_accepted_at": "2026-07-16T20:03:56.926513+00:00",
+      "dealer_info": {
+        "first_name": "Photo",
+        "last_name": "Tester",
+        "phone": "0810000001",
+        "id_number": null
+      },
+      "company_info": {
+        "company_name": "TEST_Photo Motors",
+        "company_address": "1 Photo Lane, JHB",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "created_at": "2026-07-16T20:03:54.446308+00:00",
+      "cover_photo": "data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+      "profile_pic": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+      "dealership_id": "9add693a-0a7d-491e-81a1-51362967af28"
+    },
+    {
+      "id": "cf0ab284-cd56-46b0-9439-a784da82a234",
+      "email": "pillars_86c483c2@example.com",
+      "password_hash": "$2b$10$xCkNOuumMFwMwpChJ3VES.i5f14KmtdvulCU58rlWcPeOgHvKfAAm",
+      "role": "dealer",
+      "active": false,
+      "archived_at": "2026-07-16T22:27:27.837696+00:00",
+      "agreement_accepted_at": "2026-07-16T20:46:06.534878+00:00",
+      "dealer_info": {
+        "first_name": "TEST",
+        "last_name": "Pillars",
+        "phone": "0821234567",
+        "id_number": "9001010000000"
+      },
+      "company_info": {
+        "company_name": "TEST_Pillars Motors",
+        "company_address": "1 Pillar Rd, Johannesburg",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "created_at": "2026-07-16T20:46:06.457015+00:00",
+      "dealership_id": "2d08335b-954a-462b-9b7d-d93cf06c1d7d"
+    },
+    {
+      "id": "bbaf0843-7f1b-4087-94dd-a6e8ec0e55f0",
+      "email": "photo_dealer_8589f834@example.com",
+      "password_hash": "$2b$10$/QKi4nfI7g5oP3L7iETyjuOB1fyQ.6MqItfjLyBYQxHzGPO.9qpIW",
+      "role": "dealer",
+      "active": false,
+      "archived_at": "2026-07-16T20:47:20.690018+00:00",
+      "agreement_accepted_at": "2026-07-16T20:46:44.652010+00:00",
+      "dealer_info": {
+        "first_name": "Photo",
+        "last_name": "Tester",
+        "phone": "0810000001",
+        "id_number": null
+      },
+      "company_info": {
+        "company_name": "TEST_Photo Motors",
+        "company_address": "1 Photo Lane, JHB",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "created_at": "2026-07-16T20:46:42.436714+00:00",
+      "cover_photo": "data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+      "profile_pic": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+      "dealership_id": "e37a080a-f660-45f7-ac66-c7bb85c96ac6"
+    },
+    {
+      "id": "6c59e12e-8156-4c7f-ad85-438ff586f5a3",
+      "email": "photo_dealer_20704c2a@example.com",
+      "password_hash": "$2b$10$4C/M5GRAoqm02ermeviWfOrTmXiVfp1t1TrThb/guz6JwxyCpesru",
+      "role": "dealer",
+      "active": false,
+      "archived_at": "2026-07-16T20:47:20.586561+00:00",
+      "agreement_accepted_at": "2026-07-16T20:47:13.610660+00:00",
+      "dealer_info": {
+        "first_name": "Photo",
+        "last_name": "Tester",
+        "phone": "0810000001",
+        "id_number": null
+      },
+      "company_info": {
+        "company_name": "TEST_Photo Motors",
+        "company_address": "1 Photo Lane, JHB",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "created_at": "2026-07-16T20:47:11.419329+00:00",
+      "cover_photo": "data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+      "profile_pic": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+      "dealership_id": "2558216d-5164-479d-bf34-19e993ebcbf3"
+    },
+    {
+      "id": "562259fa-1cf6-400e-b4a5-f65ddf012681",
+      "email": "colour_test_dealer3@example.com",
+      "password_hash": "$2b$10$3yOw1.jvdLgkc5X70C2pjuW1A5Tcx/bBeimFP98tZ1TW3kRKoRmzW",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": "2026-07-19T20:03:00.727925+00:00",
+      "dealer_info": {
+        "first_name": "Colour",
+        "last_name": "Test",
+        "phone": "0821234567",
+        "id_number": null
+      },
+      "company_info": {
+        "company_name": "Colour Test Motors",
+        "company_address": "1 Test St, Johannesburg",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "created_at": "2026-07-19T20:01:38.135393+00:00",
+      "dealership_id": "fd12fe79-56a9-4267-8c4a-ca7a76c4c8f6"
+    },
+    {
+      "id": "cb20d8aa-9837-4024-807f-f9d4dad23df0",
+      "email": "test_reg_1ca717d4@example.com",
+      "password_hash": "$2b$10$KHt6LWNiBYkpNmUlFdaaKO1uN.fm2caHCU1AK7P.NAiU7vPlQ8cIG",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Alice",
+        "last_name": "Smith",
+        "phone": "0821234567",
+        "id_number": null,
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST Reg Motors",
+        "company_address": "1 Test Street, JHB",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "6c722e1a-4115-4bd1-bb70-0ef2ed7909e0",
+      "created_at": "2026-07-19T20:54:17.829940+00:00"
+    },
+    {
+      "id": "845affef-f1d6-48d2-bc20-c6cc96054413",
+      "email": "test_jobtitle_d5b6f87d@example.com",
+      "password_hash": "$2b$10$2niDEHhsyheza20KIS7pBOVmwP61v9ddjMRULLFE8G4p4A0XbuDbe",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Alice",
+        "last_name": "Smith",
+        "phone": "0821234567",
+        "id_number": null,
+        "job_title": "Sales Manager"
+      },
+      "company_info": {
+        "company_name": "TEST Motors",
+        "company_address": "1 Test Street, JHB",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "8d54e3ec-2656-4c64-9d1a-34e7711ab56b",
+      "created_at": "2026-07-19T20:54:18.057061+00:00"
+    },
+    {
+      "id": "21871ba4-ba9b-4838-946a-48dc7d90c470",
+      "email": "test_owner_60f3e379@example.com",
+      "password_hash": "$2b$10$JYNEXRsOoRqnwfMS3ZzIy.cn86KF.0wlBKtGk8maziYQTZoyAEsh.",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Owner",
+        "last_name": "One",
+        "phone": "0821234567",
+        "id_number": null,
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST Add-User Motors",
+        "company_address": "1 Test Street, JHB",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "02d0338c-555e-48a5-b9ca-c6ed14798334",
+      "created_at": "2026-07-19T20:54:18.821576+00:00"
+    },
+    {
+      "id": "fd8218b6-2e9d-42ac-8aac-637cfd5a3ffb",
+      "email": "test_mate_d6ad4302@example.com",
+      "password_hash": "$2b$10$VJx5NYnpWmsMAB7sFzG/a.Uv7hvwDU3juETlWooDNvHTiKNh0WFZq",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Mate",
+        "last_name": "Two",
+        "phone": "0827654321",
+        "id_number": null,
+        "job_title": "F&I Manager"
+      },
+      "company_info": {
+        "company_name": "TEST Add-User Motors",
+        "company_address": "1 Test Street, JHB",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "02d0338c-555e-48a5-b9ca-c6ed14798334",
+      "created_at": "2026-07-19T20:54:19.023154+00:00",
+      "created_by_admin_id": "15010b2b-b4f8-4285-b195-7e4d440270ff"
+    },
+    {
+      "id": "a74a192a-d102-4c95-834a-74038c20e7a7",
+      "email": "test_a_da8fdc3b@example.com",
+      "password_hash": "$2b$10$0nQKuAgqcdHV2YML99rbTeE5NqebKA8iCzMlQqftsZQjuQ4ces4KK",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": "2026-07-19T20:54:19.288242+00:00",
+      "dealer_info": {
+        "first_name": "Alice",
+        "last_name": "Alpha",
+        "phone": "0821234567",
+        "id_number": null,
+        "job_title": "Sales Manager"
+      },
+      "company_info": {
+        "company_name": "TEST E2E Motors",
+        "company_address": "1 Test Street, JHB",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "62d0f6e6-21c1-4d1c-b65e-2590f75d5567",
+      "created_at": "2026-07-19T20:54:19.186081+00:00"
+    },
+    {
+      "id": "44bce445-1a98-4430-951e-c30bdab78987",
+      "email": "test_b_1081e10c@example.com",
+      "password_hash": "$2b$10$UpLCSQCmkErlFWw8L4XWC.qLfp1qIgwGPcPlx6qEfhU26EvScykbK",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": "2026-07-19T20:54:19.733762+00:00",
+      "dealer_info": {
+        "first_name": "Bob",
+        "last_name": "Beta",
+        "phone": "0820000000",
+        "id_number": null,
+        "job_title": "F&I"
+      },
+      "company_info": {
+        "company_name": "TEST E2E Motors",
+        "company_address": "1 Test Street, JHB",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "62d0f6e6-21c1-4d1c-b65e-2590f75d5567",
+      "created_at": "2026-07-19T20:54:19.483578+00:00",
+      "created_by_admin_id": "15010b2b-b4f8-4285-b195-7e4d440270ff"
+    },
+    {
+      "id": "c950c85d-56a2-463a-8725-f456775e37e9",
+      "email": "test_reg_d863471d@example.com",
+      "password_hash": "$2b$10$KwOOIfsVifM/Q0ZgE60uROO0s7.uiGdqKKAo3f5tGyfK7Np4kdMg.",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Alice",
+        "last_name": "Smith",
+        "phone": "0821234567",
+        "id_number": null,
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST Reg Motors",
+        "company_address": "1 Test Street, JHB",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "5972f6c4-c924-4c2f-9016-01acf87cc4ba",
+      "created_at": "2026-07-19T20:54:34.329235+00:00"
+    },
+    {
+      "id": "c776c47d-a8e6-4010-abcb-8040f58316af",
+      "email": "test_jobtitle_572fc5ef@example.com",
+      "password_hash": "$2b$10$vK1Z/PGMvywptueAMhWjGOjFXv./EWMGwwtNllhZzOsGOZSXIVXjy",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Alice",
+        "last_name": "Smith",
+        "phone": "0821234567",
+        "id_number": null,
+        "job_title": "Sales Manager"
+      },
+      "company_info": {
+        "company_name": "TEST Motors",
+        "company_address": "1 Test Street, JHB",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "3b882f8c-b9f6-4362-bdc9-8121221dda00",
+      "created_at": "2026-07-19T20:54:34.614389+00:00"
+    },
+    {
+      "id": "cb525769-57f7-4cd4-b06c-aca0e416fbdc",
+      "email": "test_owner_9b15a776@example.com",
+      "password_hash": "$2b$10$g.a72.wiR3L2zZjJYhQftuF.poIvu/UeAlRB.sNizdU4RrOwJIPDu",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Owner",
+        "last_name": "One",
+        "phone": "0821234567",
+        "id_number": null,
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST Add-User Motors",
+        "company_address": "1 Test Street, JHB",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "f5d1775d-a356-4f05-836e-1aa6bcc2eaff",
+      "created_at": "2026-07-19T20:54:35.244537+00:00"
+    },
+    {
+      "id": "44da0311-23aa-40b1-9400-8f70319c091f",
+      "email": "test_mate_78f377c5@example.com",
+      "password_hash": "$2b$10$y2ynvVCKvz6rmmWfPGyEnuZm8BoGufei0aWV9FoxRQrgjgCCPJL2u",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Mate",
+        "last_name": "Two",
+        "phone": "0827654321",
+        "id_number": null,
+        "job_title": "F&I Manager"
+      },
+      "company_info": {
+        "company_name": "TEST Add-User Motors",
+        "company_address": "1 Test Street, JHB",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "f5d1775d-a356-4f05-836e-1aa6bcc2eaff",
+      "created_at": "2026-07-19T20:54:35.405933+00:00",
+      "created_by_admin_id": "15010b2b-b4f8-4285-b195-7e4d440270ff"
+    },
+    {
+      "id": "613089ab-fe3d-4bf7-a9ef-f636979fee1e",
+      "email": "test_a_6d5fcd11@example.com",
+      "password_hash": "$2b$10$DpRn46B1pjz0jex7vMLJWuq6nllc.zHQ5XwlgLjcSY48SI7QmCuYi",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": "2026-07-19T20:54:35.879499+00:00",
+      "dealer_info": {
+        "first_name": "Alice",
+        "last_name": "Alpha",
+        "phone": "0821234567",
+        "id_number": null,
+        "job_title": "Sales Manager"
+      },
+      "company_info": {
+        "company_name": "TEST E2E Motors",
+        "company_address": "1 Test Street, JHB",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "11591369-b420-47f3-8285-6be9459168e6",
+      "created_at": "2026-07-19T20:54:35.755134+00:00"
+    },
+    {
+      "id": "13285602-8f34-416f-9aba-b1100bbb5575",
+      "email": "test_b_bae52891@example.com",
+      "password_hash": "$2b$10$of9OB2V2c38MKWHZSRQMU.z5Bil8TZC7aqHMGKUdayashubtUUtFu",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": "2026-07-19T20:54:36.319415+00:00",
+      "dealer_info": {
+        "first_name": "Bob",
+        "last_name": "Beta",
+        "phone": "0820000000",
+        "id_number": null,
+        "job_title": "F&I"
+      },
+      "company_info": {
+        "company_name": "TEST E2E Motors",
+        "company_address": "1 Test Street, JHB",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "11591369-b420-47f3-8285-6be9459168e6",
+      "created_at": "2026-07-19T20:54:36.055222+00:00",
+      "created_by_admin_id": "15010b2b-b4f8-4285-b195-7e4d440270ff"
+    },
+    {
+      "id": "cc7c4936-4a5b-45d5-8d2e-8bf10f38f431",
+      "email": "test_ui_300c2f@example.com",
+      "password_hash": "$2b$10$FAXegDQFaRdGVcKMlEfqreghRzbZTEaltkgJGQTJxQGNpWXnHyqnO",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": "2026-07-19T20:56:51.114985+00:00",
+      "dealer_info": {
+        "first_name": "Alice",
+        "last_name": "Alpha",
+        "phone": "0821234567",
+        "id_number": null,
+        "job_title": "Sales Manager"
+      },
+      "company_info": {
+        "company_name": "TEST UI Motors",
+        "company_address": "1 UI St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "255fb254-7148-4f6c-bff2-85bef18ac667",
+      "created_at": "2026-07-19T20:56:51.013271+00:00"
+    },
+    {
+      "id": "2f371fa9-ecec-41cf-bb86-370cf8493154",
+      "email": "test_cas_a_265dc897@example.com",
+      "password_hash": "$2b$10$Zw5ExtPLyQtWH6ui6RjLNep0.aTZlP5ccYuvwt3qEjhr2BGyC5jKu",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Alice",
+        "last_name": "Cascade",
+        "phone": "0821234567",
+        "id_number": null,
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST Cascade Motors",
+        "company_address": "1 Test St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "2df5461b-3d48-44e7-a9e1-4c09b4337313",
+      "created_at": "2026-07-19T21:13:07.683219+00:00"
+    },
+    {
+      "id": "13be468a-151c-483f-84aa-0204bd62e906",
+      "email": "test_cas_b_7ca76d42@example.com",
+      "password_hash": "$2b$10$yJlxh9TGLmnLSPypL/8IeeCYtpQdINwLTE/gLlPIlGTn1j2cZehwu",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Bob",
+        "last_name": "Cascade",
+        "phone": "0820000000",
+        "id_number": null,
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST Cascade Motors",
+        "company_address": "1 Test St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "2df5461b-3d48-44e7-a9e1-4c09b4337313",
+      "created_at": "2026-07-19T21:13:07.878252+00:00",
+      "created_by_admin_id": "15010b2b-b4f8-4285-b195-7e4d440270ff"
+    },
+    {
+      "id": "8d1c89d3-a960-4cd8-8aa2-6c44d600f9dd",
+      "email": "test_arc_a_3ecf1087@example.com",
+      "password_hash": "$2b$10$802sKr1LRyP5nNDGW3waoe4XKHkU7Ea5atmbTrEfp6/zVhS4OzUT2",
+      "role": "dealer",
+      "active": false,
+      "archived_at": "2026-07-19T21:13:09.980538+00:00",
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Anna",
+        "last_name": "Arc",
+        "phone": "0821234567",
+        "id_number": null,
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST Arc Motors",
+        "company_address": "1 Test St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "06cb1206-ced6-44bc-9ee9-00195ee40dd5",
+      "created_at": "2026-07-19T21:13:09.691723+00:00"
+    },
+    {
+      "id": "34847c0e-55b1-475b-920b-6fe18b206ace",
+      "email": "test_arc_b_f23aab81@example.com",
+      "password_hash": "$2b$10$ArN0IKv5xglqMikLUMYDjO5lLUUdB1OECPcG27sK0beNz3lhMP8dC",
+      "role": "dealer",
+      "active": false,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Bran",
+        "last_name": "Arc",
+        "phone": "0820000000",
+        "id_number": null,
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST Arc Motors",
+        "company_address": "1 Test St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "06cb1206-ced6-44bc-9ee9-00195ee40dd5",
+      "created_at": "2026-07-19T21:13:09.885730+00:00",
+      "created_by_admin_id": "15010b2b-b4f8-4285-b195-7e4d440270ff"
+    },
+    {
+      "id": "6753a659-a1f6-4f59-b225-b50bdd18c986",
+      "email": "test_rewards_144aa065@example.com",
+      "password_hash": "$2b$10$8iNObWW0WGnU2wvKAA1boeWnBalnO126dQbn1PIo0YPW0fR0lh9yu",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "3789040e-17f1-42f3-a214-ee451cf2fec8",
+      "created_at": "2026-07-20T18:11:27.673196+00:00"
+    },
+    {
+      "id": "44ad4f12-0301-4aab-8139-550d064340a9",
+      "email": "test_rewards_220521cc@example.com",
+      "password_hash": "$2b$10$RyqzM8AgnuOCRbcOXirQDOgCmqsxspIJY4Vy1SUXVUh4lLqqHltP.",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "ad3a858c-d6eb-4d73-baf5-7e6c460b12f5",
+      "created_at": "2026-07-20T18:11:28.035957+00:00"
+    },
+    {
+      "id": "d4e2f5d9-76c6-4332-ab0a-5161216fe327",
+      "email": "test_rewards_71d59afe@example.com",
+      "password_hash": "$2b$10$bjyNimDmvvMb2mPASYNWNuUyjmVwtZ6S5Xs6lBJEHRn2T/3uDdU6W",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "c92b77c6-e7ce-441d-950d-e55eebb06d3f",
+      "created_at": "2026-07-20T18:11:28.404344+00:00"
+    },
+    {
+      "id": "00943948-6dd5-4e6d-900f-78304bce0cb0",
+      "email": "test_rewards_b29f5d64@example.com",
+      "password_hash": "$2b$10$vmDOuqQWI64y0AoRAI7TiegHtvjaN3WJO0cKkkpbhhvkDyv0DS9v.",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "fc96e654-13a7-49eb-9c8c-4f017d7be30b",
+      "created_at": "2026-07-20T18:11:28.736239+00:00"
+    },
+    {
+      "id": "96608795-c67f-42cb-8eef-cef8c6f3df90",
+      "email": "test_rewards_75173e50@example.com",
+      "password_hash": "$2b$10$PduyI6geABEAdV7cdmfi3uPJSdRmvxS/i0bhUIWKySFM33b0UTD8y",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "ca6fdf0c-4e65-495a-8044-a5995e5bc564",
+      "created_at": "2026-07-20T18:11:28.892310+00:00"
+    },
+    {
+      "id": "76bcbc4b-b702-44a0-a218-dfc73a13a680",
+      "email": "test_rewards_13b0cf1e@example.com",
+      "password_hash": "$2b$10$dhEdIPYn50cxRqsFF2Ou9OvtdtMAcFwwWWloWq5rFZXHmgeVW1cI6",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "8f273b12-a234-4242-a458-198128f0fac3",
+      "created_at": "2026-07-20T18:11:29.247737+00:00"
+    },
+    {
+      "id": "e9394115-1c99-47e3-a44a-30c40a91cbf1",
+      "email": "test_rewards_11fb9656@example.com",
+      "password_hash": "$2b$10$omqOCflna5DCSJkRqGSsWut/G4HwQcqiF2Xo53X3P/ohE8QmyyD3a",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "7b4a148d-deba-457f-8ccd-1e10f4104ec4",
+      "created_at": "2026-07-20T18:11:29.413496+00:00"
+    },
+    {
+      "id": "aade1a0a-6f1a-4560-92b5-a5c7e5d4e5d4",
+      "email": "test_rewards_ae981b58@example.com",
+      "password_hash": "$2b$10$ncFbjphrWMnpsa58zs5DT.50AdVy8V9b4lAbJcdWuinQ7h470oOFO",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "cbc2eca5-9016-4b7c-b1c1-4397da250f2c",
+      "created_at": "2026-07-20T18:11:29.739622+00:00"
+    },
+    {
+      "id": "65412219-70e7-4748-bf3b-e9e46a1487f5",
+      "email": "test_rewards_11d638d8@example.com",
+      "password_hash": "$2b$10$58RpecK5WiaQ5PcR7Z6c.urRC5t3vdAtiPymrpWJzUMyMCupm5ZXK",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "335f9f55-a8e7-4279-af55-9c8d20ab8fdb",
+      "created_at": "2026-07-20T18:11:30.139606+00:00"
+    },
+    {
+      "id": "00105f33-1283-4e86-abb6-990011eac476",
+      "email": "test_rewards_b008c7d8@example.com",
+      "password_hash": "$2b$10$7JIAMm/NNR1wtoCQpn7BhuSRDKZtyrHg4V/HRVa.N5bMNf84jMl9.",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "52fa855b-db53-4d10-bffd-e98910036355",
+      "created_at": "2026-07-20T18:12:23.447132+00:00"
+    },
+    {
+      "id": "db6031cc-adc4-457f-9b61-c384efbfc7ac",
+      "email": "test_rewards_498b6f6f@example.com",
+      "password_hash": "$2b$10$i5B4t7rveaPEmGVnrWjuHOHwYJ7dB9Y/EVzi9HgOFPBFNmS45QRAW",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "6180c044-fa19-4a45-98b2-534302cb1b1a",
+      "created_at": "2026-07-20T18:12:23.843265+00:00"
+    },
+    {
+      "id": "09dd47d0-580b-413d-83bb-5573e18460b2",
+      "email": "test_rewards_d54c7eb4@example.com",
+      "password_hash": "$2b$10$IFHsderx4Pc0e59J/KRlnOe15uX8dSPckriCUdWPEMgx4I4U20hGm",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "a5dc4f4b-0f9e-4c8c-9cbc-59ecc39191c8",
+      "created_at": "2026-07-20T18:12:24.271629+00:00"
+    },
+    {
+      "id": "cfb9eb6a-bff8-4402-8a55-f62268ada507",
+      "email": "test_rewards_0f47566e@example.com",
+      "password_hash": "$2b$10$2lE4AmfhMmWofGYCqD3Kb./UOdyEsPcb0YDgVvV10Z0NaaNRNLA96",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "e6a33dab-6c82-41bd-a4bb-f31441a8d9d8",
+      "created_at": "2026-07-20T18:12:24.697692+00:00"
+    },
+    {
+      "id": "25feef8f-dc9e-4392-97f3-64231729a276",
+      "email": "test_rewards_3e1ca4db@example.com",
+      "password_hash": "$2b$10$tZIiNfpzQXaNP16gDs3ijOiZfdazZ6OvLoqLjsRzuHNaiT910V2b6",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "279bc305-32fe-42ac-8417-a1c3bd889732",
+      "created_at": "2026-07-20T18:12:24.885504+00:00"
+    },
+    {
+      "id": "5e782805-e548-44f0-af7c-2d23457b40b5",
+      "email": "test_rewards_1b2b41a5@example.com",
+      "password_hash": "$2b$10$WbHF6dGzm8BTZOO/fYRan.Inp3KVWZl0Be7BSyuvuMhXfl0Mf/UkC",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "b4c4c142-faac-4c78-b059-fa87e5fedad7",
+      "created_at": "2026-07-20T18:12:25.325573+00:00"
+    },
+    {
+      "id": "29f36ac1-8419-41dd-8dd1-3714b9318e46",
+      "email": "test_rewards_0cfdcd51@example.com",
+      "password_hash": "$2b$10$K/Q3NHQlXHkNEEAs.iN59eAJWy7cYXE7JzU1fn9bmFY1N1W0NcZc6",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "e6a17318-8701-4506-ac41-46fb1bdf3575",
+      "created_at": "2026-07-20T18:12:25.633551+00:00"
+    },
+    {
+      "id": "dd9af30e-38e1-401a-baee-cdb4ae0b7a29",
+      "email": "test_rewards_14736485@example.com",
+      "password_hash": "$2b$10$OVo1u7lqlPs22RE.HdJoBOYlMNc02rN95h4eV9aXdBJZY/hEgYguW",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "0ccf6769-4012-4810-b9ea-72104be9206a",
+      "created_at": "2026-07-20T18:12:26.073762+00:00"
+    },
+    {
+      "id": "ad2ca8d6-8645-4069-abbf-0b7027f8e9c4",
+      "email": "test_rewards_e0ad5416@example.com",
+      "password_hash": "$2b$10$51A1xxASUkwA4M/mvZcVhOquF3FWqdaQIYUql8DCmwXtr4uIhwFqm",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "2af9dcc0-b248-4c82-8260-dc016e00f5a5",
+      "created_at": "2026-07-20T18:12:26.588543+00:00"
+    },
+    {
+      "id": "bc65d948-c533-4ec0-b45d-56fbe234a89b",
+      "email": "test_rewards_d5a82666@example.com",
+      "password_hash": "$2b$10$iDVR2RK/BkeDr/jowTxGmeIPr654XBXxCKEz9ke.JjCCmPJLmp76q",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "03852511-11b1-4ded-8603-c7a757448d4d",
+      "created_at": "2026-07-20T18:12:40.838637+00:00"
+    },
+    {
+      "id": "5592f2f7-f73c-4b9d-aa8d-39d95edc5cf7",
+      "email": "test_rewards_1cb123b2@example.com",
+      "password_hash": "$2b$10$Vvv/xF0xG19RYyLJm.lvPeRaM7yZYjKCR5HHfDZWCrYCT.VFf0vwO",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": "2026-07-20T18:12:41.204794+00:00",
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "415c2870-292a-464d-b811-9fe5b0d85714",
+      "created_at": "2026-07-20T18:12:41.152042+00:00"
+    },
+    {
+      "id": "cfe7bb7b-6210-48ea-9d6a-35b8952e0b8a",
+      "email": "test_rewards_5990a73a@example.com",
+      "password_hash": "$2b$10$VoHqcUVz32crYQpDr0gb2.MBkFJMIhD96ECu/QDQUmvLRbE.2Rhii",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": "2026-07-20T18:12:41.668097+00:00",
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "e6491eeb-a489-4235-916c-382505a1e193",
+      "created_at": "2026-07-20T18:12:41.619436+00:00"
+    },
+    {
+      "id": "0fdd902f-d4f1-4408-9d32-511456e6b23e",
+      "email": "test_rewards_fcc9979a@example.com",
+      "password_hash": "$2b$10$T1.P9wNX7uofdhwdIgACY.vNhTPRCTYGrsxiQrchTRO1pwRHs/Kp6",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "d58210ec-b33f-40c1-be94-b376ed177a52",
+      "created_at": "2026-07-20T18:12:42.008004+00:00"
+    },
+    {
+      "id": "d39303d8-f78c-4e70-92a1-7f1bd477ef73",
+      "email": "test_rewards_d6f8ad96@example.com",
+      "password_hash": "$2b$10$EYzbaVLLx5crK/YISm4s4u81SL14tsGjZ5umj.v2zMBmc/HYtgZlu",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "cfb80bb5-5698-48ed-9b91-4555541d13be",
+      "created_at": "2026-07-20T18:12:42.169713+00:00"
+    },
+    {
+      "id": "c9696841-09f6-4a8c-93ff-524e264c4a81",
+      "email": "test_rewards_234b4149@example.com",
+      "password_hash": "$2b$10$pzWJInio9IFJInZ/bUH3juZyKLDiVpkYpYuN9UeAw6tT4AK76Fc2G",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "71fef0cf-97e3-4762-aa96-4328f48834bb",
+      "created_at": "2026-07-20T18:12:42.496669+00:00"
+    },
+    {
+      "id": "4f2c5b6f-53d6-4c8c-bc47-4c9f2f4ce777",
+      "email": "test_rewards_1d938aba@example.com",
+      "password_hash": "$2b$10$lgRd0ZTa7D2s52SmmFFTruc2KPtpRlr4fae461n4CPL7Tq2.0ZpOW",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "f4205e7b-7675-43f2-bffc-5f06110da410",
+      "created_at": "2026-07-20T18:12:42.680396+00:00"
+    },
+    {
+      "id": "d325356f-a894-4178-8998-d381c62c3426",
+      "email": "test_rewards_a458369b@example.com",
+      "password_hash": "$2b$10$SDRw94TeWs1UaA8XB7t5W.I2TEVAlhFkybV3LW1oCnKJl1fcG.1nm",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "f1556478-fdec-4ef8-b0be-55005d9a49c4",
+      "created_at": "2026-07-20T18:12:42.985951+00:00"
+    },
+    {
+      "id": "635816f9-4b24-4292-a574-652ea606401c",
+      "email": "test_rewards_cbb4cfef@example.com",
+      "password_hash": "$2b$10$d20C64sYVW/nFGqv.L7kPuyGDnPWScYGpufRqyRKe/7ZYsgtRvYn2",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "938227bf-24cd-4513-9dab-babbffa87bfe",
+      "created_at": "2026-07-20T18:12:43.391570+00:00"
+    },
+    {
+      "id": "a2522e0a-37d6-4e2f-8574-2070798edc06",
+      "email": "test_rewards_edb2ba5b@example.com",
+      "password_hash": "$2b$10$Tbl9txjwr5rx28UJt3DrRuz3bXtH/tsAUkv/7VNgaTLu6WPPDR68y",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "cebe92b8-eee3-4ab8-82f6-24cf1d8d14b7",
+      "created_at": "2026-07-20T18:13:00.030897+00:00"
+    },
+    {
+      "id": "2926a247-ea71-4b89-9967-3f994cae259d",
+      "email": "test_rewards_43be8a17@example.com",
+      "password_hash": "$2b$10$w0yQ0WR3oPDR4pMTTOrBo.heQs6ufXuTA1FBUPfySrTR7wogjvkZ2",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": "2026-07-20T18:13:00.442684+00:00",
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "c5ad3242-ddde-4413-b626-b949b6c9739d",
+      "created_at": "2026-07-20T18:13:00.384649+00:00"
+    },
+    {
+      "id": "fea9df3b-31ec-4ba4-b6f8-c9091955796f",
+      "email": "test_rewards_538f4bf1@example.com",
+      "password_hash": "$2b$10$THaFOQ9dbp.W9VfqqlB4j.nSTDYPNIe.vDuzFpXr.wzEPWPvFliI.",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": "2026-07-20T18:13:01.177245+00:00",
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "54867521-426f-47ce-9989-d00e4db17041",
+      "created_at": "2026-07-20T18:13:01.104171+00:00"
+    },
+    {
+      "id": "990df90d-d0bd-463a-931c-e74a04fc6c5c",
+      "email": "test_rewards_bc80024d@example.com",
+      "password_hash": "$2b$10$hkQvSwXI.OPeERZNLlTKCO.AV7Zm2goZe.eS/Afsq3mmF6WRTWi2i",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "6a26fbb9-b4ad-47af-9b58-135c06e3e8e3",
+      "created_at": "2026-07-20T18:13:01.678107+00:00"
+    },
+    {
+      "id": "bf3dca60-49ce-4126-b9b3-0551a5d00046",
+      "email": "test_rewards_1a085162@example.com",
+      "password_hash": "$2b$10$.7DXasCmjyyM13woWUtlsOs5PsFrfj1oF2WJyufGZjQhgwEm3lkhe",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "3a916184-24e9-4d2c-94ff-73a9b2e3599e",
+      "created_at": "2026-07-20T18:13:01.853430+00:00"
+    },
+    {
+      "id": "97083788-425b-42d9-91e5-653a233668c2",
+      "email": "test_rewards_e53f893e@example.com",
+      "password_hash": "$2b$10$K1bifE4XJ3O/aXUtXhBbauJOcZy4NEQnOeDVOfbkJXzabcX8jaOBq",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "abe03ab5-aacf-458c-aa6d-778832a7a376",
+      "created_at": "2026-07-20T18:13:02.153989+00:00"
+    },
+    {
+      "id": "58d78a26-38ef-463e-9d6e-8224dd339dc0",
+      "email": "test_rewards_5d185400@example.com",
+      "password_hash": "$2b$10$WrbW9OmCx5VbWTfUNVXAb.NokYWk/0aEBffyaOteCLWPZfagGFK8a",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "28262e2b-1fec-47df-af7d-c7f0d9be8ae7",
+      "created_at": "2026-07-20T18:13:02.357990+00:00"
+    },
+    {
+      "id": "11e81c27-6e49-429c-87ec-96ff6e126651",
+      "email": "test_rewards_8f4070dd@example.com",
+      "password_hash": "$2b$10$.7nubLQ9tRutTRWMn0xz3el8TMJluCyhTMosw.lrN2ftV9J8Pmlu2",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "235bedd6-86a5-4724-a44b-69d058f7d82a",
+      "created_at": "2026-07-20T18:13:02.722560+00:00"
+    },
+    {
+      "id": "131601fb-b679-47af-ba90-bda8f41d3765",
+      "email": "test_rewards_a7128e9e@example.com",
+      "password_hash": "$2b$10$k89g7lGC4t0L0l2WCZMVoeaqbrUdFHLroNnXfgiJqQkDk3cFP00SS",
+      "role": "dealer",
+      "active": true,
+      "archived_at": null,
+      "agreement_accepted_at": null,
+      "dealer_info": {
+        "first_name": "Rew",
+        "last_name": "Tester",
+        "phone": "0821234567",
+        "id_number": "9001010000000",
+        "job_title": null
+      },
+      "company_info": {
+        "company_name": "TEST_Rewards Motors",
+        "company_address": "1 Point St",
+        "company_reg_no": null,
+        "vat_no": null
+      },
+      "dealership_id": "2855b04a-325b-4d19-9444-929b02492791",
+      "created_at": "2026-07-20T18:13:03.155684+00:00"
+    }
+  ],
+  "submissions": [
+    {
+      "id": "1df85be8-7b45-4133-9ee0-31678039eff1",
+      "reference": "FB-000084",
+      "dealer_id": "a74a192a-d102-4c95-834a-74038c20e7a7",
+      "dealership_id": "62d0f6e6-21c1-4d1c-b65e-2590f75d5567",
+      "submitted_by_user_id": "a74a192a-d102-4c95-834a-74038c20e7a7",
+      "submitted_by_name": "Alice Alpha",
+      "submitted_by_job_title": "Sales Manager",
+      "submitted_at": "2026-07-19T20:54:19.872899+00:00",
+      "dealer_email": "test_a_da8fdc3b@example.com",
+      "dealer_name": "Alice Alpha",
+      "dealer_first_name": "Alice",
+      "dealer_phone": "0821234567",
+      "company_name": "TEST E2E Motors",
+      "make_name": "Toyota",
+      "model_name": "Corolla",
+      "derivative_name": "1.8 XS",
+      "fuel_type": "Petrol",
+      "year_of_production": 2020,
+      "transmission": "Automatic",
+      "year": 2020,
+      "year_registered": 2020,
+      "vin": "TESTVINC9055372D3",
+      "engine_number": "TESTENG5E03DA",
+      "colour": "White",
+      "license_disk_data": null,
+      "mechanical_condition": 8,
+      "cosmetic_condition": 8,
+      "interior_condition": 8,
+      "history_condition": 8,
+      "exterior_condition": null,
+      "tyre_condition": null,
+      "windscreen_condition": "Perfect",
+      "condition": 8,
+      "service_history": "Full Service History with Agents",
+      "last_service_date": "2024-06-01",
+      "last_service_mileage": 45000,
+      "paint_evidence": false,
+      "paint_quality": null,
+      "accident_damage": false,
+      "accident_damage_types": [],
+      "rim_size": null,
+      "reconditioning_items": [],
+      "reconditioning_total_zar": 0.0,
+      "factory_warranty": false,
+      "mileage": 55000,
+      "photos": {},
+      "status": "priced",
+      "price": 250000.0,
+      "price_notes": "TEST offer",
+      "priced_at": "2026-07-19T20:54:20.308123+00:00",
+      "market_analysis": null,
+      "market_analysis_at": null,
+      "tyre_estimate": null,
+      "tyre_estimate_at": null,
+      "billing_accepted_at": "2026-07-19T20:54:19.872925+00:00",
+      "created_at": "2026-07-19T20:54:19.872927+00:00",
+      "price_history": [
+        {
+          "id": "6119294e-31a5-436b-b030-79090cdbd4da",
+          "action": "offer",
+          "previous_price": null,
+          "new_price": 250000.0,
+          "previous_notes": null,
+          "new_notes": "TEST offer",
+          "comment": "Initial offer",
+          "admin_id": "15010b2b-b4f8-4285-b195-7e4d440270ff",
+          "admin_name": "Fourbuy Admin",
+          "at": "2026-07-19T20:54:20.308113+00:00"
+        }
+      ]
+    },
+    {
+      "id": "3f6ab1d7-e962-4efe-9233-54b586f0c6c6",
+      "reference": "FB-000085",
+      "dealer_id": "44bce445-1a98-4430-951e-c30bdab78987",
+      "dealership_id": "62d0f6e6-21c1-4d1c-b65e-2590f75d5567",
+      "submitted_by_user_id": "44bce445-1a98-4430-951e-c30bdab78987",
+      "submitted_by_name": "Bob Beta",
+      "submitted_by_job_title": "F&I",
+      "submitted_at": "2026-07-19T20:54:20.075606+00:00",
+      "dealer_email": "test_b_1081e10c@example.com",
+      "dealer_name": "Bob Beta",
+      "dealer_first_name": "Bob",
+      "dealer_phone": "0820000000",
+      "company_name": "TEST E2E Motors",
+      "make_name": "BMW",
+      "model_name": "3 Series",
+      "derivative_name": "1.8 XS",
+      "fuel_type": "Petrol",
+      "year_of_production": 2020,
+      "transmission": "Automatic",
+      "year": 2020,
+      "year_registered": 2020,
+      "vin": "TESTVINF744BCF056",
+      "engine_number": "TESTENG25BA51",
+      "colour": "White",
+      "license_disk_data": null,
+      "mechanical_condition": 8,
+      "cosmetic_condition": 8,
+      "interior_condition": 8,
+      "history_condition": 8,
+      "exterior_condition": null,
+      "tyre_condition": null,
+      "windscreen_condition": "Perfect",
+      "condition": 8,
+      "service_history": "Full Service History with Agents",
+      "last_service_date": "2024-06-01",
+      "last_service_mileage": 45000,
+      "paint_evidence": false,
+      "paint_quality": null,
+      "accident_damage": false,
+      "accident_damage_types": [],
+      "rim_size": null,
+      "reconditioning_items": [],
+      "reconditioning_total_zar": 0.0,
+      "factory_warranty": false,
+      "mileage": 55000,
+      "photos": {},
+      "status": "priced",
+      "price": 300000.0,
+      "price_notes": "TEST offer",
+      "priced_at": "2026-07-19T20:54:20.465094+00:00",
+      "market_analysis": null,
+      "market_analysis_at": null,
+      "tyre_estimate": null,
+      "tyre_estimate_at": null,
+      "billing_accepted_at": "2026-07-19T20:54:20.075631+00:00",
+      "created_at": "2026-07-19T20:54:20.075633+00:00",
+      "price_history": [
+        {
+          "id": "f75eca00-c4c9-4661-bf21-1fa51184834d",
+          "action": "offer",
+          "previous_price": null,
+          "new_price": 300000.0,
+          "previous_notes": null,
+          "new_notes": "TEST offer",
+          "comment": "Initial offer",
+          "admin_id": "15010b2b-b4f8-4285-b195-7e4d440270ff",
+          "admin_name": "Fourbuy Admin",
+          "at": "2026-07-19T20:54:20.465084+00:00"
+        }
+      ]
+    },
+    {
+      "id": "6ffe38ff-6585-4f08-8ba7-1ac13f5f3b62",
+      "reference": "FB-000086",
+      "dealer_id": "613089ab-fe3d-4bf7-a9ef-f636979fee1e",
+      "dealership_id": "11591369-b420-47f3-8285-6be9459168e6",
+      "submitted_by_user_id": "613089ab-fe3d-4bf7-a9ef-f636979fee1e",
+      "submitted_by_name": "Alice Alpha",
+      "submitted_by_job_title": "Sales Manager",
+      "submitted_at": "2026-07-19T20:54:36.419135+00:00",
+      "dealer_email": "test_a_6d5fcd11@example.com",
+      "dealer_name": "Alice Alpha",
+      "dealer_first_name": "Alice",
+      "dealer_phone": "0821234567",
+      "company_name": "TEST E2E Motors",
+      "make_name": "Toyota",
+      "model_name": "Corolla",
+      "derivative_name": "1.8 XS",
+      "fuel_type": "Petrol",
+      "year_of_production": 2020,
+      "transmission": "Automatic",
+      "year": 2020,
+      "year_registered": 2020,
+      "vin": "TESTVINE060D3E6F4",
+      "engine_number": "TESTENGBD80F1",
+      "colour": "White",
+      "license_disk_data": null,
+      "mechanical_condition": 8,
+      "cosmetic_condition": 8,
+      "interior_condition": 8,
+      "history_condition": 8,
+      "exterior_condition": null,
+      "tyre_condition": null,
+      "windscreen_condition": "Perfect",
+      "condition": 8,
+      "service_history": "Full Service History with Agents",
+      "last_service_date": "2024-06-01",
+      "last_service_mileage": 45000,
+      "paint_evidence": false,
+      "paint_quality": null,
+      "accident_damage": false,
+      "accident_damage_types": [],
+      "rim_size": null,
+      "reconditioning_items": [],
+      "reconditioning_total_zar": 0.0,
+      "factory_warranty": false,
+      "mileage": 55000,
+      "photos": {},
+      "status": "priced",
+      "price": 250000.0,
+      "price_notes": "TEST offer",
+      "priced_at": "2026-07-19T20:54:36.816163+00:00",
+      "market_analysis": null,
+      "market_analysis_at": null,
+      "tyre_estimate": null,
+      "tyre_estimate_at": null,
+      "billing_accepted_at": "2026-07-19T20:54:36.419158+00:00",
+      "created_at": "2026-07-19T20:54:36.419160+00:00",
+      "price_history": [
+        {
+          "id": "b83fb2a8-32ed-410c-ad1b-bb23f19f36a9",
+          "action": "offer",
+          "previous_price": null,
+          "new_price": 250000.0,
+          "previous_notes": null,
+          "new_notes": "TEST offer",
+          "comment": "Initial offer",
+          "admin_id": "15010b2b-b4f8-4285-b195-7e4d440270ff",
+          "admin_name": "Fourbuy Admin",
+          "at": "2026-07-19T20:54:36.816154+00:00"
+        }
+      ]
+    },
+    {
+      "id": "1adc6491-8a7d-47c6-b703-1a43b699de7e",
+      "reference": "FB-000087",
+      "dealer_id": "13285602-8f34-416f-9aba-b1100bbb5575",
+      "dealership_id": "11591369-b420-47f3-8285-6be9459168e6",
+      "submitted_by_user_id": "13285602-8f34-416f-9aba-b1100bbb5575",
+      "submitted_by_name": "Bob Beta",
+      "submitted_by_job_title": "F&I",
+      "submitted_at": "2026-07-19T20:54:36.622522+00:00",
+      "dealer_email": "test_b_bae52891@example.com",
+      "dealer_name": "Bob Beta",
+      "dealer_first_name": "Bob",
+      "dealer_phone": "0820000000",
+      "company_name": "TEST E2E Motors",
+      "make_name": "BMW",
+      "model_name": "3 Series",
+      "derivative_name": "1.8 XS",
+      "fuel_type": "Petrol",
+      "year_of_production": 2020,
+      "transmission": "Automatic",
+      "year": 2020,
+      "year_registered": 2020,
+      "vin": "TESTVIN843D3DC190",
+      "engine_number": "TESTENG870457",
+      "colour": "White",
+      "license_disk_data": null,
+      "mechanical_condition": 8,
+      "cosmetic_condition": 8,
+      "interior_condition": 8,
+      "history_condition": 8,
+      "exterior_condition": null,
+      "tyre_condition": null,
+      "windscreen_condition": "Perfect",
+      "condition": 8,
+      "service_history": "Full Service History with Agents",
+      "last_service_date": "2024-06-01",
+      "last_service_mileage": 45000,
+      "paint_evidence": false,
+      "paint_quality": null,
+      "accident_damage": false,
+      "accident_damage_types": [],
+      "rim_size": null,
+      "reconditioning_items": [],
+      "reconditioning_total_zar": 0.0,
+      "factory_warranty": false,
+      "mileage": 55000,
+      "photos": {},
+      "status": "priced",
+      "price": 300000.0,
+      "price_notes": "TEST offer",
+      "priced_at": "2026-07-19T20:54:36.965187+00:00",
+      "market_analysis": null,
+      "market_analysis_at": null,
+      "tyre_estimate": null,
+      "tyre_estimate_at": null,
+      "billing_accepted_at": "2026-07-19T20:54:36.622556+00:00",
+      "created_at": "2026-07-19T20:54:36.622557+00:00",
+      "price_history": [
+        {
+          "id": "b5412f50-d3e0-49a2-80d4-699db2bb1652",
+          "action": "offer",
+          "previous_price": null,
+          "new_price": 300000.0,
+          "previous_notes": null,
+          "new_notes": "TEST offer",
+          "comment": "Initial offer",
+          "admin_id": "15010b2b-b4f8-4285-b195-7e4d440270ff",
+          "admin_name": "Fourbuy Admin",
+          "at": "2026-07-19T20:54:36.965177+00:00"
+        }
+      ]
+    },
+    {
+      "id": "b41b9888-5f42-49aa-817c-5a6401a7e986",
+      "reference": "FB-000088",
+      "dealer_id": "cc7c4936-4a5b-45d5-8d2e-8bf10f38f431",
+      "dealership_id": "255fb254-7148-4f6c-bff2-85bef18ac667",
+      "submitted_by_user_id": "cc7c4936-4a5b-45d5-8d2e-8bf10f38f431",
+      "submitted_by_name": "Alice Alpha",
+      "submitted_by_job_title": "Sales Manager",
+      "submitted_at": "2026-07-19T20:56:51.224134+00:00",
+      "dealer_email": "test_ui_300c2f@example.com",
+      "dealer_name": "Alice Alpha",
+      "dealer_first_name": "Alice",
+      "dealer_phone": "0821234567",
+      "company_name": "TEST UI Motors",
+      "make_name": "Toyota",
+      "model_name": "Corolla",
+      "derivative_name": "1.8 XS",
+      "fuel_type": "Petrol",
+      "year_of_production": 2020,
+      "transmission": "Automatic",
+      "year": 2020,
+      "year_registered": 2020,
+      "vin": "TESTVINB52CA256A7",
+      "engine_number": "TESTENG4B2A6F",
+      "colour": "White",
+      "license_disk_data": null,
+      "mechanical_condition": 8,
+      "cosmetic_condition": 8,
+      "interior_condition": 8,
+      "history_condition": 8,
+      "exterior_condition": null,
+      "tyre_condition": null,
+      "windscreen_condition": "Perfect",
+      "condition": 8,
+      "service_history": "Full Service History with Agents",
+      "last_service_date": "2024-06-01",
+      "last_service_mileage": 45000,
+      "paint_evidence": false,
+      "paint_quality": null,
+      "accident_damage": false,
+      "accident_damage_types": [],
+      "rim_size": null,
+      "reconditioning_items": [],
+      "reconditioning_total_zar": 0.0,
+      "factory_warranty": false,
+      "mileage": 55000,
+      "photos": {},
+      "status": "priced",
+      "price": 56000.0,
+      "price_notes": null,
+      "priced_at": "2026-07-19T21:47:58.041821+00:00",
+      "market_analysis": null,
+      "market_analysis_at": null,
+      "tyre_estimate": null,
+      "tyre_estimate_at": null,
+      "billing_accepted_at": "2026-07-19T20:56:51.224157+00:00",
+      "created_at": "2026-07-19T20:56:51.224159+00:00",
+      "price_history": [
+        {
+          "id": "5e8c8cc6-42b8-4c56-8f8c-003ece60b4f5",
+          "action": "offer",
+          "previous_price": null,
+          "new_price": 56000.0,
+          "previous_notes": null,
+          "new_notes": null,
+          "comment": "Initial offer",
+          "admin_id": "15010b2b-b4f8-4285-b195-7e4d440270ff",
+          "admin_name": "Fourbuy Admin",
+          "at": "2026-07-19T21:47:58.041810+00:00"
+        }
+      ]
+    },
+    {
+      "id": "41ecff3e-5d19-4f0d-9922-6144abf3e0ac",
+      "reference": "FB-000093",
+      "dealer_id": "2926a247-ea71-4b89-9967-3f994cae259d",
+      "dealership_id": "c5ad3242-ddde-4413-b626-b949b6c9739d",
+      "submitted_by_user_id": "2926a247-ea71-4b89-9967-3f994cae259d",
+      "submitted_by_name": "Rew Tester",
+      "submitted_by_job_title": null,
+      "submitted_at": "2026-07-20T18:13:00.670544+00:00",
+      "dealer_email": "test_rewards_43be8a17@example.com",
+      "dealer_name": "Rew Tester",
+      "dealer_first_name": "Rew",
+      "dealer_phone": "0821234567",
+      "company_name": "TEST_Rewards Motors",
+      "make_name": "Toyota",
+      "model_name": "Hilux",
+      "derivative_name": "2.4 GD-6 SR",
+      "fuel_type": "Diesel",
+      "year_of_production": 2020,
+      "transmission": "Manual",
+      "year": 2020,
+      "year_registered": 2020,
+      "vin": "TBC",
+      "engine_number": "TBC",
+      "colour": "White",
+      "license_disk_data": "%TEST%LICENSE_DISK%DATA%",
+      "mechanical_condition": 8,
+      "cosmetic_condition": 8,
+      "interior_condition": 8,
+      "history_condition": 8,
+      "exterior_condition": null,
+      "tyre_condition": null,
+      "windscreen_condition": "Perfect",
+      "condition": 8,
+      "service_history": "Full Service History with Agents",
+      "last_service_date": "TBC",
+      "last_service_mileage": null,
+      "paint_evidence": false,
+      "paint_quality": null,
+      "accident_damage": false,
+      "accident_damage_types": [],
+      "rim_size": null,
+      "reconditioning_items": [],
+      "reconditioning_total_zar": 0.0,
+      "factory_warranty": false,
+      "mileage": 55000,
+      "photos": {
+        "front": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+        "driver_side": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+        "passenger_side": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+        "rear": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+        "interior": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+      },
+      "status": "priced",
+      "price": 160000.0,
+      "price_notes": "TEST bump",
+      "priced_at": "2026-07-20T18:13:00.918263+00:00",
+      "market_analysis": null,
+      "market_analysis_at": null,
+      "tyre_estimate": null,
+      "tyre_estimate_at": null,
+      "billing_accepted_at": "2026-07-20T18:13:00.670573+00:00",
+      "created_at": "2026-07-20T18:13:00.670576+00:00",
+      "price_history": [
+        {
+          "id": "9c085cd0-9c28-42ed-9771-ad12df21d74e",
+          "action": "offer",
+          "previous_price": null,
+          "new_price": 150000.0,
+          "previous_notes": null,
+          "new_notes": "TEST",
+          "comment": "Initial offer",
+          "admin_id": "15010b2b-b4f8-4285-b195-7e4d440270ff",
+          "admin_name": "Fourbuy Admin",
+          "at": "2026-07-20T18:13:00.737323+00:00"
+        },
+        {
+          "id": "1b46d0a0-6dbd-4540-8a9a-ff1950fb45f9",
+          "action": "update",
+          "previous_price": 150000.0,
+          "new_price": 160000.0,
+          "previous_notes": "TEST",
+          "new_notes": "TEST bump",
+          "comment": "Price updated",
+          "admin_id": "15010b2b-b4f8-4285-b195-7e4d440270ff",
+          "admin_name": "Fourbuy Admin",
+          "at": "2026-07-20T18:13:00.918255+00:00"
+        }
+      ],
+      "market_values": {
+        "status": "ok",
+        "new_list_price_zar": 476900.0,
+        "retail_price_zar": 362348.01,
+        "trade_price_zar": 348672.0,
+        "adjusted_retail_zar": 391336.0,
+        "market_price_zar": 0.0,
+        "mm_code": "60039244",
+        "fetched_at": "2026-07-22T02:53:53.974939+00:00",
+        "source": "kredo_vehicle_values",
+        "input_condition": "clean",
+        "input_mileage": 55000,
+        "resolved_make": "TOYOTA",
+        "resolved_model": "HILUX 2016 ON",
+        "resolved_year": "2020",
+        "resolved_derivative": "HILUX 2.4 GD-6 RB SR P/U D/C"
+      }
+    },
+    {
+      "id": "92214c03-1759-4005-ab0e-4e31256cc80d",
+      "reference": "FB-000094",
+      "dealer_id": "fea9df3b-31ec-4ba4-b6f8-c9091955796f",
+      "dealership_id": "54867521-426f-47ce-9989-d00e4db17041",
+      "submitted_by_user_id": "fea9df3b-31ec-4ba4-b6f8-c9091955796f",
+      "submitted_by_name": "Rew Tester",
+      "submitted_by_job_title": null,
+      "submitted_at": "2026-07-20T18:13:01.413805+00:00",
+      "dealer_email": "test_rewards_538f4bf1@example.com",
+      "dealer_name": "Rew Tester",
+      "dealer_first_name": "Rew",
+      "dealer_phone": "0821234567",
+      "company_name": "TEST_Rewards Motors",
+      "make_name": "Toyota",
+      "model_name": "Hilux",
+      "derivative_name": "2.4 GD-6 SR",
+      "fuel_type": "Diesel",
+      "year_of_production": 2020,
+      "transmission": "Manual",
+      "year": 2020,
+      "year_registered": 2020,
+      "vin": "TBC",
+      "engine_number": "TBC",
+      "colour": "White",
+      "license_disk_data": "%TEST%LICENSE_DISK%DATA%",
+      "mechanical_condition": 8,
+      "cosmetic_condition": 8,
+      "interior_condition": 8,
+      "history_condition": 8,
+      "exterior_condition": null,
+      "tyre_condition": null,
+      "windscreen_condition": "Perfect",
+      "condition": 8,
+      "service_history": "Full Service History with Agents",
+      "last_service_date": "TBC",
+      "last_service_mileage": null,
+      "paint_evidence": false,
+      "paint_quality": null,
+      "accident_damage": false,
+      "accident_damage_types": [],
+      "rim_size": null,
+      "reconditioning_items": [],
+      "reconditioning_total_zar": 0.0,
+      "factory_warranty": false,
+      "mileage": 55000,
+      "photos": {
+        "front": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+        "driver_side": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+        "passenger_side": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+        "rear": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+        "interior": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+      },
+      "status": "priced",
+      "price": 100000.0,
+      "price_notes": "TEST outside SLA",
+      "priced_at": "2026-07-20T18:13:01.477959+00:00",
+      "market_analysis": null,
+      "market_analysis_at": null,
+      "tyre_estimate": null,
+      "tyre_estimate_at": null,
+      "billing_accepted_at": "2026-07-20T18:13:01.413829+00:00",
+      "created_at": "2026-07-18T18:13:01.435198+00:00",
+      "price_history": [
+        {
+          "id": "8998341c-2752-40f2-8ad5-d09fbaa56c42",
+          "action": "offer",
+          "previous_price": null,
+          "new_price": 100000.0,
+          "previous_notes": null,
+          "new_notes": "TEST outside SLA",
+          "comment": "Initial offer",
+          "admin_id": "15010b2b-b4f8-4285-b195-7e4d440270ff",
+          "admin_name": "Fourbuy Admin",
+          "at": "2026-07-20T18:13:01.477948+00:00"
+        }
+      ]
+    }
+  ],
+  "reward_ledger": [
+    {
+      "id": "b0a11bfa-41c6-4349-80a2-4bd79919da3d",
+      "user_id": "2926a247-ea71-4b89-9967-3f994cae259d",
+      "dealership_id": "c5ad3242-ddde-4413-b626-b949b6c9739d",
+      "type": "earn",
+      "delta": 1,
+      "sub_id": "41ecff3e-5d19-4f0d-9922-6144abf3e0ac",
+      "note": "Billable valuation \u00b7 FB-000093",
+      "at": "2026-07-20T18:13:00.738367+00:00"
+    }
+  ],
+  "reward_redemptions": [],
+  "report_orders": []
+}
