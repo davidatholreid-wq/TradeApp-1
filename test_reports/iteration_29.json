@@ -1,0 +1,49 @@
+{
+  "summary": "Frontend-only verification of the 5 new read-only sections added to WebAdminDashboard.tsx. Ran browser automation against the wide-viewport (1440x900) admin cockpit. Positive-case sub FB-000105 (Ford Bryanston, Audi Q5, mv.status=ok, license_disk_data present, 2 report_orders, 1 price_history) and negative/loading-case FB-000089 (mv.status=loading, no license, no report_orders) were both inspected end-to-end. Section ordering is correct (TYRE ESTIMATE -> MARKET VALUES -> VIN-LINKED REPORTS -> LICENSE DISK DATA -> OFFER HISTORY). MARKET VALUES renders with the LOCKED AT VALUATION pill and all four tiles (New List Price R 565 000, M&M Code 4054306 monospace, Trade R 293 393, Retail R 343 390). LICENSE DISK DATA renders in a monospace block on subs that have it and is correctly ABSENT when the field is missing. Loading state ('Fetching from Kredo...') renders correctly for mv.status=loading. Dealers tab regression: PASS. ACCIDENT / CLAIM HISTORY was not exercised live because no sub in the current preview DB has kredo_vin_history.status='ok' (which is the expected 'section-absent' branch). TWO defects found in OFFER HISTORY and VIN-LINKED REPORTS -- see below.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "WebAdminDashboard.tsx OFFER HISTORY section",
+        "issue": "Field-name mismatch vs the backend PriceHistoryEntry schema. WebAdminDashboard reads p.price / p.priced_at / p.change_comment / p.notes / p.admin_email, but GET /api/submissions/{id} returns price_history entries shaped { new_price, previous_price, at, comment, new_notes, previous_notes, admin_name, action, id }. Result: every row renders as literal '-- --' (both the price and timestamp cells) on ALL priced submissions (verified on FB-000105 and FB-000089). The mobile screen at app/(app)/vehicle/[id].tsx uses h.new_price / h.at and works correctly -- so the two views are NOT in parity, which is the whole point of this change. Reference: /app/frontend/src/components/WebAdminDashboard.tsx:143-150 (type declaration) and :1360-1385 (render).",
+        "testID": "n/a",
+        "priority": "HIGH"
+      },
+      {
+        "component": "WebAdminDashboard.tsx VIN-LINKED REPORTS row title",
+        "issue": "formatReportName() only maps three slugs (lightstone, carvertical, kredo_cartrust), but the real report_orders in DB use type='lightstone_verification' and 'lightstone_repair'. These fall through to type.replace(/_/g,' ') and render as lowercase 'lightstone verification' / 'lightstone repair' -- no capitalisation, no 'Report' suffix. The backend already returns a fully-formatted r.name ('Lightstone Vehicle Verification Report', 'Lightstone Vehicle Repair History Report'), which the mobile UI uses. To achieve real parity, either (a) use r.name directly (like mobile), or (b) extend the map to include lightstone_verification/lightstone_repair. Reference: /app/frontend/src/components/WebAdminDashboard.tsx:172-180 and :1308.",
+        "testID": "n/a",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/tmp/06_fb105_bottom.png (FB-000105 shows all 4 new sections + broken OFFER HISTORY -- --)",
+    "/tmp/07_fb089_bottom.png (FB-000089 mv.status=loading -> 'Fetching from Kredo...' rendered, VIN/LICENSE sections correctly absent)",
+    "/tmp/08_dealers.png (Dealers tab regression)"
+  ],
+  "action_items": [
+    "Fix OFFER HISTORY field names in /app/frontend/src/components/WebAdminDashboard.tsx: update the price_history type at lines 143-150 and the JSX at lines 1360-1385 to read new_price, at, comment, new_notes, admin_name (matching the backend schema and the mobile [id].tsx implementation). Currently every entry renders '-- --'.",
+    "Fix VIN-LINKED REPORTS row title: use r.name (as mobile does) or extend formatReportName map to include lightstone_verification and lightstone_repair. Current output 'lightstone verification' does not match mobile parity."
+  ],
+  "critical_code_review_comments": [
+    "WebAdminDashboard.tsx is now 2112 lines -- well past the 700-line guideline. Consider splitting the cockpit detail column into its own component.",
+    "Two of the five newly-added sections have subtle bugs that no live testing on empty/loading fixtures would catch -- both only manifest when the underlying data actually exists on a submission. Recommend adding a lightweight snapshot test at least for OFFER HISTORY and VIN-LINKED REPORTS rendering."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "not tested (frontend-only request)",
+    "frontend": "60% (3 of 5 new sections fully correct: MARKET VALUES, LICENSE DISK DATA, ACCIDENT-absent-guard. OFFER HISTORY broken. VIN-LINKED REPORTS name formatting off. Section ordering + loading state + absent-when-missing guards all correct.)"
+  },
+  "seed_data_creation": "None. Used existing preview data. FB-000105 (Audi Q5, mv.status=ok, mm=4054306, 2 report_orders, license_disk_data present, 1 price_history) as happy path. FB-000089 as loading/empty case.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Preview DB currently has 10 submissions (9 priced + 1 archived). No sub has kredo_vin_history.status='ok', so the ACCIDENT / CLAIM HISTORY render path could not be exercised end-to-end -- if the main agent wants that verified, seed one sub with kredo_vin_history={status:'ok', data:{'claim-history':[...]}} first. FB-000105 id = 2500341e-9a21-42fa-97c2-30dcbdbd53c9 is the best all-in-one fixture (mv.ok + license + 2 report_orders + price_history). GET /api/submissions/{id} wraps the payload as {\"submission\": {...}} -- WebAdminDashboard already unwraps this via data.submission at line 236. Backend price_history schema uses fields (new_price, previous_price, at, comment, new_notes, previous_notes, admin_name, action, id) -- NOT (price, priced_at, change_comment, notes, admin_email) as WebAdminDashboard currently assumes.",
+  "rca_of_issue": "Both defects are pure type/field-name drift between the new WebAdminDashboard sections and the actual backend response shape. E1 typed the price_history entry inline (WebAdminDashboard.tsx:143-150) using field names that were plausible but not what /api/submissions/{id} actually returns -- easy to spot by diffing against the working PriceHistoryEntry type in /app/frontend/app/(app)/vehicle/[id].tsx:103-114. Same class of drift on VIN-LINKED REPORTS: the ReportOrder shape in the mobile screen (line 116-128) exposes r.name (a pre-formatted human title), which the backend fills correctly, but WebAdminDashboard instead re-derives a title from r.type via a 3-entry map that doesn't cover the real slugs. Repro: log in as admin@fourbuy.co.za, PRICED tab -> FB-000105, scroll to bottom -> both sections visibly wrong. Mitigation: adopt the same PriceHistoryEntry / ReportOrder types the mobile screen already uses (import them or copy verbatim) and reference r.name / h.new_price / h.at / h.comment / h.new_notes / h.admin_name."
+}

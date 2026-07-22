@@ -109,6 +109,45 @@ type SubmissionFull = Submission & {
     };
     generated_at: string;
   } | null;
+
+  // Kredo cached vehicle-values snapshot (locked at valuation).
+  market_values?: {
+    status?: "ok" | "loading" | "error";
+    new_list_price_zar?: number | null;
+    retail_price_zar?: number | null;
+    trade_price_zar?: number | null;
+    mm_code?: string | null;
+    fetched_at?: string | null;
+    error?: string | null;
+  } | null;
+
+  // Ordered VIN-linked reports (Lightstone / CarVertical / CarTrust).
+  report_orders?: {
+    id: string;
+    type: string;
+    status?: string;
+    ordered_at?: string;
+    completed_at?: string | null;
+    cost_zar?: number | null;
+    pdf_url?: string | null;
+  }[];
+
+  // Cached Kredo VIN history (accident / claim history).
+  kredo_vin_history?: {
+    status?: "ok" | "error" | "loading";
+    fetched_at?: string | null;
+    data?: any;
+    error?: string | null;
+  } | null;
+
+  // Full offer history — every price change with timestamp + notes.
+  price_history?: {
+    price: number;
+    priced_at?: string;
+    notes?: string | null;
+    change_comment?: string | null;
+    admin_email?: string | null;
+  }[];
 };
 
 const PHOTO_ORDER: { key: string; fallback?: string; label: string }[] = [
@@ -122,6 +161,22 @@ const PHOTO_ORDER: { key: string; fallback?: string; label: string }[] = [
 function resolvePhoto(photos: Record<string, string> | undefined, key: string, fallback?: string) {
   if (!photos) return "";
   return photos[key] || (fallback ? photos[fallback] : "") || "";
+}
+
+/** Format a ZAR amount for the market-value + report cost tiles. */
+function fmtZar(v: number | null | undefined): string {
+  if (v == null || Number.isNaN(v) || v === 0) return "—";
+  return `R ${Number(v).toLocaleString("en-ZA", { maximumFractionDigits: 0 })}`;
+}
+
+/** Turn a report_orders type slug into a human title matching the mobile UI. */
+function formatReportName(type: string): string {
+  const map: Record<string, string> = {
+    lightstone: "Lightstone Report",
+    carvertical: "CarVertical Report",
+    kredo_cartrust: "CarTrust Report",
+  };
+  return map[type] || type.replace(/_/g, " ");
 }
 
 type Bucket = "incoming" | "priced" | "archived";
@@ -1197,6 +1252,137 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                   </Text>
                 )}
               </View>
+
+              {/* ================= MARKET VALUES (Kredo) ================= */}
+              {/* Locked-at-valuation Kredo snapshot: new list + M&M code
+                  from the flatfile, trade + retail from Kredo /value.
+                  Matches the mobile "Market Values" card 1:1. */}
+              <View style={styles.analysisBox}>
+                <View style={styles.priceBoxHeader}>
+                  <Text style={styles.boxTitle}>MARKET VALUES</Text>
+                  {selected.market_values?.status === "ok" ? (
+                    <View style={styles.lockedPill}>
+                      <Ionicons name="lock-closed" size={11} color={colors.textSecondary} />
+                      <Text style={styles.lockedPillText}>LOCKED AT VALUATION</Text>
+                    </View>
+                  ) : null}
+                </View>
+                {selected.market_values?.status === "ok" ? (
+                  <View style={styles.mvGrid}>
+                    <View style={styles.mvBox}>
+                      <Text style={styles.mvLabel}>NEW LIST PRICE</Text>
+                      <Text style={styles.mvValue}>{fmtZar(selected.market_values.new_list_price_zar)}</Text>
+                    </View>
+                    <View style={styles.mvBox}>
+                      <Text style={styles.mvLabel}>M&M CODE</Text>
+                      <Text style={[styles.mvValue, styles.mvMono]}>{selected.market_values.mm_code || "—"}</Text>
+                    </View>
+                    <View style={styles.mvBox}>
+                      <Text style={styles.mvLabel}>TRADE VALUE</Text>
+                      <Text style={styles.mvValue}>{fmtZar(selected.market_values.trade_price_zar)}</Text>
+                    </View>
+                    <View style={styles.mvBox}>
+                      <Text style={styles.mvLabel}>RETAIL VALUE</Text>
+                      <Text style={styles.mvValue}>{fmtZar(selected.market_values.retail_price_zar)}</Text>
+                    </View>
+                  </View>
+                ) : selected.market_values?.status === "error" ? (
+                  <Text style={styles.analysisEmpty}>
+                    Could not fetch market values: {selected.market_values.error || "Kredo lookup failed."}
+                  </Text>
+                ) : (
+                  <Text style={styles.analysisEmpty}>Fetching from Kredo…</Text>
+                )}
+              </View>
+
+              {/* ================= VIN-LINKED REPORTS ================= */}
+              {/* Read-only list of every VIN-report order placed against
+                  this submission — matches the mobile "Order a VIN-Linked
+                  Report" section. Ordering UI stays on mobile for now. */}
+              {selected.report_orders && selected.report_orders.length > 0 ? (
+                <View style={styles.analysisBox}>
+                  <Text style={styles.boxTitle}>VIN-LINKED REPORTS</Text>
+                  {selected.report_orders.map((r) => (
+                    <View key={r.id} style={styles.reportRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.reportName}>{formatReportName(r.type)}</Text>
+                        <Text style={styles.reportMeta}>
+                          {r.ordered_at ? `Ordered ${new Date(r.ordered_at).toLocaleString("en-ZA")}` : ""}
+                          {r.cost_zar != null ? `  ·  ${fmtZar(r.cost_zar)}` : ""}
+                        </Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.reportStatusPill,
+                          r.status === "completed" && { backgroundColor: colors.success + "22", borderColor: colors.success },
+                          r.status === "failed" && { backgroundColor: colors.danger + "22", borderColor: colors.danger },
+                        ]}
+                      >
+                        <Text style={styles.reportStatusText}>{(r.status || "pending").toUpperCase()}</Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+
+              {/* ================= ACCIDENT / CLAIM HISTORY (Kredo VIN) ================= */}
+              {selected.kredo_vin_history?.status === "ok" ? (
+                <View style={styles.analysisBox}>
+                  <Text style={styles.boxTitle}>ACCIDENT / CLAIM HISTORY</Text>
+                  <Text style={styles.summary}>
+                    {(() => {
+                      const claims = (selected.kredo_vin_history?.data as any)?.["claim-history"];
+                      if (Array.isArray(claims) && claims.length > 0) {
+                        return `${claims.length} claim record${claims.length === 1 ? "" : "s"} on file (Kredo).`;
+                      }
+                      return "No claim history recorded against this VIN (Kredo).";
+                    })()}
+                  </Text>
+                  {selected.kredo_vin_history?.fetched_at ? (
+                    <Text style={styles.disclaimer}>
+                      Fetched {new Date(selected.kredo_vin_history.fetched_at).toLocaleString("en-ZA")}
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
+
+              {/* ================= LICENSE DISK DATA ================= */}
+              {selected.license_disk_data ? (
+                <View style={styles.analysisBox}>
+                  <Text style={styles.boxTitle}>LICENSE DISK DATA</Text>
+                  <Text style={styles.diskData} selectable>
+                    {selected.license_disk_data}
+                  </Text>
+                </View>
+              ) : null}
+
+              {/* ================= OFFER HISTORY ================= */}
+              {selected.price_history && selected.price_history.length > 0 ? (
+                <View style={styles.analysisBox}>
+                  <Text style={styles.boxTitle}>OFFER HISTORY</Text>
+                  {selected.price_history.map((p, i) => (
+                    <View key={i} style={styles.offerRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.offerPrice}>{fmtZar(p.price)}</Text>
+                        {p.change_comment ? (
+                          <Text style={styles.offerNote}>{p.change_comment}</Text>
+                        ) : null}
+                        {p.notes ? (
+                          <Text style={styles.offerNote}>{p.notes}</Text>
+                        ) : null}
+                      </View>
+                      <View>
+                        <Text style={styles.offerMeta}>
+                          {p.priced_at ? new Date(p.priced_at).toLocaleString("en-ZA") : "—"}
+                        </Text>
+                        {p.admin_email ? (
+                          <Text style={styles.offerMeta}>{p.admin_email}</Text>
+                        ) : null}
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
             </ScrollView>
           )}
         </View>
@@ -1795,6 +1981,102 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   factorText: { color: colors.text, fontSize: 12, flex: 1, lineHeight: 18 },
   disclaimer: { color: colors.textDisabled, fontSize: 11, fontStyle: "italic", marginTop: spacing.sm },
   analysisEmpty: { color: colors.textSecondary, fontSize: 13, marginTop: spacing.sm, lineHeight: 19 },
+
+  // === MARKET VALUES (Kredo snapshot) ===
+  lockedPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  lockedPillText: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+  },
+  mvGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginTop: spacing.sm,
+    marginHorizontal: -spacing.xs,
+  },
+  mvBox: {
+    width: "50%",
+    padding: spacing.xs,
+  },
+  mvLabel: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+    marginBottom: 4,
+  },
+  mvValue: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+  mvMono: {
+    fontFamily: fonts.mono,
+    letterSpacing: 0.5,
+  },
+
+  // === VIN-LINKED REPORTS list ===
+  reportRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: spacing.sm,
+  },
+  reportName: { color: colors.text, fontSize: 13, fontWeight: "700" },
+  reportMeta: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
+  reportStatusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  reportStatusText: {
+    color: colors.text,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.6,
+  },
+
+  // === LICENSE DISK RAW DATA ===
+  diskData: {
+    color: colors.text,
+    fontSize: 12,
+    fontFamily: fonts.mono,
+    lineHeight: 17,
+    marginTop: spacing.sm,
+  },
+
+  // === OFFER HISTORY entries ===
+  offerRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: spacing.md,
+  },
+  offerPrice: { color: colors.text, fontSize: 15, fontWeight: "800" },
+  offerNote: { color: colors.textSecondary, fontSize: 12, marginTop: 2, lineHeight: 17 },
+  offerMeta: { color: colors.textSecondary, fontSize: 11, textAlign: "right" },
   tyreHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
