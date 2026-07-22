@@ -1925,23 +1925,12 @@ export default function VehicleDetail() {
               <View style={styles.marketFooter}>
                 <Text style={styles.marketFooterText}>
                   Source: Kredo Vehicle Values
-                  {marketValues.fetched_at ? ` · ${formatFetched(marketValues.fetched_at)}` : ""}
+                  {marketValues.fetched_at ? ` · captured ${formatFetched(marketValues.fetched_at)}` : ""}
                 </Text>
-                <TouchableOpacity
-                  testID="market-values-refresh"
-                  onPress={refreshMarketValues}
-                  disabled={marketValuesLoading}
-                  style={[styles.marketRefreshBtn, marketValuesLoading && styles.docBtnDisabled]}
-                >
-                  {marketValuesLoading ? (
-                    <ActivityIndicator size="small" color={colors.text} />
-                  ) : (
-                    <>
-                      <Ionicons name="refresh" size={14} color={colors.text} />
-                      <Text style={styles.marketRefreshText}>Refresh</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
+                <View style={styles.marketLockedPill} testID="market-values-locked">
+                  <Ionicons name="lock-closed" size={12} color={colors.textSecondary} />
+                  <Text style={styles.marketLockedText}>Locked at valuation</Text>
+                </View>
               </View>
             </>
           ) : marketValues?.status === "error" ? (
@@ -3318,6 +3307,27 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     letterSpacing: 0.5,
+  },
+  // Small "locked at valuation" pill — replaces the Refresh CTA once a
+  // successful snapshot has been captured, since trade/retail values are
+  // fixed at the time of valuation and must not drift.
+  marketLockedPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  marketLockedText: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
   },
   marketLoadingBox: {
     flexDirection: "row",

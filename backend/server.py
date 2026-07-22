@@ -1274,22 +1274,27 @@ async def get_submission(sub_id: str, current: dict = Depends(get_current_user))
 
 @api_router.post("/submissions/{sub_id}/market-values/refresh")
 async def refresh_market_values(sub_id: str, current: dict = Depends(get_current_user)):
-    """Force a re-fetch of the cached Kredo Vehicle Values for a submission.
+    """Trigger a Kredo Vehicle Values fetch — but ONLY when we don't
+    already hold a successful snapshot.
 
-    Available to both admins and the submitting dealer (via
-    `_can_access_submission`). Clears the cached snapshot first so the
-    lazy-fetch helper actually re-hits Kredo instead of returning the old
-    cached values or the recent-error backoff.
+    Trade + retail values form part of this submission's valuation record
+    and must not drift after the fact. So once
+    `market_values.status == "ok"` this endpoint becomes a no-op and
+    returns the cached snapshot with `locked: true`. Loading placeholders
+    and previously-errored snapshots can still be retried.
     """
     sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
     if not sub:
         raise HTTPException(404, "Submission not found")
     if not await _can_access_submission(sub, current):
         raise HTTPException(403, "Not authorized")
+    existing = sub.get("market_values") or {}
+    if isinstance(existing, dict) and existing.get("status") == "ok":
+        return {"market_values": existing, "locked": True}
     await db.submissions.update_one({"id": sub_id}, {"$unset": {"market_values": ""}})
     sub.pop("market_values", None)
     mv = await _ensure_market_values(sub, background=True)
-    return {"market_values": mv}
+    return {"market_values": mv, "locked": False}
 
 
 @api_router.get("/admin/submissions")
