@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Image, StyleSheet, View, StyleProp, ViewStyle, ImageStyle } from "react-native";
 import { BRAND } from "@/src/theme";
-import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
+import { useTheme, type Palette } from "@/src/theme/ThemeContext";
 
 type Props = {
   /**
@@ -32,13 +32,16 @@ const ASPECT = 617 / 215;
 // insertion in the app routed through this component so a future rebrand is
 // a one-file change.
 export default function BrandLogo({ size = "md", style, containerStyle, testID }: Props) {
-  const colors = useThemeColors();
+  const { colors, mode } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const h = HEIGHTS[size];
+  // Use the dark-on-white wordmark in day mode so it reads cleanly against
+  // the light background. Dark mode stays with the white wordmark on black.
+  const src = mode === "light" ? BRAND.logoLight : BRAND.logo;
   return (
     <View style={[styles.wrap, containerStyle]} testID={testID ?? "brand-logo"}>
       <Image
-        source={BRAND.logo}
+        source={src}
         style={[{ height: h, width: h * ASPECT }, style]}
         resizeMode="contain"
         accessibilityLabel="Fourbuy Car Buying Co."

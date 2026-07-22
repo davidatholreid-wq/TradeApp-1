@@ -1,0 +1,51 @@
+{
+  "summary": "Frontend-only visual test of the day/night logo swap. Verified BrandLogo + WebAdminDashboard swap between logo-fourbuy.png (white-on-dark) and logo-fourbuy-light.png (dark-on-white) per themeMode. Login screen correctly stays on the dark logo regardless of stored mode (uses raw BRAND.logo). Live toggling from Profile → Appearance (Day ↔ Night) swaps the logo instantly with no reload; the mode persists in localStorage 'fourbuy.themeMode' and survives a page reload. Admin cockpit (desktop ≥1280px) topbar correctly swaps as well. REGRESSION FOUND: the Register (Invitation only) screen is locked to a dark background (uses darkPalette for its StyleSheet) but its <BrandLogo/> reads mode from ThemeContext, so with themeMode='light' the light-variant (dark car icon + dark 'FOURBUY / CAR BUYING CO.' text on transparent) is rendered on the dark register background — the logo is barely visible. Per the review request this screen was expected to keep the dark-mode (white) logo like Login.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Register / Invitation-only screen",
+        "issue": "Register screen background is hard-locked to darkPalette (see /app/frontend/app/(auth)/register.tsx:31-32), but the logo uses <BrandLogo size=\"lg\" /> (line 74) which reads mode from ThemeContext. When the dealer previously toggled Day (themeMode='light' persisted in AsyncStorage/localStorage) and then logs out, the Register screen renders the dark-on-white logo variant (logo-fourbuy-light.png) on the dark background — the wordmark is barely visible. Per the review spec, Register should stay on the white-on-dark logo regardless of the stored preference (same treatment as Login).",
+        "testID": "brand-logo",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Register (Invitation only)",
+        "issues": [
+          "Logo/background contrast mismatch when themeMode='light' is persisted — the dark-content light-variant logo renders on the darkPalette background, producing a nearly invisible wordmark. Reproduce: login as any dealer → Profile → Appearance → Day → Log out → tap 'Request access' on Login."
+        ]
+      }
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/screenshots/01_initial.png",
+    "/app/test_reports/screenshots/03_profile_dark.png",
+    "/app/test_reports/screenshots/04_profile_day.png",
+    "/app/test_reports/screenshots/06_after_reload_day.png",
+    "/app/test_reports/screenshots/07_home_day.png",
+    "/app/test_reports/screenshots/07b_dealers_day.png",
+    "/app/test_reports/screenshots/09_after_logout.png",
+    "/app/test_reports/screenshots/10_register.png",
+    "/app/test_reports/screenshots/adm_01_dashboard_light.png",
+    "/app/test_reports/screenshots/adm_02_dashboard_dark.png"
+  ],
+  "action_items": [
+    "Fix Register screen logo: force the dark-mode logo regardless of themeMode. Simplest fix — replace <BrandLogo size=\"lg\" /> in /app/frontend/app/(auth)/register.tsx:74 with a plain <Image source={BRAND.logo} .../> block (mirroring Login), OR add a `forceDark`/`variant` prop to BrandLogo and set it here.",
+    "Consider the same guard for any future 'locked-dark' surface so a mode change never leaks into these screens."
+  ],
+  "critical_code_review_comments": [
+    "BrandLogo has no way to opt out of the theme-driven variant selection. Screens that hard-code darkPalette for their styles (Login uses raw <Image>; Register uses <BrandLogo>) end up with mismatched treatments. Consider adding an optional `variant?: 'auto'|'dark'|'light'` prop (default 'auto') on BrandLogo — cleaner than duplicating the <Image> block in every locked screen.",
+    "makeStyles(colors) in BrandLogo.tsx is called with `colors` but the returned styles only reference `alignItems/justifyContent` — colors are unused. Minor cleanup: drop the palette dependency to avoid unnecessary re-memoization on theme change."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (frontend-only request)", "frontend": "85%"},
+  "seed_data_creation": "None — used existing dealer minitest@example.com / Mini1234! and admin admin@fourbuy.co.za / admin123.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Reproduce Register regression: login as minitest → Profile → Appearance → Day → Log out → tap 'Request access'. Expected: white-on-dark wordmark. Actual: dark-on-white wordmark on dark background. All other surfaces (Profile header, Home, Dealers, WebAdminDashboard topbar) correctly swap. Login screen is unaffected because it uses raw <Image source={BRAND.logo}/> instead of <BrandLogo/>.",
+  "rca_of_issue": "Root cause: /app/frontend/app/(auth)/register.tsx forces its StyleSheet to darkPalette (const colors = darkPalette; line 31) so the background stays dark, but the <BrandLogo/> component internally reads `mode` from ThemeContext (see /app/frontend/src/components/BrandLogo.tsx:35,40) and selects BRAND.logoLight when mode === 'light'. There is no override prop, so a persisted themeMode='light' bleeds the light-variant logo onto the dark-locked register surface. Fix: either replace with raw <Image source={BRAND.logo}/> as Login does, or add a `variant`/`forceDark` prop to BrandLogo and set it on Register."
+}

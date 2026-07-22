@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { spacing, radius, fonts, BRAND } from "@/src/theme";
-import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
+import { useThemeColors, useThemeMode, type Palette } from "@/src/theme/ThemeContext";
 import { apiFetch } from "@/src/api";
 import { buildWhatsappUrl, buildDealerMessage } from "@/src/utils/whatsapp";
 import BillingScreen from "@/app/(app)/billing";
@@ -129,6 +129,7 @@ type CockpitView = "submissions" | "dealers" | "billing" | "rewards" | "kredo";
 
 export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }) {
   const colors = useThemeColors();
+  const themeMode = useThemeMode();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { width } = useWindowDimensions();
   const [view, setView] = useState<CockpitView>("submissions");
@@ -374,7 +375,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
       <View style={styles.topbar}>
         <View style={styles.topbarLeft}>
           <Image
-            source={BRAND.logo}
+            source={themeMode === "light" ? BRAND.logoLight : BRAND.logo}
             style={styles.logo}
             resizeMode="contain"
             accessibilityLabel="Fourbuy Car Buying Co."
