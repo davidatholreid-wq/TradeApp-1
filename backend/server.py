@@ -791,6 +791,31 @@ async def me(current: dict = Depends(get_current_user)):
             dship = await db.dealerships.find_one({"id": dealership_id}, {"_id": 0})
             if dship:
                 current["dealership"] = dship
+        # Attach a friendly "referred_by" payload so the Profile screen can
+        # render a "Referred by …" line without a second round-trip. We only
+        # expose safe fields (name + dealership) — never id/email/phone.
+        rb_id = current.get("referred_by_user_id")
+        if rb_id:
+            referrer = await db.users.find_one(
+                {"id": rb_id},
+                {"_id": 0, "dealer_info": 1, "dealership_id": 1, "referral_code": 1},
+            )
+            if referrer:
+                info = referrer.get("dealer_info") or {}
+                first = (info.get("first_name") or "").strip()
+                last = (info.get("last_name") or "").strip()
+                name = (first + " " + last).strip() or "a Fourbuy dealer"
+                rb_dship_name = None
+                if referrer.get("dealership_id"):
+                    rdship = await db.dealerships.find_one(
+                        {"id": referrer["dealership_id"]}, {"_id": 0, "name": 1}
+                    )
+                    rb_dship_name = (rdship or {}).get("name")
+                current["referred_by"] = {
+                    "name": name,
+                    "dealership": rb_dship_name,
+                    "code": current.get("referred_by_code") or referrer.get("referral_code"),
+                }
     return {"user": current}
 
 
@@ -2970,6 +2995,36 @@ async def admin_list_dealers(
     for d in dealers:
         ds = ds_map.get(d.get("dealership_id") or "")
         d["dealership"] = ds  # {id, name, active, ...} or None
+
+    # Enrich with "referred_by" — a small subset of the referrer's user doc
+    # (name + dealership) so the admin cockpit can display "Referred by …"
+    # under each dealer card. Single bulk lookup keeps this O(dealers).
+    rb_ids = list({d.get("referred_by_user_id") for d in dealers if d.get("referred_by_user_id")})
+    rb_map: dict = {}
+    if rb_ids:
+        rb_docs = await db.users.find(
+            {"id": {"$in": rb_ids}},
+            {"_id": 0, "id": 1, "dealer_info": 1, "dealership_id": 1, "referral_code": 1},
+        ).to_list(len(rb_ids))
+        for u in rb_docs:
+            info = u.get("dealer_info") or {}
+            first = (info.get("first_name") or "").strip()
+            last = (info.get("last_name") or "").strip()
+            name = (first + " " + last).strip() or "a Fourbuy dealer"
+            rb_dship_name = None
+            if u.get("dealership_id") and u["dealership_id"] in ds_map:
+                rb_dship_name = ds_map[u["dealership_id"]].get("name")
+            elif u.get("dealership_id"):
+                dsx = await db.dealerships.find_one({"id": u["dealership_id"]}, {"_id": 0, "name": 1})
+                rb_dship_name = (dsx or {}).get("name")
+            rb_map[u["id"]] = {
+                "name": name,
+                "dealership": rb_dship_name,
+                "code": u.get("referral_code"),
+            }
+    for d in dealers:
+        rb_id = d.get("referred_by_user_id")
+        d["referred_by"] = rb_map.get(rb_id) if rb_id else None
 
     # Reward balances — single ledger scan so this stays O(ledger) not O(dealers·ledger).
     balances: dict[str, int] = {}

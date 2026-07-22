@@ -22,6 +22,13 @@ export default function Profile() {
   // (and lazily on /auth/me for accounts that pre-date the feature). It's
   // a lifetime code — the same one for the entire duration of the account.
   const referralCode: string | null = (user as any)?.referral_code ?? null;
+  // Backend enriches /auth/me with `referred_by` for dealers that were
+  // signed up via another dealer's referral link. Payload shape:
+  //   { name: string, dealership?: string|null, code?: string|null }
+  const referredBy = (user as any)?.referred_by as
+    | { name: string; dealership?: string | null; code?: string | null }
+    | null
+    | undefined;
 
   const buildShareUrl = (code: string): string => {
     // In dev we rely on the packager proxy URL; in production this becomes
@@ -187,6 +194,21 @@ export default function Profile() {
             <Text style={styles.hintText}>
               Invite another dealer to Fourbuy. When they&apos;re onboarded and earn a Fourbuy Rewards point, you earn one too — for the lifetime of their account.
             </Text>
+            {referredBy ? (
+              <View style={styles.referredByRow} testID="profile-referred-by">
+                <Ionicons name="ribbon" size={14} color={colors.textSecondary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.referredByLabel}>REFERRED BY</Text>
+                  <Text style={styles.referredByName} numberOfLines={1} ellipsizeMode="tail">
+                    {referredBy.name}
+                    {referredBy.dealership ? `  ·  ${referredBy.dealership}` : ""}
+                  </Text>
+                  {referredBy.code ? (
+                    <Text style={styles.referredByCode}>Code: {referredBy.code}</Text>
+                  ) : null}
+                </View>
+              </View>
+            ) : null}
             <View style={styles.referralCodeRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.referralCodeLabel}>YOUR REFERRAL CODE</Text>
@@ -437,6 +459,36 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     paddingTop: spacing.md,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+  },
+  referredByRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  referredByLabel: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+  },
+  referredByName: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "800",
+    marginTop: 2,
+  },
+  referredByCode: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
+    fontFamily: fonts.mono,
+    letterSpacing: 1,
   },
   referralCodeLabel: {
     color: colors.textSecondary,

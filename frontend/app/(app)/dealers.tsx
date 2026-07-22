@@ -48,6 +48,13 @@ type Dealer = {
     address?: string;
     active?: boolean;
   } | null;
+  // Populated by /api/admin/dealers when this dealer was created via
+  // another dealer's referral link. Small subset only — never email/phone.
+  referred_by?: {
+    name: string;
+    dealership?: string | null;
+    code?: string | null;
+  } | null;
 };
 
 export default function Dealers() {
@@ -482,6 +489,19 @@ export default function Dealers() {
                 {(item.reward_lifetime_earned || 0) > 0
                   ? ` · ${item.reward_lifetime_earned} lifetime`
                   : ""}
+              </Text>
+            </View>
+          ) : null}
+          {item.referred_by ? (
+            <View style={styles.metaItem} testID={`dealer-referred-by-${item.id}`}>
+              <Ionicons name="ribbon-outline" size={13} color={colors.textSecondary} />
+              <Text style={styles.metaText} numberOfLines={1} ellipsizeMode="tail">
+                Referred by{" "}
+                <Text style={{ color: colors.text, fontWeight: "700" }}>
+                  {item.referred_by.name}
+                </Text>
+                {item.referred_by.dealership ? `  ·  ${item.referred_by.dealership}` : ""}
+                {item.referred_by.code ? `  ·  ${item.referred_by.code}` : ""}
               </Text>
             </View>
           ) : null}
