@@ -2126,6 +2126,46 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
         story.append(Spacer(1, 4))
         story.append(two_col2)
 
+    # ============ KREDO MARKET VALUES ============
+    # Snapshot of the Kredo Vehicle Values pulled at the time of valuation
+    # (new list + M&M code from the flatfile, trade + retail from Kredo's
+    # /value endpoint). These are locked once captured, so what appears
+    # here matches the app's "Market Values" card exactly.
+    mv = sub.get("market_values") or {}
+    if isinstance(mv, dict) and mv.get("status") == "ok":
+        story.append(Paragraph("KREDO MARKET VALUES", section_title))
+        mv_rows = [
+            ["New List Price", _fmt_zar(mv.get("new_list_price_zar"))],
+            ["M&M Code", str(mv.get("mm_code") or "—")],
+            ["Trade Value", _fmt_zar(mv.get("trade_price_zar"))],
+            ["Retail Value", _fmt_zar(mv.get("retail_price_zar"))],
+        ]
+        t_mv = Table(mv_rows, colWidths=[46 * mm, 140 * mm])
+        ts_mv = _row_style()
+        # Emphasise trade + retail — those are the numbers the desk cares
+        # about when negotiating the offer.
+        ts_mv.add("FONT", (1, 0), (1, -1), "Courier-Bold", 9)
+        ts_mv.add("TEXTCOLOR", (1, 2), (1, 3), INK)
+        t_mv.setStyle(ts_mv)
+        story.append(t_mv)
+        # Footer note — provenance + captured-at timestamp so the reader
+        # knows this is a locked historical snapshot, not a live reading.
+        fetched_at = mv.get("fetched_at")
+        try:
+            if isinstance(fetched_at, datetime):
+                ts_txt = fetched_at.strftime("%d %b %Y %H:%M UTC")
+            elif isinstance(fetched_at, str):
+                ts_txt = fetched_at.split(".")[0].replace("T", " ") + " UTC"
+            else:
+                ts_txt = "—"
+        except Exception:
+            ts_txt = "—"
+        story.append(Spacer(1, 2))
+        story.append(Paragraph(
+            f"Source: Kredo Vehicle Values · captured {ts_txt} · locked at valuation",
+            small,
+        ))
+
     # ============ AI MARKET ANALYSIS ============
     ma = sub.get("market_analysis") or {}
     if ma:

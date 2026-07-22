@@ -1,0 +1,34 @@
+{
+  "summary": "Backend-only test of the new KREDO MARKET VALUES section in the valuation PDF export. 5/5 pytest cases PASSED against the preview URL. Verified: admin-downloaded PDF for FB-000093 is valid (%PDF- header, application/pdf content-type), extracted text contains all required labels ('KREDO MARKET VALUES', 'New List Price', 'M&M Code', 'Trade Value', 'Retail Value'), the M&M code literal '60039244' appears, and the footer 'Source: Kredo Vehicle Values ... locked at valuation' is rendered. Auth regressions confirmed: 401 without token, 403 for a non-owner dealer (minitest@example.com). Regression sub with missing/non-ok market_values (FB-000089) still returned 200 with the KREDO section correctly omitted — no crash.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_valuation_pdf_kredo.py",
+    "/app/test_reports/pytest/kredo_pdf_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:2129-2167 — implementation is clean: guarded by `mv.get('status') == 'ok'`, ZAR formatter reused, timestamp fallback handles both datetime and ISO string. Non-'ok' branch produces no output (verified via FB-000089 regression) — good.",
+    "server.py is now 4782 lines — well past the 700-line guideline. Not caused by this change, but flagged for future modularisation."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_valuation_pdf_kredo.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "not tested (backend-only request)"
+  },
+  "seed_data_creation": "None. Used existing preview data: FB-000093 (mv.status=ok, mm_code=60039244) as happy path; FB-000089 (mv missing) as regression sub.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Preview DB currently has 16 submissions via GET /api/admin/submissions (reference key is 'reference', not 'ref_no'). GET /api/submissions/ (no id) returns 405 — use /api/admin/submissions to list. Auth login response uses key 'token' (not 'access_token'). Extracted PDF text for FB-000093 saved to /tmp/fb093_pdf.txt for reference — includes New List Price R476,900.00 / M&M 60039244 / Trade R348,672.00 / Retail R362,348.01 / footer 'captured 2026-07-22 02:53:53 UTC · locked at valuation'.",
+  "rca_of_issue": "N/A — feature works as specified."
+}
