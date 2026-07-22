@@ -115,18 +115,18 @@ export default function RegisterInvitationOnly() {
             we can verify each dealership before you go live.
           </Text>
 
-          {/* Referred-by banner — only shown when a valid /?ref=CODE code
-              is present in the URL. Tells the prospect (and the admin who
-              later opens the WhatsApp message) exactly which dealer sent
-              them, so the accounts can be linked and rewards paid out. */}
-          {referralCode ? (
+          {/* Referred-by banner — only shown when the `?ref=CODE` code
+              resolves to a real dealer via /api/referral/lookup. If the
+              code is missing OR unknown, we skip the banner entirely
+              rather than showing a misleading "a Fourbuy dealer" line. */}
+          {referralCode && referrer ? (
             <View style={styles.referralBanner} testID="referred-by-banner">
               <Ionicons name="ribbon" size={16} color={colors.text} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.referralBannerLabel}>REFERRED BY</Text>
                 <Text style={styles.referralBannerName}>
-                  {referrer?.name || "a Fourbuy dealer"}
-                  {referrer?.dealership ? `  ·  ${referrer.dealership}` : ""}
+                  {referrer.name}
+                  {referrer.dealership ? `  ·  ${referrer.dealership}` : ""}
                 </Text>
                 <Text style={styles.referralBannerCode}>Code: {referralCode}</Text>
               </View>

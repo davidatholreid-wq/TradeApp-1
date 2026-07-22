@@ -14,11 +14,22 @@ import os
 import uuid
 import base64
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 import requests
 from motor.motor_asyncio import AsyncIOMotorClient
 import asyncio
+
+# Load /app/backend/.env before reading MONGO_URL/DB_NAME so that direct
+# mongo helpers hit the SAME database as the FastAPI server. Without this,
+# pytest inherits only shell env and DB_NAME falls back to a wrong default,
+# so seeded ledger rows never show up via /rewards/me.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+except Exception:
+    pass
 
 BASE_URL = os.environ.get("EXPO_BACKEND_URL", "https://fourbuy-admin.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
@@ -27,7 +38,18 @@ ADMIN_EMAIL = "admin@fourbuy.co.za"
 ADMIN_PASSWORD = "admin123"
 
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
-DB_NAME = os.environ.get("DB_NAME", "test_database")
+DB_NAME = os.environ.get("DB_NAME", "autopricepro_db")
+
+# Registration is INVITATION-ONLY as of the SA ID / referral rollout — new
+# dealers must be created by an admin via POST /api/admin/dealerships/{id}/users.
+# We create rewards test dealers into Ford Bryanston, which is preserved in every
+# environment cleanup as a "core" dealership.
+FORD_BRYANSTON_ID = os.environ.get("REWARDS_TEST_DEALERSHIP_ID", "5b5cd0c6-3f06-45c4-8067-52c40f0c92bf")
+
+# Known-good SA IDs (13-digit + valid DOB + Luhn) — same values used across
+# the referral test suite. Uniqueness is not enforced on sa_id_number in the
+# backend, so we can safely reuse a single valid ID for many disposable dealers.
+SA_ID_VALID = "9202204720083"  # 1992-02-20, Luhn ok
 
 
 # ---------- Fixtures ----------
@@ -47,7 +69,12 @@ def admin_token(s):
     return data["token"]
 
 
-def _register_dealer(s):
+def _register_dealer(s, admin_token):
+    """Create a fresh dealer via the admin invitation endpoint and log them in.
+
+    Public /api/auth/register is intentionally disabled (returns 403) because
+    Fourbuy is invitation-only, so tests must go through the admin flow.
+    """
     email = f"test_rewards_{uuid.uuid4().hex[:8]}@example.com"
     password = "Rewards123!"
     payload = {
@@ -57,27 +84,31 @@ def _register_dealer(s):
             "first_name": "Rew",
             "last_name": "Tester",
             "phone": "0821234567",
-            "id_number": "9001010000000",
         },
-        "company_info": {
-            "company_name": "TEST_Rewards Motors",
-            "company_address": "1 Point St",
-        },
+        "active": True,
+        "sa_id_number": SA_ID_VALID,
     }
-    r = s.post(f"{API}/auth/register", json=payload)
-    assert r.status_code == 200, f"Register failed: {r.status_code} {r.text}"
-    d = r.json()
-    return {"token": d["token"], "user_id": d["user"]["id"], "email": email, "password": password}
+    r = s.post(
+        f"{API}/admin/dealerships/{FORD_BRYANSTON_ID}/users",
+        json=payload,
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert r.status_code == 200, f"Admin invite failed: {r.status_code} {r.text}"
+    user = r.json()["user"]
+    # Log the new dealer in to get their own token.
+    lr = s.post(f"{API}/auth/login", json={"email": email, "password": password})
+    assert lr.status_code == 200, f"Dealer login failed: {lr.status_code} {lr.text}"
+    return {"token": lr.json()["token"], "user_id": user["id"], "email": email, "password": password}
 
 
 @pytest.fixture(scope="session")
-def dealer_a(s):
-    return _register_dealer(s)
+def dealer_a(s, admin_token):
+    return _register_dealer(s, admin_token)
 
 
 @pytest.fixture(scope="session")
-def dealer_b(s):
-    return _register_dealer(s)
+def dealer_b(s, admin_token):
+    return _register_dealer(s, admin_token)
 
 
 def _tiny_b64():
@@ -202,7 +233,9 @@ class TestRewardsMeShape:
         assert d["voucher_provider"] == "Takealot"
         assert d["can_redeem"] is False
         assert d["points_to_next_voucher"] == 50
-        assert d["totals"] == {"earned": 0, "spent": 0, "refunded": 0}
+        # totals must include earned/spent/refunded (referred was added later by the referral feature)
+        for k in ("earned", "spent", "refunded"):
+            assert d["totals"].get(k) == 0, f"totals.{k} should be 0, got {d['totals'].get(k)}"
         assert d["ledger"] == []
         assert d["redemptions"] == []
         # No _id leaks
@@ -249,7 +282,7 @@ class TestSlaAwardGuard:
     """No point awarded if the submission is priced OUTSIDE the 24h SLA."""
 
     def test_no_award_when_outside_sla(self, s, admin_token):
-        dealer = _register_dealer(s)
+        dealer = _register_dealer(s, admin_token)
         sub_id = _submit_vehicle(s, dealer)
         # Push created_at back 48h so it becomes outside SLA
         _push_submission_back(sub_id, hours=48)
@@ -270,16 +303,16 @@ class TestSlaAwardGuard:
 class TestRedeem:
     """POST /api/rewards/redeem — insufficient + successful redemption."""
 
-    def test_redeem_insufficient_400(self, s):
-        dealer = _register_dealer(s)
+    def test_redeem_insufficient_400(self, s, admin_token):
+        dealer = _register_dealer(s, admin_token)
         r = s.post(f"{API}/rewards/redeem",
                    json={"desired_email": dealer["email"]},
                    headers={"Authorization": f"Bearer {dealer['token']}"})
         assert r.status_code == 400
         assert "enough" in (r.json().get("detail") or "").lower() or "50" in (r.json().get("detail") or "")
 
-    def test_redeem_success_deducts_points_and_creates_pending(self, s):
-        dealer = _register_dealer(s)
+    def test_redeem_success_deducts_points_and_creates_pending(self, s, admin_token):
+        dealer = _register_dealer(s, admin_token)
         # Seed 50 earn entries for this dealer directly in mongo
         _seed_ledger_earn(dealer["user_id"], 50)
         # Verify balance == 50 via API
@@ -311,8 +344,8 @@ class TestRedeem:
         # Cleanup
         _cleanup_ledger(dealer["user_id"])
 
-    def test_redeem_defaults_email_to_login_email(self, s):
-        dealer = _register_dealer(s)
+    def test_redeem_defaults_email_to_login_email(self, s, admin_token):
+        dealer = _register_dealer(s, admin_token)
         _seed_ledger_earn(dealer["user_id"], 50)
         # Omit desired_email → should fallback to login email
         r = s.post(f"{API}/rewards/redeem",
@@ -327,8 +360,8 @@ class TestRedeem:
 class TestAdminInboxAndActions:
     """Admin list / fulfil / reject."""
 
-    def _seed_pending(self, s):
-        dealer = _register_dealer(s)
+    def _seed_pending(self, s, admin_token):
+        dealer = _register_dealer(s, admin_token)
         _seed_ledger_earn(dealer["user_id"], 50)
         r = s.post(f"{API}/rewards/redeem", json={"desired_email": dealer["email"]},
                    headers={"Authorization": f"Bearer {dealer['token']}"})
@@ -336,7 +369,7 @@ class TestAdminInboxAndActions:
         return dealer, r.json()["redemption"]["id"]
 
     def test_admin_list_all_and_filter_pending(self, s, admin_token):
-        dealer, redemption_id = self._seed_pending(s)
+        dealer, redemption_id = self._seed_pending(s, admin_token)
         # List all
         r = s.get(f"{API}/admin/reward-redemptions",
                   headers={"Authorization": f"Bearer {admin_token}"})
@@ -368,7 +401,7 @@ class TestAdminInboxAndActions:
         _cleanup_ledger(dealer["user_id"])
 
     def test_fulfill_marks_and_no_balance_change_plus_double_fulfill_blocked(self, s, admin_token):
-        dealer, redemption_id = self._seed_pending(s)
+        dealer, redemption_id = self._seed_pending(s, admin_token)
         # Balance is 0 already (points spent at redeem)
         pre = s.get(f"{API}/rewards/me",
                     headers={"Authorization": f"Bearer {dealer['token']}"}).json()
@@ -404,7 +437,7 @@ class TestAdminInboxAndActions:
         _cleanup_ledger(dealer["user_id"])
 
     def test_reject_refunds_points(self, s, admin_token):
-        dealer, redemption_id = self._seed_pending(s)
+        dealer, redemption_id = self._seed_pending(s, admin_token)
         pre = s.get(f"{API}/rewards/me",
                     headers={"Authorization": f"Bearer {dealer['token']}"}).json()
         assert pre["balance"] == 0

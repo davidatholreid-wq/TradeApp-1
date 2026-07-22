@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 33 — SA-ID / Referral feature re-verification. Backend: test_rewards.py 12/12 GREEN after two small test-file fixes (dotenv-load + tolerate new totals.referred field). test_referral_and_sa_id.py 12/12 GREEN. Referral lookup spot-checks: GET /api/referral/lookup?code=F5MY89 -> 200 {code, referrer_name='Test Dealer', referrer_first_name='Test', referrer_dealership='Mini Test Motors'}; ?code=ZZZZZZ -> 404. Admin invite endpoint continues to validate SA-ID (Luhn/date/length) and auto-generates 6-char referral_code. Frontend: (a) /register (no ref) -> Invitation-only card, banner ABSENT (correct). (b) /register?ref=ZZZZZZ -> banner ABSENT, no 'REFERRED BY' text, no code echo (correct, matches E1's fix). (c) /register?ref=F5MY89 -> banner present with 'Test Dealer · Mini Test Motors' + 'Code: F5MY89'. (d) Profile screen for minitest@example.com renders referral-code-value=F5MY89 and share-fourbuy-btn is present. (e) Admin cockpit -> Dealers tab -> Ford Bryanston 'Add User' modal still exposes SA ID Number (13 digits) + Referred By (optional code) inputs. NEW MINOR BUG FOUND: WhatsApp message on unknown ref still includes 'Referral code: ZZZZZZ' line — banner is gated on `referralCode && referrer` but the WhatsApp `referralLine` at register.tsx:73 is only gated on `referralCode`. Spec says msg must not include referral line for unknown/missing codes. One-line fix suggested below — not applied (business logic).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/admin/dealerships/{id}/users", "issue": "Missing sa_id_number still returns 422 (Pydantic default) instead of 400 — carried over from iteration_32; not blocking, dealer UI validates client-side."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Register via WhatsApp with invalid ?ref=CODE", "issue": "Referred-by banner correctly hides when /api/referral/lookup returns 404, BUT the generated wa.me message still contains 'Referral code: ZZZZZZ' because `referralLine` is gated on referralCode alone. Fix: change /app/frontend/app/(auth)/register.tsx:73 from `const referralLine = referralCode ?` to `const referralLine = (referralCode && referrer) ?` so the message is consistent with the visible banner.", "affected_testIDs": []}
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_rewards.py (updated: dotenv load + tolerant totals assertion)",
+    "/app/backend/tests/test_referral_and_sa_id.py",
+    "/app/test_reports/pytest/iteration_33_rewards.xml",
+    "/app/test_reports/pytest/iteration_33_referral.xml",
+    "/tmp/reg_no_ref.png, /tmp/reg_unknown_ref.png, /tmp/reg_valid_ref.png",
+    "/tmp/profile_minitest_v2.png, /tmp/admin_dealers_tab.png, /tmp/admin_add_user_modal_final.png"
+  ],
+  "action_items": [
+    "Fix /app/frontend/app/(auth)/register.tsx:73 — gate `referralLine` on `(referralCode && referrer)` so the WhatsApp message does NOT emit a 'Referral code: <CODE>' line for unknown/invalid codes. Matches the banner's guard at line 122 and the review-request spec.",
+    "(Optional, carried over from iteration_32) Convert the 422 on missing sa_id_number to a 400 with a friendly message via an explicit Pydantic validator on AdminInviteUserRequest.",
+    "(Optional) Fix the pytest warning 'Class-scoped fixture defined as instance method is deprecated' in test_referral_and_sa_id.py — @classmethod on TestReferralRewards._setup_referrer or use module-scoped fixtures."
+  ],
+  "critical_code_review_comments": [
+    "backend/server.py is still 4900+ lines — refactor into routers (auth, submissions, admin, rewards, referrals) is overdue.",
+    "test_rewards.py silently defaulted DB_NAME to 'test_database' if pytest was invoked without the shell-exported .env — root cause of the initial 7-failure run. Fixed by loading /app/backend/.env at import time. Same pattern should be added to any other test file that talks to Mongo directly."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_rewards.py (loaded /app/backend/.env at import; relaxed TestRewardsMeShape.totals assertion to allow new totals.referred field)"
+  ],
+  "success_rate": {"backend": "100% (12/12 rewards + 12/12 referral_and_sa_id)", "frontend": "~90% — 3/3 register-banner scenarios correct + Profile share card + admin invite modal all pass; only remaining defect is the WhatsApp referral-line leak for unknown codes"},
+  "seed_data_creation": "test_rewards.py + test_referral_and_sa_id.py created several TEST_-prefixed disposable dealers under Ford Bryanston during the run and cleaned up their reward_ledger rows via _cleanup_ledger. minitest@example.com retains its persisted referral_code F5MY89. No new dealerships or submissions were seeded manually.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "minitest@example.com referral code is F5MY89 in the current preview DB (persisted, safe). Ford Bryanston id 5b5cd0c6-3f06-45c4-8067-52c40f0c92bf, Mini Test Motors id 3e18c809-2803-4124-aeaa-9b0bc9cd3998 both intact. SA IDs to reuse: 9202204720083 (valid), 8501015009086 (valid), 9202204720081 (bad Luhn), 9902324720085 (bad date). If invoking pytest directly (not via `export $(grep -v '^#' .env|xargs)`), test_rewards.py now self-loads /app/backend/.env — safe to run from any cwd. Admin cockpit Dealers modal testIDs to know: `[data-testid^=\"group-add-user-\"]`, `[data-testid^=\"dealer-add-teammate-\"]`. Profile screen: `[data-testid=\"referral-code-value\"]`, `[data-testid=\"share-fourbuy-btn\"]`. Register banner: `[data-testid=\"referred-by-banner\"]`.",
+  "rca_of_issue": "WhatsApp-referral-line-leak RCA: register.tsx has two independent guards. The banner JSX at line 122 is correctly `referralCode && referrer` (only shown when /api/referral/lookup succeeds). The WhatsApp `referralLine` at line 73 is only `referralCode ? ...` — so any string in the URL flows into the outgoing wa.me message. Reproduction: open /register?ref=ZZZZZZ, fill dealership + name, click 'Request via WhatsApp' → captured url contains encoded '• Referral code: ZZZZZZ'. Mitigation: change line 73 to `const referralLine = (referralCode && referrer) ? ...`. No backend change needed. Optionally also drop the '(from …)' clause since the banner already surfaces the referrer name."
+}
