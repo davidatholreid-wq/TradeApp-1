@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { TouchableOpacity } from "@/src/components/HapticButtons";
 import { View, Text, StyleSheet, ActivityIndicator, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -18,6 +18,12 @@ export const SCAN_PARSED_KEY = "app.scan.parsed";
 // the user scanned via the camera or picked from their library.
 export const SCAN_PHOTO_KEY = "app.scan.photo";
 
+// Ignore any barcode detection fired within this window after mount —
+// avoids the CameraView firing an immediate "phantom" scan on re-entry
+// when a barcode is still cached in its native buffer from a previous
+// visit. Long enough to swallow the buffer, short enough to feel snappy.
+const MOUNT_SETTLE_MS = 900;
+
 /**
  * Scan / upload the SA license disc PDF-417 barcode.
  *
@@ -35,7 +41,23 @@ export default function ScanScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const cameraRef = useState<any>(null);
+  const cameraRef = useRef<any>(null);
+  const mountedAtRef = useRef<number>(Date.now());
+
+  useEffect(() => {
+    // On every fresh mount, wipe any stale scan artefacts from a previous
+    // session so this scan starts from a clean slate. This is what the
+    // user hits after a "Reset" on the submit form: without the wipe,
+    // the old barcode/parsed/photo would still be sitting in storage
+    // and could confuse downstream screens.
+    (async () => {
+      await storage.removeItem(SCAN_BUFFER_KEY);
+      await storage.removeItem(SCAN_PARSED_KEY);
+      await storage.removeItem(SCAN_PHOTO_KEY);
+    })();
+    mountedAtRef.current = Date.now();
+    setScanned(null);
+  }, []);
 
   useEffect(() => {
     if (permission && !permission.granted && permission.canAskAgain) {
@@ -79,14 +101,21 @@ export default function ScanScreen() {
 
   // ------- Live camera scan handler -------
   const handleScanned = async ({ data }: { data: string }) => {
+    // Guard 1: swallow anything the CameraView fires from a stale native
+    // buffer immediately after mount — this is the "phantom scan" that
+    // used to strand the user on "Scanned! Returning…" when they came
+    // back to this screen after a Reset.
+    if (Date.now() - mountedAtRef.current < MOUNT_SETTLE_MS) return;
+    // Guard 2: only accept the first genuine scan per screen visit.
     if (scanned) return;
+    if (!data || !String(data).trim()) return;
     setScanned(data);
     // Best-effort still capture from the live camera view. On web (Expo
     // Go browser preview) `takePictureAsync` isn't supported — we just
     // skip the photo capture there and rely on the decoded data.
     let photoDataUrl: string | null = null;
     try {
-      const camera = (cameraRef[0] as any) || null;
+      const camera = cameraRef.current;
       if (camera?.takePictureAsync) {
         const shot = await camera.takePictureAsync({ base64: true, quality: 0.7, skipProcessing: true });
         if (shot?.base64) {
@@ -97,6 +126,13 @@ export default function ScanScreen() {
       console.log("scan still-capture failed", err);
     }
     await persistAndReturn(data, photoDataUrl);
+  };
+
+  // Manual reset — used by the "Retake" button when the user wants to
+  // rescan (either after a mis-fire or simply to try a different frame).
+  const retake = () => {
+    setScanned(null);
+    mountedAtRef.current = Date.now(); // re-open the settle window
   };
 
   // ------- Upload photo (server-side decode) handler -------
@@ -218,7 +254,7 @@ export default function ScanScreen() {
   return (
     <View style={styles.container}>
       <CameraView
-        ref={(r) => { (cameraRef[0] as any) = r; }}
+        ref={(r) => { cameraRef.current = r; }}
         style={StyleSheet.absoluteFill}
         facing="back"
         barcodeScannerSettings={{
@@ -245,6 +281,16 @@ export default function ScanScreen() {
           <Text style={styles.hint}>
             {scanned ? "Scanned! Returning..." : "Align the barcode within the frame"}
           </Text>
+          {scanned ? (
+            <TouchableOpacity
+              testID="scan-retake-btn"
+              onPress={retake}
+              style={styles.retakeBtn}
+            >
+              <Ionicons name="refresh" size={16} color="#fff" />
+              <Text style={styles.retakeBtnText}>Retake</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         <View style={styles.bottomBar}>
@@ -255,7 +301,7 @@ export default function ScanScreen() {
             testID="upload-photo-btn"
             style={styles.uploadBtn}
             onPress={handleUploadPhoto}
-            disabled={uploading || !!scanned}
+            disabled={uploading}
           >
             {uploading ? (
               <ActivityIndicator color="#fff" />
@@ -325,6 +371,19 @@ const styles = StyleSheet.create({
   bl: { bottom: 0, left: 0, borderBottomWidth: 4, borderLeftWidth: 4 },
   br: { bottom: 0, right: 0, borderBottomWidth: 4, borderRightWidth: 4 },
   hint: { color: "#fff", marginTop: spacing.lg, fontSize: 14, textAlign: "center" },
+  retakeBtn: {
+    marginTop: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.55)",
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  retakeBtnText: { color: "#fff", fontWeight: "700", fontSize: 13, letterSpacing: 0.5 },
   bottomBar: {
     padding: spacing.md,
     backgroundColor: "rgba(0,0,0,0.7)",

@@ -1840,35 +1840,37 @@ export default function VehicleDetail() {
         {/* Kredo VIN accident/claim history — admin-only, on-demand fetch. */}
         {isAdmin && sub.vin && sub.vin.trim() && sub.vin.toUpperCase() !== "TBC" ? (
           <View style={styles.reportsSection} testID="kredo-history-section">
-            <View style={styles.kredoHead}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.sectionTitle}>Accident / Claim History</Text>
-                <Text style={styles.reportsHelp}>
-                  Kredo VIN history for {sub.vin}. Results are cached — refresh only if you need a fresh check.
-                </Text>
-              </View>
-              <TouchableOpacity
-                testID="kredo-history-fetch-btn"
-                style={styles.kredoFetchBtn}
-                onPress={() => fetchKredoHistory(!!kredoHistory)}
-                disabled={kredoLoading}
-              >
-                {kredoLoading ? (
-                  <ActivityIndicator color={colors.onPrimary} size="small" />
-                ) : (
-                  <>
-                    <Ionicons
-                      name={kredoHistory ? "refresh" : "search"}
-                      size={14}
-                      color={colors.onPrimary}
-                    />
-                    <Text style={styles.kredoFetchBtnText}>
-                      {kredoHistory ? "Refresh" : "Fetch"}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
+            <Text style={styles.sectionTitle}>Accident / Claim History</Text>
+            <Text style={styles.reportsHelp}>
+              Kredo VIN history for {sub.vin}. Results are cached — refresh only if you need a fresh check.
+            </Text>
+
+            <TouchableOpacity
+              testID="kredo-history-fetch-btn"
+              style={[
+                styles.kredoFetchBtn,
+                kredoLoading && styles.kredoFetchBtnDisabled,
+              ]}
+              onPress={() => fetchKredoHistory(!!kredoHistory)}
+              disabled={kredoLoading}
+              accessibilityRole="button"
+              accessibilityLabel={kredoHistory ? "Refresh accident history" : "Fetch accident history"}
+            >
+              {kredoLoading ? (
+                <ActivityIndicator color={colors.onPrimary} size="small" />
+              ) : (
+                <>
+                  <Ionicons
+                    name={kredoHistory ? "refresh" : "search"}
+                    size={16}
+                    color={colors.onPrimary}
+                  />
+                  <Text style={styles.kredoFetchBtnText}>
+                    {kredoHistory ? "Refresh Accident History" : "Fetch Accident History"}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
 
             {!kredoHistory ? (
               <View style={styles.kredoEmpty}>
@@ -3796,15 +3798,20 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   kredoFetchBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    backgroundColor: colors.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: radius.sm,
-    minWidth: 84,
     justifyContent: "center",
+    gap: 8,
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+    minHeight: 44,
   },
-  kredoFetchBtnText: { color: colors.onPrimary, fontSize: 12, fontWeight: "800", letterSpacing: 0.5 },
+  kredoFetchBtnDisabled: {
+    opacity: 0.6,
+  },
+  kredoFetchBtnText: { color: colors.onPrimary, fontSize: 13, fontWeight: "800", letterSpacing: 0.5 },
   kredoEmpty: {
     flexDirection: "row",
     alignItems: "flex-start",
