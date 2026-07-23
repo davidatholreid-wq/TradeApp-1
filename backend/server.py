@@ -1415,6 +1415,65 @@ async def refresh_market_values(sub_id: str, current: dict = Depends(get_current
     return {"market_values": mv, "locked": False}
 
 
+@api_router.post("/admin/submissions/{sub_id}/bimmer-spec")
+async def fetch_bimmer_spec_endpoint(sub_id: str, current: dict = Depends(require_admin)):
+    """Fetch BMW / MINI / Rolls-Royce / ALPINA factory spec from bimmer.work
+    for the submission's VIN.
+
+    Admin-only, on-demand. The response is CACHED on the submission
+    (`bimmer_spec` field), so a second click on the same VIN is instant
+    and doesn't consume a 2captcha solve credit. If the previous attempt
+    errored, retrying is allowed (fresh solve).
+
+    Returns 400 for unsupported makes (non-BMW group), 404 if the
+    submission has no VIN yet.
+    """
+    from services.bimmer_scraper import (
+        BIMMER_SUPPORTED_MAKES,  # noqa: F401 — surfaced for docs
+        fetch_bimmer_spec,
+        is_bimmer_supported_make,
+    )
+
+    sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+
+    vin = (sub.get("vin") or "").strip().upper()
+    if len(vin) != 17:
+        raise HTTPException(400, "Submission has no valid 17-character VIN yet.")
+
+    make = sub.get("make_name") or sub.get("make") or ""
+    if not is_bimmer_supported_make(make):
+        raise HTTPException(
+            400,
+            "bimmer.work only supports BMW, MINI, Rolls-Royce and ALPINA vehicles.",
+        )
+
+    # Cached OK snapshot? Return instantly. Cached error snapshots still let
+    # the admin retry with a fresh solve.
+    existing = sub.get("bimmer_spec") or {}
+    if isinstance(existing, dict) and existing.get("status") == "ok" and existing.get("vin") == vin:
+        return {"bimmer_spec": existing, "cached": True}
+
+    key = os.getenv("TWOCAPTCHA_API_KEY", "").strip()
+    if not key:
+        raise HTTPException(500, "Bimmer.work integration is not fully configured (missing captcha key).")
+
+    logger.info("bimmer.work: fetching spec for sub=%s vin=%s (admin=%s)", sub_id, vin, current.get("email"))
+    spec = await fetch_bimmer_spec(vin, twocaptcha_key=key)
+
+    # Persist regardless of success / failure — a failure snapshot with an
+    # `error` string lets the UI surface a specific message and the admin can
+    # retry when appropriate (page structure change, transient captcha, etc.).
+    await db.submissions.update_one(
+        {"id": sub_id},
+        {"$set": {"bimmer_spec": spec}},
+    )
+    if spec.get("status") != "ok":
+        return {"bimmer_spec": spec, "cached": False}
+    return {"bimmer_spec": spec, "cached": False}
+
+
 @api_router.get("/admin/submissions")
 async def admin_list_submissions(
     bucket: Optional[Literal["incoming", "priced", "archived", "all"]] = "all",
