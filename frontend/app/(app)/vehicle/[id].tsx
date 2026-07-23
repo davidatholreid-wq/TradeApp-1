@@ -116,7 +116,7 @@ type PriceHistoryEntry = {
 type ReportOrder = {
   id: string;
   submission_id: string;
-  type: "lightstone_verification" | "lightstone_repair" | "car_vertical";
+  type: "lightstone_verification" | "lightstone_repair" | "car_vertical" | "bmw_options";
   name: string;
   cost_zar: number;
   status: "pending" | "delivered" | "failed";
@@ -653,6 +653,9 @@ export default function VehicleDetail() {
     lightstone_repair: { name: "Lightstone Vehicle Repair History Report", cost_zar: 50 },
     car_vertical: { name: "Car Vertical Report", cost_zar: 200 },
     kredo_cartrust: { name: "Kredo CarTrust Vehicle Report", cost_zar: 200 },
+    // BMW factory options — live Bimmervin lookup, only offered on
+    // BMW-group VINs (BMW, MINI, Rolls-Royce, ALPINA).
+    bmw_options: { name: "BMW Factory Options", cost_zar: 10 },
   };
 
   const orderedReportTypes = useMemo(
@@ -1633,7 +1636,17 @@ export default function VehicleDetail() {
                   </>
                 )}
 
-                {(["lightstone_verification", "lightstone_repair", "car_vertical"] as ReportOrder["type"][])
+                {((): ReportOrder["type"][] => {
+                    const baseTypes: ReportOrder["type"][] = [
+                      "lightstone_verification",
+                      "lightstone_repair",
+                      "car_vertical",
+                    ];
+                    // BMW factory options is BMW-group only — filter on the
+                    // submission's make so it never appears on other brands.
+                    if (isBimmerSupported) baseTypes.push("bmw_options");
+                    return baseTypes;
+                  })()
                   .filter((t) => !isAdmin || orderedReportTypes.has(t))
                   .map((t) => {
                     const meta = REPORT_CATALOG[t];
@@ -1994,96 +2007,12 @@ export default function VehicleDetail() {
           )}
         </View>
 
-        {/* Bimmervin factory options (BMW / MINI / Rolls-Royce / ALPINA).
-            Admin-only, on-demand — R10 billed to the dealership on the
-            first successful fetch per submission; subsequent clicks are
-            cached and free. See services/bimmervin_client.py. */}
-        {isAdmin && isBimmerSupported ? (
-          <>
-            <Text style={styles.sectionTitle}>Factory Fitted Vehicle Options</Text>
-            <View style={styles.marketValuesCard} testID="bimmer-spec-card">
-              <Text style={styles.bimmerSubHeader}>Against supplied VIN</Text>
-
-              {bimmerSpec?.status === "ok" ? (
-                <>
-                  {Array.isArray(bimmerSpec.options) && bimmerSpec.options.length > 0 ? (
-                    <View style={styles.bimmerOptionsList}>
-                      {bimmerSpec.options.map((o: any) => (
-                        <View
-                          key={`${o.kind}-${o.code}`}
-                          style={o.description ? styles.bimmerOptionRow : styles.bimmerOptionRowBare}
-                        >
-                          <View style={styles.bimmerOptionKindBadge}>
-                            <Text style={styles.bimmerOptionKindText}>{o.kind}</Text>
-                          </View>
-                          <Text style={styles.bimmerOptionCodeStrong}>{o.code}</Text>
-                          {o.description ? (
-                            <Text style={styles.bimmerOptionDesc} numberOfLines={2}>
-                              {o.description}
-                            </Text>
-                          ) : (
-                            <Text style={styles.bimmerOptionDescMuted}>—</Text>
-                          )}
-                        </View>
-                      ))}
-                    </View>
-                  ) : (
-                    <Text style={styles.bimmerFetchHint}>No factory options returned for this VIN.</Text>
-                  )}
-                  <View style={styles.marketFooter}>
-                    <Text style={styles.marketFooterText}>
-                      {bimmerSpec.options?.length || 0} option{(bimmerSpec.options?.length || 0) === 1 ? "" : "s"}
-                      {bimmerSpec.captured_at ? ` · captured ${formatFetched(bimmerSpec.captured_at)}` : ""}
-                    </Text>
-                  </View>
-                </>
-              ) : bimmerSpec?.status === "error" ? (
-                <View style={styles.marketErrorBox}>
-                  <Ionicons name="alert-circle-outline" size={18} color={colors.warning} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.marketErrorText}>Could not fetch factory options.</Text>
-                    <Text style={styles.marketErrorDetail} numberOfLines={3}>
-                      {bimmerSpec.error || "Bimmervin request failed."}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    testID="bimmer-retry"
-                    onPress={fetchBimmerSpec}
-                    disabled={bimmerLoading}
-                    style={[styles.marketRefreshBtn, bimmerLoading && styles.docBtnDisabled]}
-                  >
-                    {bimmerLoading ? (
-                      <ActivityIndicator size="small" color={colors.text} />
-                    ) : (
-                      <Text style={styles.marketRefreshText}>Retry</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <View style={styles.bimmerFetchRow}>
-                  <Text style={styles.bimmerFetchHint}>
-                    Fetches every factory-fitted option for the VIN above. Adds R10 to the dealership&apos;s billing on success.
-                  </Text>
-                  <TouchableOpacity
-                    testID="bimmer-fetch"
-                    onPress={fetchBimmerSpec}
-                    disabled={bimmerLoading}
-                    style={[styles.bimmerFetchBtn, bimmerLoading && styles.docBtnDisabled]}
-                  >
-                    {bimmerLoading ? (
-                      <ActivityIndicator size="small" color={colors.onPrimary} />
-                    ) : (
-                      <>
-                        <Ionicons name="cloud-download" size={14} color={colors.onPrimary} />
-                        <Text style={styles.bimmerFetchBtnText}>Fetch (R10)</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
-          </>
-        ) : null}
+        {/* NOTE: BMW factory options used to have its own admin-only card
+            here. It has been moved into "Order a VIN-Linked Report" below
+            so any dealer with a BMW-group vehicle can purchase the R10
+            factory-options lookup like any other VIN report. The result
+            still gets cached on `submission.bimmer_spec` so the valuation
+            PDF continues to include it. */}
 
         {isAdmin ? (
           <>
@@ -2481,6 +2410,44 @@ function ReportResultBody({ data }: { data: Record<string, any> }) {
     if (typeof v === "object") return JSON.stringify(v);
     return String(v);
   };
+
+  // BMW Factory Options result (from Bimmervin) has a different shape than
+  // the Lightstone/CarVertical mock reports — no summary/sections, just
+  // {status:"ok", vin, options:[{code, kind, description}], ...}. Render
+  // it inline as a list of code + description pills instead of using the
+  // generic sections renderer.
+  const isBmwOptions =
+    data && data.status === "ok" && Array.isArray(data.options) && !sections;
+  if (isBmwOptions) {
+    const options = (data.options || []) as { code: string; kind: string; description?: string | null }[];
+    return (
+      <View>
+        <Text style={[styles.viewReportBody, { marginBottom: spacing.sm }]}>
+          {options.length} factory-fitted option{options.length === 1 ? "" : "s"} against VIN {data.vin || "—"}.
+        </Text>
+        <View style={styles.bimmerOptionsList}>
+          {options.map((o) => (
+            <View
+              key={`${o.kind}-${o.code}`}
+              style={o.description ? styles.bimmerOptionRow : styles.bimmerOptionRowBare}
+            >
+              <View style={styles.bimmerOptionKindBadge}>
+                <Text style={styles.bimmerOptionKindText}>{o.kind}</Text>
+              </View>
+              <Text style={styles.bimmerOptionCodeStrong}>{o.code}</Text>
+              {o.description ? (
+                <Text style={styles.bimmerOptionDesc} numberOfLines={2}>
+                  {o.description}
+                </Text>
+              ) : (
+                <Text style={styles.bimmerOptionDescMuted}>—</Text>
+              )}
+            </View>
+          ))}
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View>

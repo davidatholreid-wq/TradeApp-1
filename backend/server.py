@@ -178,6 +178,14 @@ REPORT_CATALOG = {
         "name": "Car Vertical Report",
         "cost_zar": 200.0,
     },
+    # BMW-only VIN-linked report — sourced live from Bimmervin (BMW factory
+    # order) rather than the mocked provider generator. Front-end filters
+    # this out of the catalog for non-BMW-group submissions.
+    "bmw_options": {
+        "name": "BMW Factory Options",
+        "cost_zar": 10.0,
+        "supported_makes": ["BMW", "MINI", "ROLLS-ROYCE", "ROLLS ROYCE", "ALPINA"],
+    },
 }
 
 
@@ -704,7 +712,7 @@ class DealerPhotoUpload(BaseModel):
 
 
 class ReportOrderCreate(BaseModel):
-    type: Literal["lightstone_verification", "lightstone_repair", "car_vertical"]
+    type: Literal["lightstone_verification", "lightstone_repair", "car_vertical", "bmw_options"]
     accepted_charge: bool = False
 
 
@@ -1684,12 +1692,42 @@ async def admin_delete_submission(sub_id: str, current: dict = Depends(require_a
 
 # ============ Vehicle report orders (VIN-linked, chargeable) ============
 @api_router.get("/reports/catalog")
-async def report_catalog(_: dict = Depends(get_current_user)):
-    """Return the list of available VIN reports and their costs."""
+async def report_catalog(
+    submission_id: Optional[str] = None,
+    _: dict = Depends(get_current_user),
+):
+    """Return the list of available VIN reports and their costs.
+
+    When a ``submission_id`` is supplied we filter the catalog against
+    ``supported_makes`` so that make-specific reports (currently BMW-only
+    ``bmw_options``) never surface on submissions they can't service.
+    """
+    make: Optional[str] = None
+    if submission_id:
+        sub = await db.submissions.find_one({"id": submission_id}, {"_id": 0, "make_name": 1, "make": 1})
+        if sub:
+            make = (sub.get("make_name") or sub.get("make") or "").upper().strip()
+
+    def _allowed(entry: dict) -> bool:
+        supported = entry.get("supported_makes")
+        if not supported:
+            return True
+        if not make:
+            # Without submission context we can't filter — hide make-restricted
+            # reports so callers don't accidentally offer them everywhere.
+            return False
+        return make in [s.upper() for s in supported]
+
     return {
         "reports": [
-            {"type": k, "name": v["name"], "cost_zar": v["cost_zar"]}
+            {
+                "type": k,
+                "name": v["name"],
+                "cost_zar": v["cost_zar"],
+                "supported_makes": v.get("supported_makes"),
+            }
             for k, v in REPORT_CATALOG.items()
+            if _allowed(v)
         ]
     }
 
@@ -1866,17 +1904,58 @@ async def order_submission_report(
     if not catalog:
         raise HTTPException(400, "Unknown report type")
 
+    # Make-restricted reports (currently bmw_options) refuse to run against
+    # wrong-brand submissions. Front-end already filters these out, but the
+    # backend gates defensively too.
+    supported_makes = catalog.get("supported_makes")
+    if supported_makes:
+        make = (sub.get("make_name") or sub.get("make") or "").upper().strip()
+        if make not in [s.upper() for s in supported_makes]:
+            raise HTTPException(400, f"This report is only available for {', '.join(supported_makes)} vehicles.")
+
     existing = await db.report_orders.find_one(
         {"submission_id": sub_id, "type": payload.type}
     )
     if existing:
         raise HTTPException(409, "This report has already been ordered for this submission")
 
-    # MOCKED: real Lightstone / CarVertical APIs will replace this generator.
-    # For now the report is marked delivered immediately with a realistic payload
-    # so the dealer can see the shape of the final output.
-    result_data = _mock_report_data(payload.type, sub)
     now_ts = now_utc()
+
+    # bmw_options is a LIVE Bimmervin lookup, not mock data. On failure we
+    # do NOT bill the dealer or create the order — we return a 502 so the
+    # dealer can retry when appropriate.
+    if payload.type == "bmw_options":
+        from services.bimmervin_client import fetch_bimmer_spec, describe_option_code
+
+        spec = await fetch_bimmer_spec(vin)
+        if spec.get("status") != "ok":
+            raise HTTPException(
+                502,
+                spec.get("error") or "Could not fetch BMW factory options — please try again.",
+            )
+
+        # Re-apply descriptions defensively (already done inside the client,
+        # but re-running keeps this endpoint safe if the client changes).
+        for o in spec.get("options") or []:
+            if o.get("code"):
+                o["description"] = describe_option_code(o["code"])
+
+        # Also mirror the spec onto the submission for the mobile "Factory
+        # Fitted Vehicle Options" card and the valuation PDF.
+        await db.submissions.update_one(
+            {"id": sub_id},
+            {"$set": {"bimmer_spec": spec}},
+        )
+        result_data = spec
+        note = "Sourced live from Bimmervin (BMW factory order data)."
+        mocked = False
+    else:
+        # MOCKED: real Lightstone / CarVertical APIs will replace this generator.
+        # For now the report is marked delivered immediately with a realistic payload
+        # so the dealer can see the shape of the final output.
+        result_data = _mock_report_data(payload.type, sub)
+        note = "MOCK DATA — this report was generated locally while the real provider APIs are being integrated."
+        mocked = True
 
     order = {
         "id": str(uuid.uuid4()),
@@ -1891,8 +1970,8 @@ async def order_submission_report(
         "ordered_by": current["id"],
         "delivered_at": now_ts,
         "result_data": result_data,
-        "note": "MOCK DATA — this report was generated locally while the real provider APIs are being integrated.",
-        "mocked": True,
+        "note": note,
+        "mocked": mocked,
     }
     await db.report_orders.insert_one(order)
     order.pop("_id", None)
