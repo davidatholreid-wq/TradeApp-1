@@ -1429,7 +1429,11 @@ async def fetch_bimmer_spec_endpoint(sub_id: str, current: dict = Depends(requir
     Returns 400 for unsupported makes (non-BMW group), 404 if the
     submission has no VIN yet.
     """
-    from services.bimmervin_client import fetch_bimmer_spec, is_bimmer_supported_make
+    from services.bimmervin_client import (
+        describe_option_code,
+        fetch_bimmer_spec,
+        is_bimmer_supported_make,
+    )
 
     sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
     if not sub:
@@ -1446,11 +1450,39 @@ async def fetch_bimmer_spec_endpoint(sub_id: str, current: dict = Depends(requir
             "Bimmervin only supports BMW, MINI, Rolls-Royce and ALPINA vehicles.",
         )
 
+    def _reapply_descriptions(spec: dict) -> dict:
+        """Refresh every option's ``description`` from the local dictionary
+        so any codes we've added to `bmw_sa_codes.json` since the snapshot
+        was captured get their labels retroactively — no extra credit."""
+        opts = spec.get("options") if isinstance(spec, dict) else None
+        if not isinstance(opts, list):
+            return spec
+        unknown: list[str] = []
+        described = 0
+        for o in opts:
+            if isinstance(o, dict) and o.get("code"):
+                desc = describe_option_code(o["code"])
+                o["description"] = desc
+                if desc:
+                    described += 1
+                else:
+                    unknown.append(o["code"])
+        spec["unknown_codes"] = unknown
+        counts = spec.get("option_counts") or {}
+        counts["described"] = described
+        counts["unknown"] = len(unknown)
+        spec["option_counts"] = counts
+        return spec
+
     # Cached OK snapshot for the same VIN? Return instantly. Cached error
     # snapshots still let the admin retry with a fresh Bimmervin call.
     existing = sub.get("bimmer_spec") or {}
     if isinstance(existing, dict) and existing.get("status") == "ok" and existing.get("vin") == vin:
-        return {"bimmer_spec": existing, "cached": True}
+        enriched = _reapply_descriptions(existing)
+        # Persist the refreshed descriptions too so the mobile GET picks
+        # them up on its next load (single Mongo write, no external call).
+        await db.submissions.update_one({"id": sub_id}, {"$set": {"bimmer_spec": enriched}})
+        return {"bimmer_spec": enriched, "cached": True}
 
     logger.info("bimmervin: fetching spec for sub=%s vin=%s (admin=%s)", sub_id, vin, current.get("email"))
     spec = await fetch_bimmer_spec(vin)
@@ -2376,25 +2408,33 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
         t_bs.setStyle(_row_style())
         story.append(t_bs)
 
-        # Compact codes strip — render all SA/E/HO codes as a single
-        # comma-separated paragraph grouped by kind. Wraps naturally.
+        # Detailed option list with human-readable descriptions from the
+        # local BMW SA-code dictionary. Each row: [Kind] [Code] [Description].
+        # Codes we don't have in the dictionary still print with an em-dash
+        # so the reader knows we know about the code but haven't labelled
+        # it yet.
         opts = bs.get("options") or []
         if opts:
-            by_kind: dict[str, list[str]] = {}
-            for o in opts:
-                by_kind.setdefault(o.get("kind") or "?", []).append(o.get("code") or "")
-            for kind in ("SA", "E", "HO"):
-                codes = by_kind.get(kind) or []
-                if not codes:
-                    continue
-                story.append(Spacer(1, 3))
-                story.append(Paragraph(
-                    f'<font name="Helvetica-Bold" size="8" color="#6B6B6B">'
-                    f'{kind} codes ({len(codes)}) </font>'
-                    f'<font name="Courier" size="8" color="#111111">'
-                    f'{"  ·  ".join(codes)}</font>',
-                    ParagraphStyle("bs_codes", parent=small, leading=10, wordWrap="CJK"),
-                ))
+            story.append(Spacer(1, 4))
+            opt_rows: list[list[Any]] = [["Kind", "Code", "Description"]]
+            # Show SA first, then E, then HO (biggest → smallest signal).
+            order = {"SA": 0, "E": 1, "HO": 2}
+            for o in sorted(opts, key=lambda x: (order.get(x.get("kind"), 9), x.get("code") or "")):
+                kind = o.get("kind") or ""
+                code = o.get("code") or ""
+                desc = o.get("description") or "—"
+                opt_rows.append([
+                    kind,
+                    Paragraph(f'<font name="Courier-Bold" size="8">{code}</font>',
+                              ParagraphStyle("opt_code", parent=small, leading=10)),
+                    _P(desc),
+                ])
+            t_opts = Table(opt_rows, colWidths=[16 * mm, 22 * mm, 148 * mm], repeatRows=1)
+            ts_opts = _row_style()
+            ts_opts.add("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 8)
+            ts_opts.add("BACKGROUND", (0, 0), (-1, 0), PAPER)
+            t_opts.setStyle(ts_opts)
+            story.append(t_opts)
 
         story.append(Spacer(1, 2))
         story.append(Paragraph(

@@ -30,9 +30,11 @@ don't burn extra ``/auth/token`` calls.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Optional
 
 import httpx
@@ -43,6 +45,38 @@ BIMMERVIN_API_BASE = os.getenv("BIMMERVIN_API_BASE", "https://api.vinrequest.xyz
 BIMMERVIN_SANDBOX_VIN = "WBA00000000000000"
 
 BIMMER_SUPPORTED_MAKES = {"BMW", "MINI", "ROLLS-ROYCE", "ROLLS ROYCE", "ALPINA"}
+
+# -----------------------------------------------------------------------------
+# BMW SA / E code dictionary (curated, free, offline).
+# The file is bundled with the backend and loaded once at import-time; we
+# expose a helper so other modules (PDF generator, tests) can reuse the same
+# dictionary. Every lookup is case-insensitive and gracefully returns None
+# for unknown codes so the UI can fall back to displaying the raw code.
+# -----------------------------------------------------------------------------
+_SA_CODES_PATH = Path(__file__).with_name("bmw_sa_codes.json")
+try:
+    with _SA_CODES_PATH.open("r", encoding="utf-8") as _fh:
+        _SA_CODES_RAW: dict[str, str] = json.load(_fh)
+        # Strip metadata keys (start with _) — only real codes remain.
+        SA_CODES: dict[str, str] = {
+            str(k).upper(): str(v)
+            for k, v in _SA_CODES_RAW.items()
+            if not k.startswith("_") and isinstance(v, str)
+        }
+    logger.info("bimmervin: loaded %d SA-code descriptions", len(SA_CODES))
+except Exception as e:  # noqa: BLE001
+    logger.warning("bimmervin: could not load SA-code dictionary (%s)", e)
+    SA_CODES = {}
+
+
+def describe_option_code(code: Optional[str]) -> Optional[str]:
+    """Return a human-readable description for a BMW SA / E code, or None
+    if the code isn't in our local dictionary. Callers should fall back to
+    displaying the raw code itself in that case.
+    """
+    if not code:
+        return None
+    return SA_CODES.get(str(code).strip().upper())
 
 
 def is_bimmer_supported_make(make: Optional[str]) -> bool:
@@ -122,25 +156,30 @@ def _normalise_vehicle_order(raw: dict) -> dict:
     sa = vo.get("sa_codes") or []
     ec = vo.get("e_codes") or []
     ho = vo.get("ho_codes") or []
-    options: list[dict[str, str]] = []
+    options: list[dict[str, Any]] = []
+    unknown: list[str] = []
     seen: set[str] = set()
+    def _push(code: str, kind: str) -> None:
+        c = str(code).strip().upper()
+        if not c or c in seen:
+            return
+        seen.add(c)
+        desc = describe_option_code(c)
+        if desc is None:
+            unknown.append(c)
+        options.append({
+            "code": c,
+            "kind": kind,
+            "description": desc,  # None for unknown codes → UI falls back to code only
+        })
     # SA codes = factory options ("sonderausstattung"). This is what a
     # buyer / dealer actually cares about.
     for c in sa:
-        code = str(c).strip().upper()
-        if code and code not in seen:
-            seen.add(code)
-            options.append({"code": code, "kind": "SA"})
+        _push(c, "SA")
     for c in ec:
-        code = str(c).strip().upper()
-        if code and code not in seen:
-            seen.add(code)
-            options.append({"code": code, "kind": "E"})
+        _push(c, "E")
     for c in ho:
-        code = str(c).strip().upper()
-        if code and code not in seen:
-            seen.add(code)
-            options.append({"code": code, "kind": "HO"})
+        _push(c, "HO")
 
     # Marketing name: Bimmervin's factory-order endpoint doesn't return a
     # marketing model string — only chassis series (e.g. "G30") + type_key
@@ -166,7 +205,10 @@ def _normalise_vehicle_order(raw: dict) -> dict:
             "sa": len(sa),
             "e": len(ec),
             "ho": len(ho),
+            "described": sum(1 for o in options if o.get("description")),
+            "unknown": len(unknown),
         },
+        "unknown_codes": unknown,  # useful for tracking new codes to add
         "raw_vehicle_order": vo,  # keep the raw for debug / future rendering
         "source": "bimmervin.xyz",
         "captured_at": datetime.now(timezone.utc).isoformat(),

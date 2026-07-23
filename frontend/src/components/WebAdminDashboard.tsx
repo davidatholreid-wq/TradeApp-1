@@ -131,7 +131,7 @@ type SubmissionFull = Submission & {
     colour_code?: string | null;
     fabric_code?: string | null;
     build_date?: string | null;
-    options?: { code: string; kind: string }[];
+    options?: { code: string; kind: string; description?: string | null }[];
     captured_at?: string | null;
     error?: string | null;
   } | null;
@@ -1351,11 +1351,23 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                     </View>
                   </View>
                   {Array.isArray(selected.bimmer_spec.options) && selected.bimmer_spec.options.length > 0 ? (
-                    <View style={styles.bimmerOptionsWebWrap}>
+                    <View style={styles.bimmerOptionsWebList}>
                       {selected.bimmer_spec.options.map((o) => (
-                        <View key={`${o.kind}-${o.code}`} style={styles.bimmerOptionWebPill}>
-                          <Text style={styles.bimmerOptionWebKind}>{o.kind}</Text>
-                          <Text style={styles.bimmerOptionWebCode}>{o.code}</Text>
+                        <View
+                          key={`${o.kind}-${o.code}`}
+                          style={o.description ? styles.bimmerOptionWebRow : styles.bimmerOptionWebRowBare}
+                        >
+                          <View style={styles.bimmerOptionWebKindBadge}>
+                            <Text style={styles.bimmerOptionWebKindText}>{o.kind}</Text>
+                          </View>
+                          <Text style={styles.bimmerOptionWebCodeStrong}>{o.code}</Text>
+                          {o.description ? (
+                            <Text style={styles.bimmerOptionWebDesc} numberOfLines={2}>
+                              {o.description}
+                            </Text>
+                          ) : (
+                            <Text style={styles.bimmerOptionWebDescMuted}>—</Text>
+                          )}
                         </View>
                       ))}
                     </View>
@@ -2178,6 +2190,72 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     fontFamily: fonts.mono,
     letterSpacing: 0.5,
     fontWeight: "700",
+  },
+  // Rich rows with descriptions — used when local dictionary knows the code.
+  bimmerOptionsWebList: {
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    gap: 6,
+  },
+  bimmerOptionWebRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  bimmerOptionWebRowBare: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: colors.border,
+    backgroundColor: "transparent",
+    opacity: 0.72,
+  },
+  bimmerOptionWebKindBadge: {
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+    backgroundColor: colors.neon + "22",
+    minWidth: 24,
+    alignItems: "center",
+  },
+  bimmerOptionWebKindText: {
+    color: colors.text,
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  bimmerOptionWebCodeStrong: {
+    color: colors.text,
+    fontSize: 12,
+    fontFamily: fonts.mono,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+    minWidth: 50,
+  },
+  bimmerOptionWebDesc: {
+    color: colors.text,
+    fontSize: 12,
+    lineHeight: 15,
+    flex: 1,
+  },
+  bimmerOptionWebDescMuted: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    flex: 1,
+    fontStyle: "italic",
   },
 
   // === VIN-LINKED REPORTS list ===

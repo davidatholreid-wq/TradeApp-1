@@ -2036,15 +2036,29 @@ export default function VehicleDetail() {
                     </Text>
                   </View>
 
-                  {/* Option-code grid — SA codes first (biggest signal),
-                      then E codes, then HO. Each pill kept mono so codes
-                      are scan-friendly. */}
+                  {/* Option code list — shows the SA/E kind chip, the
+                      raw code (mono), and the human-readable description
+                      from our local BMW SA-code dictionary. Codes we
+                      don't have a description for still render as a
+                      one-line pill with the code only. */}
                   {Array.isArray(bimmerSpec.options) && bimmerSpec.options.length > 0 ? (
-                    <View style={styles.bimmerOptionsWrap}>
+                    <View style={styles.bimmerOptionsList}>
                       {bimmerSpec.options.map((o: any) => (
-                        <View key={`${o.kind}-${o.code}`} style={styles.bimmerOptionPill}>
-                          <Text style={styles.bimmerOptionKind}>{o.kind}</Text>
-                          <Text style={styles.bimmerOptionCode}>{o.code}</Text>
+                        <View
+                          key={`${o.kind}-${o.code}`}
+                          style={o.description ? styles.bimmerOptionRow : styles.bimmerOptionRowBare}
+                        >
+                          <View style={styles.bimmerOptionKindBadge}>
+                            <Text style={styles.bimmerOptionKindText}>{o.kind}</Text>
+                          </View>
+                          <Text style={styles.bimmerOptionCodeStrong}>{o.code}</Text>
+                          {o.description ? (
+                            <Text style={styles.bimmerOptionDesc} numberOfLines={2}>
+                              {o.description}
+                            </Text>
+                          ) : (
+                            <Text style={styles.bimmerOptionDescMuted}>—</Text>
+                          )}
                         </View>
                       ))}
                     </View>
@@ -3564,6 +3578,74 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     fontFamily: fonts.mono,
     letterSpacing: 0.5,
     fontWeight: "700",
+  },
+  // Rich-row option list variant that shows a description next to each
+  // code. Used when the local dictionary yields a human label; codes
+  // without a description fall back to the bare (short) row layout.
+  bimmerOptionsList: {
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    marginTop: spacing.sm,
+    gap: 6,
+  },
+  bimmerOptionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  bimmerOptionRowBare: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: colors.border,
+    backgroundColor: "transparent",
+    opacity: 0.72,
+  },
+  bimmerOptionKindBadge: {
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+    backgroundColor: colors.neon + "22",
+    minWidth: 22,
+    alignItems: "center",
+  },
+  bimmerOptionKindText: {
+    color: colors.text,
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  bimmerOptionCodeStrong: {
+    color: colors.text,
+    fontSize: 12,
+    fontFamily: fonts.mono,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+    minWidth: 46,
+  },
+  bimmerOptionDesc: {
+    color: colors.text,
+    fontSize: 12,
+    lineHeight: 15,
+    flex: 1,
+  },
+  bimmerOptionDescMuted: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    flex: 1,
+    fontStyle: "italic",
   },
   marketErrorBox: {
     flexDirection: "row",
