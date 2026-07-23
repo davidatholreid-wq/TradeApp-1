@@ -864,6 +864,21 @@ export default function VehicleDetail() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
+        {/* Unseen banner — loud red warning shown to both dealers and admins
+            immediately at the top of the vehicle detail so the "Cover Price"
+            below is never mistaken for an inspection-backed number. */}
+        {sub.unseen ? (
+          <View style={styles.unseenBanner} testID="unseen-banner">
+            <Ionicons name="eye-off" size={18} color="#B3261E" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.unseenBannerTitle}>Vehicle Unseen — Subject to View & Less to Spend</Text>
+              <Text style={styles.unseenBannerHint}>
+                Desktop valuation. Fourbuy has NOT physically inspected the vehicle. Final cover will adjust at inspection.
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
         {/* Reference badge */}
         {sub.reference ? (
           <View style={styles.refBadge}>
@@ -2585,6 +2600,30 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     letterSpacing: 0.3,
   },
   scroll: { padding: spacing.lg, paddingBottom: 120 },
+  // ----- "Vehicle Unseen" warning banner (top of detail page) -----
+  unseenBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1.2,
+    borderColor: "#B3261E",
+    backgroundColor: "#FDECEA",
+  },
+  unseenBannerTitle: {
+    color: "#B3261E",
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+  unseenBannerHint: {
+    color: "#6B2018",
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 15,
+  },
 
   // Reference badge — high-contrast, clean mono readout
   refBadge: {

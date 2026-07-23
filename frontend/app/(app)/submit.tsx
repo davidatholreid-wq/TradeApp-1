@@ -5,7 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { storage } from "@/src/utils/storage";
-import { SCAN_BUFFER_KEY, SCAN_PARSED_KEY } from "./scan";
+import { SCAN_BUFFER_KEY, SCAN_PARSED_KEY, SCAN_PHOTO_KEY } from "./scan";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { spacing, radius, fonts } from "@/src/theme";
@@ -85,9 +85,19 @@ export default function SubmitVehicle() {
   // Identity (license-disc-scan-fed or manual)
   const [licenseDisk, setLicenseDisk] = useState<string | null>(null);
   const [licenseDiskInfo, setLicenseDiskInfo] = useState<LicenseDiskInfo | null>(null);
+  // Base64 photo of the disc — captured during camera scan or uploaded
+  // from gallery. Sent alongside the raw PDF-417 string so admins can
+  // visually verify if the decode ever looks off.
+  const [licenseDiskPhoto, setLicenseDiskPhoto] = useState<string | null>(null);
   const [colour, setColour] = useState<string | null>(null);
   const [vin, setVin] = useState<string>("TBC");
   const [engineNo, setEngineNo] = useState<string>("TBC");
+
+  // "Vehicle Unseen, Subject to View & Less to Spend" toggle. When ON,
+  // every physical-inspection section (condition rating, recon, service
+  // history, damage) hides from the form and becomes non-required at
+  // submit. The valuation is stamped loudly across the PDF and every UI.
+  const [unseen, setUnseen] = useState(false);
 
   // The four condition pillars. Each starts unrated so the dealer must
   // consciously grade the vehicle across all four before we compute the
@@ -383,8 +393,13 @@ export default function SubmitVehicle() {
           if (parsed?.colour) setColour((prev) => prev || parsed!.colour!);
           if (parsed?.vin) setVin(parsed.vin);
           if (parsed?.engineNo) setEngineNo(parsed.engineNo);
+          // Also pull the licence-disc photograph if the scan flow
+          // captured one (camera still-frame or gallery upload).
+          const photo = await storage.getItem<string>(SCAN_PHOTO_KEY, "");
+          if (photo) setLicenseDiskPhoto(photo);
           await storage.removeItem(SCAN_BUFFER_KEY);
           await storage.removeItem(SCAN_PARSED_KEY);
+          await storage.removeItem(SCAN_PHOTO_KEY);
         }
       })();
     }, [])
@@ -470,15 +485,19 @@ export default function SubmitVehicle() {
     // If no VIN from scan and no manual colour picked → force colour.
     if ((!vin || vin === "TBC") && !colour) return "Please pick a colour (or scan the license disc).";
     for (const p of PHOTO_ORDER) if (!photos[p.key]) return `Photo missing: ${p.label}`;
-    // Condition ratings must be explicitly chosen — all four pillars.
-    if (!mechanicalRating) return "Please rate the mechanical health.";
-    if (!cosmeticRating) return "Please rate the cosmetic appearance.";
-    if (!interiorRating) return "Please rate the interior condition.";
-    if (!historyRating) return "Please rate the general condition.";
-    if (!windscreen) return "Please choose the windscreen condition.";
-    if (!serviceHistory) return "Please choose the service history.";
-    if (paintEvidence && !paintQuality) return "Choose the paintwork quality (Excellent, Fair or Poor).";
-    if (accidentDamage && accidentTypes.length === 0) return "Select at least one type of previous accident damage.";
+    // Inspection-derived fields — skipped entirely when the dealer
+    // toggled "Vehicle Unseen" (a desktop-only valuation request).
+    if (!unseen) {
+      // Condition ratings must be explicitly chosen — all four pillars.
+      if (!mechanicalRating) return "Please rate the mechanical health.";
+      if (!cosmeticRating) return "Please rate the cosmetic appearance.";
+      if (!interiorRating) return "Please rate the interior condition.";
+      if (!historyRating) return "Please rate the general condition.";
+      if (!windscreen) return "Please choose the windscreen condition.";
+      if (!serviceHistory) return "Please choose the service history.";
+      if (paintEvidence && !paintQuality) return "Choose the paintwork quality (Excellent, Fair or Poor).";
+      if (accidentDamage && accidentTypes.length === 0) return "Select at least one type of previous accident damage.";
+    }
     return null;
   };
 
@@ -510,20 +529,25 @@ export default function SubmitVehicle() {
           colour: colour || (licenseDiskInfo?.colour ?? "TBC"),
           vin: vin || "TBC", engine_number: engineNo || "TBC",
           license_disk_data: licenseDisk,
-          mechanical_condition: mechanicalRating,
-          cosmetic_condition: cosmeticRating,
-          interior_condition: interiorRating,
-          history_condition: historyRating,
-          windscreen_condition: windscreen,
-          service_history: serviceHistory,
-          last_service_date: lastServiceDate || null,
-          last_service_mileage: lastServiceMileage ? parseInt(lastServiceMileage) : null,
+          license_disk_photo: licenseDiskPhoto,
+          // Desktop / unseen-vehicle mode: submits without inspection
+          // fields. Backend relaxes validation and downstream renderers
+          // stamp the valuation with the "Vehicle Unseen" banner.
+          unseen,
+          mechanical_condition: unseen ? 5 : mechanicalRating,
+          cosmetic_condition: unseen ? 5 : cosmeticRating,
+          interior_condition: unseen ? 5 : interiorRating,
+          history_condition: unseen ? 5 : historyRating,
+          windscreen_condition: unseen ? null : windscreen,
+          service_history: unseen ? null : serviceHistory,
+          last_service_date: unseen ? null : (lastServiceDate || null),
+          last_service_mileage: unseen ? null : (lastServiceMileage ? parseInt(lastServiceMileage) : null),
           photos, mileage: parseInt(mileage),
-          paint_evidence: paintEvidence,
-          paint_quality: paintEvidence ? paintQuality : null,
-          accident_damage: accidentDamage,
-          accident_damage_types: accidentDamage ? accidentTypes : [],
-          reconditioning_items: reconItems.filter(r => r.label.trim() && parseFloat(r.amount) > 0).map(r => ({ label: r.label.trim(), amount_zar: parseFloat(r.amount), photo: r.photo || null })),
+          paint_evidence: unseen ? null : paintEvidence,
+          paint_quality: unseen ? null : (paintEvidence ? paintQuality : null),
+          accident_damage: unseen ? null : accidentDamage,
+          accident_damage_types: unseen ? [] : (accidentDamage ? accidentTypes : []),
+          reconditioning_items: unseen ? [] : reconItems.filter(r => r.label.trim() && parseFloat(r.amount) > 0).map(r => ({ label: r.label.trim(), amount_zar: parseFloat(r.amount), photo: r.photo || null })),
           billing_accepted: true,
         }),
       });
@@ -715,6 +739,40 @@ export default function SubmitVehicle() {
             </View>
           ) : null}
 
+          {/* ---- Vehicle Unseen toggle ----
+              Sits between the identity section and the condition rating
+              so the dealer sees it BEFORE they start rating anything.
+              Toggling it ON hides the condition, service-history,
+              damage and reconditioning sections entirely (see the
+              `{!unseen && ...}` guards below), relaxes backend
+              validation, and stamps the resulting valuation with the
+              "Vehicle Unseen, Subject to View & Less to Spend" banner
+              across the PDF and every UI. */}
+          <View style={styles.unseenBox}>
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text style={styles.unseenTitle}>
+                <Ionicons name="eye-off-outline" size={16} color={colors.text} /> Vehicle Unseen — Subject to View
+              </Text>
+              <Text style={styles.unseenHint}>
+                Turn this on if you have NOT physically inspected the vehicle.
+                Condition rating, service history, damage & reconditioning will
+                be skipped. Fourbuy will price it as an unseen desktop
+                valuation ({'"Less to Spend"'}).
+              </Text>
+            </View>
+            <TouchableOpacity
+              testID="unseen-toggle"
+              accessibilityRole="switch"
+              accessibilityState={{ checked: unseen }}
+              onPress={() => setUnseen((v) => !v)}
+              style={[styles.unseenSwitch, unseen && styles.unseenSwitchOn]}
+            >
+              <View style={[styles.unseenKnob, unseen && styles.unseenKnobOn]} />
+            </TouchableOpacity>
+          </View>
+
+          {!unseen ? (
+          <>
           <Text style={styles.sectionTitle}>CONDITION</Text>
           <Text style={styles.sectionHint}>
             Four pillars — weighted average forms the overall condition score
@@ -784,6 +842,9 @@ export default function SubmitVehicle() {
               <TextInput style={styles.input} value={lastServiceMileage} onChangeText={setLastServiceMileage} placeholder="TBC" placeholderTextColor={colors.textDisabled} keyboardType="numeric" />
             </View>
           </View>
+          </>
+          ) : null}
+          {/* --- end !unseen: CONDITION + SERVICE HISTORY --- */}
 
           <Text style={styles.sectionTitle}>ODOMETER</Text>
           <TextInput testID="mileage-input" style={styles.input} value={mileage} onChangeText={setMileage} placeholder="Current mileage (km)" placeholderTextColor={colors.textDisabled} keyboardType="numeric" />
@@ -804,6 +865,8 @@ export default function SubmitVehicle() {
             ))}
           </View>
 
+          {!unseen ? (
+          <>
           <Text style={styles.sectionTitle}>DAMAGE</Text>
           <TouchableOpacity
             style={styles.checkRow}
@@ -914,6 +977,9 @@ export default function SubmitVehicle() {
             <Text style={styles.reconAddText}>ADD LINE ITEM</Text>
           </TouchableOpacity>
           {reconTotal > 0 ? <Text style={styles.reconTotal}>Total reconditioning: R {reconTotal.toFixed(2)}</Text> : null}
+          </>
+          ) : null}
+          {/* --- end !unseen: DAMAGE + RECONDITIONING --- */}
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <TouchableOpacity style={[styles.submitBtn, submitting && styles.submitBtnDisabled]} onPress={handleSubmit} disabled={submitting} testID="submit-button">
@@ -1033,6 +1099,52 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   diskMono: { fontFamily: fonts.mono, color: colors.text, fontWeight: "700" },
   diskHint: { color: colors.textSecondary, fontSize: 11, fontStyle: "italic" },
   tbcRow: { padding: 10, backgroundColor: colors.paper, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.borderLight, marginTop: 4 },
+  // ----- Vehicle Unseen toggle -----
+  unseenBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    padding: spacing.md,
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.paper,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  unseenTitle: {
+    ...fonts.smallStrong,
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  unseenHint: {
+    ...fonts.small,
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  unseenSwitch: {
+    width: 46,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.borderLight,
+    justifyContent: "center",
+    padding: 2,
+  },
+  unseenSwitchOn: {
+    backgroundColor: colors.primary,
+  },
+  unseenKnob: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#fff",
+    alignSelf: "flex-start",
+  },
+  unseenKnobOn: {
+    alignSelf: "flex-end",
+  },
   tbcLabel: { color: colors.textSecondary, fontSize: 11 },
   tbcHl: { color: colors.text, fontWeight: "800" },
 

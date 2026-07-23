@@ -41,6 +41,7 @@ type Submission = {
   factory_warranty?: boolean;
   accident_damage?: boolean;
   front_photo?: string | null;
+  unseen?: boolean;
 };
 
 type SubmissionFull = Submission & {
@@ -660,6 +661,12 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                         <Text style={styles.rowDealer} numberOfLines={1}>
                           {s.dealer_name} — {s.company_name}
                         </Text>
+                        {s.unseen ? (
+                          <View style={styles.rowUnseenPill}>
+                            <Ionicons name="eye-off" size={10} color="#B3261E" />
+                            <Text style={styles.rowUnseenPillText}>UNSEEN · SUBJECT TO VIEW</Text>
+                          </View>
+                        ) : null}
                         {s.price !== null && s.price !== undefined ? (
                           <Text style={styles.rowPrice}>R {s.price.toLocaleString()}</Text>
                         ) : null}
@@ -681,6 +688,19 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
             </View>
           ) : (
             <ScrollView contentContainerStyle={styles.detailScroll}>
+              {selected.unseen ? (
+                <View style={styles.detailUnseenBanner} testID="admin-unseen-banner">
+                  <Ionicons name="eye-off" size={20} color="#B3261E" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.detailUnseenTitle}>
+                      Vehicle Unseen — Subject to View & Less to Spend
+                    </Text>
+                    <Text style={styles.detailUnseenHint}>
+                      Desktop valuation. Dealer has NOT physically inspected the vehicle. Price this cautiously.
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
               <View style={styles.detailHeader}>
                 <View>
                   <Text style={styles.detailRef}>{selected.reference ?? "—"}</Text>
@@ -1715,6 +1735,47 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     fontVariant: ["tabular-nums"],
     letterSpacing: -0.1,
     marginTop: 6,
+  },
+  rowUnseenPill: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    backgroundColor: "#FDECEA",
+    borderWidth: 1,
+    borderColor: "#B3261E",
+  },
+  rowUnseenPillText: {
+    color: "#B3261E",
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+  },
+  detailUnseenBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: "#B3261E",
+    backgroundColor: "#FDECEA",
+  },
+  detailUnseenTitle: {
+    color: "#B3261E",
+    fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+  detailUnseenHint: {
+    color: "#6B2018",
+    fontSize: 12,
+    marginTop: 2,
+    lineHeight: 16,
   },
 
   rightPane: { flex: 1, backgroundColor: colors.bg },

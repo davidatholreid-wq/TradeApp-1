@@ -46,6 +46,7 @@ type HistoryItem = {
   dealer_email?: string;
   dealer_name?: string;
   company_name?: string;
+  unseen?: boolean;
 };
 
 const STATUS_OPTIONS = [
@@ -144,6 +145,12 @@ export default function HistoryScreen() {
             </Text>
             {item.derivative_name ? (
               <Text style={styles.derivative}>{item.derivative_name}</Text>
+            ) : null}
+            {item.unseen ? (
+              <View style={styles.unseenPill} testID="unseen-pill">
+                <Ionicons name="eye-off" size={9} color="#B3261E" />
+                <Text style={styles.unseenPillText}>UNSEEN · SUBJECT TO VIEW</Text>
+              </View>
             ) : null}
           </View>
           <View
@@ -392,6 +399,25 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12,
     marginTop: 2,
+  },
+  unseenPill: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    marginTop: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    backgroundColor: "#FDECEA",
+    borderWidth: 1,
+    borderColor: "#B3261E",
+  },
+  unseenPillText: {
+    color: "#B3261E",
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.4,
   },
   statusPill: {
     paddingHorizontal: 8,

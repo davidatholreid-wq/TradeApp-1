@@ -6,6 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import re
 import asyncio
+import base64
 import logging
 import uuid
 import bcrypt
@@ -631,33 +632,48 @@ class VehicleSubmission(BaseModel):
     vin: Optional[str] = "TBC"
     engine_number: Optional[str] = "TBC"
     license_disk_data: Optional[str] = None
+    # Base64 photo of the physical licence disc (from live-camera capture or
+    # a gallery upload). Uploaded to Cloudinary on submit for permanent
+    # attachment to the submission.
+    license_disk_photo: Optional[str] = None
+
+    # "Vehicle Unseen, Subject to View & Less to Spend" flag. When the dealer
+    # is requesting a desktop valuation without having inspected the car,
+    # every physical-inspection field below (condition ratings, recon,
+    # service history, damage) becomes non-mandatory and the valuation is
+    # flagged loudly in every UI + the PDF.
+    unseen: Optional[bool] = False
 
     # Four condition pillars (1-10). We took over the old exterior/tyre
     # fields with the new mechanical/cosmetic/history pillars — interior
     # stays as-is. exterior_condition / tyre_condition are kept as optional
     # for backwards compatibility with legacy submissions.
-    mechanical_condition: int = Field(ge=1, le=10)
-    cosmetic_condition: int = Field(ge=1, le=10)
-    interior_condition: int = Field(ge=1, le=10)
-    history_condition: int = Field(ge=1, le=10)
+    # When `unseen=True` these become optional (defaulted to a neutral 5
+    # so scoring & downstream analytics don't blow up); the UI hides the
+    # rating cards entirely in that mode.
+    mechanical_condition: int = Field(default=5, ge=1, le=10)
+    cosmetic_condition: int = Field(default=5, ge=1, le=10)
+    interior_condition: int = Field(default=5, ge=1, le=10)
+    history_condition: int = Field(default=5, ge=1, le=10)
     # Legacy (deprecated) — accepted but not required by the new mobile form.
     exterior_condition: Optional[int] = Field(default=None, ge=1, le=10)
     tyre_condition: Optional[int] = Field(default=None, ge=1, le=10)
     # Windscreen — three simple options after the flow rewrite. "Chip" and
     # "Crack" from the legacy schema are still accepted for historical
     # submissions but new submissions must use one of the new options.
-    windscreen_condition: Literal[
+    # Optional when `unseen=True` (the dealer hasn't inspected the glass yet).
+    windscreen_condition: Optional[Literal[
         "Perfect", "Chip Repairs", "Needs Replacement",
         "Chip", "Crack",  # legacy
-    ]
+    ]] = None
 
-    # Service history
-    service_history: Literal[
+    # Service history — optional when `unseen=True`.
+    service_history: Optional[Literal[
         "Full Service History with Agents",
         "Full Service History with Agents & Non-Agents",
         "Partial Service History",
         "No Service History",
-    ]
+    ]] = None
     last_service_date: Optional[str] = None   # ISO date or None → "TBC"
     last_service_mileage: Optional[int] = None
 
@@ -665,11 +681,12 @@ class VehicleSubmission(BaseModel):
     photos: dict
     mileage: int
 
-    # Damage / paint
-    paint_evidence: bool
+    # Damage / paint — optional when the vehicle is unseen (we can't
+    # know paint or accident history without inspecting).
+    paint_evidence: Optional[bool] = None
     # Optional detail selected when paint_evidence == True
     paint_quality: Optional[Literal["Excellent", "Fair", "Poor"]] = None
-    accident_damage: bool
+    accident_damage: Optional[bool] = None
     # Multiple damage categories identifiable in the dealer's inspection.
     # Free-string list so the enum can grow without a migration; the UI
     # currently offers: Cosmetic, Structural, Mechanical, Glass,
@@ -1014,6 +1031,170 @@ async def vehicle_options(
     }
 
 
+# ============ License disc decoder ============
+class LicenseDiskDecodeRequest(BaseModel):
+    """Request payload for the license-disc PDF-417 decoder.
+
+    Exactly one of `image_base64` or `raw` should be supplied.
+      - `image_base64`: a full `data:image/...;base64,...` URL (or bare
+        base64) — the server decodes the PDF-417 barcode server-side.
+      - `raw`: an already-decoded PDF-417 string (from an on-device scan).
+    """
+    image_base64: Optional[str] = None
+    raw: Optional[str] = None
+
+
+def _parse_license_disk_string(raw: str) -> dict:
+    """Parse a decoded SA licence-disc PDF-417 string into structured fields.
+
+    Field layout is not perfectly standardised across issuers, so we use
+    positional AND heuristic detection (VIN = 17-char alnum, expiry =
+    YYYY-MM-DD, colour = known dictionary token, etc). Mirrors the
+    frontend `decodeLicenseDisk` utility used by the live-camera path so
+    both entry points return the same shape.
+    """
+    tokens = [t.strip() for t in (raw or "").split("%") if t.strip()]
+    out: dict = {}
+
+    # VIN — 17 char alphanumeric.
+    vin_re = re.compile(r"^[A-HJ-NPR-Z0-9]{17}$", re.I)
+    for t in tokens:
+        if vin_re.match(t):
+            out["vin"] = t.upper()
+            break
+
+    # Expiry — YYYY-MM-DD (or YYYY/MM/DD).
+    date_re = re.compile(r"^\d{4}[-/]\d{2}[-/]\d{2}$")
+    for t in tokens:
+        if date_re.match(t):
+            out["expiryDate"] = t.replace("/", "-")
+            break
+
+    # Colour — known SA vocabulary.
+    colours = {
+        "WHITE", "BLACK", "SILVER", "GREY", "GRAY", "RED", "BLUE",
+        "GREEN", "YELLOW", "GOLD", "BROWN", "BEIGE", "ORANGE",
+        "PURPLE", "MAROON", "BURGUNDY", "PINK", "BRONZE",
+    }
+    for t in tokens:
+        if t.upper() in colours:
+            out["colour"] = t.upper().title()
+            break
+
+    # Make — sample of common SA makes (aligned with the flatfile Kredo
+    # imports). Not exhaustive; we just want a confident match so we can
+    # anchor the following token as the model.
+    common_makes = {
+        "TOYOTA", "VOLKSWAGEN", "VW", "FORD", "BMW", "MERCEDES-BENZ", "MERCEDES",
+        "HYUNDAI", "KIA", "NISSAN", "MAZDA", "HONDA", "SUZUKI", "AUDI", "SUBARU",
+        "MITSUBISHI", "LEXUS", "PORSCHE", "MINI", "JEEP", "LAND", "JAGUAR",
+        "VOLVO", "PEUGEOT", "RENAULT", "CITROEN", "FIAT", "OPEL", "CHEVROLET",
+        "ISUZU", "DAIHATSU", "HAVAL", "GWM", "CHERY", "TATA", "MAHINDRA",
+        "ALFA", "BAIC", "GEELY", "SEAT", "SKODA", "DODGE", "CADILLAC",
+    }
+    make_idx = -1
+    for i, t in enumerate(tokens):
+        if t.upper() in common_makes:
+            out["make"] = t.upper()
+            make_idx = i
+            break
+
+    # Model — token immediately after the make (skip pure numeric tokens).
+    if make_idx >= 0:
+        for j in range(make_idx + 1, len(tokens)):
+            t = tokens[j]
+            if t.isdigit() or len(t) < 2:
+                continue
+            if t.upper() in colours:  # don't grab the colour
+                continue
+            out["model"] = t.upper()
+            break
+
+    # Description — anything matching common body-style words.
+    body_styles = re.compile(
+        r"^(SEDAN|HATCH[- ]?BACK|HATCH|SUV|COUPE|COUP[EÉ]|CONVERTIBLE|"
+        r"PICKUP|BAKKIE|WAGON|STATION[- ]?WAGON|VAN|MPV|CROSSOVER|MOTOR CAR).*$",
+        re.I,
+    )
+    for t in tokens:
+        if body_styles.match(t):
+            out["description"] = t.title()
+            break
+
+    # Registration plate — 2-3 letters/digits, hyphen or space, and a suffix.
+    plate_re = re.compile(r"^[A-Z]{1,3}[- ]?\d{1,4}[- ]?[A-Z]{0,3}$", re.I)
+    for t in tokens:
+        if plate_re.match(t) and t.upper() != (out.get("vin") or ""):
+            out["registration"] = t.upper()
+            break
+
+    # Engine — the token IMMEDIATELY AFTER the VIN is conventionally the
+    # engine number on SA discs (see the frontend decoder for the same
+    # rule). We prefer that positional heuristic over regex to avoid
+    # misclassifying similar-looking tokens elsewhere in the payload.
+    if "vin" in out:
+        try:
+            vin_idx = tokens.index(out["vin"])
+            if vin_idx + 1 < len(tokens):
+                cand = tokens[vin_idx + 1]
+                if 4 <= len(cand) <= 20 and cand.upper() != out["vin"]:
+                    out["engineNo"] = cand.upper()
+        except ValueError:
+            pass
+
+    return out
+
+
+@api_router.post("/vehicles/license-disk/decode")
+async def decode_license_disk(payload: LicenseDiskDecodeRequest, current: dict = Depends(get_current_user)):
+    """Decode a SA license-disc PDF-417 barcode from either a raw scanned
+    string OR an uploaded photograph.
+
+    Used by the mobile app's "Upload from gallery" flow (photo → server
+    decode) and as a diagnostic endpoint for the live-camera path.
+    """
+    raw = (payload.raw or "").strip() or None
+    if not raw:
+        if not payload.image_base64:
+            raise HTTPException(400, "Provide `image_base64` or `raw`.")
+        # Strip any `data:image/...;base64,` prefix and decode.
+        b64 = payload.image_base64
+        if "," in b64:
+            b64 = b64.split(",", 1)[1]
+        try:
+            img_bytes = base64.b64decode(b64)
+        except Exception:
+            raise HTTPException(400, "image_base64 is not valid base64")
+        try:
+            import zxingcpp
+            from PIL import Image as PILImage
+            from io import BytesIO
+            pil_img = PILImage.open(BytesIO(img_bytes)).convert("RGB")
+            results = zxingcpp.read_barcodes(pil_img)
+            if not results:
+                # Retry after a mild rescale — very small phone photos of a
+                # tiny disc can miss otherwise. Only bother if the input
+                # was under 1200px on the long edge.
+                w, h = pil_img.size
+                if max(w, h) < 1600:
+                    pil_img2 = pil_img.resize((w * 2, h * 2), PILImage.LANCZOS)
+                    results = zxingcpp.read_barcodes(pil_img2)
+            if not results:
+                raise HTTPException(422, "No barcode detected on the photo. Try a clearer, close-up shot of the license disc.")
+            # Prefer PDF-417 results if multiple codes were found.
+            pdf417 = [r for r in results if getattr(r, "format", "").lower().replace("-", "") in ("pdf417", "pdf_417")]
+            chosen = (pdf417 or results)[0]
+            raw = chosen.text if hasattr(chosen, "text") else str(chosen)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.exception("license disc decode failed")
+            raise HTTPException(500, f"Barcode decode failed: {exc.__class__.__name__}")
+
+    parsed = _parse_license_disk_string(raw or "")
+    return {"raw": raw, "parsed": parsed}
+
+
 # ============ Submissions ============
 @api_router.post("/submissions")
 async def create_submission(payload: VehicleSubmission, current: dict = Depends(get_current_user)):
@@ -1034,15 +1215,21 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
     # Per-submission acceptance popup ("R50 incl. VAT / no fee if not priced within 24h").
     if not payload.billing_accepted:
         raise HTTPException(400, "Billing acceptance is required for each submission")
-    # Guardrail — every 1-10 rating we actually care about.
-    for rating, name in [
-        (payload.mechanical_condition, "mechanical"),
-        (payload.cosmetic_condition, "cosmetic"),
-        (payload.interior_condition, "interior"),
-        (payload.history_condition, "history"),
-    ]:
-        if not (1 <= rating <= 10):
-            raise HTTPException(400, f"{name.title()} condition must be 1-10")
+    # Guardrail — every 1-10 rating we actually care about. Skipped when
+    # the submission is flagged as `unseen` (dealer hasn't inspected).
+    if not payload.unseen:
+        for rating, name in [
+            (payload.mechanical_condition, "mechanical"),
+            (payload.cosmetic_condition, "cosmetic"),
+            (payload.interior_condition, "interior"),
+            (payload.history_condition, "history"),
+        ]:
+            if not (1 <= rating <= 10):
+                raise HTTPException(400, f"{name.title()} condition must be 1-10")
+        if not payload.windscreen_condition:
+            raise HTTPException(400, "Windscreen condition is required")
+        if not payload.service_history:
+            raise HTTPException(400, "Service history is required")
     total_recon = sum((r.get("amount_zar", 0) or 0) for r in payload.reconditioning_items)
     sub_id = str(uuid.uuid4())
     reference = await next_reference_number()
@@ -1054,6 +1241,14 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         payload.license_disk_data,
         folder=f"fourbuy/submissions/{sub_id}",
         public_id="license_disk",
+    )
+    # Physical licence-disc photograph (camera capture or gallery upload).
+    # Kept alongside the decoded PDF-417 blob so admins can visually
+    # verify the disc if the decode ever looks off.
+    license_disk_photo_uploaded = upload_image_to_cloudinary(
+        payload.license_disk_photo,
+        folder=f"fourbuy/submissions/{sub_id}",
+        public_id="license_disk_photo",
     )
     # Reconditioning items may carry an optional per-line photo (base64 data
     # URL from the mobile picker). Upload each to Cloudinary and store the
@@ -1109,6 +1304,13 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         "engine_number": payload.engine_number or "TBC",
         "colour": payload.colour,
         "license_disk_data": license_disk_uploaded,
+        "license_disk_photo": license_disk_photo_uploaded,
+        # Loud UI flag — set when the dealer is requesting a desktop
+        # valuation without physically inspecting the vehicle. Downstream
+        # renderers (PDF, admin dashboard, dealer detail, list views)
+        # display a "Vehicle Unseen, Subject to View & Less to Spend"
+        # banner and hide condition/recon-derived numbers.
+        "unseen": bool(payload.unseen),
         # Condition — 4 weighted pillars form the overall condition score:
         #   Mechanical 30% · Cosmetic 25% · Interior 25% · History 20%.
         # exterior/tyre kept for legacy compatibility with older submissions.
@@ -2259,6 +2461,40 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]))
     story.append(title_tbl)
+
+    # ============ UNSEEN VALUATION BANNER ============
+    # If the dealer flagged the submission as "vehicle unseen" (i.e. a
+    # desktop valuation without physical inspection), we surface a loud,
+    # red-outlined banner immediately below the title so nobody — dealer,
+    # trader, admin — accidentally treats the Cover Price as an
+    # inspection-backed number.
+    if sub.get("unseen"):
+        unseen_para = Paragraph(
+            '<font name="Helvetica-Bold" size="10" color="#B3261E">'
+            "VEHICLE UNSEEN — SUBJECT TO VIEW &amp; LESS TO SPEND"
+            "</font><br/>"
+            '<font name="Helvetica" size="8" color="#6B6B6B">'
+            "This valuation is desktop-only. Fourbuy has NOT physically "
+            "inspected the vehicle. The final trade cover will be adjusted "
+            "at inspection to reflect actual condition."
+            "</font>",
+            ParagraphStyle("unseen_banner", parent=styles["Normal"], leading=13),
+        )
+        unseen_tbl = Table(
+            [[unseen_para]],
+            colWidths=[CONTENT_W_MM * mm],
+        )
+        unseen_tbl.setStyle(TableStyle([
+            ("BOX", (0, 0), (-1, -1), 1.2, DANGER),
+            ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor("#FDECEA")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, -1), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ]))
+        story.append(Spacer(1, 4))
+        story.append(unseen_tbl)
+        story.append(Spacer(1, 4))
 
     # ============ OFFER CARD (top when priced/declined) ============
     price = sub.get("price")

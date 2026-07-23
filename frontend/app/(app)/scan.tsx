@@ -5,18 +5,37 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import * as ImagePicker from "expo-image-picker";
 import { colors, spacing, radius } from "@/src/theme";
 import { storage } from "@/src/utils/storage";
 import { decodeLicenseDisk, summariseLicenseDisk } from "@/src/utils/licenseDisk";
+import { apiFetch } from "@/src/api";
 
 export const SCAN_BUFFER_KEY = "app.scan.buffer";
 export const SCAN_PARSED_KEY = "app.scan.parsed";
+// Base64 image (data-URL) of the licence disc so the submit screen can
+// upload it alongside the decoded data — one persisted photo, whether
+// the user scanned via the camera or picked from their library.
+export const SCAN_PHOTO_KEY = "app.scan.photo";
 
+/**
+ * Scan / upload the SA license disc PDF-417 barcode.
+ *
+ * Two entry paths — both write to the same AsyncStorage keys so the
+ * submit screen behaves identically on return:
+ *   1. Live camera scan — expo-camera decodes PDF-417 on-device; we
+ *      snap a still frame and persist it alongside the decoded data.
+ *   2. Upload from gallery — dealer picks a photo; the backend runs
+ *      zxing-cpp on the image and returns the decoded raw + parsed
+ *      structured fields.
+ */
 export default function ScanScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ returnPath?: string }>();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const cameraRef = useState<any>(null);
 
   useEffect(() => {
     if (permission && !permission.granted && permission.canAskAgain) {
@@ -24,30 +43,99 @@ export default function ScanScreen() {
     }
   }, [permission, requestPermission]);
 
-  const handleScanned = async ({ data }: { data: string }) => {
-    if (scanned) return;
-    setScanned(data);
-    await storage.setItem(SCAN_BUFFER_KEY, data);
+  const returnToCaller = () => {
+    const target = params?.returnPath === "submit" ? "/(app)/submit" : null;
+    if (target) {
+      router.replace(target as any);
+    } else {
+      router.back();
+    }
+  };
+
+  const persistAndReturn = async (raw: string, imageDataUrl?: string | null) => {
+    await storage.setItem(SCAN_BUFFER_KEY, raw);
     try {
-      const parsed = decodeLicenseDisk(data);
-      // storage.setItem is JSON-serialised so we stringify the object manually
-      // — storage supports string/number/bool/null; we serialise to string.
+      const parsed = decodeLicenseDisk(raw);
       await storage.setItem(SCAN_PARSED_KEY, JSON.stringify(parsed));
       console.log("License disk parsed:", summariseLicenseDisk(parsed));
     } catch (e) {
       console.log("decodeLicenseDisk failed", e);
     }
-    setTimeout(() => {
-      // Return to the exact screen the user came from (defaults to /submit
-      // for the license-disc-in-valuation flow). Using explicit navigation
-      // avoids the router.back()-lands-on-home issue on tab-based navigators.
-      const target = params?.returnPath === "submit" ? "/(app)/submit" : null;
-      if (target) {
-        router.replace(target as any);
-      } else {
-        router.back();
+    if (imageDataUrl) {
+      await storage.setItem(SCAN_PHOTO_KEY, imageDataUrl);
+    }
+    setTimeout(returnToCaller, 500);
+  };
+
+  // ------- Live camera scan handler -------
+  const handleScanned = async ({ data }: { data: string }) => {
+    if (scanned) return;
+    setScanned(data);
+    // Best-effort still capture from the live camera view. On web (Expo
+    // Go browser preview) `takePictureAsync` isn't supported — we just
+    // skip the photo capture there and rely on the decoded data.
+    let photoDataUrl: string | null = null;
+    try {
+      const camera = (cameraRef[0] as any) || null;
+      if (camera?.takePictureAsync) {
+        const shot = await camera.takePictureAsync({ base64: true, quality: 0.7, skipProcessing: true });
+        if (shot?.base64) {
+          photoDataUrl = `data:image/jpeg;base64,${shot.base64}`;
+        }
       }
-    }, 600);
+    } catch (err) {
+      console.log("scan still-capture failed", err);
+    }
+    await persistAndReturn(data, photoDataUrl);
+  };
+
+  // ------- Upload photo (server-side decode) handler -------
+  const handleUploadPhoto = async () => {
+    if (uploading) return;
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert(
+          "Photo access needed",
+          "Please allow access to your photo library to upload a photo of the license disc.",
+        );
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        base64: true,
+        quality: 0.8,
+        allowsEditing: false,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+      const b64 = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : null;
+      if (!b64) {
+        Alert.alert("Upload failed", "Could not read the selected photo.");
+        return;
+      }
+      setUploading(true);
+      const resp = await apiFetch("/api/vehicles/license-disk/decode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image_base64: b64 }),
+      });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        setUploading(false);
+        Alert.alert(
+          "Decode failed",
+          json?.detail || "Could not read the barcode on that photo. Please try a clearer close-up shot of the disc.",
+        );
+        return;
+      }
+      setUploading(false);
+      setScanned(json.raw || "uploaded");
+      await persistAndReturn(json.raw || "", b64);
+    } catch (err: any) {
+      setUploading(false);
+      Alert.alert("Upload failed", err?.message || "Something went wrong reading the photo.");
+    }
   };
 
   if (!permission) {
@@ -62,7 +150,7 @@ export default function ScanScreen() {
     return (
       <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
         <View style={styles.header}>
-          <TouchableOpacity testID="scan-back-button" onPress={() => router.back()} style={styles.headerBtn}>
+          <TouchableOpacity testID="scan-back-button" onPress={returnToCaller} style={styles.headerBtn}>
             <Ionicons name="chevron-back" size={24} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Scan License Disk</Text>
@@ -71,7 +159,9 @@ export default function ScanScreen() {
         <View style={styles.permissionBox}>
           <Ionicons name="camera" size={64} color={colors.textDisabled} />
           <Text style={styles.permissionTitle}>Camera access needed</Text>
-          <Text style={styles.permissionText}>Allow camera access to scan license disk barcodes.</Text>
+          <Text style={styles.permissionText}>
+            Allow camera access to scan license disc barcodes — or upload a photo from your library instead.
+          </Text>
           <TouchableOpacity
             testID="request-permission-button"
             style={styles.permBtn}
@@ -81,12 +171,27 @@ export default function ScanScreen() {
               } else {
                 Alert.alert(
                   "Camera Permission",
-                  "Please enable camera permissions in Settings to scan license disks."
+                  "Please enable camera permissions in Settings to scan license disks.",
                 );
               }
             }}
           >
             <Text style={styles.permBtnText}>Grant Access</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            testID="upload-photo-fallback"
+            style={styles.uploadBtnAlt}
+            onPress={handleUploadPhoto}
+            disabled={uploading}
+          >
+            {uploading ? (
+              <ActivityIndicator color={colors.primary} />
+            ) : (
+              <>
+                <Ionicons name="image-outline" size={20} color={colors.primary} />
+                <Text style={styles.uploadBtnAltText}>Upload photo from library</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -96,6 +201,7 @@ export default function ScanScreen() {
   return (
     <View style={styles.container}>
       <CameraView
+        ref={(r) => { (cameraRef[0] as any) = r; }}
         style={StyleSheet.absoluteFill}
         facing="back"
         barcodeScannerSettings={{
@@ -105,7 +211,7 @@ export default function ScanScreen() {
       />
       <SafeAreaView style={styles.overlay} edges={["top", "bottom"]}>
         <View style={styles.topBar}>
-          <TouchableOpacity testID="scan-close-button" onPress={() => router.back()} style={styles.headerBtn}>
+          <TouchableOpacity testID="scan-close-button" onPress={returnToCaller} style={styles.headerBtn}>
             <Ionicons name="close" size={26} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.topBarTitle}>Scan License Disk</Text>
@@ -128,6 +234,21 @@ export default function ScanScreen() {
           <Text style={styles.bottomHint}>
             Supports PDF417 (SA license disk) and standard barcodes
           </Text>
+          <TouchableOpacity
+            testID="upload-photo-btn"
+            style={styles.uploadBtn}
+            onPress={handleUploadPhoto}
+            disabled={uploading || !!scanned}
+          >
+            {uploading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="image-outline" size={20} color="#fff" />
+                <Text style={styles.uploadBtnText}>Upload photo of disc instead</Text>
+              </>
+            )}
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     </View>
@@ -157,6 +278,19 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
   },
   permBtnText: { color: "#000", fontWeight: "800", letterSpacing: 1 },
+  uploadBtnAlt: {
+    marginTop: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 10,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: "transparent",
+  },
+  uploadBtnAltText: { color: colors.primary, fontWeight: "700" },
   overlay: { flex: 1, backgroundColor: "transparent" },
   topBar: {
     flexDirection: "row",
@@ -174,6 +308,25 @@ const styles = StyleSheet.create({
   bl: { bottom: 0, left: 0, borderBottomWidth: 4, borderLeftWidth: 4 },
   br: { bottom: 0, right: 0, borderBottomWidth: 4, borderRightWidth: 4 },
   hint: { color: "#fff", marginTop: spacing.lg, fontSize: 14, textAlign: "center" },
-  bottomBar: { padding: spacing.md, backgroundColor: "rgba(0,0,0,0.6)" },
-  bottomHint: { color: colors.textSecondary, fontSize: 12, textAlign: "center" },
+  bottomBar: {
+    padding: spacing.md,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  bottomHint: { color: "#DDD", fontSize: 12, textAlign: "center" },
+  uploadBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 10,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.4)",
+    backgroundColor: "rgba(255,255,255,0.08)",
+    minWidth: 250,
+    justifyContent: "center",
+  },
+  uploadBtnText: { color: "#fff", fontWeight: "600", fontSize: 14 },
 });

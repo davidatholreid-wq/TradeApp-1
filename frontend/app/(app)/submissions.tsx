@@ -31,6 +31,7 @@ type Submission = {
   priced_at?: string | null;
   created_at: string;
   front_photo?: string | null;
+  unseen?: boolean;
 };
 
 type BucketCounts = { incoming: number; priced: number; archived: number };
@@ -138,6 +139,12 @@ export default function DashboardScreen() {
           <Text style={styles.cardSubtitle} numberOfLines={1}>
             {item.derivative_name}
           </Text>
+          {item.unseen ? (
+            <View style={styles.unseenPill} testID="unseen-pill">
+              <Ionicons name="eye-off" size={10} color="#B3261E" />
+              <Text style={styles.unseenPillText}>UNSEEN · SUBJECT TO VIEW</Text>
+            </View>
+          ) : null}
         </View>
         <View
           style={[
@@ -479,6 +486,25 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   cardRef: { color: "#fff", fontSize: 14, fontWeight: "800", letterSpacing: 0.6, fontFamily: fonts.mono, marginBottom: 6 },
   cardTitle: { color: colors.text, fontSize: 17, fontWeight: "700", letterSpacing: 0.1 },
   cardSubtitle: { color: colors.textSecondary, fontSize: 14, marginTop: 3, letterSpacing: 0.1 },
+  unseenPill: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    backgroundColor: "#FDECEA",
+    borderWidth: 1,
+    borderColor: "#B3261E",
+  },
+  unseenPillText: {
+    color: "#B3261E",
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+  },
   badge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
