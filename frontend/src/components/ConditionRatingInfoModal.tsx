@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { Modal, View, Text, ScrollView, TouchableOpacity, StyleSheet, Platform } from "react-native";
+import { TouchableOpacity } from "@/src/components/HapticButtons";
+import { Modal, View, Text, ScrollView, StyleSheet, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { spacing, radius, fonts } from "@/src/theme";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";

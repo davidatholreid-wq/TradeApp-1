@@ -8,16 +8,8 @@
  * Route: /(app)/kredo-test  (admin-only)
  */
 import { useEffect, useState, useMemo } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-  TextInput,
-  Alert,
-} from "react-native";
+import { TouchableOpacity } from "@/src/components/HapticButtons";
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { apiFetch } from "@/src/api";

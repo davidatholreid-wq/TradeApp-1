@@ -1,14 +1,6 @@
 import { useCallback, useState, useMemo } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  RefreshControl,
-  TouchableOpacity,
-  ActivityIndicator,
-  Image,
-} from "react-native";
+import { TouchableOpacity } from "@/src/components/HapticButtons";
+import { View, Text, StyleSheet, FlatList, RefreshControl, ActivityIndicator, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";

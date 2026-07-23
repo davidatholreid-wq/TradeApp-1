@@ -1,16 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  Modal,
-  TouchableOpacity,
-  Image,
-  ActivityIndicator,
-  ScrollView,
-  Platform,
-  Alert,
-} from "react-native";
+import { TouchableOpacity } from "@/src/components/HapticButtons";
+import { View, Text, StyleSheet, Modal, Image, ActivityIndicator, ScrollView, Platform, Alert } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { spacing, radius, fonts } from "@/src/theme";

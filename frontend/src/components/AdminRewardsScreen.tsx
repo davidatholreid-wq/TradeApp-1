@@ -4,7 +4,8 @@
  * with Fulfil / Reject actions.
  */
 import { useCallback, useEffect, useState, useMemo } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert } from "react-native";
+import { TouchableOpacity } from "@/src/components/HapticButtons";
+import { View, Text, StyleSheet, ScrollView, TextInput, ActivityIndicator, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { apiFetch } from "@/src/api";
 import { spacing, radius, fonts } from "@/src/theme";

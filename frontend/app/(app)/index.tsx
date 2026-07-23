@@ -1,15 +1,6 @@
 import { useMemo, useState, useCallback } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  ImageBackground,
-  Image,
-  Pressable,
-  useWindowDimensions,
-  Platform,
-} from "react-native";
+import { Pressable } from "@/src/components/HapticButtons";
+import { View, Text, StyleSheet, ScrollView, ImageBackground, Image, useWindowDimensions, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import Animated, {

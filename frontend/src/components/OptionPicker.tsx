@@ -1,14 +1,6 @@
 import React, { useState, useMemo } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Modal,
-  FlatList,
-  TextInput,
-  Pressable,
-} from "react-native";
+import { Pressable, TouchableOpacity } from "@/src/components/HapticButtons";
+import { View, Text, StyleSheet, Modal, FlatList, TextInput } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { spacing, radius } from "@/src/theme";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";

@@ -1,15 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ActivityIndicator,
-  ScrollView,
-  Image,
-  TextInput,
-  useWindowDimensions,
-} from "react-native";
+import { TouchableOpacity } from "@/src/components/HapticButtons";
+import { View, Text, StyleSheet, ActivityIndicator, ScrollView, Image, TextInput, useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { spacing, radius, fonts, BRAND } from "@/src/theme";
 import { useThemeColors, useThemeMode, type Palette } from "@/src/theme/ThemeContext";

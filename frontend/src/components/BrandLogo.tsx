@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { Image, StyleSheet, View, StyleProp, ViewStyle, ImageStyle, TouchableOpacity } from "react-native";
+import { TouchableOpacity } from "@/src/components/HapticButtons";
+import { Image, StyleSheet, View, StyleProp, ViewStyle, ImageStyle } from "react-native";
 import { useRouter } from "expo-router";
 import { BRAND } from "@/src/theme";
 import { useTheme, type Palette } from "@/src/theme/ThemeContext";
