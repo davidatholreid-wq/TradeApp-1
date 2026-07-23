@@ -5,6 +5,7 @@ import {
   StyleSheet,
   ScrollView,
   ImageBackground,
+  Image,
   Pressable,
   useWindowDimensions,
   Platform,
@@ -25,6 +26,10 @@ import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { useAuth } from "@/src/context/AuthContext";
 import BrandLogo from "@/src/components/BrandLogo";
 
+// Local brand assets for partner cards.
+const TAKEALOT_LOGO = require("../../assets/brands/takealot.png");
+const VAPSSA_LOGO = require("../../assets/brands/vapssa.png");
+
 // ---------------------------------------------------------------------------
 // Home / Landing screen (dealer + admin)
 // ---------------------------------------------------------------------------
@@ -40,17 +45,52 @@ import BrandLogo from "@/src/components/BrandLogo";
 
 type CardKey = "cover_price" | "rewards" | "ad_vaps";
 
+// A card can render one of two front-face variants:
+//  - "photo":  hero image with a dark tint overlay + white copy
+//  - "brand":  solid brand-colour background with the partner's own logo
+//              (used when the *partner's* identity should be the visual
+//              hero — Takealot for rewards, VAPS SA for the ad spot).
+// The back face is the same shape either way: a themed info panel with
+// bullets, so dealers get a consistent flip experience.
+type FrontVariant =
+  | {
+      kind: "photo";
+      image: string;
+      accent: string;
+      frontIcon: keyof typeof Ionicons.glyphMap;
+    }
+  | {
+      kind: "brand";
+      /** Solid background colour for the branded card. */
+      bg: string;
+      /** Optional secondary colour for a soft top→bottom gradient feel. */
+      bgAccent?: string;
+      /** Local require(...) for the partner logo. */
+      logo: number;
+      /** Preferred logo width in the card header (height auto). */
+      logoWidth: number;
+      /** Colour for eyebrow / body copy on the branded background. */
+      fg: string;
+      /** Optional darker highlight colour for the title/CTA text. */
+      fgTitle?: string;
+      /** Optional decorative Ionicon shown in the corner chip. */
+      chipIcon?: keyof typeof Ionicons.glyphMap;
+      /** Icon chip background — leave undefined to hide the chip. */
+      chipBg?: string;
+      /** Icon chip foreground colour. */
+      chipFg?: string;
+    };
+
 type CardCopy = {
   key: CardKey;
   eyebrow: string;
   title: string;
   subtitle: string;
   cta: string;
-  image: string;
-  accent: string; // Overlay tint for photo (RGBA)
-  frontIcon: keyof typeof Ionicons.glyphMap;
+  front: FrontVariant;
   back: {
     heading: string;
+    icon: keyof typeof Ionicons.glyphMap;
     bullets: string[];
     footer?: string;
   };
@@ -67,12 +107,16 @@ const CARDS: CardCopy[] = [
     title: "Get a Guaranteed Cover Price",
     subtitle: "Fourbuy Car Buying Co. commits a firm buy price, upfront.",
     cta: "Learn how it works",
-    image:
-      "https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1400&q=80",
-    accent: "rgba(10,18,32,0.55)",
-    frontIcon: "shield-checkmark",
+    front: {
+      kind: "photo",
+      image:
+        "https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1400&q=80",
+      accent: "rgba(10,18,32,0.55)",
+      frontIcon: "shield-checkmark",
+    },
     back: {
       heading: "How the Cover Price works",
+      icon: "shield-checkmark",
       bullets: [
         "Submit any vehicle in under 90 seconds from your phone.",
         "Fourbuy issues a firm, guaranteed cover price — no lowballing on collection.",
@@ -84,16 +128,31 @@ const CARDS: CardCopy[] = [
   },
   {
     key: "rewards",
+    // Takealot-branded card — the partner logo IS the identity.
+    // Copy focuses on the tangible reward (Takealot vouchers) rather
+    // than the abstract "points" so dealers instantly grasp the value.
+    // We use a clean off-white surface so the supplied Takealot logo
+    // (with its own iconic blue tile) reads as an authentic partner
+    // lock-up rather than blending into a same-blue card background.
     eyebrow: "For every deal",
-    title: "Earn with the Dealer Reward Programme",
+    title: "Earn Takealot Vouchers",
     subtitle: "Turn every submission into points. Redeem for real value.",
     cta: "See how you earn",
-    image:
-      "https://images.unsplash.com/photo-1607083206968-13611e3d76db?auto=format&fit=crop&w=1400&q=80",
-    accent: "rgba(20,10,32,0.55)",
-    frontIcon: "gift",
+    front: {
+      kind: "brand",
+      bg: "#FFFFFF",
+      bgAccent: "#F0F6FB",
+      logo: TAKEALOT_LOGO,
+      logoWidth: 180,
+      fg: "#3F3F46",
+      fgTitle: "#0F79B4", // Match Takealot brand blue for the headline.
+      chipIcon: "gift",
+      chipBg: "#0F79B4",
+      chipFg: "#FFFFFF",
+    },
     back: {
       heading: "Dealer Rewards",
+      icon: "gift",
       bullets: [
         "Earn 1 point for every billable valuation you submit.",
         "Refer another dealer — earn bonus points when they submit their first vehicle.",
@@ -105,17 +164,27 @@ const CARDS: CardCopy[] = [
   },
   {
     key: "ad_vaps",
+    // VAPS SA-branded card. The logo has red + dark grey lock-up on
+    // white — so we keep the front face light with a soft off-white
+    // gradient and use the VAPS red as the CTA accent to echo the
+    // brand's own colour palette.
     eyebrow: "Advertising",
-    title: "VAPS SA — Cover Your Deals",
+    title: "Innovative Dealer Value",
     subtitle: "Value-added products & extended warranties for dealer stock.",
     cta: "Learn more",
-    image:
-      "https://images.unsplash.com/photo-1450101499163-c8848c66ca85?auto=format&fit=crop&w=1400&q=80",
-    accent: "rgba(6,24,20,0.55)",
-    frontIcon: "megaphone",
+    front: {
+      kind: "brand",
+      bg: "#FFFFFF",
+      bgAccent: "#F4F4F5",
+      logo: VAPSSA_LOGO,
+      logoWidth: 165,
+      fg: "#3F3F46", // Cool grey for body copy on the white card.
+      fgTitle: "#111111", // Near-black for the headline.
+    },
     badge: "Sponsored",
     back: {
       heading: "About VAPS SA",
+      icon: "shield-outline",
       bullets: [
         "South Africa's independent VAPS provider for the used-car trade.",
         "Extended warranties, service plans, tyre & rim, deposit protection.",
@@ -223,6 +292,12 @@ function FlipCard({ card, styles, colors }: FlipCardProps) {
     };
   });
 
+  const frontFace = card.front.kind === "photo" ? (
+    <PhotoFrontFace card={card} styles={styles} />
+  ) : (
+    <BrandFrontFace card={card} styles={styles} />
+  );
+
   return (
     <Pressable
       onPress={flip}
@@ -232,36 +307,7 @@ function FlipCard({ card, styles, colors }: FlipCardProps) {
     >
       {/* FRONT */}
       <Animated.View style={[styles.cardFace, frontStyle]} pointerEvents={flipped ? "none" : "auto"}>
-        <ImageBackground
-          source={{ uri: card.image }}
-          style={styles.cardBg}
-          imageStyle={styles.cardBgImg}
-          resizeMode="cover"
-        >
-          <View style={[styles.cardOverlay, { backgroundColor: card.accent }]}>
-            <View style={styles.cardTopRow}>
-              <View style={styles.cardIconChip}>
-                <Ionicons name={card.frontIcon} size={16} color="#fff" />
-              </View>
-              <Text style={styles.cardEyebrow}>{card.eyebrow}</Text>
-              {card.badge ? (
-                <View style={styles.cardBadge}>
-                  <Text style={styles.cardBadgeText}>{card.badge}</Text>
-                </View>
-              ) : null}
-            </View>
-
-            <View style={{ flex: 1 }} />
-
-            <Text style={styles.cardTitle}>{card.title}</Text>
-            <Text style={styles.cardSubtitle}>{card.subtitle}</Text>
-
-            <View style={styles.cardCtaRow}>
-              <Text style={styles.cardCtaText}>{card.cta}</Text>
-              <Ionicons name="chevron-forward" size={14} color="#fff" />
-            </View>
-          </View>
-        </ImageBackground>
+        {frontFace}
       </Animated.View>
 
       {/* BACK */}
@@ -272,7 +318,7 @@ function FlipCard({ card, styles, colors }: FlipCardProps) {
         <View style={styles.cardBackInner}>
           <View style={styles.cardTopRow}>
             <View style={[styles.cardIconChip, { backgroundColor: colors.primary }]}>
-              <Ionicons name={card.frontIcon} size={16} color={colors.onPrimary || "#fff"} />
+              <Ionicons name={card.back.icon} size={16} color={colors.onPrimary || "#fff"} />
             </View>
             <Text style={[styles.cardEyebrow, { color: colors.primary }]}>{card.eyebrow}</Text>
           </View>
@@ -304,6 +350,123 @@ function FlipCard({ card, styles, colors }: FlipCardProps) {
         </View>
       </Animated.View>
     </Pressable>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Front-face renderers
+// ---------------------------------------------------------------------------
+function PhotoFrontFace({
+  card,
+  styles,
+}: {
+  card: CardCopy;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  if (card.front.kind !== "photo") return null;
+  const { image, accent, frontIcon } = card.front;
+  return (
+    <ImageBackground
+      source={{ uri: image }}
+      style={styles.cardBg}
+      imageStyle={styles.cardBgImg}
+      resizeMode="cover"
+    >
+      <View style={[styles.cardOverlay, { backgroundColor: accent }]}>
+        <View style={styles.cardTopRow}>
+          <View style={styles.cardIconChip}>
+            <Ionicons name={frontIcon} size={16} color="#fff" />
+          </View>
+          <Text style={styles.cardEyebrow}>{card.eyebrow}</Text>
+          {card.badge ? (
+            <View style={styles.cardBadge}>
+              <Text style={styles.cardBadgeText}>{card.badge}</Text>
+            </View>
+          ) : null}
+        </View>
+
+        <View style={{ flex: 1 }} />
+
+        <Text style={styles.cardTitle}>{card.title}</Text>
+        <Text style={styles.cardSubtitle}>{card.subtitle}</Text>
+
+        <View style={styles.cardCtaRow}>
+          <Text style={styles.cardCtaText}>{card.cta}</Text>
+          <Ionicons name="chevron-forward" size={14} color="#fff" />
+        </View>
+      </View>
+    </ImageBackground>
+  );
+}
+
+function BrandFrontFace({
+  card,
+  styles,
+}: {
+  card: CardCopy;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  if (card.front.kind !== "brand") return null;
+  const { bg, bgAccent, logo, logoWidth, fg, fgTitle, chipIcon, chipBg, chipFg } = card.front;
+  const titleColor = fgTitle ?? fg;
+  const isDarkText = titleColor.toLowerCase() === "#111111" || titleColor.toLowerCase().startsWith("#0") || titleColor.toLowerCase().startsWith("#1") || titleColor.toLowerCase().startsWith("#2") || titleColor.toLowerCase().startsWith("#3");
+  // Badge / eyebrow contrast helpers on the branded surface.
+  const badgeBg = isDarkText ? "rgba(0,0,0,0.08)" : "rgba(255,255,255,0.18)";
+  const badgeFg = isDarkText ? "#111111" : "#FFFFFF";
+
+  return (
+    <View style={[styles.brandFace, { backgroundColor: bg }]}>
+      {/* Optional soft top→bottom secondary tint for depth. Placed as a
+         separate overlay so we don't need a gradient dependency. */}
+      {bgAccent ? (
+        <View
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: "55%",
+            backgroundColor: bgAccent,
+            opacity: 0.55,
+          }}
+          pointerEvents="none"
+        />
+      ) : null}
+
+      {/* Logo watermark — big and centred as the hero. */}
+      <View style={styles.brandLogoWrap} pointerEvents="none">
+        <Image source={logo} style={{ width: logoWidth, height: logoWidth * 0.5 }} resizeMode="contain" />
+      </View>
+
+      {/* Content sits above the logo, aligned to bottom. */}
+      <View style={styles.brandContent}>
+        <View style={styles.cardTopRow}>
+          {chipIcon && chipBg ? (
+            <View style={[styles.cardIconChip, { backgroundColor: chipBg }]}>
+              <Ionicons name={chipIcon} size={16} color={chipFg || "#fff"} />
+            </View>
+          ) : null}
+          <Text style={[styles.cardEyebrow, { color: fg }]}>{card.eyebrow}</Text>
+          {card.badge ? (
+            <View style={[styles.cardBadge, { backgroundColor: badgeBg }]}>
+              <Text style={[styles.cardBadgeText, { color: badgeFg }]}>{card.badge}</Text>
+            </View>
+          ) : null}
+        </View>
+
+        <Text style={[styles.cardTitle, { color: titleColor, marginTop: spacing.sm }]}>
+          {card.title}
+        </Text>
+        <Text style={[styles.cardSubtitle, { color: fg, opacity: isDarkText ? 0.75 : 0.9 }]}>
+          {card.subtitle}
+        </Text>
+
+        <View style={styles.cardCtaRow}>
+          <Text style={[styles.cardCtaText, { color: titleColor }]}>{card.cta}</Text>
+          <Ionicons name="chevron-forward" size={14} color={titleColor} />
+        </View>
+      </View>
+    </View>
   );
 }
 
@@ -387,6 +550,36 @@ const makeStyles = (colors: Palette) =>
     },
     cardBgImg: {
       borderRadius: radius.lg,
+    },
+    // ------ Brand-front-face variant ------
+    brandFace: {
+      // Fill the parent card face explicitly rather than relying on
+      // `flex: 1` inside a `position: absolute` parent, which can render
+      // as zero-height on react-native-web in some Metro configs.
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      borderRadius: radius.lg,
+      overflow: "hidden",
+      padding: spacing.md,
+    },
+    brandLogoWrap: {
+      // The logo is our hero — centre it in the top half of the card
+      // so it reads instantly as "this is Takealot / VAPS SA territory"
+      // before the dealer even reads the copy.
+      position: "absolute",
+      top: spacing.md,
+      left: 0,
+      right: 0,
+      alignItems: "center",
+    },
+    brandContent: {
+      position: "absolute",
+      left: spacing.md,
+      right: spacing.md,
+      bottom: spacing.md,
     },
     cardOverlay: {
       flex: 1,
