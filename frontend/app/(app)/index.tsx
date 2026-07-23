@@ -17,7 +17,6 @@ import { useFocusEffect } from "expo-router";
 import { spacing, radius, fonts } from "@/src/theme";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { useAuth } from "@/src/context/AuthContext";
-import BrandLogo from "@/src/components/BrandLogo";
 
 // Local brand assets for partner cards.
 const TAKEALOT_LOGO = require("../../assets/brands/takealot.png");
@@ -259,11 +258,6 @@ export default function HomeScreen() {
         contentContainerStyle={[styles.scroll, { paddingBottom: insets + spacing.xl }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <BrandLogo size="md" />
-        </View>
-
         {/* Hero video banner — autoplays on focus, loops silently. */}
         <View style={styles.heroWrap}>
           {/* Poster frame — visible until the video decodes its first
@@ -542,11 +536,10 @@ const makeStyles = (colors: Palette) =>
     },
     scroll: {
       paddingHorizontal: spacing.md,
+      // Give the hero video a little breathing room from the top-safe
+      // area now that the Fourbuy logo header has been removed from Home
+      // (per user request — the video is the hero on this screen).
       paddingTop: spacing.sm,
-    },
-    header: {
-      alignItems: "center",
-      paddingVertical: spacing.md,
     },
     heroWrap: {
       width: "100%",
