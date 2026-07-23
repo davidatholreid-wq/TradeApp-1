@@ -178,13 +178,13 @@ REPORT_CATALOG = {
         "name": "Car Vertical Report",
         "cost_zar": 200.0,
     },
-    # BMW-only VIN-linked report — sourced live from Bimmervin (BMW factory
-    # order) rather than the mocked provider generator. Front-end filters
-    # this out of the catalog for non-BMW-group submissions.
+    # BMW-family VIN-linked report — sourced live from Bimmervin (BMW
+    # factory order). Currently offered on BMW and MINI vehicles only.
+    # Front-end filters this out of the catalog for other brands.
     "bmw_options": {
         "name": "BMW Factory Options",
-        "cost_zar": 10.0,
-        "supported_makes": ["BMW", "MINI", "ROLLS-ROYCE", "ROLLS ROYCE", "ALPINA"],
+        "cost_zar": 20.0,
+        "supported_makes": ["BMW", "MINI"],
     },
 }
 

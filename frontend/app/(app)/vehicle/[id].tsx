@@ -318,7 +318,11 @@ export default function VehicleDetail() {
   const [bimmerLoading, setBimmerLoading] = useState(false);
   const isBimmerSupported = useMemo(() => {
     const mk = (sub?.make_name || (sub as any)?.make || "").toString().toUpperCase();
-    return ["BMW", "MINI", "ROLLS-ROYCE", "ROLLS ROYCE", "ALPINA"].includes(mk);
+    // BMW factory options via Bimmervin — currently sold for BMW and MINI
+    // only. Backend catalog is the source of truth (via supported_makes),
+    // this frontend gate mirrors it so we don't render the row prematurely
+    // before the catalog endpoint returns.
+    return ["BMW", "MINI"].includes(mk);
   }, [sub?.make_name]);
 
   const fetchBimmerSpec = async () => {
@@ -654,8 +658,8 @@ export default function VehicleDetail() {
     car_vertical: { name: "Car Vertical Report", cost_zar: 200 },
     kredo_cartrust: { name: "Kredo CarTrust Vehicle Report", cost_zar: 200 },
     // BMW factory options — live Bimmervin lookup, only offered on
-    // BMW-group VINs (BMW, MINI, Rolls-Royce, ALPINA).
-    bmw_options: { name: "BMW Factory Options", cost_zar: 10 },
+    // BMW and MINI vehicles.
+    bmw_options: { name: "BMW Factory Options", cost_zar: 20 },
   };
 
   const orderedReportTypes = useMemo(
