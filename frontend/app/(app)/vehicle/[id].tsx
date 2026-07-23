@@ -1994,53 +1994,18 @@ export default function VehicleDetail() {
           )}
         </View>
 
-        {/* Bimmervin factory spec (BMW / MINI / Rolls-Royce / ALPINA).
-            Admin-only, on-demand — first click ~3 credits (~€3), cached
-            per-VIN thereafter. See services/bimmervin_client.py. */}
+        {/* Bimmervin factory options (BMW / MINI / Rolls-Royce / ALPINA).
+            Admin-only, on-demand — R10 billed to the dealership on the
+            first successful fetch per submission; subsequent clicks are
+            cached and free. See services/bimmervin_client.py. */}
         {isAdmin && isBimmerSupported ? (
           <>
-            <Text style={styles.sectionTitle}>BMW Factory Spec</Text>
+            <Text style={styles.sectionTitle}>Factory Fitted Vehicle Options</Text>
             <View style={styles.marketValuesCard} testID="bimmer-spec-card">
+              <Text style={styles.bimmerSubHeader}>Against supplied VIN</Text>
+
               {bimmerSpec?.status === "ok" ? (
                 <>
-                  <View style={styles.marketRow}>
-                    <Text style={styles.marketLabel}>Series / Type</Text>
-                    <Text style={styles.marketValue} numberOfLines={1}>
-                      {[bimmerSpec.series, bimmerSpec.type_key].filter(Boolean).join(" · ") || "—"}
-                    </Text>
-                  </View>
-                  <View style={styles.marketRow}>
-                    <Text style={styles.marketLabel}>Colour Code</Text>
-                    <Text style={[styles.marketValue, { fontFamily: fonts.mono }]}>
-                      {bimmerSpec.colour_code || "—"}
-                    </Text>
-                  </View>
-                  <View style={styles.marketRow}>
-                    <Text style={styles.marketLabel}>Interior / Fabric</Text>
-                    <Text style={[styles.marketValue, { fontFamily: fonts.mono }]}>
-                      {bimmerSpec.fabric_code || "—"}
-                    </Text>
-                  </View>
-                  {bimmerSpec.build_date ? (
-                    <View style={styles.marketRow}>
-                      <Text style={styles.marketLabel}>Retrieved</Text>
-                      <Text style={styles.marketValue} numberOfLines={1}>
-                        {bimmerSpec.build_date}
-                      </Text>
-                    </View>
-                  ) : null}
-                  <View style={[styles.marketRow, { borderBottomWidth: 0 }]}>
-                    <Text style={styles.marketLabel}>Factory Options</Text>
-                    <Text style={styles.marketValue}>
-                      {bimmerSpec.options?.length || 0} codes
-                    </Text>
-                  </View>
-
-                  {/* Option code list — shows the SA/E kind chip, the
-                      raw code (mono), and the human-readable description
-                      from our local BMW SA-code dictionary. Codes we
-                      don't have a description for still render as a
-                      one-line pill with the code only. */}
                   {Array.isArray(bimmerSpec.options) && bimmerSpec.options.length > 0 ? (
                     <View style={styles.bimmerOptionsList}>
                       {bimmerSpec.options.map((o: any) => (
@@ -2062,32 +2027,21 @@ export default function VehicleDetail() {
                         </View>
                       ))}
                     </View>
-                  ) : null}
-
+                  ) : (
+                    <Text style={styles.bimmerFetchHint}>No factory options returned for this VIN.</Text>
+                  )}
                   <View style={styles.marketFooter}>
                     <Text style={styles.marketFooterText}>
-                      Source: Bimmervin
+                      {bimmerSpec.options?.length || 0} option{(bimmerSpec.options?.length || 0) === 1 ? "" : "s"}
                       {bimmerSpec.captured_at ? ` · captured ${formatFetched(bimmerSpec.captured_at)}` : ""}
                     </Text>
-                    <TouchableOpacity
-                      testID="bimmer-refresh"
-                      onPress={fetchBimmerSpec}
-                      disabled={bimmerLoading}
-                      style={[styles.marketRefreshBtn, bimmerLoading && styles.docBtnDisabled]}
-                    >
-                      {bimmerLoading ? (
-                        <ActivityIndicator size="small" color={colors.text} />
-                      ) : (
-                        <Text style={styles.marketRefreshText}>Refresh</Text>
-                      )}
-                    </TouchableOpacity>
                   </View>
                 </>
               ) : bimmerSpec?.status === "error" ? (
                 <View style={styles.marketErrorBox}>
                   <Ionicons name="alert-circle-outline" size={18} color={colors.warning} />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.marketErrorText}>Could not fetch factory spec.</Text>
+                    <Text style={styles.marketErrorText}>Could not fetch factory options.</Text>
                     <Text style={styles.marketErrorDetail} numberOfLines={3}>
                       {bimmerSpec.error || "Bimmervin request failed."}
                     </Text>
@@ -2107,13 +2061,9 @@ export default function VehicleDetail() {
                 </View>
               ) : (
                 <View style={styles.bimmerFetchRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.bimmerFetchTitle}>Pull factory options from BMW</Text>
-                    <Text style={styles.bimmerFetchHint}>
-                      Fetches series, colour, fabric &amp; every SA / E code from
-                      Bimmervin (~€3 per VIN, cached thereafter).
-                    </Text>
-                  </View>
+                  <Text style={styles.bimmerFetchHint}>
+                    Fetches every factory-fitted option for the VIN above. Adds R10 to the dealership&apos;s billing on success.
+                  </Text>
                   <TouchableOpacity
                     testID="bimmer-fetch"
                     onPress={fetchBimmerSpec}
@@ -2125,7 +2075,7 @@ export default function VehicleDetail() {
                     ) : (
                       <>
                         <Ionicons name="cloud-download" size={14} color={colors.onPrimary} />
-                        <Text style={styles.bimmerFetchBtnText}>Fetch</Text>
+                        <Text style={styles.bimmerFetchBtnText}>Fetch (R10)</Text>
                       </>
                     )}
                   </TouchableOpacity>
@@ -3512,9 +3462,17 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     fontSize: 13,
   },
   // ---- Bimmervin (BMW factory spec) styles -------------------------------
+  bimmerSubHeader: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+    marginBottom: spacing.sm,
+  },
   bimmerFetchRow: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: "column",
+    alignItems: "stretch",
     gap: spacing.md,
     paddingVertical: spacing.md,
   },

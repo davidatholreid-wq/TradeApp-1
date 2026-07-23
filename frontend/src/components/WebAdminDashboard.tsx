@@ -1317,39 +1317,14 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 )}
               </View>
 
-              {/* ================= BMW FACTORY SPEC (Bimmervin) ================= */}
-              {/* Read-only mirror of the mobile "BMW Factory Spec" card.
-                  Fetching lives on mobile — the web cockpit just displays
-                  the cached snapshot. */}
+              {/* ================= FACTORY FITTED VEHICLE OPTIONS (Bimmervin) ================= */}
+              {/* Read-only mirror of the mobile "Factory Fitted Vehicle
+                  Options" card. Fetching stays on mobile — the web
+                  cockpit just displays the cached snapshot. */}
               {selected.bimmer_spec?.status === "ok" ? (
                 <View style={styles.analysisBox}>
-                  <Text style={styles.boxTitle}>BMW FACTORY SPEC</Text>
-                  <View style={styles.mvGrid}>
-                    <View style={styles.mvBox}>
-                      <Text style={styles.mvLabel}>SERIES / TYPE</Text>
-                      <Text style={[styles.mvValue, styles.mvMono]}>
-                        {[selected.bimmer_spec.series, selected.bimmer_spec.type_key].filter(Boolean).join(" · ") || "—"}
-                      </Text>
-                    </View>
-                    <View style={styles.mvBox}>
-                      <Text style={styles.mvLabel}>COLOUR CODE</Text>
-                      <Text style={[styles.mvValue, styles.mvMono]}>
-                        {selected.bimmer_spec.colour_code || "—"}
-                      </Text>
-                    </View>
-                    <View style={styles.mvBox}>
-                      <Text style={styles.mvLabel}>INTERIOR / FABRIC</Text>
-                      <Text style={[styles.mvValue, styles.mvMono]}>
-                        {selected.bimmer_spec.fabric_code || "—"}
-                      </Text>
-                    </View>
-                    <View style={styles.mvBox}>
-                      <Text style={styles.mvLabel}>FACTORY OPTIONS</Text>
-                      <Text style={styles.mvValue}>
-                        {selected.bimmer_spec.options?.length || 0} codes
-                      </Text>
-                    </View>
-                  </View>
+                  <Text style={styles.boxTitle}>FACTORY FITTED VEHICLE OPTIONS</Text>
+                  <Text style={styles.bimmerWebSubHeader}>Against supplied VIN</Text>
                   {Array.isArray(selected.bimmer_spec.options) && selected.bimmer_spec.options.length > 0 ? (
                     <View style={styles.bimmerOptionsWebList}>
                       {selected.bimmer_spec.options.map((o) => (
@@ -1371,13 +1346,15 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                         </View>
                       ))}
                     </View>
-                  ) : null}
+                  ) : (
+                    <Text style={styles.analysisEmpty}>No factory options returned for this VIN.</Text>
+                  )}
                 </View>
               ) : selected.bimmer_spec?.status === "error" ? (
                 <View style={styles.analysisBox}>
-                  <Text style={styles.boxTitle}>BMW FACTORY SPEC</Text>
+                  <Text style={styles.boxTitle}>FACTORY FITTED VEHICLE OPTIONS</Text>
                   <Text style={styles.analysisEmpty}>
-                    Could not fetch factory spec: {selected.bimmer_spec.error || "Bimmervin lookup failed."}
+                    Could not fetch factory options: {selected.bimmer_spec.error || "Bimmervin lookup failed."}
                   </Text>
                 </View>
               ) : null}
@@ -2158,6 +2135,14 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
 
   // === Bimmervin (BMW factory spec) — web pills ===
+  bimmerWebSubHeader: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+    marginBottom: spacing.sm,
+  },
   bimmerOptionsWebWrap: {
     flexDirection: "row",
     flexWrap: "wrap",

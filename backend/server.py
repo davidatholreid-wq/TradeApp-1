@@ -1474,6 +1474,36 @@ async def fetch_bimmer_spec_endpoint(sub_id: str, current: dict = Depends(requir
         spec["option_counts"] = counts
         return spec
 
+    async def _bill_once_if_needed(vin_: str, dealer_id_: Optional[str]) -> None:
+        """Insert the R10 charge on `report_orders` at most once per
+        submission. Called from BOTH the cached and fresh paths so a
+        successful lookup always ends up billed exactly once — even if
+        the spec was cached before this billing rule existed."""
+        if not dealer_id_:
+            return
+        existing_bill = await db.report_orders.find_one(
+            {"submission_id": sub_id, "type": "bmw_options"},
+        )
+        if existing_bill:
+            return
+        now_ts = now_utc()
+        order = {
+            "id": str(uuid.uuid4()),
+            "submission_id": sub_id,
+            "dealer_id": dealer_id_,
+            "vin": vin_,
+            "type": "bmw_options",
+            "name": "BMW Factory Options",
+            "cost_zar": 10.0,
+            "status": "delivered",
+            "ordered_at": now_ts,
+            "ordered_by": current["id"],
+            "delivered_at": now_ts,
+            "note": "Factory-fitted options list fetched via Bimmervin for the supplied VIN.",
+        }
+        await db.report_orders.insert_one(order)
+        logger.info("bimmervin: billed R10 to dealer %s for sub %s", dealer_id_, sub_id)
+
     # Cached OK snapshot for the same VIN? Return instantly. Cached error
     # snapshots still let the admin retry with a fresh Bimmervin call.
     existing = sub.get("bimmer_spec") or {}
@@ -1482,6 +1512,10 @@ async def fetch_bimmer_spec_endpoint(sub_id: str, current: dict = Depends(requir
         # Persist the refreshed descriptions too so the mobile GET picks
         # them up on its next load (single Mongo write, no external call).
         await db.submissions.update_one({"id": sub_id}, {"$set": {"bimmer_spec": enriched}})
+        # Bill R10 if we haven't yet for this submission (legacy caches
+        # captured before the billing rule existed still get charged the
+        # first time an admin views them, as agreed).
+        await _bill_once_if_needed(vin, sub.get("dealer_id"))
         return {"bimmer_spec": enriched, "cached": True}
 
     logger.info("bimmervin: fetching spec for sub=%s vin=%s (admin=%s)", sub_id, vin, current.get("email"))
@@ -1497,6 +1531,13 @@ async def fetch_bimmer_spec_endpoint(sub_id: str, current: dict = Depends(requir
             {"id": sub_id},
             {"$set": {"bimmer_spec": spec}},
         )
+
+    # Bill R10 on the dealership when the fetch was successful. Handled
+    # through the same helper so cached + fresh both flow through one code
+    # path (and one idempotency check on `report_orders`).
+    if spec.get("status") == "ok":
+        await _bill_once_if_needed(vin, sub.get("dealer_id"))
+
     return {"bimmer_spec": spec, "cached": False}
 
 
@@ -2389,35 +2430,24 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
             small,
         ))
 
-    # ============ BMW FACTORY SPEC (Bimmervin) ============
+    # ============ BMW FACTORY FITTED OPTIONS (Bimmervin) ============
     # Only rendered for BMW-group vehicles that have a cached Bimmervin
-    # snapshot. Shows chassis series/type, colour + fabric codes, build
-    # date, and the full list of factory option codes as a compact grid.
+    # snapshot. Shows the raw factory-fitted option list (SA + E codes)
+    # with plain-English descriptions from the local dictionary. No
+    # chassis/colour/fabric meta — those are already in the vehicle
+    # details table above.
     bs = sub.get("bimmer_spec") or {}
     if isinstance(bs, dict) and bs.get("status") == "ok":
-        story.append(Paragraph("BMW FACTORY SPEC", section_title))
-        bs_rows = [
-            ["Series / Type", _P(" · ".join(x for x in [bs.get("series"), bs.get("type_key")] if x) or "—", mono=True)],
-            ["Colour Code", _P(bs.get("colour_code") or "—", mono=True)],
-            ["Interior / Fabric", _P(bs.get("fabric_code") or "—", mono=True)],
-        ]
-        if bs.get("build_date"):
-            bs_rows.append(["Retrieved", _P(bs.get("build_date"))])
-        bs_rows.append(["Factory Options", _P(f"{len(bs.get('options') or [])} codes")])
-        t_bs = Table(bs_rows, colWidths=[46 * mm, 140 * mm])
-        t_bs.setStyle(_row_style())
-        story.append(t_bs)
-
-        # Detailed option list with human-readable descriptions from the
-        # local BMW SA-code dictionary. Each row: [Kind] [Code] [Description].
-        # Codes we don't have in the dictionary still print with an em-dash
-        # so the reader knows we know about the code but haven't labelled
-        # it yet.
+        story.append(Paragraph("FACTORY FITTED VEHICLE OPTIONS", section_title))
+        story.append(Paragraph(
+            f'<font name="Helvetica" size="8" color="#6B6B6B">'
+            f'Against supplied VIN {bs.get("vin") or "—"}'
+            f'</font>',
+            small,
+        ))
         opts = bs.get("options") or []
         if opts:
-            story.append(Spacer(1, 4))
             opt_rows: list[list[Any]] = [["Kind", "Code", "Description"]]
-            # Show SA first, then E, then HO (biggest → smallest signal).
             order = {"SA": 0, "E": 1, "HO": 2}
             for o in sorted(opts, key=lambda x: (order.get(x.get("kind"), 9), x.get("code") or "")):
                 kind = o.get("kind") or ""
@@ -2435,12 +2465,8 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
             ts_opts.add("BACKGROUND", (0, 0), (-1, 0), PAPER)
             t_opts.setStyle(ts_opts)
             story.append(t_opts)
-
-        story.append(Spacer(1, 2))
-        story.append(Paragraph(
-            f"Source: Bimmervin (BMW factory order) · VIN {bs.get('vin') or '—'}",
-            small,
-        ))
+        else:
+            story.append(Paragraph("No factory options returned for this VIN.", small))
 
     # ============ AI MARKET ANALYSIS ============
     ma = sub.get("market_analysis") or {}
