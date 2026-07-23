@@ -8,11 +8,20 @@ per variant so we can display it on the vehicle detail Market Values card
 without hitting Kredo again.
 
 Rules:
-- Filter to the four testing makes the user asked for: AUDI, BMW, FORD, TOYOTA.
-- Make is stored title-cased for display friendliness (`Audi`, `BMW`, `Ford`,
-  `Toyota`). Model + derivative stay in Kredo's original UPPERCASE +
-  year-ranged / model-prefixed form so the Kredo Vehicle Values resolver
-  can pass them straight through.
+- Include ALL makes / models / derivatives Kredo publishes. Older data
+  (RegYear more than 9 years before today) is skipped so the picker
+  isn't flooded with obsolete vintage entries — the exact cut-off is
+  set by ``MIN_YEAR`` below.
+- Only KEEP passenger-car body types (VehicleType ``A``) and light
+  commercial / bakkie body types (VehicleType ``B`` — e.g. Hilux S/C
+  and D/C). Everything else Kredo publishes (heavy trucks ``H``,
+  buses ``Z``, motorbikes ``C``, tractors ``M``, trailers ``T``,
+  caravans ``S``) is skipped because Fourbuy does not appraise them.
+- Make is stored title-cased for display friendliness (`Land Rover`,
+  `Mercedes-Benz`, `Volkswagen`); a small alias table below preserves
+  known industry-uppercase brands like `BMW`, `MINI`. Model + derivative
+  stay in Kredo's original UPPERCASE + year-ranged / model-prefixed form
+  so the Kredo Vehicle Values resolver can pass them straight through.
 - Where the Excel has duplicate rows for the same (make, model, variant,
   year) but different `PublicationSection` (Kredo's pricing publication
   code — 'P'assenger, 'B'ase, 'N', 'Q'...), we keep the FIRST row
@@ -22,20 +31,68 @@ Rules:
 """
 import json
 import sys
+from datetime import date
 from pathlib import Path
 
 import openpyxl
 
-INPUT = Path("/tmp/kredo_flatfile.xlsx")
+INPUT = Path("/app/backend/kredo_flatfile_202607.xlsx")
 OUTPUT = Path("/app/backend/vehicle_specs_kredo.json")
-ALLOWED_MAKES = {"AUDI", "BMW", "FORD", "TOYOTA"}
+
+# Skip anything older than this many years — keeps the picker useful
+# and drops obsolete entries dealers rarely appraise.
+MAX_AGE_YEARS = 9
+MIN_YEAR = date.today().year - MAX_AGE_YEARS
+
+# Kredo VehicleType codes we accept:
+#   A = automobile (passenger car)
+#   B = bakkie / light commercial (Hilux, Ranger, etc.)
+# Everything else (H heavy trucks, Z buses, M tractors, C motorbikes,
+# T trailers, S specialty like caravans) is skipped.
+ALLOWED_VEHICLE_TYPES = {"A", "B"}
+
+# Brands that are conventionally rendered all-uppercase (industry style
+# rather than sentence case). Everything else is title-cased for display.
+UPPERCASE_MAKES = {
+    "BMW", "MINI", "GMC", "MG", "TVR", "SEAT", "SMART", "GAC",
+    "JAC", "BAIC", "BYD", "GWM", "FAW", "HAVAL", "DFSK", "JMC",
+    "KTM", "SAIC", "LDV", "CMC", "CAM", "BAW", "SRM", "AC",
+    "AIM", "IVECO", "HAFEI", "FAW",
+}
+
+# Manual overrides where auto-titlecasing gets the branding wrong.
+MAKE_DISPLAY_OVERRIDES = {
+    "ROLLS ROYCE": "Rolls-Royce",
+    "ROLLS-ROYCE": "Rolls-Royce",
+    "MERCEDES-BENZ": "Mercedes-Benz",
+    "MERCEDES BENZ": "Mercedes-Benz",
+    "LAND ROVER": "Land Rover",
+    "LAND-ROVER": "Land Rover",
+    "ALFA ROMEO": "Alfa Romeo",
+    "ASTON MARTIN": "Aston Martin",
+    "GAC MOTOR": "GAC Motor",
+    "US TRUCK": "US Truck",
+    "ZX AUTO": "ZX Auto",
+    "GOLDEN JOURNEY": "Golden Journey",
+    "GOLDEN DRAGON": "Golden Dragon",
+    "ASHOK LEYLAND": "Ashok Leyland",
+    "BRANDT BRV": "Brandt BRV",
+    "B.A.W": "BAW",
+    "C.A.M": "CAM",
+}
 
 
-def _title_make(m: str) -> str:
-    # BMW stays uppercase (industry convention); others title-case.
-    if m == "BMW":
-        return "BMW"
-    return m.title()
+def _display_make(m: str) -> str:
+    m_upper = m.upper().strip()
+    if m_upper in MAKE_DISPLAY_OVERRIDES:
+        return MAKE_DISPLAY_OVERRIDES[m_upper]
+    if m_upper in UPPERCASE_MAKES:
+        return m_upper
+    # Title-case word-by-word, preserving hyphens.
+    return " ".join(
+        "-".join(x.capitalize() for x in w.split("-"))
+        for w in m_upper.split()
+    )
 
 
 def main() -> int:
@@ -52,7 +109,7 @@ def main() -> int:
     required = [
         "Make", "Model", "Variant", "RegYear", "MMCode", "NewListPrice",
         "FuelType", "ManualAuto", "BodyType", "NoOfDoors", "Drive",
-        "Seats", "CubicCapacity", "Kilowatts", "NoCylinders",
+        "Seats", "CubicCapacity", "Kilowatts", "NoCylinders", "VehicleType",
     ]
     missing = [k for k in required if k not in idx]
     if missing:
@@ -67,7 +124,12 @@ def main() -> int:
     for r in rows:
         total += 1
         make = str(r[idx["Make"]] or "").strip()
-        if make.upper() not in ALLOWED_MAKES:
+        if not make:
+            continue
+        # Restrict to passenger cars + bakkies; skip trucks, buses,
+        # bikes, tractors, trailers, caravans.
+        vtype = str(r[idx["VehicleType"]] or "").strip().upper()
+        if vtype not in ALLOWED_VEHICLE_TYPES:
             continue
         model = str(r[idx["Model"]] or "").strip()
         variant = str(r[idx["Variant"]] or "").strip()
@@ -77,6 +139,9 @@ def main() -> int:
         try:
             year = int(year_raw)
         except (TypeError, ValueError):
+            continue
+        # Skip obsolete rows — anything older than MIN_YEAR (9 years ago).
+        if year < MIN_YEAR:
             continue
 
         key = (make.upper(), model, variant, year)
@@ -111,7 +176,7 @@ def main() -> int:
             new_price_num = None
 
         entry = {
-            "make": _title_make(make.upper()),
+            "make": _display_make(make.upper()),
             "model": model,
             "derivative": variant,
             "fuel_type": fuel,

@@ -5288,18 +5288,33 @@ async def seed_data():
             #  a) collection is empty, OR
             #  b) it has non-Kredo (mock) rows, OR
             #  c) it has Kredo rows but they were imported before we started
-            #     preserving `mm_code` on each variant.
+            #     preserving `mm_code` on each variant, OR
+            #  d) the flatfile on disk has a materially different row count
+            #     from what's in Mongo — i.e. someone re-imported the Excel
+            #     with additional makes / years. We compare the row counts
+            #     with a small tolerance to avoid churn on trivial diffs.
             existing_kredo = await db.vehicle_specs.count_documents({"spec_source": "kredo"})
             total = await db.vehicle_specs.count_documents({})
             needs_mm = False
             if existing_kredo:
-                # Peek at a row to see if the new mm_code field is populated.
                 probe = await db.vehicle_specs.find_one(
                     {"spec_source": "kredo"}, {"mm_code": 1, "_id": 0}
                 )
                 if not probe or "mm_code" not in probe:
                     needs_mm = True
-            if total == 0 or existing_kredo == 0 or needs_mm:
+
+            # Check flatfile row-count vs seeded row-count.
+            import json as _json_probe
+            with open(kredo_specs_path) as _fh:
+                file_row_count = len(_json_probe.load(_fh))
+            row_count_stale = abs(existing_kredo - file_row_count) > max(50, int(file_row_count * 0.01))
+
+            if total == 0 or existing_kredo == 0 or needs_mm or row_count_stale:
+                if row_count_stale and not (total == 0 or existing_kredo == 0 or needs_mm):
+                    logger.info(
+                        "Kredo flatfile row count changed (%s → %s) — reseeding vehicle_specs.",
+                        existing_kredo, file_row_count,
+                    )
                 await _reseed_from_kredo()
         elif await db.vehicle_specs.count_documents({}) == 0:
             from vehicle_specs_seed import expand_specs

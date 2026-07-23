@@ -205,89 +205,113 @@ async def fetch_landrover_osh(vin: str, *, country_label: str = "South Africa",
     a ZA business — override for edge cases (e.g. an imported vehicle
     still under service in another market).
     """
-    from playwright.async_api import async_playwright
+    try:
+        from playwright.async_api import async_playwright
+    except Exception as exc:  # pragma: no cover
+        logger.exception("Playwright import failed")
+        return {
+            "status": "error",
+            "error": f"Service history lookup is temporarily unavailable ({exc.__class__.__name__}). Please try again shortly.",
+        }
 
     vin = (vin or "").strip().upper()
     if len(vin) != 17:
         return {"status": "error", "error": "VIN must be 17 characters."}
 
-    async with async_playwright() as pw:
-        browser = await pw.chromium.launch(
-            headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-blink-features=AutomationControlled",
-                "--disable-dev-shm-usage",
-            ],
-        )
-        try:
-            ctx = await browser.new_context(
-                user_agent=(
-                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
-                ),
-                viewport={"width": 1366, "height": 900},
-                locale="en-GB",
-            )
-            page = await ctx.new_page()
-            await page.goto(OSH_URL, wait_until="domcontentloaded", timeout=30000)
-
-            # Fill VIN + submit.
-            await page.fill('input[name="vin"]', vin, timeout=8000)
-            await page.click("#lookup-vin", timeout=8000)
-
-            # JLR shows a modal-based country picker after the first submit.
-            # The country choice is a clickable `<div data-country="XX">` — not
-            # a semantic button. Country code is a stable ISO-3166 alpha-2
-            # value derived from the country label; we support the two we
-            # actually need in ZA today, with a text-based fallback for any
-            # future country label we don't recognise.
-            _ISO_BY_LABEL = {"south africa": "ZA"}
-            iso = _ISO_BY_LABEL.get((country_label or "").strip().lower())
+    try:
+        async with async_playwright() as pw:
             try:
-                await page.wait_for_selector("#country-modal.in", timeout=8000)
-                if iso:
-                    await page.click(f'.modal-country[data-country="{iso}"]', timeout=8000)
-                else:
-                    # Text fallback — scope inside the modal to avoid clicking
-                    # the disambiguating dropdown row of the same name.
-                    await page.locator(
-                        f'#country-modal .modal-country:has-text("{country_label}")'
-                    ).first.click(timeout=8000)
-            except Exception:
-                # No modal — fine.
-                pass
-
-            # Wait for the /home page with vehicle details.
-            try:
-                await page.wait_for_url(
-                    re.compile(r"osh\.landrover\.com/home", re.I),
-                    timeout=timeout_sec * 1000,
+                browser = await pw.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--no-sandbox",
+                        "--disable-blink-features=AutomationControlled",
+                        "--disable-dev-shm-usage",
+                    ],
                 )
-            except Exception:
-                pass
-
-            # Outstanding Alerts are loaded lazily via AJAX after the main
-            # page renders. Give the network a chance to settle so we
-            # capture the alert list too. This also acts as a fallback
-            # when wait_for_url above didn't hit /home for some reason.
-            try:
-                await page.wait_for_load_state("networkidle", timeout=15000)
-            except Exception:
-                pass
-
-            result_url = page.url
-            if "/home" not in result_url:
-                # Common failure: server 5xx or the VIN is unknown to JLR SA.
-                body_txt = (await page.inner_text("body"))[:300]
+            except Exception as exc:
+                logger.exception("Playwright chromium launch failed")
                 return {
                     "status": "error",
-                    "error": f"JLR OSH did not return a result page (URL={result_url}). Body: {body_txt!r}",
+                    "error": "Service history lookup is temporarily unavailable — the browser runtime is not ready. Please try again shortly.",
                 }
+            try:
+                ctx = await browser.new_context(
+                    user_agent=(
+                        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                        "(KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
+                    ),
+                    viewport={"width": 1366, "height": 900},
+                    locale="en-GB",
+                )
+                page = await ctx.new_page()
+                await page.goto(OSH_URL, wait_until="domcontentloaded", timeout=30000)
 
-            html = await page.content()
-            parsed = parse_osh_home_page(html, vin)
-            parsed["result_url"] = result_url
-            return parsed
-        finally:
-            await browser.close()
+                # Fill VIN + submit.
+                await page.fill('input[name="vin"]', vin, timeout=8000)
+                await page.click("#lookup-vin", timeout=8000)
+
+                # JLR shows a modal-based country picker after the first submit.
+                # The country choice is a clickable `<div data-country="XX">` — not
+                # a semantic button. Country code is a stable ISO-3166 alpha-2
+                # value derived from the country label; we support the two we
+                # actually need in ZA today, with a text-based fallback for any
+                # future country label we don't recognise.
+                _ISO_BY_LABEL = {"south africa": "ZA"}
+                iso = _ISO_BY_LABEL.get((country_label or "").strip().lower())
+                try:
+                    await page.wait_for_selector("#country-modal.in", timeout=8000)
+                    if iso:
+                        await page.click(f'.modal-country[data-country="{iso}"]', timeout=8000)
+                    else:
+                        # Text fallback — scope inside the modal to avoid clicking
+                        # the disambiguating dropdown row of the same name.
+                        await page.locator(
+                            f'#country-modal .modal-country:has-text("{country_label}")'
+                        ).first.click(timeout=8000)
+                except Exception:
+                    # No modal — fine.
+                    pass
+
+                # Wait for the /home page with vehicle details.
+                try:
+                    await page.wait_for_url(
+                        re.compile(r"osh\.landrover\.com/home", re.I),
+                        timeout=timeout_sec * 1000,
+                    )
+                except Exception:
+                    pass
+
+                # Outstanding Alerts are loaded lazily via AJAX after the main
+                # page renders. Give the network a chance to settle so we
+                # capture the alert list too. This also acts as a fallback
+                # when wait_for_url above didn't hit /home for some reason.
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=15000)
+                except Exception:
+                    pass
+
+                result_url = page.url
+                if "/home" not in result_url:
+                    # Common failure: server 5xx or the VIN is unknown to JLR SA.
+                    body_txt = (await page.inner_text("body"))[:300]
+                    return {
+                        "status": "error",
+                        "error": f"JLR OSH did not return a result page (URL={result_url}). Body: {body_txt!r}",
+                    }
+
+                html = await page.content()
+                parsed = parse_osh_home_page(html, vin)
+                parsed["result_url"] = result_url
+                return parsed
+            finally:
+                try:
+                    await browser.close()
+                except Exception:
+                    pass
+    except Exception as exc:
+        logger.exception("JLR OSH scrape failed unexpectedly")
+        return {
+            "status": "error",
+            "error": f"Service history lookup failed unexpectedly ({exc.__class__.__name__}). Please try again shortly.",
+        }
