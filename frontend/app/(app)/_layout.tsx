@@ -48,6 +48,16 @@ export default function AppLayout() {
         <Tabs.Screen
           name="index"
           options={{
+            // Home landing page — reachable via the top-of-screen Fourbuy
+            // logo tap on any in-app screen. Deliberately kept OUT of the
+            // bottom tab bar so the tab layout stays lean; the logo is the
+            // universal "Home" affordance (mirrors how a website works).
+            href: null,
+          }}
+        />
+        <Tabs.Screen
+          name="submissions"
+          options={{
             title: isAdmin ? "Submissions" : "My Vehicles",
             tabBarIcon: ({ color, size }) => <Ionicons name="list" color={color} size={size} />,
           }}

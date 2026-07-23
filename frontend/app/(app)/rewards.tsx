@@ -20,6 +20,7 @@ import { useAuth } from "@/src/context/AuthContext";
 import { spacing, radius, fonts } from "@/src/theme";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { TakealotVoucherCard } from "@/src/components/TakealotVoucherCard";
+import BrandLogo from "@/src/components/BrandLogo";
 
 type Redemption = {
   id: string;
@@ -127,6 +128,10 @@ export default function RewardsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
+      {/* Home-link brand strip */}
+      <View style={styles.brandStrip}>
+        <BrandLogo size="xs" linkToHome />
+      </View>
       <ScrollView
         contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.xxl }]}
         refreshControl={
@@ -334,6 +339,11 @@ const buildStatusTextStyles = (colors: Palette) => ({
 const makeStyles = (colors: Palette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   scroll: { padding: spacing.md, gap: spacing.md },
+  brandStrip: {
+    alignItems: "flex-end",
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+  },
   h1: { color: colors.text, fontSize: 24, fontWeight: "800", letterSpacing: 0.5, fontFamily: fonts.heading },
   sub: { color: colors.textSecondary, fontSize: 13, lineHeight: 18 },
   hero: {

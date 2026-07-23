@@ -88,7 +88,7 @@ export default function Profile() {
           <Text style={styles.headerTitle}>Profile</Text>
           <Text style={styles.brandTag}>{BRAND.name}</Text>
         </View>
-        <BrandLogo size="sm" />
+        <BrandLogo size="sm" linkToHome />
       </View>
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.md }]}>
         {/* WhatsApp Business-style banner: cover photo + overlaid profile pic */}

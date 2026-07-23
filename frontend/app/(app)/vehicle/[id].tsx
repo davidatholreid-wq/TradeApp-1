@@ -872,7 +872,7 @@ export default function VehicleDetail() {
             )}
           </TouchableOpacity>
         ) : (
-          <BrandLogo size="xs" />
+          <BrandLogo size="xs" linkToHome />
         )}
       </View>
 

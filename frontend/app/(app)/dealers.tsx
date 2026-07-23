@@ -631,7 +631,7 @@ export default function Dealers() {
               {showArchived && archivedCount > 0 ? ` · ${archivedCount} archived` : ""}
             </Text>
           </View>
-          <BrandLogo size="sm" />
+          <BrandLogo size="sm" linkToHome />
         </View>
         <View style={styles.headerActions}>
           <TouchableOpacity

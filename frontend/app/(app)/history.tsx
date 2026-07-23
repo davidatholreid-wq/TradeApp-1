@@ -18,6 +18,7 @@ import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { apiFetch } from "@/src/api";
 import { useAuth } from "@/src/context/AuthContext";
 import { formatZAR } from "@/src/utils/format";
+import BrandLogo from "@/src/components/BrandLogo";
 
 /**
  * History screen — dedicated "past valuations" search.
@@ -221,10 +222,13 @@ export default function HistoryScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.header}>
-        <Text style={styles.title}>History</Text>
-        <Text style={styles.sub}>
-          {isAdmin ? "All submissions · all dealers" : "Your past valuations"}
-        </Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title}>History</Text>
+          <Text style={styles.sub}>
+            {isAdmin ? "All submissions · all dealers" : "Your past valuations"}
+          </Text>
+        </View>
+        <BrandLogo size="xs" linkToHome />
       </View>
 
       <View style={styles.searchWrap}>
@@ -297,6 +301,9 @@ export default function HistoryScreen() {
 const makeStyles = (colors: Palette) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
     paddingBottom: spacing.xs,

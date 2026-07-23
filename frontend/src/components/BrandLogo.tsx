@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { Image, StyleSheet, View, StyleProp, ViewStyle, ImageStyle } from "react-native";
+import { Image, StyleSheet, View, StyleProp, ViewStyle, ImageStyle, TouchableOpacity } from "react-native";
+import { useRouter } from "expo-router";
 import { BRAND } from "@/src/theme";
 import { useTheme, type Palette } from "@/src/theme/ThemeContext";
 
@@ -19,6 +20,13 @@ type Props = {
    * following the active theme via `useTheme()`.
    */
   variant?: "auto" | "dark" | "light";
+  /**
+   * When true, wraps the wordmark in a touchable that navigates back to
+   * the app's Home landing page. Use this on every in-app header logo
+   * so the logo functions as a universal "Home" affordance (matches the
+   * behaviour of a website's top-left logo).
+   */
+  linkToHome?: boolean;
 };
 
 const HEIGHTS: Record<NonNullable<Props["size"]>, number> = {
@@ -38,8 +46,9 @@ const ASPECT = 617 / 215;
 // Single source of truth for rendering the Fourbuy wordmark. Keep every logo
 // insertion in the app routed through this component so a future rebrand is
 // a one-file change.
-export default function BrandLogo({ size = "md", style, containerStyle, testID, variant = "auto" }: Props) {
+export default function BrandLogo({ size = "md", style, containerStyle, testID, variant = "auto", linkToHome = false }: Props) {
   const { colors, mode } = useTheme();
+  const router = useRouter();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const h = HEIGHTS[size];
   // Use the dark-on-white wordmark in day mode so it reads cleanly against
@@ -49,14 +58,38 @@ export default function BrandLogo({ size = "md", style, containerStyle, testID, 
   // automatic theme-driven choice.
   const effectiveMode = variant === "auto" ? mode : variant;
   const src = effectiveMode === "light" ? BRAND.logoLight : BRAND.logo;
+  const inner = (
+    <Image
+      source={src}
+      style={[{ height: h, width: h * ASPECT }, style]}
+      resizeMode="contain"
+      accessibilityLabel="Fourbuy Car Buying Co."
+    />
+  );
+  if (linkToHome) {
+    return (
+      <TouchableOpacity
+        onPress={() => {
+          try {
+            router.push("/(app)" as any);
+          } catch {
+            /* no-op */
+          }
+        }}
+        activeOpacity={0.75}
+        accessibilityRole="link"
+        accessibilityLabel="Go to Fourbuy home"
+        style={[styles.wrap, containerStyle]}
+        testID={testID ?? "brand-logo-home-link"}
+        hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
+      >
+        {inner}
+      </TouchableOpacity>
+    );
+  }
   return (
     <View style={[styles.wrap, containerStyle]} testID={testID ?? "brand-logo"}>
-      <Image
-        source={src}
-        style={[{ height: h, width: h * ASPECT }, style]}
-        resizeMode="contain"
-        accessibilityLabel="Fourbuy Car Buying Co."
-      />
+      {inner}
     </View>
   );
 }

@@ -16,6 +16,7 @@ import { spacing, radius, fonts } from "@/src/theme";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { apiFetch } from "@/src/api";
 import { useAuth } from "@/src/context/AuthContext";
+import BrandLogo from "@/src/components/BrandLogo";
 
 type BillingItem = {
   id: string;
@@ -179,7 +180,7 @@ export default function BillingScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.header}>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.title}>Billing</Text>
           <Text style={styles.sub}>
             {isAdmin
@@ -187,6 +188,7 @@ export default function BillingScreen() {
               : "Your monthly invoice — submissions & VIN reports"}
           </Text>
         </View>
+        <BrandLogo size="xs" linkToHome />
       </View>
 
       <View style={styles.monthRow}>
@@ -528,6 +530,9 @@ export default function BillingScreen() {
 const makeStyles = (colors: Palette) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     backgroundColor: colors.paper,
