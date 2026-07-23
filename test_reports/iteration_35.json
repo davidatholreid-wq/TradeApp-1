@@ -1,0 +1,57 @@
+{
+  "summary": "Verified frontend fix for 'resp.json is not a function' TypeError on scan.tsx upload-photo path and re-ran backend license-disk regression suite. All 9 previously-passing pytest cases still pass. Direct authed POST /api/vehicles/license-disk/decode returns the expected {raw, parsed, source} shape.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "static_checks": {
+    "scan_tsx_no_resp_json": "PASS — grep of /app/frontend/app/(app)/scan.tsx for 'resp.json' and 'resp.ok' returned no matches",
+    "scan_tsx_uses_apiFetch_directly": "PASS — line 131 assigns `json = await apiFetch(...)` (no .json() call); apiFetch already returns parsed JSON",
+    "scan_tsx_try_catch_wrapping": "PASS — apiFetch call is wrapped in try/catch (lines 130-144); on error surfaces `apiErr?.message` via Alert.alert('Decode failed', ...)",
+    "scan_tsx_persistAndReturn_call": "PASS — line 151 calls `persistAndReturn(json?.raw || '', b64, json?.parsed || {})` as required"
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_license_disk_decode.py",
+    "/app/test_reports/pytest/iteration_35_license_disk.xml"
+  ],
+  "backend_regression_results": {
+    "total": 9,
+    "passed": 9,
+    "failed": 0,
+    "cases": [
+      "TestAuthGuard::test_unauth_returns_401_or_403 PASSED",
+      "TestAuthGuard::test_authed_login_works PASSED",
+      "TestRequestValidation::test_empty_body_returns_400 PASSED",
+      "TestRequestValidation::test_invalid_base64_returns_400 PASSED",
+      "TestBarcodeRawDecode::test_raw_string_returns_200_and_barcode_source PASSED",
+      "TestBarcodeRawDecode::test_raw_string_parses_all_fields PASSED",
+      "TestOcrFallback::test_blank_photo_no_500 PASSED",
+      "TestOcrFallback::test_photo_with_readable_pdf417_barcode PASSED",
+      "TestOcrFallback::test_blank_photo_with_data_uri_prefix PASSED"
+    ]
+  },
+  "direct_endpoint_check": {
+    "endpoint": "POST /api/vehicles/license-disk/decode",
+    "auth": "admin@fourbuy.co.za (Bearer token)",
+    "payload": "{raw: '%1%foo%GS12345%TOYOTA%COROLLA%WHITE%AHTBB1KX20A012345%1AA-Z0-1234%2026-04-30%SEDAN'}",
+    "response_status": 200,
+    "response_shape_ok": true,
+    "response_source": "barcode",
+    "parsed_fields_matched": ["vin=AHTBB1KX20A012345", "make=TOYOTA", "model=COROLLA", "colour=White", "expiryDate=2026-04-30", "description=Sedan", "engineNo=1AA-Z0-1234"]
+  },
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "N/A (static-only per request)"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Frontend Playwright not exercised for the upload-photo flow because ImagePicker uses a native file dialog per E1's guidance. If a UI regression check is later needed, verify the scan screen renders without red-screen error and the 'Upload photo of disc instead' button is tappable, but the actual photo picker cannot be scripted reliably in the Expo web preview.",
+  "rca_of_issue": "Original bug: scan.tsx called `resp.json()` on the return of `apiFetch(...)`, but `/app/frontend/src/api.ts::apiFetch` already parses the JSON body internally and returns the parsed object (throwing on non-2xx). Calling `.json()` on that plain object triggered 'resp.json is not a function (it is undefined)'. Fix (applied by E1): assign apiFetch result directly to `json`, wrap in try/catch, and use `apiErr?.message` in the failure Alert. Verified by static grep + backend regression + direct HTTP smoke test — all green."
+}

@@ -125,27 +125,30 @@ export default function ScanScreen() {
         return;
       }
       setUploading(true);
-      const resp = await apiFetch("/api/vehicles/license-disk/decode", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_base64: b64 }),
-      });
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
+      // `apiFetch` returns the parsed JSON directly (or throws on non-2xx).
+      let json: any;
+      try {
+        json = await apiFetch("/api/vehicles/license-disk/decode", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image_base64: b64 }),
+        });
+      } catch (apiErr: any) {
         setUploading(false);
         Alert.alert(
           "Decode failed",
-          json?.detail || "Could not read the barcode on that photo. Please try a clearer close-up shot of the disc.",
+          apiErr?.message ||
+            "Could not read the barcode on that photo. Please try a clearer, close-up shot of the license disc.",
         );
         return;
       }
       setUploading(false);
-      setScanned(json.raw || "uploaded");
+      setScanned(json?.raw || "uploaded");
       // Persist BOTH the raw string (may be empty for OCR-only decodes)
       // AND the structured `parsed` object the backend already produced,
       // so submit.tsx picks up VIN/engine/etc. even when the barcode
       // itself couldn't be read and OCR did the extracting.
-      await persistAndReturn(json.raw || "", b64, json.parsed || {});
+      await persistAndReturn(json?.raw || "", b64, json?.parsed || {});
     } catch (err: any) {
       setUploading(false);
       Alert.alert("Upload failed", err?.message || "Something went wrong reading the photo.");
