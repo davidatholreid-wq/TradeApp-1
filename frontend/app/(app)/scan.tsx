@@ -52,10 +52,20 @@ export default function ScanScreen() {
     }
   };
 
-  const persistAndReturn = async (raw: string, imageDataUrl?: string | null) => {
+  const persistAndReturn = async (
+    raw: string,
+    imageDataUrl?: string | null,
+    parsedOverride?: any,
+  ) => {
     await storage.setItem(SCAN_BUFFER_KEY, raw);
+    // Prefer a parsed object supplied by the caller (used when the backend
+    // OCR-decoded the disc and gave us structured fields directly). Falls
+    // back to the client-side PDF-417 string parser for the live-camera
+    // scan path.
     try {
-      const parsed = decodeLicenseDisk(raw);
+      const parsed = parsedOverride && Object.keys(parsedOverride).length
+        ? parsedOverride
+        : decodeLicenseDisk(raw);
       await storage.setItem(SCAN_PARSED_KEY, JSON.stringify(parsed));
       console.log("License disk parsed:", summariseLicenseDisk(parsed));
     } catch (e) {
@@ -131,7 +141,11 @@ export default function ScanScreen() {
       }
       setUploading(false);
       setScanned(json.raw || "uploaded");
-      await persistAndReturn(json.raw || "", b64);
+      // Persist BOTH the raw string (may be empty for OCR-only decodes)
+      // AND the structured `parsed` object the backend already produced,
+      // so submit.tsx picks up VIN/engine/etc. even when the barcode
+      // itself couldn't be read and OCR did the extracting.
+      await persistAndReturn(json.raw || "", b64, json.parsed || {});
     } catch (err: any) {
       setUploading(false);
       Alert.alert("Upload failed", err?.message || "Something went wrong reading the photo.");

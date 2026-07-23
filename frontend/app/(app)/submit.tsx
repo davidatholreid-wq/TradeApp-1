@@ -384,11 +384,19 @@ export default function SubmitVehicle() {
     useCallback(() => {
       (async () => {
         const buf = await storage.getItem<string>(SCAN_BUFFER_KEY, "");
-        if (buf) {
-          setLicenseDisk(buf);
-          const parsedStr = await storage.getItem<string>(SCAN_PARSED_KEY, "");
+        const parsedStr = await storage.getItem<string>(SCAN_PARSED_KEY, "");
+        // Either a raw PDF-417 string, OR an OCR-only parsed payload
+        // (backend Gemini fallback) should trigger auto-fill.
+        if (buf || parsedStr) {
+          if (buf) setLicenseDisk(buf);
           let parsed: LicenseDiskInfo | null = null;
-          try { parsed = parsedStr ? JSON.parse(parsedStr) : decodeLicenseDisk(buf); } catch { parsed = decodeLicenseDisk(buf); }
+          try {
+            parsed = parsedStr
+              ? JSON.parse(parsedStr)
+              : (buf ? decodeLicenseDisk(buf) : null);
+          } catch {
+            parsed = buf ? decodeLicenseDisk(buf) : null;
+          }
           setLicenseDiskInfo(parsed);
           if (parsed?.colour) setColour((prev) => prev || parsed!.colour!);
           if (parsed?.vin) setVin(parsed.vin);

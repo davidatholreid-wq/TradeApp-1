@@ -1150,21 +1150,32 @@ async def decode_license_disk(payload: LicenseDiskDecodeRequest, current: dict =
     """Decode a SA license-disc PDF-417 barcode from either a raw scanned
     string OR an uploaded photograph.
 
-    Used by the mobile app's "Upload from gallery" flow (photo → server
-    decode) and as a diagnostic endpoint for the live-camera path.
+    Two-stage strategy for the photo path:
+      1. **PDF-417 barcode decode** via zxing-cpp — fastest, structured,
+         always tried first. Works when the barcode itself is captured
+         clean & sharp.
+      2. **LLM vision OCR fallback** — when zxing can't find a barcode
+         (small photos, glare, cropped, oblique angle, etc.) we send the
+         image to Gemini and ask it to read the printed VIN and engine
+         number directly off the disc. Slower + costs a fraction of a
+         cent per request, but MUCH more forgiving on real dealer
+         photos. The extracted VIN/engine still populate the same fields
+         the barcode path would.
     """
     raw = (payload.raw or "").strip() or None
+    ocr_used = False
     if not raw:
         if not payload.image_base64:
             raise HTTPException(400, "Provide `image_base64` or `raw`.")
         # Strip any `data:image/...;base64,` prefix and decode.
-        b64 = payload.image_base64
-        if "," in b64:
-            b64 = b64.split(",", 1)[1]
+        b64_full = payload.image_base64
+        b64 = b64_full.split(",", 1)[1] if "," in b64_full else b64_full
         try:
             img_bytes = base64.b64decode(b64)
         except Exception:
             raise HTTPException(400, "image_base64 is not valid base64")
+
+        # ---- Stage 1: PDF-417 barcode decode ----
         try:
             import zxingcpp
             from PIL import Image as PILImage
@@ -1172,27 +1183,116 @@ async def decode_license_disk(payload: LicenseDiskDecodeRequest, current: dict =
             pil_img = PILImage.open(BytesIO(img_bytes)).convert("RGB")
             results = zxingcpp.read_barcodes(pil_img)
             if not results:
-                # Retry after a mild rescale — very small phone photos of a
-                # tiny disc can miss otherwise. Only bother if the input
-                # was under 1200px on the long edge.
                 w, h = pil_img.size
                 if max(w, h) < 1600:
                     pil_img2 = pil_img.resize((w * 2, h * 2), PILImage.LANCZOS)
                     results = zxingcpp.read_barcodes(pil_img2)
-            if not results:
-                raise HTTPException(422, "No barcode detected on the photo. Try a clearer, close-up shot of the license disc.")
-            # Prefer PDF-417 results if multiple codes were found.
-            pdf417 = [r for r in results if getattr(r, "format", "").lower().replace("-", "") in ("pdf417", "pdf_417")]
-            chosen = (pdf417 or results)[0]
-            raw = chosen.text if hasattr(chosen, "text") else str(chosen)
-        except HTTPException:
-            raise
-        except Exception as exc:
-            logger.exception("license disc decode failed")
-            raise HTTPException(500, f"Barcode decode failed: {exc.__class__.__name__}")
+            if results:
+                pdf417 = [r for r in results if str(getattr(r, "format", "")).lower().replace("-", "") in ("pdf417", "pdf_417")]
+                chosen = (pdf417 or results)[0]
+                raw = chosen.text if hasattr(chosen, "text") else str(chosen)
+        except Exception:
+            logger.exception("zxing barcode decode threw; falling back to OCR")
+
+        # ---- Stage 2: LLM vision OCR fallback ----
+        if not raw:
+            logger.info("No PDF-417 barcode detected — falling back to LLM OCR")
+            ocr_used = True
+            try:
+                # Down-scale huge phone photos to keep the LLM payload
+                # small (Gemini vision handles up to ~1600px on the long
+                # edge just fine and cuts round-trip cost noticeably).
+                try:
+                    from PIL import Image as PILImage
+                    from io import BytesIO
+                    pil_img = PILImage.open(BytesIO(img_bytes)).convert("RGB")
+                    w, h = pil_img.size
+                    if max(w, h) > 1600:
+                        scale = 1600.0 / max(w, h)
+                        pil_img = pil_img.resize((int(w * scale), int(h * scale)), PILImage.LANCZOS)
+                    buf = BytesIO()
+                    pil_img.save(buf, format="JPEG", quality=85)
+                    img_bytes_small = buf.getvalue()
+                except Exception:
+                    img_bytes_small = img_bytes  # Best effort
+
+                b64_small = base64.b64encode(img_bytes_small).decode("ascii")
+                from emergentintegrations.llm.chat import ImageContent
+                system_prompt = (
+                    "You are an expert at reading South African vehicle "
+                    "license disks. The user will send a photograph of a "
+                    "physical SA license disk (the round paper disk fixed to "
+                    "the windscreen). Extract ONLY the printed text values. "
+                    "If a field is not legible, use null. NEVER invent "
+                    "values. Return STRICT JSON only — no prose, no fences."
+                )
+                user_prompt = (
+                    "Read the following fields off the license disc "
+                    "photograph and return JSON exactly matching this "
+                    "schema:\n"
+                    "{\n"
+                    '  "vin": "17-char VIN (exclude I/O/Q) or null",\n'
+                    '  "engineNo": "engine number as printed or null",\n'
+                    '  "registration": "number-plate / registration or null",\n'
+                    '  "make": "vehicle make in ALL CAPS or null",\n'
+                    '  "model": "vehicle model in ALL CAPS or null",\n'
+                    '  "colour": "vehicle colour Title-Cased or null",\n'
+                    '  "description": "body-type description or null",\n'
+                    '  "expiryDate": "YYYY-MM-DD expiry or null"\n'
+                    "}\n"
+                    "Return JSON ONLY. Nothing else."
+                )
+                chat = LlmChat(
+                    api_key=EMERGENT_LLM_KEY,
+                    session_id=f"license-disk-ocr-{uuid.uuid4()}",
+                    system_message=system_prompt,
+                ).with_model("gemini", "gemini-2.5-flash")
+                reply = await chat.send_message(
+                    UserMessage(text=user_prompt, file_contents=[ImageContent(image_base64=b64_small)])
+                )
+                # The LLM may return with or without code fences — strip
+                # both defensively so `json.loads` sees pure JSON.
+                text = (reply or "").strip()
+                if text.startswith("```"):
+                    text = re.sub(r"^```(?:json)?\s*", "", text)
+                    text = re.sub(r"\s*```$", "", text)
+                import json as _json
+                try:
+                    parsed_ocr = _json.loads(text)
+                except Exception:
+                    logger.warning("LLM OCR did not return valid JSON: %s", text[:200])
+                    raise HTTPException(422, "Could not read the license disc. Try a clearer, close-up photo with the whole disc in-frame and no glare.")
+
+                # Whitelist + normalise the LLM's output so a misbehaved
+                # response can't leak weird keys back to the frontend.
+                out: dict = {}
+                for k in ("vin", "engineNo", "registration", "make", "model", "colour", "description", "expiryDate"):
+                    v = parsed_ocr.get(k)
+                    if isinstance(v, str) and v.strip() and v.strip().lower() not in ("null", "none", "n/a", "unknown", "-", ""):
+                        out[k] = v.strip()
+                # VIN sanity — 17 alnum, exclude I/O/Q.
+                if "vin" in out:
+                    if not re.match(r"^[A-HJ-NPR-Z0-9]{17}$", out["vin"], re.I):
+                        # If Gemini returned something close-but-off, drop
+                        # it rather than pretend we have a real VIN.
+                        out.pop("vin", None)
+                    else:
+                        out["vin"] = out["vin"].upper()
+                if not out.get("vin") and not out.get("engineNo"):
+                    raise HTTPException(422, "Could not read the VIN or engine number on the disc. Try a clearer, close-up photo.")
+                return {
+                    "raw": None,
+                    "parsed": out,
+                    "source": "ocr",
+                }
+            except HTTPException:
+                raise
+            except Exception as exc:
+                logger.exception("LLM OCR fallback failed")
+                raise HTTPException(422, "Could not read the barcode or text on that photo. Try a clearer close-up.")
 
     parsed = _parse_license_disk_string(raw or "")
-    return {"raw": raw, "parsed": parsed}
+    return {"raw": raw, "parsed": parsed, "source": "ocr" if ocr_used else "barcode"}
 
 
 # ============ Submissions ============
