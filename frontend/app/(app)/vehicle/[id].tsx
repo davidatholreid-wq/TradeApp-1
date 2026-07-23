@@ -310,6 +310,37 @@ export default function VehicleDetail() {
       setMarketValuesLoading(false);
     }
   };
+
+  // Bimmervin factory spec (BMW / MINI / Rolls-Royce / ALPINA) — admin-only,
+  // on-demand button. First call spends ~3 credits (~€3 = R60); subsequent
+  // calls for the same VIN come back cached for free.
+  const bimmerSpec: any = (sub as any)?.bimmer_spec ?? null;
+  const [bimmerLoading, setBimmerLoading] = useState(false);
+  const isBimmerSupported = useMemo(() => {
+    const mk = (sub?.make_name || (sub as any)?.make || "").toString().toUpperCase();
+    return ["BMW", "MINI", "ROLLS-ROYCE", "ROLLS ROYCE", "ALPINA"].includes(mk);
+  }, [sub?.make_name]);
+
+  const fetchBimmerSpec = async () => {
+    if (!id || bimmerLoading) return;
+    setBimmerLoading(true);
+    try {
+      const r = await apiFetch(`/api/admin/submissions/${id}/bimmer-spec`, {
+        method: "POST",
+      });
+      setSub((prev) => (prev ? { ...prev, bimmer_spec: r.bimmer_spec } : prev));
+      if (r?.bimmer_spec?.status !== "ok") {
+        Alert.alert(
+          "Factory spec",
+          r?.bimmer_spec?.error || "Could not fetch factory spec.",
+        );
+      }
+    } catch (e: any) {
+      Alert.alert("Factory spec", e?.message || "Could not fetch factory spec.");
+    } finally {
+      setBimmerLoading(false);
+    }
+  };
   const [declineModal, setDeclineModal] = useState(false);
   const [declineNote, setDeclineNote] = useState("");
   const [declining, setDeclining] = useState(false);
@@ -1963,6 +1994,133 @@ export default function VehicleDetail() {
           )}
         </View>
 
+        {/* Bimmervin factory spec (BMW / MINI / Rolls-Royce / ALPINA).
+            Admin-only, on-demand — first click ~3 credits (~€3), cached
+            per-VIN thereafter. See services/bimmervin_client.py. */}
+        {isAdmin && isBimmerSupported ? (
+          <>
+            <Text style={styles.sectionTitle}>BMW Factory Spec</Text>
+            <View style={styles.marketValuesCard} testID="bimmer-spec-card">
+              {bimmerSpec?.status === "ok" ? (
+                <>
+                  <View style={styles.marketRow}>
+                    <Text style={styles.marketLabel}>Series / Type</Text>
+                    <Text style={styles.marketValue} numberOfLines={1}>
+                      {[bimmerSpec.series, bimmerSpec.type_key].filter(Boolean).join(" · ") || "—"}
+                    </Text>
+                  </View>
+                  <View style={styles.marketRow}>
+                    <Text style={styles.marketLabel}>Colour Code</Text>
+                    <Text style={[styles.marketValue, { fontFamily: fonts.mono }]}>
+                      {bimmerSpec.colour_code || "—"}
+                    </Text>
+                  </View>
+                  <View style={styles.marketRow}>
+                    <Text style={styles.marketLabel}>Interior / Fabric</Text>
+                    <Text style={[styles.marketValue, { fontFamily: fonts.mono }]}>
+                      {bimmerSpec.fabric_code || "—"}
+                    </Text>
+                  </View>
+                  {bimmerSpec.build_date ? (
+                    <View style={styles.marketRow}>
+                      <Text style={styles.marketLabel}>Retrieved</Text>
+                      <Text style={styles.marketValue} numberOfLines={1}>
+                        {bimmerSpec.build_date}
+                      </Text>
+                    </View>
+                  ) : null}
+                  <View style={[styles.marketRow, { borderBottomWidth: 0 }]}>
+                    <Text style={styles.marketLabel}>Factory Options</Text>
+                    <Text style={styles.marketValue}>
+                      {bimmerSpec.options?.length || 0} codes
+                    </Text>
+                  </View>
+
+                  {/* Option-code grid — SA codes first (biggest signal),
+                      then E codes, then HO. Each pill kept mono so codes
+                      are scan-friendly. */}
+                  {Array.isArray(bimmerSpec.options) && bimmerSpec.options.length > 0 ? (
+                    <View style={styles.bimmerOptionsWrap}>
+                      {bimmerSpec.options.map((o: any) => (
+                        <View key={`${o.kind}-${o.code}`} style={styles.bimmerOptionPill}>
+                          <Text style={styles.bimmerOptionKind}>{o.kind}</Text>
+                          <Text style={styles.bimmerOptionCode}>{o.code}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+
+                  <View style={styles.marketFooter}>
+                    <Text style={styles.marketFooterText}>
+                      Source: Bimmervin
+                      {bimmerSpec.captured_at ? ` · captured ${formatFetched(bimmerSpec.captured_at)}` : ""}
+                    </Text>
+                    <TouchableOpacity
+                      testID="bimmer-refresh"
+                      onPress={fetchBimmerSpec}
+                      disabled={bimmerLoading}
+                      style={[styles.marketRefreshBtn, bimmerLoading && styles.docBtnDisabled]}
+                    >
+                      {bimmerLoading ? (
+                        <ActivityIndicator size="small" color={colors.text} />
+                      ) : (
+                        <Text style={styles.marketRefreshText}>Refresh</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </>
+              ) : bimmerSpec?.status === "error" ? (
+                <View style={styles.marketErrorBox}>
+                  <Ionicons name="alert-circle-outline" size={18} color={colors.warning} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.marketErrorText}>Could not fetch factory spec.</Text>
+                    <Text style={styles.marketErrorDetail} numberOfLines={3}>
+                      {bimmerSpec.error || "Bimmervin request failed."}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    testID="bimmer-retry"
+                    onPress={fetchBimmerSpec}
+                    disabled={bimmerLoading}
+                    style={[styles.marketRefreshBtn, bimmerLoading && styles.docBtnDisabled]}
+                  >
+                    {bimmerLoading ? (
+                      <ActivityIndicator size="small" color={colors.text} />
+                    ) : (
+                      <Text style={styles.marketRefreshText}>Retry</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.bimmerFetchRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.bimmerFetchTitle}>Pull factory options from BMW</Text>
+                    <Text style={styles.bimmerFetchHint}>
+                      Fetches series, colour, fabric &amp; every SA / E code from
+                      Bimmervin (~€3 per VIN, cached thereafter).
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    testID="bimmer-fetch"
+                    onPress={fetchBimmerSpec}
+                    disabled={bimmerLoading}
+                    style={[styles.bimmerFetchBtn, bimmerLoading && styles.docBtnDisabled]}
+                  >
+                    {bimmerLoading ? (
+                      <ActivityIndicator size="small" color={colors.onPrimary} />
+                    ) : (
+                      <>
+                        <Ionicons name="cloud-download" size={14} color={colors.onPrimary} />
+                        <Text style={styles.bimmerFetchBtnText}>Fetch</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          </>
+        ) : null}
+
         {isAdmin ? (
           <>
             <Text style={styles.sectionTitle}>Admin Pricing</Text>
@@ -3338,6 +3496,74 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   marketLoadingText: {
     color: colors.textSecondary,
     fontSize: 13,
+  },
+  // ---- Bimmervin (BMW factory spec) styles -------------------------------
+  bimmerFetchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  bimmerFetchTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "800",
+    marginBottom: 2,
+  },
+  bimmerFetchHint: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 14,
+  },
+  bimmerFetchBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: radius.pill,
+    backgroundColor: colors.neon,
+    minWidth: 96,
+    justifyContent: "center",
+  },
+  bimmerFetchBtnText: {
+    color: colors.onPrimary,
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.6,
+  },
+  bimmerOptionsWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    paddingVertical: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    marginTop: spacing.sm,
+  },
+  bimmerOptionPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  bimmerOptionKind: {
+    color: colors.textSecondary,
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  bimmerOptionCode: {
+    color: colors.text,
+    fontSize: 11,
+    fontFamily: fonts.mono,
+    letterSpacing: 0.5,
+    fontWeight: "700",
   },
   marketErrorBox: {
     flexDirection: "row",

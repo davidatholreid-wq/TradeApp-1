@@ -1417,22 +1417,19 @@ async def refresh_market_values(sub_id: str, current: dict = Depends(get_current
 
 @api_router.post("/admin/submissions/{sub_id}/bimmer-spec")
 async def fetch_bimmer_spec_endpoint(sub_id: str, current: dict = Depends(require_admin)):
-    """Fetch BMW / MINI / Rolls-Royce / ALPINA factory spec from bimmer.work
-    for the submission's VIN.
+    """Fetch BMW / MINI / Rolls-Royce / ALPINA factory spec via the
+    Bimmervin API for the submission's VIN.
 
     Admin-only, on-demand. The response is CACHED on the submission
-    (`bimmer_spec` field), so a second click on the same VIN is instant
-    and doesn't consume a 2captcha solve credit. If the previous attempt
-    errored, retrying is allowed (fresh solve).
+    (``bimmer_spec`` field), so a second click on the same VIN is instant
+    and doesn't spend credits (~€3 per real call). If the previous
+    attempt errored, retrying is allowed and always hits Bimmervin
+    fresh.
 
     Returns 400 for unsupported makes (non-BMW group), 404 if the
     submission has no VIN yet.
     """
-    from services.bimmer_scraper import (
-        BIMMER_SUPPORTED_MAKES,  # noqa: F401 — surfaced for docs
-        fetch_bimmer_spec,
-        is_bimmer_supported_make,
-    )
+    from services.bimmervin_client import fetch_bimmer_spec, is_bimmer_supported_make
 
     sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
     if not sub:
@@ -1446,31 +1443,28 @@ async def fetch_bimmer_spec_endpoint(sub_id: str, current: dict = Depends(requir
     if not is_bimmer_supported_make(make):
         raise HTTPException(
             400,
-            "bimmer.work only supports BMW, MINI, Rolls-Royce and ALPINA vehicles.",
+            "Bimmervin only supports BMW, MINI, Rolls-Royce and ALPINA vehicles.",
         )
 
-    # Cached OK snapshot? Return instantly. Cached error snapshots still let
-    # the admin retry with a fresh solve.
+    # Cached OK snapshot for the same VIN? Return instantly. Cached error
+    # snapshots still let the admin retry with a fresh Bimmervin call.
     existing = sub.get("bimmer_spec") or {}
     if isinstance(existing, dict) and existing.get("status") == "ok" and existing.get("vin") == vin:
         return {"bimmer_spec": existing, "cached": True}
 
-    key = os.getenv("TWOCAPTCHA_API_KEY", "").strip()
-    if not key:
-        raise HTTPException(500, "Bimmer.work integration is not fully configured (missing captcha key).")
-
-    logger.info("bimmer.work: fetching spec for sub=%s vin=%s (admin=%s)", sub_id, vin, current.get("email"))
-    spec = await fetch_bimmer_spec(vin, twocaptcha_key=key)
+    logger.info("bimmervin: fetching spec for sub=%s vin=%s (admin=%s)", sub_id, vin, current.get("email"))
+    spec = await fetch_bimmer_spec(vin)
 
     # Persist regardless of success / failure — a failure snapshot with an
-    # `error` string lets the UI surface a specific message and the admin can
-    # retry when appropriate (page structure change, transient captcha, etc.).
-    await db.submissions.update_one(
-        {"id": sub_id},
-        {"$set": {"bimmer_spec": spec}},
-    )
-    if spec.get("status") != "ok":
-        return {"bimmer_spec": spec, "cached": False}
+    # ``error`` string lets the UI surface a specific message and the admin can
+    # retry when appropriate (transient/network error, etc.). We only persist
+    # if the result is a genuine spec or a proper error; for ``needs_full_vin``
+    # we return it live so the admin can supply the correct VIN first.
+    if spec.get("status") == "ok" or spec.get("status") == "error":
+        await db.submissions.update_one(
+            {"id": sub_id},
+            {"$set": {"bimmer_spec": spec}},
+        )
     return {"bimmer_spec": spec, "cached": False}
 
 
@@ -2360,6 +2354,51 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
         story.append(Spacer(1, 2))
         story.append(Paragraph(
             f"Source: Kredo Vehicle Values · captured {ts_txt} · locked at valuation",
+            small,
+        ))
+
+    # ============ BMW FACTORY SPEC (Bimmervin) ============
+    # Only rendered for BMW-group vehicles that have a cached Bimmervin
+    # snapshot. Shows chassis series/type, colour + fabric codes, build
+    # date, and the full list of factory option codes as a compact grid.
+    bs = sub.get("bimmer_spec") or {}
+    if isinstance(bs, dict) and bs.get("status") == "ok":
+        story.append(Paragraph("BMW FACTORY SPEC", section_title))
+        bs_rows = [
+            ["Series / Type", _P(" · ".join(x for x in [bs.get("series"), bs.get("type_key")] if x) or "—", mono=True)],
+            ["Colour Code", _P(bs.get("colour_code") or "—", mono=True)],
+            ["Interior / Fabric", _P(bs.get("fabric_code") or "—", mono=True)],
+        ]
+        if bs.get("build_date"):
+            bs_rows.append(["Retrieved", _P(bs.get("build_date"))])
+        bs_rows.append(["Factory Options", _P(f"{len(bs.get('options') or [])} codes")])
+        t_bs = Table(bs_rows, colWidths=[46 * mm, 140 * mm])
+        t_bs.setStyle(_row_style())
+        story.append(t_bs)
+
+        # Compact codes strip — render all SA/E/HO codes as a single
+        # comma-separated paragraph grouped by kind. Wraps naturally.
+        opts = bs.get("options") or []
+        if opts:
+            by_kind: dict[str, list[str]] = {}
+            for o in opts:
+                by_kind.setdefault(o.get("kind") or "?", []).append(o.get("code") or "")
+            for kind in ("SA", "E", "HO"):
+                codes = by_kind.get(kind) or []
+                if not codes:
+                    continue
+                story.append(Spacer(1, 3))
+                story.append(Paragraph(
+                    f'<font name="Helvetica-Bold" size="8" color="#6B6B6B">'
+                    f'{kind} codes ({len(codes)}) </font>'
+                    f'<font name="Courier" size="8" color="#111111">'
+                    f'{"  ·  ".join(codes)}</font>',
+                    ParagraphStyle("bs_codes", parent=small, leading=10, wordWrap="CJK"),
+                ))
+
+        story.append(Spacer(1, 2))
+        story.append(Paragraph(
+            f"Source: Bimmervin (BMW factory order) · VIN {bs.get('vin') or '—'}",
             small,
         ))
 

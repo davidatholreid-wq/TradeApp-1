@@ -122,6 +122,20 @@ type SubmissionFull = Submission & {
     error?: string | null;
   } | null;
 
+  // Bimmervin cached factory-order snapshot (BMW/MINI/Rolls/ALPINA only).
+  bimmer_spec?: {
+    status?: "ok" | "error";
+    vin?: string;
+    series?: string | null;
+    type_key?: string | null;
+    colour_code?: string | null;
+    fabric_code?: string | null;
+    build_date?: string | null;
+    options?: { code: string; kind: string }[];
+    captured_at?: string | null;
+    error?: string | null;
+  } | null;
+
   // Ordered VIN-linked reports (Lightstone / CarVertical / CarTrust).
   report_orders?: {
     id: string;
@@ -1303,6 +1317,59 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 )}
               </View>
 
+              {/* ================= BMW FACTORY SPEC (Bimmervin) ================= */}
+              {/* Read-only mirror of the mobile "BMW Factory Spec" card.
+                  Fetching lives on mobile — the web cockpit just displays
+                  the cached snapshot. */}
+              {selected.bimmer_spec?.status === "ok" ? (
+                <View style={styles.analysisBox}>
+                  <Text style={styles.boxTitle}>BMW FACTORY SPEC</Text>
+                  <View style={styles.mvGrid}>
+                    <View style={styles.mvBox}>
+                      <Text style={styles.mvLabel}>SERIES / TYPE</Text>
+                      <Text style={[styles.mvValue, styles.mvMono]}>
+                        {[selected.bimmer_spec.series, selected.bimmer_spec.type_key].filter(Boolean).join(" · ") || "—"}
+                      </Text>
+                    </View>
+                    <View style={styles.mvBox}>
+                      <Text style={styles.mvLabel}>COLOUR CODE</Text>
+                      <Text style={[styles.mvValue, styles.mvMono]}>
+                        {selected.bimmer_spec.colour_code || "—"}
+                      </Text>
+                    </View>
+                    <View style={styles.mvBox}>
+                      <Text style={styles.mvLabel}>INTERIOR / FABRIC</Text>
+                      <Text style={[styles.mvValue, styles.mvMono]}>
+                        {selected.bimmer_spec.fabric_code || "—"}
+                      </Text>
+                    </View>
+                    <View style={styles.mvBox}>
+                      <Text style={styles.mvLabel}>FACTORY OPTIONS</Text>
+                      <Text style={styles.mvValue}>
+                        {selected.bimmer_spec.options?.length || 0} codes
+                      </Text>
+                    </View>
+                  </View>
+                  {Array.isArray(selected.bimmer_spec.options) && selected.bimmer_spec.options.length > 0 ? (
+                    <View style={styles.bimmerOptionsWebWrap}>
+                      {selected.bimmer_spec.options.map((o) => (
+                        <View key={`${o.kind}-${o.code}`} style={styles.bimmerOptionWebPill}>
+                          <Text style={styles.bimmerOptionWebKind}>{o.kind}</Text>
+                          <Text style={styles.bimmerOptionWebCode}>{o.code}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                </View>
+              ) : selected.bimmer_spec?.status === "error" ? (
+                <View style={styles.analysisBox}>
+                  <Text style={styles.boxTitle}>BMW FACTORY SPEC</Text>
+                  <Text style={styles.analysisEmpty}>
+                    Could not fetch factory spec: {selected.bimmer_spec.error || "Bimmervin lookup failed."}
+                  </Text>
+                </View>
+              ) : null}
+
               {/* ================= VIN-LINKED REPORTS ================= */}
               {/* Read-only list of every VIN-report order placed against
                   this submission — matches the mobile "Order a VIN-Linked
@@ -2076,6 +2143,41 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   mvMono: {
     fontFamily: fonts.mono,
     letterSpacing: 0.5,
+  },
+
+  // === Bimmervin (BMW factory spec) — web pills ===
+  bimmerOptionsWebWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  bimmerOptionWebPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  bimmerOptionWebKind: {
+    color: colors.textSecondary,
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  bimmerOptionWebCode: {
+    color: colors.text,
+    fontSize: 11,
+    fontFamily: fonts.mono,
+    letterSpacing: 0.5,
+    fontWeight: "700",
   },
 
   // === VIN-LINKED REPORTS list ===
