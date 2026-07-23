@@ -1973,22 +1973,35 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
     # ============ VEHICLE TITLE ============
     year = sub.get("year_registered") or sub.get("year") or sub.get("year_of_production") or ""
     title_line = " ".join(str(x) for x in [year, sub.get("make_name"), sub.get("model_name")] if x)
-    subtitle_bits = [
-        sub.get("derivative_name"),
+    # Split the subtitle across two lines so a long derivative doesn't fight
+    # for horizontal space with the spec bits. Derivative gets its own row,
+    # and the compact spec strip (mileage · trans · fuel · colour) goes below.
+    derivative = (sub.get("derivative_name") or "").strip()
+    spec_bits = [
         f"{int(sub.get('mileage') or 0):,} km" if sub.get("mileage") else None,
         sub.get("transmission"),
         sub.get("fuel_type"),
         sub.get("colour"),
     ]
-    subtitle = " · ".join(str(x) for x in subtitle_bits if x)
+    spec_line = " · ".join(str(x) for x in spec_bits if x)
+    submitted_line = ""
+    if sub.get("submitted_by_name"):
+        submitted_line = (
+            f'<font name="Helvetica" size="8" color="#6B6B6B">'
+            f'Submitted by <b>{sub.get("submitted_by_name")}</b>'
+            + (f' · {sub.get("submitted_by_job_title")}' if sub.get("submitted_by_job_title") else "")
+            + (f' · {(sub.get("submitted_at") or "")[:10]}' if sub.get("submitted_at") else "")
+            + '</font>'
+        )
+    title_html = (
+        f'<font name="Helvetica-Bold" size="16" color="#111111">{title_line}</font>'
+        + (f'<br/><font name="Helvetica" size="9" color="#111111">{derivative}</font>' if derivative else "")
+        + (f'<br/><font name="Helvetica" size="8" color="#6B6B6B">{spec_line}</font>' if spec_line else "")
+        + (f'<br/>{submitted_line}' if submitted_line else "")
+    )
     title_p = Paragraph(
-        f'<font name="Helvetica-Bold" size="16" color="#111111">{title_line}</font><br/>'
-        f'<font name="Helvetica" size="8" color="#6B6B6B">{subtitle}</font>' +
-        (f'<br/><font name="Helvetica" size="8" color="#6B6B6B">Submitted by <b>{sub.get("submitted_by_name") or "—"}</b>'
-         + (f' · {sub.get("submitted_by_job_title")}' if sub.get("submitted_by_job_title") else "")
-         + (f' · {(sub.get("submitted_at") or "")[:10]}' if sub.get("submitted_at") else "")
-         + '</font>' if sub.get("submitted_by_name") else ''),
-        ParagraphStyle("title", parent=styles["Normal"], leading=19),
+        title_html,
+        ParagraphStyle("title", parent=styles["Normal"], leading=15, wordWrap="CJK"),
     )
     gen_p = Paragraph(
         f'<para align="right">'
@@ -1996,7 +2009,9 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
         f'</para>',
         ParagraphStyle("gen", parent=styles["Normal"], leading=10),
     )
-    title_tbl = Table([[title_p, gen_p]], colWidths=[140 * mm, 46 * mm])
+    # Narrow the right column and widen the left so the wrapped title has
+    # enough room even when the derivative is very long.
+    title_tbl = Table([[title_p, gen_p]], colWidths=[152 * mm, 34 * mm])
     title_tbl.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -2096,26 +2111,39 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
             story.append(photo_row)
 
     # ============ DETAILS + CONDITION (side-by-side 2 columns) ============
+    # Compact "value" style — wraps automatically inside the cell so long
+    # derivatives / VINs / notes never overflow. Every value column in this
+    # PDF should feed through this so the layout stays clean.
+    val_style = ParagraphStyle(
+        "val", parent=styles["Normal"], fontName="Helvetica",
+        fontSize=8, leading=10, textColor=INK, wordWrap="CJK",
+    )
+    val_mono_style = ParagraphStyle(
+        "valMono", parent=styles["Normal"], fontName="Courier",
+        fontSize=8, leading=10, textColor=INK, wordWrap="CJK",
+    )
+    def _P(text, mono: bool = False) -> Paragraph:
+        return Paragraph(str(text) if text is not None else "—", val_mono_style if mono else val_style)
+
     # LEFT column: Vehicle details + identity (VIN / engine).
     v_rows = [
-        ["Make", sub.get("make_name") or "—"],
-        ["Model", sub.get("model_name") or "—"],
-        ["Derivative", sub.get("derivative_name") or "—"],
-        ["Year Reg.", str(sub.get("year_registered") or sub.get("year") or "—")],
-        ["Year Prod.", str(sub.get("year_of_production") or sub.get("year") or "—")],
-        ["Mileage", f"{int(sub.get('mileage') or 0):,} km"],
-        ["Transmission", sub.get("transmission") or "—"],
-        ["Fuel Type", sub.get("fuel_type") or "—"],
-        ["Colour", sub.get("colour") or "—"],
-        ["VIN", sub.get("vin") or "—"],
-        ["Engine No.", sub.get("engine_number") or "—"],
+        ["Make", _P(sub.get("make_name") or "—")],
+        ["Model", _P(sub.get("model_name") or "—")],
+        ["Derivative", _P(sub.get("derivative_name") or "—")],
+        ["Year Reg.", _P(str(sub.get("year_registered") or sub.get("year") or "—"))],
+        ["Year Prod.", _P(str(sub.get("year_of_production") or sub.get("year") or "—"))],
+        ["Mileage", _P(f"{int(sub.get('mileage') or 0):,} km")],
+        ["Transmission", _P(sub.get("transmission") or "—")],
+        ["Fuel Type", _P(sub.get("fuel_type") or "—")],
+        ["Colour", _P(sub.get("colour") or "—")],
+        ["VIN", _P(sub.get("vin") or "—", mono=True)],
+        ["Engine No.", _P(sub.get("engine_number") or "—", mono=True)],
     ]
-    col_w = 46 * mm  # per row: label col
-    val_w = 46 * mm  # per row: value col
-    t_v = Table(v_rows, colWidths=[col_w, val_w])
+    # Rebalance columns so the value cell has more room to wrap.
+    v_label_w = 26 * mm
+    v_value_w = 66 * mm
+    t_v = Table(v_rows, colWidths=[v_label_w, v_value_w])
     ts_v = _row_style()
-    # Mono for VIN + Engine (last two rows).
-    ts_v.add("FONT", (1, -2), (1, -1), "Courier", 8)
     t_v.setStyle(ts_v)
 
     # RIGHT column: Condition assessment. Overall score inlined at the top.
@@ -2128,21 +2156,23 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
         overall = round(
             (m or 0) * 0.30 + (c or 0) * 0.25 + (i_ or 0) * 0.25 + (h_ or 0) * 0.20, 1,
         )
-        c_rows.append(["Overall Condition", f"{overall} / 10"])
+        c_rows.append(["Overall Condition", _P(f"{overall} / 10")])
         c_rows.extend([
-            ["Mechanical (30%)", f"{m} / 10"],
-            ["Cosmetic (25%)", f"{c} / 10"],
-            ["Interior (25%)", f"{i_} / 10"],
-            ["General (20%)", f"{h_} / 10"],
+            ["Mechanical (30%)", _P(f"{m} / 10")],
+            ["Cosmetic (25%)", _P(f"{c} / 10")],
+            ["Interior (25%)", _P(f"{i_} / 10")],
+            ["General (20%)", _P(f"{h_} / 10")],
         ])
-    c_rows.append(["Windscreen", sub.get("windscreen_condition") or "—"])
-    c_rows.append(["Accident Damage", "Yes" if sub.get("accident_damage") else "None"])
+    c_rows.append(["Windscreen", _P(sub.get("windscreen_condition") or "—")])
+    c_rows.append(["Accident Damage", _P("Yes" if sub.get("accident_damage") else "None")])
     if sub.get("accident_damage") and sub.get("accident_damage_types"):
-        c_rows.append(["Damage Types", ", ".join(sub.get("accident_damage_types") or [])])
-    c_rows.append(["Paint Evidence", "Yes" if sub.get("paint_evidence") else "None"])
+        c_rows.append(["Damage Types", _P(", ".join(sub.get("accident_damage_types") or []))])
+    c_rows.append(["Paint Evidence", _P("Yes" if sub.get("paint_evidence") else "None")])
     if sub.get("paint_evidence") and sub.get("paint_quality"):
-        c_rows.append(["Paint Quality", sub.get("paint_quality")])
-    t_c = Table(c_rows, colWidths=[col_w, val_w])
+        c_rows.append(["Paint Quality", _P(sub.get("paint_quality"))])
+    c_label_w = 34 * mm
+    c_value_w = 58 * mm
+    t_c = Table(c_rows, colWidths=[c_label_w, c_value_w])
     ts_c = _row_style()
     # Emphasise the "Overall Condition" row when present.
     if m is not None:
@@ -2173,9 +2203,9 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
     srv_block = None
     if sub.get("service_history"):
         srv_rows = [
-            ["History", sub.get("service_history") or "—"],
-            ["Last Service", sub.get("last_service_date") if sub.get("last_service_date") and sub.get("last_service_date") != "TBC" else "TBC"],
-            ["Service Mileage", f"{int(sub.get('last_service_mileage')):,} km" if sub.get("last_service_mileage") else "TBC"],
+            ["History", _P(sub.get("service_history") or "—")],
+            ["Last Service", _P(sub.get("last_service_date") if sub.get("last_service_date") and sub.get("last_service_date") != "TBC" else "TBC")],
+            ["Service Mileage", _P(f"{int(sub.get('last_service_mileage')):,} km" if sub.get("last_service_mileage") else "TBC")],
         ]
         gap = _compute_service_gap(sub)
         months = gap["months_ago"]
@@ -2183,18 +2213,12 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
         if months is not None or km_since is not None:
             time_colour = DANGER if (months is not None and months >= 24) else (WARN if (months is not None and months >= 12) else OK)
             km_colour = DANGER if (km_since is not None and km_since >= 30000) else (WARN if (km_since is not None and km_since >= 15000) else OK)
-            srv_rows.append(["Time Since", gap["label_time"]])
-            srv_rows.append(["Mileage Since", gap["label_km"]])
+            time_style = ParagraphStyle("srvT", parent=val_style, textColor=time_colour, fontName="Helvetica-Bold")
+            km_style = ParagraphStyle("srvK", parent=val_style, textColor=km_colour, fontName="Helvetica-Bold")
+            srv_rows.append(["Time Since", Paragraph(str(gap["label_time"]), time_style)])
+            srv_rows.append(["Mileage Since", Paragraph(str(gap["label_km"]), km_style)])
         t_s = Table(srv_rows, colWidths=[30 * mm, 62 * mm])
-        ts_s = _row_style()
-        if months is not None or km_since is not None:
-            time_idx = len(srv_rows) - 2
-            km_idx = len(srv_rows) - 1
-            ts_s.add("TEXTCOLOR", (1, time_idx), (1, time_idx), time_colour)
-            ts_s.add("FONT", (1, time_idx), (1, time_idx), "Helvetica-Bold", 8)
-            ts_s.add("TEXTCOLOR", (1, km_idx), (1, km_idx), km_colour)
-            ts_s.add("FONT", (1, km_idx), (1, km_idx), "Helvetica-Bold", 8)
-        t_s.setStyle(ts_s)
+        t_s.setStyle(_row_style())
         srv_block = t_s
 
     recon_block = None
@@ -2202,7 +2226,7 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
     if recon_items:
         rec_rows = [["Item", "Amount"]]
         for r in recon_items:
-            rec_rows.append([r.get("label") or "—", _fmt_zar(r.get("amount_zar") or 0)])
+            rec_rows.append([_P(r.get("label") or "—"), _fmt_zar(r.get("amount_zar") or 0)])
         total = sub.get("reconditioning_total_zar") or sum((r.get("amount_zar") or 0) for r in recon_items)
         rec_rows.append(["TOTAL", _fmt_zar(total)])
         t_r = Table(rec_rows, colWidths=[62 * mm, 30 * mm])
@@ -2252,19 +2276,15 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
     mv = sub.get("market_values") or {}
     if isinstance(mv, dict) and mv.get("status") == "ok":
         story.append(Paragraph("KREDO MARKET VALUES", section_title))
+        mv_mono = ParagraphStyle("mvMono", parent=val_style, fontName="Courier-Bold", fontSize=9)
         mv_rows = [
-            ["New List Price", _fmt_zar(mv.get("new_list_price_zar"))],
-            ["M&M Code", str(mv.get("mm_code") or "—")],
-            ["Trade Value", _fmt_zar(mv.get("trade_price_zar"))],
-            ["Retail Value", _fmt_zar(mv.get("retail_price_zar"))],
+            ["New List Price", Paragraph(_fmt_zar(mv.get("new_list_price_zar")), mv_mono)],
+            ["M&M Code", Paragraph(str(mv.get("mm_code") or "—"), mv_mono)],
+            ["Trade Value", Paragraph(_fmt_zar(mv.get("trade_price_zar")), mv_mono)],
+            ["Retail Value", Paragraph(_fmt_zar(mv.get("retail_price_zar")), mv_mono)],
         ]
         t_mv = Table(mv_rows, colWidths=[46 * mm, 140 * mm])
-        ts_mv = _row_style()
-        # Emphasise trade + retail — those are the numbers the desk cares
-        # about when negotiating the offer.
-        ts_mv.add("FONT", (1, 0), (1, -1), "Courier-Bold", 9)
-        ts_mv.add("TEXTCOLOR", (1, 2), (1, 3), INK)
-        t_mv.setStyle(ts_mv)
+        t_mv.setStyle(_row_style())
         story.append(t_mv)
         # Footer note — provenance + captured-at timestamp so the reader
         # knows this is a locked historical snapshot, not a live reading.
@@ -2313,10 +2333,10 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
     if tyre:
         story.append(Paragraph("TYRE REPLACEMENT ESTIMATE", section_title))
         tyre_rows = [
-            ["Tyre Spec", tyre.get("tyre_spec") or "—"],
-            ["Set of 4 Replacement", _fmt_zar(tyre.get("total_replacement_estimate_zar"))],
-            ["Fitment & Balance", _fmt_zar(tyre.get("fitment_and_balance_zar"))],
-            ["Confidence", (tyre.get("confidence") or "—").upper()],
+            ["Tyre Spec", _P(tyre.get("tyre_spec") or "—")],
+            ["Set of 4 Replacement", _P(_fmt_zar(tyre.get("total_replacement_estimate_zar")))],
+            ["Fitment & Balance", _P(_fmt_zar(tyre.get("fitment_and_balance_zar")))],
+            ["Confidence", _P((tyre.get("confidence") or "—").upper())],
         ]
         t_t = Table(tyre_rows, colWidths=[46 * mm, 140 * mm])
         t_t.setStyle(_row_style())
@@ -2333,8 +2353,8 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
             arrow = f"{_fmt_zar(prev)} → {_fmt_zar(new)}" if prev is not None else f"Initial: {_fmt_zar(new)}"
             ph_rows.append([
                 (h.get("at") or "")[:10],
-                arrow,
-                h.get("comment") or "—",
+                _P(arrow),
+                _P(h.get("comment") or "—"),
             ])
         t_ph = Table(ph_rows, colWidths=[24 * mm, 62 * mm, 100 * mm])
         t_ph.setStyle(TableStyle([
@@ -2357,7 +2377,7 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
         rep_rows = [["Report", "Cost", "Status", "Ordered"]]
         for r in reports:
             rep_rows.append([
-                r.get("name") or r.get("type"),
+                _P(r.get("name") or r.get("type")),
                 _fmt_zar(r.get("cost_zar")),
                 (r.get("status") or "pending").upper(),
                 (r.get("ordered_at") or "")[:10],
