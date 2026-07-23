@@ -1194,7 +1194,13 @@ export default function VehicleDetail() {
           </>
         ) : null}
 
-        {/* Condition breakdown — 4 pillars for new submissions, legacy 3 fallback. */}
+        {/* Condition breakdown — 4 pillars for new submissions, legacy 3 fallback.
+            HIDDEN entirely when the submission is flagged as "unseen"
+            (dealer requested a desktop valuation without physical
+            inspection). The red "Vehicle Unseen" banner at the top of
+            the page communicates that no ratings exist. */}
+        {!sub.unseen ? (
+        <>
         <Text style={styles.sectionTitle}>Condition</Text>
         <View style={styles.detailsList}>
           {typeof sub.mechanical_condition === "number" ? (
@@ -1278,9 +1284,12 @@ export default function VehicleDetail() {
             </View>
           </TouchableOpacity>
         ) : null}
+        </>
+        ) : null}
+        {/* --- end !sub.unseen : Condition section --- */}
 
         {/* Reconditioning */}
-        {sub.reconditioning_items && sub.reconditioning_items.length > 0 ? (
+        {!sub.unseen && sub.reconditioning_items && sub.reconditioning_items.length > 0 ? (
           <>
             <Text style={styles.sectionTitle}>Reconditioning Estimate</Text>
             <View style={styles.detailsList}>
@@ -1312,8 +1321,9 @@ export default function VehicleDetail() {
           </>
         ) : null}
 
-        {/* Service history */}
-        {sub.service_history ? (
+        {/* Service history — hidden when the submission is flagged as
+            "unseen" (dealer didn't inspect the vehicle). */}
+        {!sub.unseen && sub.service_history ? (
           <>
             <Text style={styles.sectionTitle}>Service History</Text>
             <View style={styles.detailsList}>

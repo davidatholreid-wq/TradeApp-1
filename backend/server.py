@@ -2722,117 +2722,72 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
     t_v.setStyle(ts_v)
 
     # RIGHT column: Condition assessment. Overall score inlined at the top.
+    # ------------------------------------------------------------------
+    # When the submission is flagged as "vehicle unseen", the dealer has
+    # NOT physically inspected the car — none of the ratings, damage or
+    # paint entries are meaningful. Drop the entire right column so the
+    # PDF doesn't imply an inspection took place.
+    unseen = bool(sub.get("unseen"))
+
     m = sub.get("mechanical_condition")
     c = sub.get("cosmetic_condition")
     i_ = sub.get("interior_condition")
     h_ = sub.get("history_condition")
-    c_rows = []
-    if m is not None:
-        overall = round(
-            (m or 0) * 0.30 + (c or 0) * 0.25 + (i_ or 0) * 0.25 + (h_ or 0) * 0.20, 1,
-        )
-        c_rows.append(["Overall Condition", _P(f"{overall} / 10")])
-        c_rows.extend([
-            ["Mechanical (30%)", _P(f"{m} / 10")],
-            ["Cosmetic (25%)", _P(f"{c} / 10")],
-            ["Interior (25%)", _P(f"{i_} / 10")],
-            ["General (20%)", _P(f"{h_} / 10")],
-        ])
-    c_rows.append(["Windscreen", _P(sub.get("windscreen_condition") or "—")])
-    c_rows.append(["Accident Damage", _P("Yes" if sub.get("accident_damage") else "None")])
-    if sub.get("accident_damage") and sub.get("accident_damage_types"):
-        c_rows.append(["Damage Types", _P(", ".join(sub.get("accident_damage_types") or []))])
-    c_rows.append(["Paint Evidence", _P("Yes" if sub.get("paint_evidence") else "None")])
-    if sub.get("paint_evidence") and sub.get("paint_quality"):
-        c_rows.append(["Paint Quality", _P(sub.get("paint_quality"))])
+    c_rows: list = []
+    if not unseen:
+        if m is not None:
+            overall = round(
+                (m or 0) * 0.30 + (c or 0) * 0.25 + (i_ or 0) * 0.25 + (h_ or 0) * 0.20, 1,
+            )
+            c_rows.append(["Overall Condition", _P(f"{overall} / 10")])
+            c_rows.extend([
+                ["Mechanical (30%)", _P(f"{m} / 10")],
+                ["Cosmetic (25%)", _P(f"{c} / 10")],
+                ["Interior (25%)", _P(f"{i_} / 10")],
+                ["General (20%)", _P(f"{h_} / 10")],
+            ])
+        c_rows.append(["Windscreen", _P(sub.get("windscreen_condition") or "—")])
+        c_rows.append(["Accident Damage", _P("Yes" if sub.get("accident_damage") else "None")])
+        if sub.get("accident_damage") and sub.get("accident_damage_types"):
+            c_rows.append(["Damage Types", _P(", ".join(sub.get("accident_damage_types") or []))])
+        c_rows.append(["Paint Evidence", _P("Yes" if sub.get("paint_evidence") else "None")])
+        if sub.get("paint_evidence") and sub.get("paint_quality"):
+            c_rows.append(["Paint Quality", _P(sub.get("paint_quality"))])
     c_label_w = 34 * mm
     c_value_w = 58 * mm
-    t_c = Table(c_rows, colWidths=[c_label_w, c_value_w])
-    ts_c = _row_style()
-    # Emphasise the "Overall Condition" row when present.
-    if m is not None:
-        ts_c.add("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 9)
-        ts_c.add("TEXTCOLOR", (1, 0), (1, 0), INK)
-        ts_c.add("BACKGROUND", (0, 0), (-1, 0), PAPER)
-    t_c.setStyle(ts_c)
-
-    # Titled headers above each column, then the two tables side-by-side.
-    hdr_left = Paragraph("VEHICLE DETAILS", section_title)
-    hdr_right = Paragraph("CONDITION ASSESSMENT", section_title)
-    two_col = Table(
-        [[hdr_left, hdr_right], [t_v, t_c]],
-        colWidths=[92 * mm, 92 * mm],
-    )
-    two_col.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (0, -1), 4),
-        ("LEFTPADDING", (1, 0), (1, -1), 4),
-        ("TOPPADDING", (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-    ]))
-    story.append(Spacer(1, 4))
-    story.append(two_col)
-
-    # ============ SERVICE + RECONDITIONING (side-by-side) ============
-    srv_block = None
-    if sub.get("service_history"):
-        srv_rows = [
-            ["History", _P(sub.get("service_history") or "—")],
-            ["Last Service", _P(sub.get("last_service_date") if sub.get("last_service_date") and sub.get("last_service_date") != "TBC" else "TBC")],
-            ["Service Mileage", _P(f"{int(sub.get('last_service_mileage')):,} km" if sub.get("last_service_mileage") else "TBC")],
-        ]
-        gap = _compute_service_gap(sub)
-        months = gap["months_ago"]
-        km_since = gap["km_since"]
-        if months is not None or km_since is not None:
-            time_colour = DANGER if (months is not None and months >= 24) else (WARN if (months is not None and months >= 12) else OK)
-            km_colour = DANGER if (km_since is not None and km_since >= 30000) else (WARN if (km_since is not None and km_since >= 15000) else OK)
-            time_style = ParagraphStyle("srvT", parent=val_style, textColor=time_colour, fontName="Helvetica-Bold")
-            km_style = ParagraphStyle("srvK", parent=val_style, textColor=km_colour, fontName="Helvetica-Bold")
-            srv_rows.append(["Time Since", Paragraph(str(gap["label_time"]), time_style)])
-            srv_rows.append(["Mileage Since", Paragraph(str(gap["label_km"]), km_style)])
-        t_s = Table(srv_rows, colWidths=[30 * mm, 62 * mm])
-        t_s.setStyle(_row_style())
-        srv_block = t_s
-
-    recon_block = None
-    recon_items = sub.get("reconditioning_items") or []
-    if recon_items:
-        rec_rows = [["Item", "Amount"]]
-        for r in recon_items:
-            rec_rows.append([_P(r.get("label") or "—"), _fmt_zar(r.get("amount_zar") or 0)])
-        total = sub.get("reconditioning_total_zar") or sum((r.get("amount_zar") or 0) for r in recon_items)
-        rec_rows.append(["TOTAL", _fmt_zar(total)])
-        t_r = Table(rec_rows, colWidths=[62 * mm, 30 * mm])
-        t_r.setStyle(TableStyle([
-            ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 7),
-            ("TEXTCOLOR", (0, 0), (-1, 0), MUTED),
-            ("BACKGROUND", (0, 0), (-1, 0), PAPER),
-            ("FONT", (0, 1), (-1, -2), "Helvetica", 8),
-            ("FONT", (1, 1), (1, -1), "Courier-Bold", 8),
-            ("FONT", (0, -1), (0, -1), "Helvetica-Bold", 8),
-            ("FONT", (1, -1), (1, -1), "Courier-Bold", 9),
-            ("TEXTCOLOR", (0, -1), (-1, -1), rl_colors.white),
-            ("BACKGROUND", (0, -1), (-1, -1), BLACK),
-            ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-            ("LINEBELOW", (0, 0), (-1, -2), 0.35, LINE),
-            ("TOPPADDING", (0, 0), (-1, -1), 3),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-            ("LEFTPADDING", (0, 0), (-1, -1), 6),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    if unseen or not c_rows:
+        # Full-width Vehicle Details only — no Condition Assessment column.
+        hdr_left = Paragraph("VEHICLE DETAILS", section_title)
+        two_col = Table(
+            [[hdr_left], [t_v]],
+            colWidths=[CONTENT_W_MM * mm],
+        )
+        two_col.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
         ]))
-        recon_block = t_r
-
-    if srv_block is not None or recon_block is not None:
-        hdr_left = Paragraph("SERVICE HISTORY" if srv_block is not None else "", section_title)
-        hdr_right = Paragraph("RECONDITIONING" if recon_block is not None else "", section_title)
-        two_col2 = Table(
-            [[hdr_left, hdr_right], [srv_block or Paragraph("", body), recon_block or Paragraph("", body)]],
+        story.append(Spacer(1, 4))
+        story.append(two_col)
+    else:
+        t_c = Table(c_rows, colWidths=[c_label_w, c_value_w])
+        ts_c = _row_style()
+        # Emphasise the "Overall Condition" row when present.
+        if m is not None:
+            ts_c.add("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 9)
+            ts_c.add("TEXTCOLOR", (1, 0), (1, 0), INK)
+            ts_c.add("BACKGROUND", (0, 0), (-1, 0), PAPER)
+        t_c.setStyle(ts_c)
+        # Titled headers above each column, then the two tables side-by-side.
+        hdr_left = Paragraph("VEHICLE DETAILS", section_title)
+        hdr_right = Paragraph("CONDITION ASSESSMENT", section_title)
+        two_col = Table(
+            [[hdr_left, hdr_right], [t_v, t_c]],
             colWidths=[92 * mm, 92 * mm],
         )
-        two_col2.setStyle(TableStyle([
+        two_col.setStyle(TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("LEFTPADDING", (0, 0), (-1, -1), 0),
             ("RIGHTPADDING", (0, 0), (0, -1), 4),
@@ -2841,7 +2796,81 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
             ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
         ]))
         story.append(Spacer(1, 4))
-        story.append(two_col2)
+        story.append(two_col)
+
+    # ============ SERVICE + RECONDITIONING (side-by-side) ============
+    # When flagged as "unseen", skip this entire block — there was no
+    # physical inspection and any service/recon content is either
+    # undefined or auto-defaulted, and misleading to include on the PDF.
+    srv_block = None
+    recon_block = None
+    if not unseen:
+        if sub.get("service_history"):
+            srv_rows = [
+                ["History", _P(sub.get("service_history") or "—")],
+                ["Last Service", _P(sub.get("last_service_date") if sub.get("last_service_date") and sub.get("last_service_date") != "TBC" else "TBC")],
+                ["Service Mileage", _P(f"{int(sub.get('last_service_mileage')):,} km" if sub.get("last_service_mileage") else "TBC")],
+            ]
+            gap = _compute_service_gap(sub)
+            months = gap["months_ago"]
+            km_since = gap["km_since"]
+            if months is not None or km_since is not None:
+                time_colour = DANGER if (months is not None and months >= 24) else (WARN if (months is not None and months >= 12) else OK)
+                km_colour = DANGER if (km_since is not None and km_since >= 30000) else (WARN if (km_since is not None and km_since >= 15000) else OK)
+                time_style = ParagraphStyle("srvT", parent=val_style, textColor=time_colour, fontName="Helvetica-Bold")
+                km_style = ParagraphStyle("srvK", parent=val_style, textColor=km_colour, fontName="Helvetica-Bold")
+                srv_rows.append(["Time Since", Paragraph(str(gap["label_time"]), time_style)])
+                srv_rows.append(["Mileage Since", Paragraph(str(gap["label_km"]), km_style)])
+            t_s = Table(srv_rows, colWidths=[30 * mm, 62 * mm])
+            t_s.setStyle(_row_style())
+            srv_block = t_s
+
+        recon_block = None
+        recon_items = sub.get("reconditioning_items") or []
+        if recon_items:
+            rec_rows = [["Item", "Amount"]]
+            for r in recon_items:
+                rec_rows.append([_P(r.get("label") or "—"), _fmt_zar(r.get("amount_zar") or 0)])
+            total = sub.get("reconditioning_total_zar") or sum((r.get("amount_zar") or 0) for r in recon_items)
+            rec_rows.append(["TOTAL", _fmt_zar(total)])
+            t_r = Table(rec_rows, colWidths=[62 * mm, 30 * mm])
+            t_r.setStyle(TableStyle([
+                ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 7),
+                ("TEXTCOLOR", (0, 0), (-1, 0), MUTED),
+                ("BACKGROUND", (0, 0), (-1, 0), PAPER),
+                ("FONT", (0, 1), (-1, -2), "Helvetica", 8),
+                ("FONT", (1, 1), (1, -1), "Courier-Bold", 8),
+                ("FONT", (0, -1), (0, -1), "Helvetica-Bold", 8),
+                ("FONT", (1, -1), (1, -1), "Courier-Bold", 9),
+                ("TEXTCOLOR", (0, -1), (-1, -1), rl_colors.white),
+                ("BACKGROUND", (0, -1), (-1, -1), BLACK),
+                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                ("LINEBELOW", (0, 0), (-1, -2), 0.35, LINE),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ]))
+            recon_block = t_r
+
+        if srv_block is not None or recon_block is not None:
+            hdr_left = Paragraph("SERVICE HISTORY" if srv_block is not None else "", section_title)
+            hdr_right = Paragraph("RECONDITIONING" if recon_block is not None else "", section_title)
+            two_col2 = Table(
+                [[hdr_left, hdr_right], [srv_block or Paragraph("", body), recon_block or Paragraph("", body)]],
+                colWidths=[92 * mm, 92 * mm],
+            )
+            two_col2.setStyle(TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (0, -1), 4),
+                ("LEFTPADDING", (1, 0), (1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]))
+            story.append(Spacer(1, 4))
+            story.append(two_col2)
 
     # ============ KREDO MARKET VALUES ============
     # Snapshot of the Kredo Vehicle Values pulled at the time of valuation

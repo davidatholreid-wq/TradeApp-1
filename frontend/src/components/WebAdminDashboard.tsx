@@ -751,7 +751,13 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 <DetailRow label="Year of Production" value={String(selected.year_of_production ?? selected.year)} last />
               </View>
 
-              {/* Condition detail — 4 pillars for new submissions, legacy 3 fallback. */}
+              {/* Condition detail — 4 pillars for new submissions, legacy 3 fallback.
+                  HIDDEN when the submission is flagged as `unseen` — no
+                  physical inspection was performed, so ratings are
+                  meaningless. The red banner at the top of the pane
+                  already tells the admin to price cautiously. */}
+              {!selected.unseen ? (
+              <>
               <Text style={styles.groupTitle}>Condition</Text>
               <View style={styles.detailsList}>
                 {typeof selected.mechanical_condition === "number" ? (
@@ -791,9 +797,12 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                   <DetailRow label="Paint Repair Quality" value={selected.paint_quality} last />
                 ) : null}
               </View>
+              </>
+              ) : null}
+              {/* --- end !unseen: Condition + Damage + Paint --- */}
 
-              {/* Service history */}
-              {selected.service_history ? (
+              {/* Service history — hidden when the submission is flagged as unseen. */}
+              {!selected.unseen && selected.service_history ? (
                 <>
                   <Text style={styles.groupTitle}>Service History</Text>
                   <View style={styles.detailsList}>
@@ -857,7 +866,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
               ) : null}
 
               {/* Reconditioning */}
-              {selected.reconditioning_items && selected.reconditioning_items.length > 0 ? (
+              {!selected.unseen && selected.reconditioning_items && selected.reconditioning_items.length > 0 ? (
                 <>
                   <Text style={styles.groupTitle}>Reconditioning Estimate</Text>
                   <View style={styles.detailsList}>

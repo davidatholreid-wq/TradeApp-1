@@ -1,0 +1,35 @@
+{
+  "summary": "Backend-only regression for the 'Subject to View' (unseen=True) PDF changes. New pytest suite (test_unseen_pdf.py, 3 tests) creates one UNSEEN and one SEEN submission via a real dealer login (minitest@example.com), admin-prices each, downloads /api/submissions/{id}/valuation.pdf, and asserts the extracted text. UNSEEN PDF contains the red banner 'VEHICLE UNSEEN — SUBJECT TO VIEW' and does NOT contain any of: CONDITION ASSESSMENT, Overall Condition, Mechanical (30%), Cosmetic (25%), Interior (25%), General (20%), SERVICE HISTORY, RECONDITIONING, Windscreen, Paint Evidence, Accident Damage. SEEN PDF still contains all four condition labels. Regression: all 9 test_license_disk_decode.py tests still pass. Backend startup clean (Application startup complete, no tracebacks). Static grep checks on both frontend files pass — both contain the required `!sub.unseen` / `!selected.unseen` guards around Condition, Service History and Reconditioning JSX.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_unseen_pdf.py",
+    "/app/test_reports/pytest/iteration_36_unseen_pdf.xml",
+    "/app/test_reports/pytest/iteration_36_license_disk.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 5701 lines — well over the 700-line guideline. Not related to this task but worth splitting into modules (submissions/valuation_pdf/kredo/admin) in a future refactor.",
+    "POST /api/submissions returns a nested wrapper `{submission: {...}, id: ...}` while other admin endpoints return the object at top level. Not a bug but the inconsistency tripped the initial test — worth normalising."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_unseen_pdf.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (3/3 new unseen-PDF tests + 9/9 license-disk regression)",
+    "frontend": "not tested (static grep only, all guards present)"
+  },
+  "seed_data_creation": "Two test submissions were created under minitest@example.com and admin-priced at R400,000 for PDF extraction: FB-000121 (unseen) and FB-000122 (seen). These are left in the DB but marked with notes='TEST_unseen_pdf' for easy cleanup by admin if desired.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The unseen/seen PDF flow is stable. Extracted PDF text is dumped to /tmp/unseen_pdf.txt and /tmp/seen_pdf.txt during tests for debugging. If the layout changes again, look at server.py `_build_valuation_pdf` around lines 2566-2810.",
+  "rca_of_issue": "N/A — this iteration confirms E1's implementation, no bugs found."
+}
