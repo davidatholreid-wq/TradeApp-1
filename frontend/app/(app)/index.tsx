@@ -11,6 +11,8 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
+import { useVideoPlayer, VideoView } from "expo-video";
+import { useFocusEffect } from "expo-router";
 
 import { spacing, radius, fonts } from "@/src/theme";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
@@ -20,6 +22,20 @@ import BrandLogo from "@/src/components/BrandLogo";
 // Local brand assets for partner cards.
 const TAKEALOT_LOGO = require("../../assets/brands/takealot.png");
 const VAPSSA_LOGO = require("../../assets/brands/vapssa.png");
+
+// Bundled hero video for the Home banner. Autoplays muted-on-loop when the
+// Home tab is focused, pauses on blur to save battery/data.
+//
+// Codec split: native (iOS/Android) always supports the H.264 mp4. Some
+// Chromium builds — including the headless-shell used by our dev-preview
+// screenshotter — ship WITHOUT proprietary H.264, so on `web` we serve
+// the VP9 webm alongside. Real Chrome / Safari / Edge / mobile browsers
+// all support at least one of the two, and both files are bundled so the
+// swap happens with zero network churn.
+const HERO_VIDEO = Platform.OS === "web"
+  ? require("../../assets/video/home_banner.webm")
+  : require("../../assets/video/home_banner.mp4");
+const HERO_POSTER = require("../../assets/video/home_banner_poster.jpg");
 
 // ---------------------------------------------------------------------------
 // Home / Landing screen (dealer + admin)
@@ -194,6 +210,38 @@ export default function HomeScreen() {
   const insets = useBottomTabBarHeight();
   const { width } = useWindowDimensions();
 
+  // Hero-video player. `useVideoPlayer` runs the setup callback exactly
+  // once when the component mounts. We deliberately mute + loop so:
+  //   - Browsers allow autoplay (Chrome / Safari block sound-on-autoplay).
+  //   - The dealer is never surprised by unexpected audio on login.
+  //   - The 30-second Gemini-generated clip runs indefinitely as a
+  //     living hero banner.
+  const heroPlayer = useVideoPlayer(HERO_VIDEO, (p) => {
+    p.loop = true;
+    p.muted = true;
+    p.play();
+  });
+
+  // Pause the hero video when the Home tab is not focused so we don't
+  // waste CPU / battery decoding a hidden frame while the dealer is on
+  // another screen. Resume when they return.
+  useFocusEffect(
+    useCallback(() => {
+      try {
+        heroPlayer.play();
+      } catch {
+        /* no-op */
+      }
+      return () => {
+        try {
+          heroPlayer.pause();
+        } catch {
+          /* no-op */
+        }
+      };
+    }, [heroPlayer]),
+  );
+
   const greetingName = useMemo(() => {
     const info = user?.dealer_info;
     if (info?.first_name) {
@@ -214,6 +262,26 @@ export default function HomeScreen() {
         {/* Header */}
         <View style={styles.header}>
           <BrandLogo size="md" />
+        </View>
+
+        {/* Hero video banner — autoplays on focus, loops silently. */}
+        <View style={styles.heroWrap}>
+          {/* Poster frame — visible until the video decodes its first
+              frame. Sitting behind the VideoView so it's replaced
+              seamlessly once playback begins (or stays put if the
+              browser can't play the video, e.g. codec-limited previews). */}
+          <Image source={HERO_POSTER} style={styles.heroPoster} resizeMode="cover" />
+          <VideoView
+            player={heroPlayer}
+            style={styles.hero}
+            contentFit="cover"
+            nativeControls={false}
+            allowsFullscreen={false}
+            allowsPictureInPicture={false}
+            accessibilityLabel="Fourbuy Car Buying Co. hero video"
+          />
+          {/* Soft bottom vignette so overlay text (added later) stays readable */}
+          <View pointerEvents="none" style={styles.heroVignette} />
         </View>
 
         {/* Welcome */}
@@ -479,6 +547,52 @@ const makeStyles = (colors: Palette) =>
     header: {
       alignItems: "center",
       paddingVertical: spacing.md,
+    },
+    heroWrap: {
+      width: "100%",
+      aspectRatio: 16 / 9,
+      borderRadius: radius.lg,
+      overflow: "hidden",
+      marginBottom: spacing.lg,
+      backgroundColor: colors.paper,
+      // Same subtle floating shadow as the flip cards so the banner feels
+      // like it belongs in the card stack.
+      ...Platform.select({
+        ios: {
+          shadowColor: "#000",
+          shadowOpacity: 0.18,
+          shadowRadius: 12,
+          shadowOffset: { width: 0, height: 6 },
+        },
+        android: { elevation: 3 },
+      }),
+    },
+    hero: {
+      width: "100%",
+      height: "100%",
+    },
+    heroPoster: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      width: "100%",
+      height: "100%",
+    },
+    heroVignette: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      bottom: 0,
+      height: "40%",
+      backgroundColor: "transparent",
+      // Emulates a top-transparent → bottom-dark gradient without pulling
+      // in an extra dependency. Keeps room for future overlay copy.
+      shadowColor: "#000",
+      shadowOpacity: 0.35,
+      shadowRadius: 30,
+      shadowOffset: { width: 0, height: 20 },
     },
     welcomeBlock: {
       paddingHorizontal: spacing.xs,
