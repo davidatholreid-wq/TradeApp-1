@@ -186,6 +186,19 @@ REPORT_CATALOG = {
         "cost_zar": 20.0,
         "supported_makes": ["BMW", "MINI"],
     },
+    # JLR Online Service History — Land Rover / Range Rover / Jaguar.
+    # Scraped live from https://osh.landrover.com. Result caches on the
+    # submission so a given VIN is only scraped once. Only offered on
+    # JLR-family submissions.
+    "landrover_osh": {
+        "name": "Land Rover / Jaguar Service History",
+        "cost_zar": 20.0,
+        "supported_makes": [
+            "LAND ROVER", "LAND-ROVER", "LANDROVER",
+            "RANGE ROVER", "RANGE-ROVER",
+            "JAGUAR",
+        ],
+    },
 }
 
 
@@ -712,7 +725,7 @@ class DealerPhotoUpload(BaseModel):
 
 
 class ReportOrderCreate(BaseModel):
-    type: Literal["lightstone_verification", "lightstone_repair", "car_vertical", "bmw_options"]
+    type: Literal["lightstone_verification", "lightstone_repair", "car_vertical", "bmw_options", "landrover_osh"]
     accepted_charge: bool = False
 
 
@@ -1948,6 +1961,27 @@ async def order_submission_report(
         )
         result_data = spec
         note = "Sourced live from Bimmervin (BMW factory order data)."
+        mocked = False
+    elif payload.type == "landrover_osh":
+        # Live JLR Online Service History scrape. Same "on-failure don't
+        # bill" contract as bmw_options — errors bubble up as 502 and
+        # nothing is inserted / charged.
+        from services.landrover_osh import fetch_landrover_osh
+
+        spec = await fetch_landrover_osh(vin)
+        if spec.get("status") != "ok":
+            raise HTTPException(
+                502,
+                spec.get("error") or "Could not fetch JLR service history — please try again.",
+            )
+        # Mirror onto the submission so PDF / other future consumers can
+        # find the payload without going through the report_orders row.
+        await db.submissions.update_one(
+            {"id": sub_id},
+            {"$set": {"landrover_osh": spec}},
+        )
+        result_data = spec
+        note = "Sourced live from osh.landrover.com (JLR Online Service History)."
         mocked = False
     else:
         # MOCKED: real Lightstone / CarVertical APIs will replace this generator.

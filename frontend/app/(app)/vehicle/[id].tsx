@@ -116,7 +116,7 @@ type PriceHistoryEntry = {
 type ReportOrder = {
   id: string;
   submission_id: string;
-  type: "lightstone_verification" | "lightstone_repair" | "car_vertical" | "bmw_options";
+  type: "lightstone_verification" | "lightstone_repair" | "car_vertical" | "bmw_options" | "landrover_osh";
   name: string;
   cost_zar: number;
   status: "pending" | "delivered" | "failed";
@@ -323,6 +323,14 @@ export default function VehicleDetail() {
     // this frontend gate mirrors it so we don't render the row prematurely
     // before the catalog endpoint returns.
     return ["BMW", "MINI"].includes(mk);
+  }, [sub?.make_name]);
+
+  // JLR OSH service-history report — offered on Land Rover / Range Rover
+  // / Jaguar submissions. Mirrors the backend catalog's `supported_makes`
+  // list so admins never see the row on non-JLR vehicles.
+  const isLandroverSupported = useMemo(() => {
+    const mk = (sub?.make_name || (sub as any)?.make || "").toString().toUpperCase();
+    return ["LAND ROVER", "LAND-ROVER", "LANDROVER", "RANGE ROVER", "RANGE-ROVER", "JAGUAR"].includes(mk);
   }, [sub?.make_name]);
 
   const fetchBimmerSpec = async () => {
@@ -660,6 +668,9 @@ export default function VehicleDetail() {
     // BMW factory options — live Bimmervin lookup, only offered on
     // BMW and MINI vehicles.
     bmw_options: { name: "BMW Factory Options", cost_zar: 20 },
+    // JLR Online Service History — live osh.landrover.com scrape, only
+    // offered on Land Rover / Range Rover / Jaguar vehicles.
+    landrover_osh: { name: "Land Rover / Jaguar Service History", cost_zar: 20 },
   };
 
   const orderedReportTypes = useMemo(
@@ -1649,6 +1660,8 @@ export default function VehicleDetail() {
                     // BMW factory options is BMW-group only — filter on the
                     // submission's make so it never appears on other brands.
                     if (isBimmerSupported) baseTypes.push("bmw_options");
+                    // JLR OSH service history is JLR-only.
+                    if (isLandroverSupported) baseTypes.push("landrover_osh");
                     return baseTypes;
                   })()
                   .filter((t) => !isAdmin || orderedReportTypes.has(t))
@@ -2449,6 +2462,84 @@ function ReportResultBody({ data }: { data: Record<string, any> }) {
             </View>
           ))}
         </View>
+      </View>
+    );
+  }
+
+  // JLR OSH result — {status:"ok", vehicle, last_service, alerts[]}. Render
+  // the three panels manually so admins see the structured data straight
+  // away without having to fish it out of a generic sections block.
+  const isJlrOsh =
+    data && data.status === "ok" && (data.source || "").includes("landrover") && !sections;
+  if (isJlrOsh) {
+    const v = (data.vehicle || {}) as { vin?: string; model_name?: string; model_year?: string };
+    const ls = data.last_service as
+      | {
+          type?: string; distance?: string; date?: string; job_number?: string;
+          repairer_name?: string; repairer_location?: string; repairer_type?: string;
+          service_items?: string[];
+        }
+      | null;
+    const alerts = (data.alerts || []) as string[];
+    return (
+      <View>
+        <Text style={styles.reportSectionHeader}>Vehicle</Text>
+        <View style={styles.reportRow}>
+          <Text style={styles.reportRowLabel}>VIN</Text>
+          <Text style={styles.reportRowValue}>{v.vin || "—"}</Text>
+        </View>
+        <View style={styles.reportRow}>
+          <Text style={styles.reportRowLabel}>Model</Text>
+          <Text style={styles.reportRowValue}>{v.model_name || "—"}</Text>
+        </View>
+        <View style={styles.reportRow}>
+          <Text style={styles.reportRowLabel}>Model Year</Text>
+          <Text style={styles.reportRowValue}>{v.model_year || "—"}</Text>
+        </View>
+
+        {ls ? (
+          <>
+            <Text style={styles.reportSectionHeader}>Last Service Recorded</Text>
+            {[
+              ["Type", ls.type],
+              ["Distance", ls.distance],
+              ["Date", ls.date],
+              ["Job Number", ls.job_number],
+              ["Repairer", ls.repairer_name],
+              ["Location", ls.repairer_location],
+            ].map(([label, val]) =>
+              val ? (
+                <View key={String(label)} style={styles.reportRow}>
+                  <Text style={styles.reportRowLabel}>{label}</Text>
+                  <Text style={styles.reportRowValue}>{val}</Text>
+                </View>
+              ) : null,
+            )}
+            {Array.isArray(ls.service_items) && ls.service_items.length > 0 ? (
+              <>
+                <Text style={[styles.reportRowLabel, { marginTop: spacing.sm }]}>Service Items</Text>
+                {ls.service_items.map((item, i) => (
+                  <Text key={`si-${i}`} style={styles.reportBullet}>•  {item}</Text>
+                ))}
+              </>
+            ) : null}
+          </>
+        ) : (
+          <Text style={[styles.viewReportBody, { marginTop: spacing.sm }]}>
+            No service records found for this VIN in JLR&apos;s South African database.
+          </Text>
+        )}
+
+        {alerts.length > 0 ? (
+          <>
+            <Text style={styles.reportSectionHeader}>
+              Outstanding Alerts ({alerts.length})
+            </Text>
+            {alerts.map((a, i) => (
+              <Text key={`al-${i}`} style={styles.reportBullet}>•  {a}</Text>
+            ))}
+          </>
+        ) : null}
       </View>
     );
   }
