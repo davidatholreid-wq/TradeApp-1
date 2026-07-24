@@ -115,14 +115,20 @@ export default function HomeScreen() {
     (user?.email ? user.email.split("@")[0] : "");
 
   const heroPlayer = useVideoPlayer(HERO_VIDEO, (p) => {
-    p.loop = true;
+    // Latest client-supplied hero video is a one-shot cinematic — no loop.
+    p.loop = false;
     p.muted = true;
     p.play();
   });
 
   useFocusEffect(
     useCallback(() => {
-      try { heroPlayer.play(); } catch { /* no-op */ }
+      // Rewind and play once every time the Home tab is re-focused so
+      // dealers see the intro from the start, not mid-way through.
+      try {
+        heroPlayer.currentTime = 0;
+        heroPlayer.play();
+      } catch { /* no-op */ }
       return () => { try { heroPlayer.pause(); } catch { /* no-op */ } };
     }, [heroPlayer]),
   );
