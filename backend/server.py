@@ -2860,49 +2860,101 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
         recon_block = None
         recon_items = sub.get("reconditioning_items") or []
         if recon_items:
-            rec_rows = [["Item", "Amount"]]
-            for r in recon_items:
-                rec_rows.append([_P(r.get("label") or "—"), _fmt_zar(r.get("amount_zar") or 0)])
-            total = sub.get("reconditioning_total_zar") or sum((r.get("amount_zar") or 0) for r in recon_items)
-            rec_rows.append(["TOTAL", _fmt_zar(total)])
-            t_r = Table(rec_rows, colWidths=[62 * mm, 30 * mm])
-            t_r.setStyle(TableStyle([
-                ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 7),
-                ("TEXTCOLOR", (0, 0), (-1, 0), MUTED),
-                ("BACKGROUND", (0, 0), (-1, 0), PAPER),
-                ("FONT", (0, 1), (-1, -2), "Helvetica", 8),
-                ("FONT", (1, 1), (1, -1), "Courier-Bold", 8),
-                ("FONT", (0, -1), (0, -1), "Helvetica-Bold", 8),
-                ("FONT", (1, -1), (1, -1), "Courier-Bold", 9),
-                ("TEXTCOLOR", (0, -1), (-1, -1), rl_colors.white),
-                ("BACKGROUND", (0, -1), (-1, -1), BLACK),
-                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-                ("LINEBELOW", (0, 0), (-1, -2), 0.35, LINE),
-                ("TOPPADDING", (0, 0), (-1, -1), 3),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-                ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ]))
-            recon_block = t_r
+            # Recon items now render as one full-width block per line so we
+            # can attach photos underneath each one. This is separate from
+            # the two-column service-history / recon layout below because
+            # photos need proper horizontal breathing room.
+            recon_block = "RENDER_BELOW"  # sentinel — handled after two_col2
 
-        if srv_block is not None or recon_block is not None:
-            hdr_left = Paragraph("SERVICE HISTORY" if srv_block is not None else "", section_title)
-            hdr_right = Paragraph("RECONDITIONING" if recon_block is not None else "", section_title)
+        if srv_block is not None:
+            hdr_left = Paragraph("SERVICE HISTORY", section_title)
             two_col2 = Table(
-                [[hdr_left, hdr_right], [srv_block or Paragraph("", body), recon_block or Paragraph("", body)]],
-                colWidths=[92 * mm, 92 * mm],
+                [[hdr_left], [srv_block]],
+                colWidths=[184 * mm],
             )
             two_col2.setStyle(TableStyle([
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (0, -1), 4),
-                ("LEFTPADDING", (1, 0), (1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                 ("TOPPADDING", (0, 0), (-1, -1), 0),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
             ]))
             story.append(Spacer(1, 4))
             story.append(two_col2)
+
+        # Recon lines with per-line photo strip (up to 5 thumbs, ~35 mm wide).
+        if recon_items:
+            story.append(Spacer(1, 6))
+            story.append(Paragraph("RECONDITIONING", section_title))
+            total = sub.get("reconditioning_total_zar") or sum((r.get("amount_zar") or 0) for r in recon_items)
+            recon_head_style = ParagraphStyle(
+                "reconHead", parent=body, fontName="Helvetica-Bold", fontSize=10,
+                textColor=INK, leading=13,
+            )
+            for r in recon_items:
+                heading = r.get("category") or r.get("label") or "Reconditioning"
+                amount = _fmt_zar(r.get("amount_zar") or 0)
+                # Grab all photos (new `photos` list first, legacy `photo` next).
+                raw_photos = []
+                if isinstance(r.get("photos"), list):
+                    raw_photos.extend([p for p in r["photos"] if p])
+                if r.get("photo") and r["photo"] not in raw_photos:
+                    raw_photos.append(r["photo"])
+                # Render photo row: 5 slots × 35 mm wide.
+                photo_row_widget = None
+                if raw_photos:
+                    thumbs: list = []
+                    for uri in raw_photos[:5]:
+                        raw = await _fetch_image_bytes(uri)
+                        img = _as_rlimage(raw, max_w_mm=34, max_h_mm=26) if raw else None
+                        thumbs.append(img or Paragraph("", small))
+                    # Pad to 5 cells so column widths stay consistent.
+                    while len(thumbs) < 5:
+                        thumbs.append(Paragraph("", small))
+                    photo_row_widget = Table([thumbs], colWidths=[36 * mm] * 5)
+                    photo_row_widget.setStyle(TableStyle([
+                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 1),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 1),
+                        ("TOPPADDING", (0, 0), (-1, -1), 2),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                    ]))
+                head_row = Table(
+                    [[Paragraph(heading, recon_head_style), Paragraph(
+                        f'<para align="right"><font name="Courier-Bold" size="10">{amount}</font></para>',
+                        body,
+                    )]],
+                    colWidths=[140 * mm, 44 * mm],
+                )
+                head_row.setStyle(TableStyle([
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("BACKGROUND", (0, 0), (-1, -1), PAPER),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ]))
+                grouping: list = [head_row]
+                if photo_row_widget is not None:
+                    grouping.append(photo_row_widget)
+                grouping.append(Spacer(1, 4))
+                story.append(KeepTogether(grouping))
+            # Total row
+            total_row = Table(
+                [[Paragraph('<font color="#FFFFFF">TOTAL RECONDITIONING</font>', body),
+                  Paragraph(f'<para align="right"><font name="Courier-Bold" size="11" color="#FFFFFF">{_fmt_zar(total)}</font></para>', body)]],
+                colWidths=[140 * mm, 44 * mm],
+            )
+            total_row.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), BLACK),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ]))
+            story.append(total_row)
 
     # ============ KREDO MARKET VALUES ============
     # Snapshot of the Kredo Vehicle Values pulled at the time of valuation
@@ -3090,6 +3142,81 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
                     small,
                 ))
                 story.append(Spacer(1, 4))
+
+            # -------- JLR OSH — vehicle + services + alerts --------
+            if r.get("type") == "landrover_osh" and isinstance(data, dict):
+                v = data.get("vehicle") or {}
+                vrows = []
+                for lbl, k in [
+                    ("VIN", "vin"), ("Model", "model_name"), ("Model Year", "model_year"),
+                    ("Engine", "engine"), ("Colour", "colour"),
+                    ("Warranty Start", "warranty_start_date"),
+                    ("Registration Country", "registration_country"),
+                ]:
+                    if v.get(k):
+                        vrows.append([lbl, _P(str(v[k]))])
+                if vrows:
+                    story.append(Paragraph("VEHICLE DETAILS", section_title))
+                    t_v = Table(vrows, colWidths=[46 * mm, 140 * mm])
+                    t_v.setStyle(_row_style())
+                    story.append(t_v)
+
+                services = data.get("services") or []
+                if services:
+                    story.append(Paragraph(f"SERVICE HISTORY ({len(services)})", section_title))
+                    srv_rows = [["Date", "Odometer", "Repairer", "Job No.", "Details"]]
+                    for s in services:
+                        srv_rows.append([
+                            _P(s.get("job_date") or "—"),
+                            _P(f"{s.get('odometer')} km" if s.get("odometer") else "—"),
+                            _P(s.get("repairer") or "—"),
+                            _P(s.get("job_number") or "—"),
+                            _P(s.get("details") or "—"),
+                        ])
+                    t_s = Table(srv_rows, colWidths=[22 * mm, 24 * mm, 52 * mm, 24 * mm, 64 * mm], repeatRows=1)
+                    ts = _row_style()
+                    ts.add("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 7)
+                    ts.add("BACKGROUND", (0, 0), (-1, 0), PAPER)
+                    t_s.setStyle(ts)
+                    story.append(t_s)
+
+                alerts = data.get("alerts") or []
+                if alerts:
+                    story.append(Paragraph(f"ALERTS ({len(alerts)})", section_title))
+                    for a in alerts:
+                        story.append(Paragraph(f"• {a}", body))
+                continue  # skip the generic renderer for this report
+
+            # -------- Kredo VIN history — accident/claim list --------
+            if r.get("type") == "kredo_vin_history" and isinstance(data, dict):
+                claims = data.get("claims") or data.get("accident_claims") or []
+                summary_bits = []
+                if data.get("claim_count") is not None:
+                    summary_bits.append(f"Claim count: {data['claim_count']}")
+                if data.get("last_claim_date"):
+                    summary_bits.append(f"Last claim: {data['last_claim_date']}")
+                if summary_bits:
+                    story.append(Paragraph(" · ".join(summary_bits), body))
+                if claims:
+                    rows = [["Date", "Damage", "Mileage", "Insurer / Type"]]
+                    for c in claims:
+                        rows.append([
+                            _P(str(c.get("accident_date") or c.get("date") or "—")),
+                            _P(str(c.get("damage") or c.get("area") or "—")),
+                            _P(f"{c.get('odometer')} km" if c.get("odometer") else "—"),
+                            _P(str(c.get("insurer") or c.get("type") or "—")),
+                        ])
+                    t_c = Table(rows, colWidths=[24 * mm, 76 * mm, 24 * mm, 62 * mm], repeatRows=1)
+                    ts = _row_style()
+                    ts.add("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 7)
+                    ts.add("BACKGROUND", (0, 0), (-1, 0), PAPER)
+                    t_c.setStyle(ts)
+                    story.append(t_c)
+                else:
+                    story.append(Paragraph("No claims recorded for this VIN.", body))
+                continue
+
+            # -------- Fallback: existing generic renderer --------
             if data.get("summary"):
                 story.append(Paragraph(data["summary"], body))
                 story.append(Spacer(1, 4))
@@ -3105,6 +3232,147 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
                         st.setStyle(_row_style())
                         story.append(st)
                 story.append(Spacer(1, 3))
+
+    # -------- CarTrust callback data (lives on the submission, not report_orders) --------
+    kct = (sub.get("reports") or {}).get("kredo_cartrust") or {}
+    ct_payload = kct.get("callback_payload") or {}
+    ct_json_raw = ct_payload.get("cartrust_json") if ct_payload else None
+    ct_data = None
+    if isinstance(ct_json_raw, str):
+        try:
+            import json as _pdf_json
+            ct_data = _pdf_json.loads(ct_json_raw)
+        except Exception:
+            ct_data = None
+    elif isinstance(ct_json_raw, dict):
+        ct_data = ct_json_raw
+
+    if ct_data:
+        story.append(PageBreak())
+        story.append(Paragraph(
+            "CARTRUST VEHICLE REPORT",
+            ParagraphStyle("ctHdr", parent=styles["Heading2"], fontSize=14, textColor=INK, spaceAfter=6),
+        ))
+
+        # Vehicle confirmation block. CarTrust returns this as
+        # `{heading, columns, rows}` — reuse the generic table renderer.
+        vconf = ct_data.get("vehicle_confirmation") or ct_data.get("vehicle") or {}
+        if isinstance(vconf, dict) and vconf:
+            if isinstance(vconf.get("rows"), list) and isinstance(vconf.get("columns"), list):
+                # defer to the generic table renderer defined below.
+                pass
+            else:
+                story.append(Paragraph("VEHICLE CONFIRMATION", section_title))
+                vc_rows = [
+                    [str(k).replace("_", " ").title(), _P(str(v))]
+                    for k, v in vconf.items() if v not in (None, "", [])
+                ]
+                if vc_rows:
+                    t_vc = Table(vc_rows, colWidths=[52 * mm, 132 * mm])
+                    t_vc.setStyle(_row_style())
+                    story.append(t_vc)
+
+        # Accident/claims from CarTrust
+        claims = (
+            ct_data.get("accident_claims")
+            or ct_data.get("claims")
+            or (ct_data.get("accident_history") or {}).get("claims")
+            or []
+        )
+        if isinstance(claims, list) and claims:
+            story.append(Paragraph(f"ACCIDENT / CLAIM HISTORY ({len(claims)})", section_title))
+            rows = [["Date", "Damage", "Mileage", "Insurer / Type"]]
+            for c in claims:
+                if not isinstance(c, dict):
+                    continue
+                rows.append([
+                    _P(str(c.get("accident_date") or c.get("date") or "—")),
+                    _P(str(c.get("damage") or c.get("area") or c.get("description") or "—")),
+                    _P(f"{c.get('odometer')} km" if c.get("odometer") else "—"),
+                    _P(str(c.get("insurer") or c.get("type") or "—")),
+                ])
+            t_c = Table(rows, colWidths=[24 * mm, 76 * mm, 24 * mm, 62 * mm], repeatRows=1)
+            ts = _row_style()
+            ts.add("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 7)
+            ts.add("BACKGROUND", (0, 0), (-1, 0), PAPER)
+            t_c.setStyle(ts)
+            story.append(t_c)
+
+        # CarTrust returns a `pdf_sections` dict where each entry is a
+        # `{heading, columns, rows}` table — CarTrust's own idea of how
+        # the section should render. Use those as the primary content
+        # and only fall back to per-key dumps for anything not covered.
+        pdf_sections = ct_data.get("pdf_sections")
+        rendered_headings: set[str] = set()
+        if isinstance(pdf_sections, dict):
+            for _name, section in pdf_sections.items():
+                if not isinstance(section, dict):
+                    continue
+                heading = str(section.get("heading") or _name)
+                cols = section.get("columns")
+                rows = section.get("rows")
+                if not (isinstance(cols, list) and isinstance(rows, list) and cols):
+                    continue
+                story.append(Paragraph(heading.upper(), section_title))
+                header = [Paragraph(f"<b>{c}</b>", small) for c in cols]
+                tbl_rows = [header]
+                for r in rows:
+                    if not isinstance(r, dict):
+                        continue
+                    row = []
+                    for c in cols:
+                        val = r.get(c)
+                        if val is None:
+                            for kc in (c.lower(), c.replace(" ", ""), c.replace(" ", "").lower()):
+                                if kc in r:
+                                    val = r[kc]
+                                    break
+                        row.append(_P(str(val) if val is not None else "—"))
+                    tbl_rows.append(row)
+                if len(tbl_rows) > 1:
+                    col_w_mm = 184.0 / len(cols)
+                    t_g = Table(tbl_rows, colWidths=[col_w_mm * mm] * len(cols), repeatRows=1)
+                    ts = _row_style()
+                    ts.add("BACKGROUND", (0, 0), (-1, 0), PAPER)
+                    ts.add("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 7)
+                    t_g.setStyle(ts)
+                    story.append(t_g)
+                rendered_headings.add(heading.upper())
+                story.append(Spacer(1, 2))
+
+        # Skip flat sections whose data is already represented in a
+        # pdf_sections table.
+        skip = {"pdf_sections", "accident_claims_payload"}
+        if "VEHICLE CONFIRMATION" in rendered_headings:
+            skip.update({"vehicle_confirmation", "vehicle", "user_input"})
+        if any("ACCIDENT" in h for h in rendered_headings):
+            skip.update({"accident_claims", "claims", "accident_history", "accident", "all_accidents"})
+        if "MICRODOT VERIFICATION" in rendered_headings:
+            skip.add("microdot")
+        if "FINANCIAL INTEREST" in rendered_headings:
+            skip.add("financial_interest")
+        if "POLICE INTEREST" in rendered_headings:
+            skip.add("police_interest")
+
+        for k, v in ct_data.items():
+            if k in skip:
+                continue
+            if v in (None, "", [], {}):
+                continue
+            story.append(Paragraph(str(k).replace("_", " ").upper(), section_title))
+            if isinstance(v, dict):
+                rows = [[str(kk).replace("_", " ").title(), _P(str(vv))]
+                        for kk, vv in v.items() if vv not in (None, "", [])]
+                if rows:
+                    t_g = Table(rows, colWidths=[52 * mm, 132 * mm])
+                    t_g.setStyle(_row_style())
+                    story.append(t_g)
+            elif isinstance(v, list):
+                for item in v[:20]:
+                    story.append(Paragraph(f"• {item}", body))
+            else:
+                story.append(Paragraph(str(v), body))
+            story.append(Spacer(1, 2))
 
     # ============ FOOTER ============
     story.append(Spacer(1, 6))
