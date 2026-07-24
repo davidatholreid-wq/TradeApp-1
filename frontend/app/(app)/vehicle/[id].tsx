@@ -485,9 +485,43 @@ export default function VehicleDetail() {
   };
 
   const openCartrust = async () => {
-    if (!cartrust?.pdf_url) return;
+    if (!cartrust) return;
     try {
-      await WebBrowser.openBrowserAsync(cartrust.pdf_url);
+      // Fetch the PDF through our authenticated backend endpoint, save
+      // to a local temp file, then hand it to expo-file-system's sharing
+      // dialog / the native PDF viewer. This works both on device and
+      // in web preview, and doesn't rely on the (now expired) presigned
+      // Kredo S3 URL.
+      const token = await storage.getItem(TOKEN_KEY);
+      const url = `${process.env.EXPO_PUBLIC_BACKEND_URL}/api/kredo/cartrust/pdf/${sub.id}`;
+      // On web we can just open with the Authorization header via a fetch
+      // + blob URL trick. On native, expo-web-browser can open a URL
+      // that already carries auth via a query-string bearer — but our
+      // API only accepts headers, so we blob it locally instead.
+      const res = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}`);
+      }
+      const blob = await res.blob();
+      if (Platform.OS === "web") {
+        const objUrl = URL.createObjectURL(blob);
+        await WebBrowser.openBrowserAsync(objUrl);
+        // Revoke a minute later to give the tab time to load.
+        setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
+      } else {
+        // Convert to base64 and write to cache dir, then open with the OS.
+        const b64: string = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(blob);
+        });
+        const path = `${FileSystem.cacheDirectory}cartrust_${sub.id}.pdf`;
+        await FileSystem.writeAsStringAsync(path, b64, { encoding: FileSystem.EncodingType.Base64 });
+        await WebBrowser.openBrowserAsync(path);
+      }
     } catch (e: any) {
       Alert.alert("Could not open PDF", e?.message || String(e));
     }
@@ -1792,7 +1826,7 @@ export default function VehicleDetail() {
                         </View>
                       ) : null}
                     </View>
-                    {cartrust?.status === "completed" && cartrust.pdf_url ? (
+                    {cartrust?.status === "completed" ? (
                       <TouchableOpacity
                         testID="cartrust-view-btn"
                         style={styles.viewReportBtn}

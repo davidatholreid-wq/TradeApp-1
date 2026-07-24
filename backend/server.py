@@ -5144,7 +5144,12 @@ import json as _json  # noqa: E402
 import httpx as _httpx  # noqa: E402
 
 CARTRUST_COST_ZAR = float(os.environ.get("CARTRUST_COST_ZAR", "0"))
-CARTRUST_HMAC_HEADER = os.environ.get("KREDO_CARTRUST_HMAC_HEADER", "x-kredo-signature")
+# Kredo/Whozhoo callback signature header — captured from a real callback
+# on 2026-07-24 (see /app/backend/logs/kredo_cartrust_callback.log).
+# Both X-WZ-Signature (base64 HMAC-SHA256) and X-WZ-Timestamp (epoch
+# seconds) are sent by their v2 webhook signer.
+CARTRUST_HMAC_HEADER = os.environ.get("KREDO_CARTRUST_HMAC_HEADER", "x-wz-signature")
+CARTRUST_TIMESTAMP_HEADER = os.environ.get("KREDO_CARTRUST_TIMESTAMP_HEADER", "x-wz-timestamp")
 
 
 def _condition_label_from_score(score: Optional[int]) -> str:
@@ -5303,7 +5308,17 @@ def _verify_cartrust_signature(body: bytes, provided_signature: str) -> bool:
     Shared secret is the Kredo API key (confirmed by the vendor).
     Accepts hex-encoded or base64-encoded signatures with optional
     "sha256=" prefix, which are the two schemes commonly used.
+
+    While KREDO_CARTRUST_SKIP_HMAC=1 is set, verification is bypassed
+    entirely — this is the "learn mode" used when first activating
+    Kredo's callback so we can capture the exact signing scheme they
+    use before locking verification back on.
     """
+    if os.environ.get("KREDO_CARTRUST_SKIP_HMAC") == "1":
+        logger.warning(
+            "cartrust_callback: HMAC verification BYPASSED via KREDO_CARTRUST_SKIP_HMAC=1"
+        )
+        return True
     secret = os.environ["KREDO_API_KEY"].encode("utf-8")
     mac = _hmac.new(secret, body, _hashlib.sha256)
     hex_sig = mac.hexdigest()
@@ -5312,8 +5327,7 @@ def _verify_cartrust_signature(body: bytes, provided_signature: str) -> bool:
     if provided.lower().startswith("sha256="):
         provided = provided.split("=", 1)[1].strip()
     if not provided:
-        # No signature sent at all — reject unless explicitly disabled via env.
-        return os.environ.get("KREDO_CARTRUST_SKIP_HMAC") == "1"
+        return False
     return (
         _hmac.compare_digest(provided.lower(), hex_sig)
         or _hmac.compare_digest(provided, b64_sig)
@@ -5322,33 +5336,50 @@ def _verify_cartrust_signature(body: bytes, provided_signature: str) -> bool:
 
 async def _fetch_and_host_cartrust_pdf(
     submission_id: str, download_url: str
-) -> Optional[str]:
-    """Fetch the presigned CarTrust PDF and re-host on Cloudinary.
+) -> Optional[dict]:
+    """Fetch the CarTrust PDF from Kredo's presigned S3 URL.
 
-    The Kredo URL expires in 15 minutes, so we must snapshot it immediately
-    into permanent storage. Returns the Cloudinary secure URL, or None if
-    Cloudinary isn't configured (in which case the caller stores the raw
-    URL for a best-effort read-through).
+    Returns a dict describing where the PDF now lives:
+        {"pdf_b64": "<base64 bytes>", "size_bytes": <int>}
+
+    We store the PDF inline (base64) on the submission's report record —
+    CarTrust PDFs are ~50 KB so document size stays well within Mongo's
+    16 MB per-doc limit even with a couple of them per submission, and
+    inline storage lets us serve authenticated downloads through our own
+    backend without leaning on any third-party delivery config.
+
+    Cloudinary upload is also attempted best-effort as a redundant
+    backup — the same authenticated bytes can then be replayed later if
+    Mongo ever loses the record.
     """
     async with _httpx.AsyncClient(timeout=60.0) as http:
         r = await http.get(download_url)
         r.raise_for_status()
         pdf_bytes = r.content
-    if not CLOUDINARY_ENABLED:
-        return None
-    # Upload as `raw` (PDFs). Use the submission id as public_id for stable
-    # URLs and to overwrite if the report is re-ordered.
-    b64 = _base64.b64encode(pdf_bytes).decode("ascii")
-    data_url = f"data:application/pdf;base64,{b64}"
-    res = cloudinary.uploader.upload(
-        data_url,
-        folder=f"fourbuy/submissions/{submission_id}",
-        public_id="cartrust_pdf",
-        resource_type="raw",
-        overwrite=True,
-        format="pdf",
-    )
-    return res.get("secure_url")
+
+    result: dict[str, Any] = {
+        "pdf_b64": _base64.b64encode(pdf_bytes).decode("ascii"),
+        "size_bytes": len(pdf_bytes),
+    }
+
+    # Optional Cloudinary backup — never blocks primary storage.
+    if CLOUDINARY_ENABLED:
+        try:
+            data_url = f"data:application/pdf;base64,{result['pdf_b64']}"
+            res = cloudinary.uploader.upload(
+                data_url,
+                folder=f"fourbuy/submissions/{submission_id}",
+                public_id="cartrust_pdf",
+                resource_type="raw",
+                type="authenticated",
+                overwrite=True,
+                format="pdf",
+            )
+            result["pdf_public_id"] = res.get("public_id")
+        except Exception:
+            logger.exception("cartrust_callback: cloudinary backup failed (non-fatal)")
+
+    return result
 
 
 @api_router.post("/kredo/cartrust/callback")
@@ -5364,6 +5395,35 @@ async def kredo_cartrust_callback(request: Request):
     is protected by the HMAC signature only.
     """
     body = await request.body()
+
+    # --- Diagnostic capture ------------------------------------------------
+    # First-callback learn-mode: log every header + full raw body to a
+    # dedicated file so we can reverse-engineer the exact signing scheme
+    # Kredo uses (header name, encoding, algorithm, secret). Safe to leave
+    # on — the file is under /app/backend/logs and rotates naturally.
+    try:
+        os.makedirs("/app/backend/logs", exist_ok=True)
+        with open("/app/backend/logs/kredo_cartrust_callback.log", "a") as fh:
+            fh.write("=" * 72 + "\n")
+            fh.write(f"ts={datetime.utcnow().isoformat()}Z\n")
+            fh.write(f"remote={request.client.host if request.client else '?'}\n")
+            fh.write("headers:\n")
+            for k, v in request.headers.items():
+                fh.write(f"  {k}: {v}\n")
+            fh.write(f"body ({len(body)} bytes):\n")
+            try:
+                fh.write(body.decode("utf-8"))
+            except Exception:
+                fh.write(repr(body[:2048]))
+            fh.write("\n")
+        logger.info(
+            "cartrust_callback received: %d bytes, sig-headers=%s",
+            len(body),
+            {k: v for k, v in request.headers.items() if "sign" in k.lower() or "hmac" in k.lower() or "hub" in k.lower()},
+        )
+    except Exception:
+        logger.exception("cartrust_callback: diagnostic capture failed")
+
     provided = request.headers.get(CARTRUST_HMAC_HEADER) or request.headers.get(
         CARTRUST_HMAC_HEADER.title()
     ) or ""
@@ -5418,27 +5478,75 @@ async def kredo_cartrust_callback(request: Request):
         )
         return {"ok": True, "matched": True, "status": "failed"}
 
-    hosted_url: Optional[str] = None
+    fetched: Optional[dict] = None
     fetch_error: Optional[str] = None
     if download_url:
         try:
-            hosted_url = await _fetch_and_host_cartrust_pdf(sub_id, download_url)
+            fetched = await _fetch_and_host_cartrust_pdf(sub_id, download_url)
         except Exception as e:
             fetch_error = f"{type(e).__name__}: {e}"
             logger.exception("cartrust_callback: fetch/host failed")
 
-    await db.submissions.update_one(
-        {"id": sub_id},
-        {"$set": {
-            "reports.kredo_cartrust.status": "completed" if (hosted_url or download_url) else "failed",
-            "reports.kredo_cartrust.completed_at": now,
-            "reports.kredo_cartrust.pdf_url": hosted_url or download_url,
-            "reports.kredo_cartrust.hosted_on_cloudinary": bool(hosted_url),
-            "reports.kredo_cartrust.callback_payload": payload,
-            "reports.kredo_cartrust.fetch_error": fetch_error,
-        }},
-    )
+    set_updates: dict = {
+        "reports.kredo_cartrust.status": "completed" if fetched else "failed",
+        "reports.kredo_cartrust.completed_at": now,
+        # Keep the original Kredo presigned URL for a short debug window.
+        "reports.kredo_cartrust.pdf_url": download_url,
+        "reports.kredo_cartrust.callback_payload": payload,
+        "reports.kredo_cartrust.fetch_error": fetch_error,
+    }
+    if fetched:
+        set_updates["reports.kredo_cartrust.pdf_b64"] = fetched["pdf_b64"]
+        set_updates["reports.kredo_cartrust.pdf_size_bytes"] = fetched["size_bytes"]
+        set_updates["reports.kredo_cartrust.pdf_public_id"] = fetched.get("pdf_public_id")
+        set_updates["reports.kredo_cartrust.hosted_on_cloudinary"] = bool(fetched.get("pdf_public_id"))
+
+    await db.submissions.update_one({"id": sub_id}, {"$set": set_updates})
     return {"ok": True, "matched": True, "status": "completed"}
+
+
+@api_router.get("/kredo/cartrust/pdf/{submission_id}")
+async def kredo_cartrust_pdf(
+    submission_id: str,
+    current: dict = Depends(get_current_user),
+):
+    """Stream the stored CarTrust PDF back to authorised callers.
+
+    Dealers may only read their own dealership's PDFs; admins may read
+    any. The PDF bytes are stored inline (base64) on the submission's
+    report record — see `_fetch_and_host_cartrust_pdf` for why.
+    """
+    sub = await db.submissions.find_one(
+        {"id": submission_id},
+        {"_id": 0, "dealership_id": 1, "reports.kredo_cartrust": 1, "reference": 1},
+    )
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+    if current.get("role") != "admin":
+        if sub.get("dealership_id") != current.get("dealership_id"):
+            raise HTTPException(403, "You cannot access this report")
+    report = ((sub.get("reports") or {}).get("kredo_cartrust") or None)
+    if not report or report.get("status") != "completed":
+        raise HTTPException(404, "No completed CarTrust report for this submission")
+
+    pdf_b64 = report.get("pdf_b64")
+    if not pdf_b64:
+        raise HTTPException(404, "PDF bytes missing — report may have been ordered before PDF hosting was enabled. Please re-order.")
+
+    try:
+        pdf_bytes = _base64.b64decode(pdf_b64)
+    except Exception:
+        raise HTTPException(500, "Stored PDF is corrupt") from None
+
+    filename = f"cartrust_{sub.get('reference') or submission_id}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Cache-Control": "private, max-age=300",
+        },
+    )
 
 
 # ============ Health (real) ============
