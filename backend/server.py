@@ -700,6 +700,13 @@ class VehicleSubmission(BaseModel):
     # Reconditioning costs: list of {label: str, amount_zar: float}
     reconditioning_items: list[dict] = []
 
+    # Factory Warranty & Maintenance Plan status (dealer-declared at
+    # valuation time). Kept independent so a car can be under Maintenance
+    # Plan but not Factory Warranty, or vice versa. `None` = not answered
+    # (legacy submissions).
+    factory_warranty_status: Optional[Literal["active", "expired"]] = None
+    maintenance_plan_status: Optional[Literal["active", "expired"]] = None
+
     # Compliance
     billing_accepted: bool = False
 
@@ -1474,8 +1481,13 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         # Reconditioning
         "reconditioning_items": recon_items_uploaded,
         "reconditioning_total_zar": round(float(total_recon), 2),
-        # Legacy fields kept for backward compat with older views
-        "factory_warranty": False,
+        # Warranty & Maintenance Plan (dealer-declared at valuation).
+        # Legacy `factory_warranty` bool is mirrored from
+        # `factory_warranty_status == "active"` so any downstream code
+        # that still reads the bool keeps working.
+        "factory_warranty_status": payload.factory_warranty_status,
+        "maintenance_plan_status": payload.maintenance_plan_status,
+        "factory_warranty": (payload.factory_warranty_status == "active"),
         # Photos & mileage
         "mileage": payload.mileage,
         "photos": photos_uploaded,
@@ -2837,6 +2849,41 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
     srv_block = None
     recon_block = None
     if not unseen:
+        # Warranty & Maintenance Plan status (dealer-declared at valuation).
+        fw = sub.get("factory_warranty_status")
+        mp = sub.get("maintenance_plan_status")
+        if fw or mp or sub.get("factory_warranty") is not None:
+            def _lbl(v: Optional[str], legacy_b: Optional[bool] = None) -> tuple:
+                if v == "active": return ("Active", OK)
+                if v == "expired": return ("Expired", DANGER)
+                if legacy_b is True: return ("Active", OK)
+                if legacy_b is False: return ("Expired / None", DANGER)
+                return ("Not answered", INK)
+            fw_txt, fw_col = _lbl(fw, sub.get("factory_warranty"))
+            mp_txt, mp_col = _lbl(mp, None)
+            fw_style = ParagraphStyle("wfw", parent=val_style, textColor=fw_col, fontName="Helvetica-Bold")
+            mp_style = ParagraphStyle("wmp", parent=val_style, textColor=mp_col, fontName="Helvetica-Bold")
+            warr_rows = [
+                ["Factory Warranty", Paragraph(fw_txt, fw_style)],
+                ["Maintenance Plan", Paragraph(mp_txt, mp_style)],
+            ]
+            t_w = Table(warr_rows, colWidths=[42 * mm, 142 * mm])
+            t_w.setStyle(_row_style())
+            hdr_w = Paragraph("WARRANTY &amp; MAINTENANCE PLAN", section_title)
+            warr_table = Table(
+                [[hdr_w], [t_w]],
+                colWidths=[184 * mm],
+            )
+            warr_table.setStyle(TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]))
+            story.append(Spacer(1, 6))
+            story.append(warr_table)
+
         if sub.get("service_history"):
             srv_rows = [
                 ["History", _P(sub.get("service_history") or "—")],
@@ -3696,6 +3743,21 @@ async def download_report_pdf(
 
 
 # ============ Market analysis (AI) ============
+def _warranty_label(status: Optional[str], legacy_bool: Optional[bool]) -> str:
+    """Human-readable label for the market-analysis prompt covering both the
+    new `factory_warranty_status` / `maintenance_plan_status` fields and
+    legacy bool submissions."""
+    if status == "active":
+        return "Active"
+    if status == "expired":
+        return "Expired"
+    if legacy_bool is True:
+        return "Active"
+    if legacy_bool is False:
+        return "Expired / None"
+    return "Not answered"
+
+
 @api_router.post("/submissions/{sub_id}/market-analysis")
 async def market_analysis(sub_id: str, current: dict = Depends(get_current_user)):
     sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0, "photos": 0})
@@ -3719,7 +3781,7 @@ async def market_analysis(sub_id: str, current: dict = Depends(get_current_user)
         '  "confidence": "low|medium|high",\n'
         '  "disclaimer": "Prices based on general market knowledge (no live scraping)."\n'
         "}\n"
-        "Consider mileage, year, condition, warranty status, and accident damage. Trade should be 15-20% below retail."
+        "Consider mileage, year, condition, warranty status, maintenance plan status, and accident damage. Trade should be 15-20% below retail."
     )
     prompt = (
         f"Vehicle:\n"
@@ -3730,7 +3792,8 @@ async def market_analysis(sub_id: str, current: dict = Depends(get_current_user)
         f"- Mileage: {sub['mileage']:,} km\n"
         f"- Colour: {sub['colour']}\n"
         f"- Condition: {sub['condition']}/10\n"
-        f"- Factory warranty: {'Yes' if sub['factory_warranty'] else 'No'}\n"
+        f"- Factory warranty: {_warranty_label(sub.get('factory_warranty_status'), sub.get('factory_warranty'))}\n"
+        f"- Maintenance plan: {_warranty_label(sub.get('maintenance_plan_status'), None)}\n"
         f"- Accident damage: {'Yes' if sub['accident_damage'] else 'None reported'}\n"
         f"\nProvide the JSON market analysis for the South African market."
     )

@@ -148,6 +148,13 @@ export default function SubmitVehicle() {
     photos: string[];
   }[]>([]);
 
+  // Factory Warranty & Maintenance Plan — dealer answers at valuation
+  // stage. Independent toggles so a car can have one but not the other.
+  // Values: null = not answered, "active" | "expired".
+  type WarrantyStatus = "active" | "expired" | null;
+  const [factoryWarrantyStatus, setFactoryWarrantyStatus] = useState<WarrantyStatus>(null);
+  const [maintenancePlanStatus, setMaintenancePlanStatus] = useState<WarrantyStatus>(null);
+
   // Wheel state + option cache
   const [wheelField, setWheelField] = useState<WheelField | null>(null);
   const [options, setOptions] = useState<{ makes: string[]; fuel_types: string[]; years: number[]; transmissions: string[]; models: string[]; derivatives: string[] }>({ makes: [], fuel_types: [], years: [], transmissions: [], models: [], derivatives: [] });
@@ -201,6 +208,8 @@ export default function SubmitVehicle() {
     setAccidentDamage(false);
     setAccidentTypes([]);
     setReconItems([]);
+    setFactoryWarrantyStatus(null);
+    setMaintenancePlanStatus(null);
     setError(null);
     setLoadedDraftId(null);
   }, []);
@@ -232,7 +241,9 @@ export default function SubmitVehicle() {
     accident_damage: accidentDamage,
     accident_damage_types: accidentTypes,
     recon_items: reconItems,
-  }), [make, fuelType, yearOfProduction, transmission, model, derivative, yearRegistered, licenseDisk, colour, vin, engineNo, mechanicalRating, cosmeticRating, interiorRating, historyRating, serviceHistory, lastServiceDate, lastServiceMileage, photos, mileage, paintEvidence, paintQuality, accidentDamage, accidentTypes, reconItems]);
+    factory_warranty_status: factoryWarrantyStatus,
+    maintenance_plan_status: maintenancePlanStatus,
+  }), [make, fuelType, yearOfProduction, transmission, model, derivative, yearRegistered, licenseDisk, colour, vin, engineNo, mechanicalRating, cosmeticRating, interiorRating, historyRating, serviceHistory, lastServiceDate, lastServiceMileage, photos, mileage, paintEvidence, paintQuality, accidentDamage, accidentTypes, reconItems, factoryWarrantyStatus, maintenancePlanStatus]);
 
   /** Restore all form fields from a saved draft payload. */
   const applyDraft = useCallback((d: any) => {
@@ -291,6 +302,17 @@ export default function SubmitVehicle() {
             };
           })
         : [],
+    );
+    // Warranty / Maintenance Plan (optional on legacy drafts)
+    setFactoryWarrantyStatus(
+      d.factory_warranty_status === "active" || d.factory_warranty_status === "expired"
+        ? d.factory_warranty_status
+        : null,
+    );
+    setMaintenancePlanStatus(
+      d.maintenance_plan_status === "active" || d.maintenance_plan_status === "expired"
+        ? d.maintenance_plan_status
+        : null,
     );
   }, []);
 
@@ -637,6 +659,10 @@ export default function SubmitVehicle() {
                   amount_zar: parseFloat(r.amount),
                   photos: (r.photos || []).slice(0, MAX_RECON_PHOTOS),
                 })),
+          // Warranty & Maintenance Plan status. Unseen submissions leave
+          // these unanswered so we don't record a guess for the AI.
+          factory_warranty_status: unseen ? null : factoryWarrantyStatus,
+          maintenance_plan_status: unseen ? null : maintenancePlanStatus,
           billing_accepted: true,
         }),
       });
@@ -938,6 +964,62 @@ export default function SubmitVehicle() {
             <View style={{ flex: 1 }}>
               <Text style={styles.subLabel}>LAST SERVICE MILEAGE</Text>
               <TextInput style={styles.input} value={lastServiceMileage} onChangeText={setLastServiceMileage} placeholder="TBC" placeholderTextColor={colors.textDisabled} keyboardType="numeric" />
+            </View>
+          </View>
+
+          {/* --- Factory Warranty & Maintenance Plan --- */}
+          <Text style={styles.sectionTitle}>WARRANTY &amp; MAINTENANCE PLAN</Text>
+          <Text style={styles.helpText}>
+            Is the vehicle under Factory Warranty and/or Maintenance Plan?
+          </Text>
+          <View style={styles.warrantyRow}>
+            <Text style={styles.warrantyLabel}>Factory Warranty</Text>
+            <View style={styles.segRow}>
+              {(["active", "expired"] as const).map((v) => {
+                const on = factoryWarrantyStatus === v;
+                return (
+                  <TouchableOpacity
+                    key={v}
+                    testID={`fw-${v}`}
+                    style={[styles.segBtn, on && (v === "active" ? styles.segBtnOnActive : styles.segBtnOnExpired)]}
+                    onPress={() => setFactoryWarrantyStatus(on ? null : v)}
+                  >
+                    <Ionicons
+                      name={v === "active" ? "shield-checkmark" : "close-circle"}
+                      size={14}
+                      color={on ? "#fff" : colors.textSecondary}
+                    />
+                    <Text style={[styles.segBtnText, on && styles.segBtnTextOn]}>
+                      {v === "active" ? "Active" : "Expired"}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+          <View style={styles.warrantyRow}>
+            <Text style={styles.warrantyLabel}>Maintenance Plan</Text>
+            <View style={styles.segRow}>
+              {(["active", "expired"] as const).map((v) => {
+                const on = maintenancePlanStatus === v;
+                return (
+                  <TouchableOpacity
+                    key={v}
+                    testID={`mp-${v}`}
+                    style={[styles.segBtn, on && (v === "active" ? styles.segBtnOnActive : styles.segBtnOnExpired)]}
+                    onPress={() => setMaintenancePlanStatus(on ? null : v)}
+                  >
+                    <Ionicons
+                      name={v === "active" ? "construct" : "close-circle"}
+                      size={14}
+                      color={on ? "#fff" : colors.textSecondary}
+                    />
+                    <Text style={[styles.segBtnText, on && styles.segBtnTextOn]}>
+                      {v === "active" ? "Active" : "Expired"}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
           </>
@@ -1389,6 +1471,57 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   checkbox: { width: 22, height: 22, borderRadius: 4, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.card, alignItems: "center", justifyContent: "center" },
   checkboxOn: { backgroundColor: colors.primary, borderColor: colors.primary },
   checkText: { color: colors.text, fontSize: 13, flex: 1 },
+
+  // Warranty & Maintenance Plan pickers
+  helpText: { color: colors.textSecondary, fontSize: 13, marginBottom: 8 },
+  warrantyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 8,
+    gap: spacing.sm,
+    flexWrap: "wrap",
+  },
+  warrantyLabel: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "700",
+    flex: 1,
+    minWidth: 140,
+  },
+  segRow: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  segBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    minWidth: 92,
+    justifyContent: "center",
+  },
+  segBtnOnActive: {
+    backgroundColor: colors.success,
+    borderColor: colors.success,
+  },
+  segBtnOnExpired: {
+    backgroundColor: colors.danger,
+    borderColor: colors.danger,
+  },
+  segBtnText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  segBtnTextOn: {
+    color: "#fff",
+  },
 
   reconRow: { flexDirection: "row", gap: 6, alignItems: "center", marginBottom: 6 },
   // New card-style recon item container (one per line).

@@ -57,6 +57,8 @@ type Submission = {
   mileage: number;
   year: number;
   factory_warranty?: boolean;
+  factory_warranty_status?: "active" | "expired" | null;
+  maintenance_plan_status?: "active" | "expired" | null;
   condition: number;
   // Legacy (may exist on older submissions)
   exterior_condition?: number;
@@ -1458,6 +1460,38 @@ export default function VehicleDetail() {
                       label="Mileage Since Service"
                       value={gap.kmSince != null ? formatKm(gap.kmSince) : "—"}
                       valueColor={kmColour}
+                      last
+                    />
+                  </>
+                );
+              })()}
+            </View>
+          </>
+        ) : null}
+
+        {/* Warranty & Maintenance Plan — dealer answer at valuation stage */}
+        {!sub.unseen && (sub.factory_warranty_status || sub.maintenance_plan_status || sub.factory_warranty !== undefined) ? (
+          <>
+            <Text style={styles.sectionTitle}>Warranty &amp; Maintenance Plan</Text>
+            <View style={styles.detailsList}>
+              {(() => {
+                const fwStatus = sub.factory_warranty_status
+                  || (sub.factory_warranty === true ? "active" : sub.factory_warranty === false ? "expired" : null);
+                const label = (v: string | null | undefined) =>
+                  v === "active" ? "Active" : v === "expired" ? "Expired" : "Not answered";
+                const colour = (v: string | null | undefined) =>
+                  v === "active" ? colors.success : v === "expired" ? colors.danger : colors.textSecondary;
+                return (
+                  <>
+                    <DetailRow
+                      label="Factory Warranty"
+                      value={label(fwStatus)}
+                      valueColor={colour(fwStatus)}
+                    />
+                    <DetailRow
+                      label="Maintenance Plan"
+                      value={label(sub.maintenance_plan_status)}
+                      valueColor={colour(sub.maintenance_plan_status)}
                       last
                     />
                   </>

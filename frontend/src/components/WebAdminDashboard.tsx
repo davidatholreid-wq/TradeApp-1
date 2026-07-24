@@ -46,6 +46,8 @@ type Submission = {
   priced_at?: string | null;
   created_at: string;
   factory_warranty?: boolean;
+  factory_warranty_status?: "active" | "expired" | null;
+  maintenance_plan_status?: "active" | "expired" | null;
   accident_damage?: boolean;
   front_photo?: string | null;
   unseen?: boolean;
@@ -882,6 +884,38 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                             label="Mileage Since Service"
                             value={gap.kmSince != null ? formatKm(gap.kmSince) : "—"}
                             color={kmColour}
+                            last
+                          />
+                        </>
+                      );
+                    })()}
+                  </View>
+                </>
+              ) : null}
+
+              {/* Warranty & Maintenance Plan — dealer answer at valuation. */}
+              {!selected.unseen && (selected.factory_warranty_status || selected.maintenance_plan_status || selected.factory_warranty !== undefined) ? (
+                <>
+                  <Text style={styles.groupTitle}>Warranty &amp; Maintenance Plan</Text>
+                  <View style={styles.detailsList}>
+                    {(() => {
+                      const fwStatus = selected.factory_warranty_status
+                        || (selected.factory_warranty === true ? "active" : selected.factory_warranty === false ? "expired" : null);
+                      const label = (v: string | null | undefined) =>
+                        v === "active" ? "Active" : v === "expired" ? "Expired" : "Not answered";
+                      const colour = (v: string | null | undefined) =>
+                        v === "active" ? colors.success : v === "expired" ? colors.danger : colors.textSecondary;
+                      return (
+                        <>
+                          <DetailRow
+                            label="Factory Warranty"
+                            value={label(fwStatus)}
+                            color={colour(fwStatus)}
+                          />
+                          <DetailRow
+                            label="Maintenance Plan"
+                            value={label(selected.maintenance_plan_status)}
+                            color={colour(selected.maintenance_plan_status)}
                             last
                           />
                         </>
