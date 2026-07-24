@@ -2543,13 +2543,17 @@ function ReportResultBody({ data }: { data: Record<string, any> }) {
     );
   }
 
-  // JLR OSH result — {status:"ok", vehicle, last_service, alerts[]}. Render
-  // the three panels manually so admins see the structured data straight
+  // JLR OSH result — {status:"ok", vehicle, last_service, alerts[], services[]}.
+  // Render the panels manually so admins see the structured data straight
   // away without having to fish it out of a generic sections block.
   const isJlrOsh =
     data && data.status === "ok" && (data.source || "").includes("landrover") && !sections;
   if (isJlrOsh) {
-    const v = (data.vehicle || {}) as { vin?: string; model_name?: string; model_year?: string };
+    const v = (data.vehicle || {}) as {
+      vin?: string; model_name?: string; model_year?: string;
+      engine?: string; colour?: string;
+      warranty_start_date?: string; registration_country?: string;
+    };
     const ls = data.last_service as
       | {
           type?: string; distance?: string; date?: string; job_number?: string;
@@ -2558,25 +2562,68 @@ function ReportResultBody({ data }: { data: Record<string, any> }) {
         }
       | null;
     const alerts = (data.alerts || []) as string[];
+    const services = (data.services || []) as Array<{
+      repairer?: string; job_number?: string; job_date?: string;
+      odometer?: string; details?: string;
+    }>;
     return (
       <View>
         <Text style={styles.reportSectionHeader}>Vehicle</Text>
-        <View style={styles.reportRow}>
-          <Text style={styles.reportRowLabel}>VIN</Text>
-          <Text style={styles.reportRowValue}>{v.vin || "—"}</Text>
-        </View>
-        <View style={styles.reportRow}>
-          <Text style={styles.reportRowLabel}>Model</Text>
-          <Text style={styles.reportRowValue}>{v.model_name || "—"}</Text>
-        </View>
-        <View style={styles.reportRow}>
-          <Text style={styles.reportRowLabel}>Model Year</Text>
-          <Text style={styles.reportRowValue}>{v.model_year || "—"}</Text>
-        </View>
+        {[
+          ["VIN", v.vin],
+          ["Model", v.model_name],
+          ["Model Year", v.model_year],
+          ["Engine", v.engine],
+          ["Colour", v.colour],
+          ["Warranty Start Date", v.warranty_start_date],
+          ["Registration Country", v.registration_country],
+        ].map(([label, val]) =>
+          val ? (
+            <View key={String(label)} style={styles.reportRow}>
+              <Text style={styles.reportRowLabel}>{label}</Text>
+              <Text style={styles.reportRowValue}>{val}</Text>
+            </View>
+          ) : null,
+        )}
+
+        {services.length > 0 ? (
+          <>
+            <Text style={styles.reportSectionHeader}>
+              Service History ({services.length})
+            </Text>
+            {services.map((s, i) => (
+              <View key={`svc-${i}`} style={styles.serviceHistoryRow}>
+                <View style={styles.serviceHistoryHeadRow}>
+                  <Text style={styles.serviceHistoryDate}>
+                    {s.job_date || "—"}
+                  </Text>
+                  <Text style={styles.serviceHistoryOdo}>
+                    {s.odometer ? `${s.odometer} km` : ""}
+                  </Text>
+                </View>
+                {s.repairer ? (
+                  <Text style={styles.serviceHistoryRepairer}>{s.repairer}</Text>
+                ) : null}
+                <View style={styles.serviceHistoryMetaRow}>
+                  {s.job_number ? (
+                    <Text style={styles.serviceHistoryJob}>Job #{s.job_number}</Text>
+                  ) : null}
+                  {s.details ? (
+                    <Text style={styles.serviceHistoryDetails} numberOfLines={3}>
+                      {s.details}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            ))}
+          </>
+        ) : null}
 
         {ls ? (
           <>
-            <Text style={styles.reportSectionHeader}>Last Service Recorded</Text>
+            <Text style={styles.reportSectionHeader}>
+              {services.length > 0 ? "Latest Service Detail" : "Last Service Recorded"}
+            </Text>
             {[
               ["Type", ls.type],
               ["Distance", ls.distance],
@@ -2601,11 +2648,11 @@ function ReportResultBody({ data }: { data: Record<string, any> }) {
               </>
             ) : null}
           </>
-        ) : (
+        ) : services.length === 0 ? (
           <Text style={[styles.viewReportBody, { marginTop: spacing.sm }]}>
             No service records found for this VIN in JLR&apos;s South African database.
           </Text>
-        )}
+        ) : null}
 
         {alerts.length > 0 ? (
           <>
@@ -4099,6 +4146,52 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     fontSize: 12,
     paddingVertical: 3,
     lineHeight: 17,
+  },
+  serviceHistoryRow: {
+    borderTopWidth: 1,
+    borderTopColor: colors.borderLight,
+    paddingVertical: spacing.sm,
+    gap: 2,
+  },
+  serviceHistoryHeadRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "baseline",
+  },
+  serviceHistoryDate: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  serviceHistoryOdo: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontVariant: ["tabular-nums"],
+  },
+  serviceHistoryRepairer: {
+    color: colors.text,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  serviceHistoryMetaRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: spacing.sm,
+    marginTop: 2,
+  },
+  serviceHistoryJob: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 0.3,
+  },
+  serviceHistoryDetails: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    flex: 1,
+    textAlign: "right",
+    lineHeight: 15,
   },
   mockBanner: {
     flexDirection: "row",

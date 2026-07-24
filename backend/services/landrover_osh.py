@@ -140,6 +140,59 @@ def _parse_alert_count(html: str) -> Optional[int]:
         return None
 
 
+def _parse_service_history_rows(html: str) -> list[dict]:
+    """Extract the rows of the /service-history tab into structured dicts.
+
+    JLR renders each service as a row inside ``#service-history-table``
+    (or a similarly-named container). Each row has 5 cells in this fixed
+    order: Repairer, Job Number, Job Date, Odometer, Details. Details
+    can be either a short summary line, a link that expands to a list
+    of items, or a nested ``<div>`` block.
+
+    Kept intentionally forgiving — JLR occasionally shuffles the DOM.
+    """
+    rows: list[dict] = []
+    # Find the "SERVICE HISTORY" section then walk each <tr> inside it.
+    m = re.search(
+        r'(?is)service\s*history\s*</h[12]>[\s\S]*?<table[^>]*>([\s\S]*?)</table>',
+        html,
+    )
+    if not m:
+        # Some JLR layouts drop the <h2> and only wrap the section in
+        # a <div class="service-history…">. Try that too.
+        m = re.search(
+            r'(?is)<div[^>]*class="[^"]*service[-_]history[^"]*"[^>]*>([\s\S]*?)</div>\s*</section>',
+            html,
+        )
+        if not m:
+            return rows
+
+    block = m.group(1)
+    tr_re = re.compile(r"(?is)<tr[^>]*>([\s\S]*?)</tr>")
+    td_re = re.compile(r"(?is)<t[dh][^>]*>([\s\S]*?)</t[dh]>")
+
+    for tr_m in tr_re.finditer(block):
+        cells = [_clean(x) or "" for x in td_re.findall(tr_m.group(1))]
+        # Skip header rows and empty rows.
+        if not cells or all(not c for c in cells):
+            continue
+        if any(c and c.lower() in {"repairer", "job number", "job date", "odometer", "details"} for c in cells):
+            continue
+        # Pad to 5 columns so the mapping is stable.
+        while len(cells) < 5:
+            cells.append("")
+        rows.append(
+            {
+                "repairer": cells[0] or None,
+                "job_number": cells[1] or None,
+                "job_date": cells[2] or None,
+                "odometer": cells[3] or None,
+                "details": cells[4] or None,
+            }
+        )
+    return rows
+
+
 def parse_osh_home_page(html: str, vin: str) -> dict:
     """Turn the HTML of the ``/home?…`` result page into a structured dict.
 
@@ -149,8 +202,14 @@ def parse_osh_home_page(html: str, vin: str) -> dict:
     pairs = _extract_label_value_pairs(html)
     vehicle = {
         "vin": pairs.get("vehicle identification number (vin)") or vin.upper(),
-        "model_name": pairs.get("model name"),
+        # "Model" on the SERVICE HISTORY tab looks like "Defender / L663";
+        # on other tabs the label is "Model Name". Fall back through both.
+        "model_name": pairs.get("model") or pairs.get("model name"),
         "model_year": pairs.get("model year"),
+        "engine": pairs.get("engine"),
+        "colour": pairs.get("colour") or pairs.get("color"),
+        "warranty_start_date": pairs.get("warranty start date"),
+        "registration_country": pairs.get("registration country") or None,
     }
     last_service = {
         "type": pairs.get("type"),
@@ -164,8 +223,9 @@ def parse_osh_home_page(html: str, vin: str) -> dict:
     }
     alerts = _parse_alerts(html)
     alert_count = _parse_alert_count(html)
+    services = _parse_service_history_rows(html)
 
-    if not vehicle["model_name"] and not last_service["type"] and not alerts:
+    if not vehicle["model_name"] and not last_service["type"] and not alerts and not services:
         return {
             "status": "error",
             "error": (
@@ -186,6 +246,7 @@ def parse_osh_home_page(html: str, vin: str) -> dict:
         "vin": vin.upper(),
         "vehicle": vehicle,
         "last_service": last_service if has_last_service else None,
+        "services": services,
         "alerts": alerts,
         "alert_count": alert_count if alert_count is not None else len(alerts),
         "source": "osh.landrover.com",
@@ -303,6 +364,66 @@ async def fetch_landrover_osh(vin: str, *, country_label: str = "South Africa",
                 html = await page.content()
                 parsed = parse_osh_home_page(html, vin)
                 parsed["result_url"] = result_url
+
+                # If the home page succeeded, click through to the
+                # SERVICE HISTORY tab and merge its extra data — the full
+                # per-service table + richer vehicle details (Engine,
+                # Colour, Warranty Start Date, Registration Country). The
+                # tab is the second nav item; JLR routes it under
+                # /service-history?token=<session>.
+                if parsed.get("status") == "ok":
+                    try:
+                        # Prefer clicking by visible text so we're
+                        # resilient to href/token changes. Fall back to a
+                        # direct navigation if the click doesn't take us
+                        # to /service-history.
+                        try:
+                            await page.get_by_text(
+                                "Service History", exact=True
+                            ).first.click(timeout=6000)
+                        except Exception:
+                            await page.goto(
+                                result_url.replace("/home", "/service-history"),
+                                wait_until="domcontentloaded",
+                                timeout=15000,
+                            )
+                        try:
+                            await page.wait_for_url(
+                                re.compile(r"osh\.landrover\.com/service-history", re.I),
+                                timeout=15000,
+                            )
+                        except Exception:
+                            pass
+                        try:
+                            await page.wait_for_load_state("networkidle", timeout=10000)
+                        except Exception:
+                            pass
+                        sh_html = await page.content()
+                        # Re-parse with the service-history HTML — it
+                        # contains the fuller vehicle-details block AND
+                        # the service-history table.
+                        sh_parsed = parse_osh_home_page(sh_html, vin)
+                        if sh_parsed.get("status") == "ok":
+                            # Preserve any keys populated on /home that
+                            # aren't repeated on /service-history.
+                            merged_vehicle = {
+                                **(parsed.get("vehicle") or {}),
+                                **{
+                                    k: v
+                                    for k, v in (sh_parsed.get("vehicle") or {}).items()
+                                    if v
+                                },
+                            }
+                            parsed["vehicle"] = merged_vehicle
+                            services = sh_parsed.get("services") or []
+                            if services:
+                                parsed["services"] = services
+                            parsed["service_history_url"] = page.url
+                    except Exception:
+                        logger.exception(
+                            "landrover_osh: SERVICE HISTORY tab enrichment failed "
+                            "(returning /home data only)"
+                        )
                 return parsed
             finally:
                 try:
