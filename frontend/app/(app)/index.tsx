@@ -39,6 +39,9 @@ const AD_MERCEDES = require("../../assets/brands/ad_mercedes.jpeg");
 
 // Lifestyle image for the "Trade with Confidence" hero tile front page.
 const HERO_TILE_LIFESTYLE = require("../../assets/brands/hero_lifestyle.jpg");
+// Lifestyle image for the "Earn Rewards" tile front page — dealer holding a
+// phone showing a Takealot voucher earned through the app.
+const REWARDS_TILE_LIFESTYLE = require("../../assets/brands/rewards_lifestyle.jpg");
 
 type PagePoint = { icon?: keyof typeof Ionicons.glyphMap; text: string };
 type PageAd = { image: number; label?: string };
@@ -78,6 +81,7 @@ const TILES: Tile[] = [
     title: "Earn Rewards",
     subtitle: "Get paid for every submission — tap to see how",
     footer: "Yours to keep — No Expiry, No Fineprint",
+    frontImage: REWARDS_TILE_LIFESTYLE,
     points: [
       { icon: "cash", text: "Earn 1 Point (R10) for every valuation submission" },
       { icon: "people", text: "Refer another dealership with your code and earn an additional 1 Point (R10) for every valuation they submit (FOR LIFE)" },

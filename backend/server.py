@@ -2460,7 +2460,7 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
         leftMargin=12 * mm, rightMargin=12 * mm,
-        topMargin=10 * mm, bottomMargin=10 * mm,
+        topMargin=22 * mm, bottomMargin=16 * mm,
         title=f"Valuation {sub.get('reference') or sub.get('id')}",
         author="Fourbuy Car Buying Co.",
     )
@@ -3382,7 +3382,102 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
         small,
     ))
 
-    doc.build(story)
+    # ------------------------------------------------------------------
+    # Page header + footer
+    # ------------------------------------------------------------------
+    # NumberedCanvas ensures every page ends up stamped with "Page N of M".
+    # Total-page-count requires a two-pass approach — the canvas subclass
+    # caches page states in showPage() and only draws the frame during
+    # save() when the final total is known.
+    from reportlab.pdfgen import canvas as _rl_canvas
+
+    _logo_path = "/app/frontend/assets/images/logo-fourbuy.png"
+    _has_logo = os.path.exists(_logo_path)
+    _ref = str(sub.get("reference") or sub.get("id") or "")[:24]
+    _make_model = " ".join(
+        str(x) for x in [sub.get("make_name"), sub.get("model_name")] if x
+    ).strip()[:64]
+
+    class NumberedCanvas(_rl_canvas.Canvas):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._saved_page_states: list = []
+
+        def showPage(self):
+            self._saved_page_states.append(dict(self.__dict__))
+            self._startPage()
+
+        def save(self):
+            total = len(self._saved_page_states)
+            for state in self._saved_page_states:
+                self.__dict__.update(state)
+                self._draw_page_frame(total)
+                _rl_canvas.Canvas.showPage(self)
+            _rl_canvas.Canvas.save(self)
+
+        def _draw_page_frame(self, total_pages: int):
+            page_w, page_h = A4
+            # ---- Header band --------------------------------------
+            band_top = page_h - 6 * mm
+            band_bot = page_h - 18 * mm
+            self.setFillColor(BLACK)
+            self.rect(0, band_bot, page_w, band_top - band_bot, stroke=0, fill=1)
+
+            if _has_logo:
+                try:
+                    from reportlab.lib.utils import ImageReader as _IR
+                    img = _IR(_logo_path)
+                    iw, ih = img.getSize()
+                    tgt_h = 9 * mm
+                    tgt_w = (iw / ih) * tgt_h
+                    self.drawImage(
+                        img,
+                        12 * mm,
+                        band_bot + (band_top - band_bot - tgt_h) / 2,
+                        width=tgt_w, height=tgt_h,
+                        preserveAspectRatio=True, mask="auto",
+                    )
+                except Exception:
+                    self.setFillColor(rl_colors.white)
+                    self.setFont("Helvetica-Bold", 10)
+                    self.drawString(12 * mm, band_bot + 4 * mm, "FOURBUY")
+            else:
+                self.setFillColor(rl_colors.white)
+                self.setFont("Helvetica-Bold", 10)
+                self.drawString(12 * mm, band_bot + 4 * mm, "FOURBUY")
+
+            self.setFillColor(rl_colors.white)
+            self.setFont("Helvetica-Bold", 9)
+            self.drawRightString(
+                page_w - 12 * mm, band_top - 5 * mm,
+                f"VEHICLE VALUATION  ·  {_ref}",
+            )
+            if _make_model:
+                self.setFont("Helvetica", 7.5)
+                self.setFillColor(rl_colors.HexColor("#BEBEBE"))
+                self.drawRightString(
+                    page_w - 12 * mm, band_top - 10 * mm,
+                    _make_model,
+                )
+
+            # ---- Footer band --------------------------------------
+            foot_y = 9 * mm
+            self.setFillColor(LINE)
+            self.rect(12 * mm, foot_y + 4 * mm, page_w - 24 * mm, 0.4, stroke=0, fill=1)
+            self.setFillColor(MUTED)
+            self.setFont("Helvetica", 7)
+            self.drawString(
+                12 * mm, foot_y,
+                "Fourbuy Car Buying Co.  ·  Confidential  ·  Offer prices are indicative and subject to physical inspection.",
+            )
+            self.setFont("Helvetica-Bold", 7)
+            self.setFillColor(INK)
+            self.drawRightString(
+                page_w - 12 * mm, foot_y,
+                f"Page {self._pageNumber} of {total_pages}",
+            )
+
+    doc.build(story, canvasmaker=NumberedCanvas)
     return buf.getvalue()
 
 
