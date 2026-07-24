@@ -5074,32 +5074,53 @@ class KredoVinHistoryRequest(BaseModel):
     submission_id: Optional[str] = None
     refresh: bool = False
     cache_only: bool = False
+    # Dealers must explicitly accept the per-fetch charge before we hit
+    # Kredo. Ignored for admins (their fetches are free).
+    accepted_charge: bool = False
+
+
+# Per-fetch cost the dealer sees on their next invoice for the accident /
+# claim history VIN lookup. Admins pay nothing.
+KREDO_VIN_HISTORY_DEALER_COST_ZAR = 100.0
 
 
 @api_router.post("/kredo/vin-history")
 async def kredo_vin_history(
     payload: KredoVinHistoryRequest,
-    current: dict = Depends(require_admin),
+    current: dict = Depends(get_current_user),
 ):
-    """Fetch (or return cached) Kredo VIN history for an admin-viewed submission.
+    """Fetch (or return cached) Kredo VIN history.
+
+    Access rules:
+    * Admins may fetch any VIN — free.
+    * Dealers may fetch VINs only on submissions belonging to their own
+      dealership. Each FRESH lookup is billed **R100** to the dealership
+      on their next invoice. Cache hits are free — the R100 charge is
+      recorded exactly once per (submission, VIN) via `report_orders`.
 
     Modes:
     * `cache_only=True`  → return cached result if present, else `null`.
       Never touches Kredo. Used to auto-populate the screen on mount.
     * `refresh=False` (default) → return cached result if present; otherwise
-      call Kredo and cache the fresh response.
-    * `refresh=True` → always call Kredo and rewrite the cache.
+      call Kredo and cache + bill the fresh response.
+    * `refresh=True` → always call Kredo. Rewrites the cache. Billed.
     """
+    is_admin = current.get("role") == "admin"
     vin = (payload.vin or "").strip().upper()
     if not vin:
         raise HTTPException(400, "vin is required")
 
+    sub: Optional[dict] = None
     if payload.submission_id:
         sub = await db.submissions.find_one(
             {"id": payload.submission_id}, {"_id": 0}
         )
         if not sub:
             raise HTTPException(404, "Submission not found")
+        # Dealers may only look up VINs on their own dealership's submissions.
+        if not is_admin and not await _can_access_submission(sub, current):
+            raise HTTPException(403, "You cannot access this submission")
+
         cached = ((sub.get("reports") or {}).get("kredo_vin_history") or None)
         if cached and not payload.refresh:
             return {
@@ -5107,9 +5128,28 @@ async def kredo_vin_history(
                 "cached_at": cached.get("fetched_at"),
                 "source": "cache",
                 "vin": vin,
+                "cost_zar": 0.0,
             }
         if payload.cache_only:
-            return {"result": None, "cached_at": None, "source": "cache", "vin": vin}
+            return {
+                "result": None,
+                "cached_at": None,
+                "source": "cache",
+                "vin": vin,
+                "cost_zar": 0.0,
+            }
+    elif not is_admin:
+        # A dealer must always call this against a specific submission — we
+        # need a submission id to enforce dealership access and to attach
+        # the R100 bill to.
+        raise HTTPException(400, "submission_id is required for dealer lookups")
+
+    # Fresh call to Kredo below — dealers must have accepted the charge.
+    if not is_admin and not payload.accepted_charge:
+        raise HTTPException(
+            400,
+            f"Please accept the R{int(KREDO_VIN_HISTORY_DEALER_COST_ZAR)} charge before requesting the accident / claim history.",
+        )
 
     try:
         raw = await get_kredo_client().vin_history(vin)
@@ -5118,20 +5158,51 @@ async def kredo_vin_history(
     normalised = _normalise_vin_history(raw)
     now = now_utc()
 
+    billed_amount = 0.0
     if payload.submission_id:
         await db.submissions.update_one(
             {"id": payload.submission_id},
             {"$set": {"reports.kredo_vin_history": {
                 "result": normalised,
                 "fetched_at": now,
-                "fetched_by_admin_id": current["id"],
+                "fetched_by_id": current["id"],
+                "fetched_by_role": current.get("role"),
             }}},
         )
+        # Dealer billing — one charge per (submission, kredo_vin_history)
+        # even if they hit refresh again later.
+        if not is_admin:
+            dealer_id = current.get("dealership_id")
+            existing_bill = await db.report_orders.find_one(
+                {"submission_id": payload.submission_id, "type": "kredo_vin_history"}
+            )
+            if not existing_bill and dealer_id:
+                await db.report_orders.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "submission_id": payload.submission_id,
+                    "dealer_id": dealer_id,
+                    "vin": vin,
+                    "type": "kredo_vin_history",
+                    "name": "Accident / Claim History (Kredo VIN)",
+                    "cost_zar": KREDO_VIN_HISTORY_DEALER_COST_ZAR,
+                    "status": "delivered",
+                    "ordered_at": now,
+                    "ordered_by": current["id"],
+                    "delivered_at": now,
+                    "note": "Kredo VIN accident / claim history live lookup.",
+                })
+                billed_amount = KREDO_VIN_HISTORY_DEALER_COST_ZAR
+                logger.info(
+                    "kredo_vin_history: billed R%s to dealer %s for sub %s",
+                    int(billed_amount), dealer_id, payload.submission_id,
+                )
+
     return {
         "result": normalised,
         "cached_at": now,
         "source": "kredo",
         "vin": vin,
+        "cost_zar": billed_amount,
     }
 
 

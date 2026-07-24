@@ -379,8 +379,31 @@ export default function VehicleDetail() {
   const [cartrust, setCartrust] = useState<CartrustReport | null>(null);
   const [cartrustLoading, setCartrustLoading] = useState(false);
 
+  // Per-fetch price the dealer pays for a live Kredo VIN accident /
+  // claim history lookup. Cache hits are free — the charge is recorded
+  // exactly once per submission by the backend. Kept in sync with
+  // KREDO_VIN_HISTORY_DEALER_COST_ZAR on the server.
+  const KREDO_VIN_HISTORY_DEALER_COST_ZAR = 100;
+
   const fetchKredoHistory = async (refresh = false) => {
     if (!sub?.id || !sub.vin) return;
+    // Dealers must explicitly accept the R100 charge — only when this
+    // will actually hit Kredo (i.e., no cache yet OR they tapped Refresh).
+    const willBill = !isAdmin && (refresh || !kredoHistory);
+    if (willBill) {
+      const proceed = await new Promise<boolean>((resolve) => {
+        Alert.alert(
+          "Accident / Claim History",
+          `A live Kredo VIN accident-and-claim check for ${sub.vin} will be added to your next invoice at R${KREDO_VIN_HISTORY_DEALER_COST_ZAR}. Continue?`,
+          [
+            { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+            { text: `Charge R${KREDO_VIN_HISTORY_DEALER_COST_ZAR}`, style: "default", onPress: () => resolve(true) },
+          ],
+          { cancelable: true, onDismiss: () => resolve(false) },
+        );
+      });
+      if (!proceed) return;
+    }
     setKredoLoading(true);
     try {
       const r = await apiFetch("/api/kredo/vin-history", {
@@ -389,12 +412,13 @@ export default function VehicleDetail() {
           vin: sub.vin.trim().toUpperCase(),
           submission_id: sub.id,
           refresh,
+          accepted_charge: willBill,
         }),
       });
       setKredoHistory(r as KredoHistory);
     } catch (e: any) {
       Alert.alert(
-        "Kredo VIN history",
+        "Accident / Claim History",
         e?.message || "Could not fetch accident history from Kredo.",
       );
     } finally {
@@ -1871,12 +1895,17 @@ export default function VehicleDetail() {
             VIN-Linked Report" section above — the standalone card was
             removed at the user's request. */}
 
-        {/* Kredo VIN accident/claim history — admin-only, on-demand fetch. */}
-        {isAdmin && sub.vin && sub.vin.trim() && sub.vin.toUpperCase() !== "TBC" ? (
+        {/* Kredo VIN accident/claim history — available to both admins
+            and dealers. Admins fetch for free; dealers pay a per-fetch
+            R100 charge that goes onto their next invoice. Cache hits are
+            free — the R100 is billed exactly once per submission. */}
+        {sub.vin && sub.vin.trim() && sub.vin.toUpperCase() !== "TBC" ? (
           <View style={styles.reportsSection} testID="kredo-history-section">
             <Text style={styles.sectionTitle}>Accident / Claim History</Text>
             <Text style={styles.reportsHelp}>
-              Kredo VIN history for {sub.vin}. Results are cached — refresh only if you need a fresh check.
+              {isAdmin
+                ? `Kredo VIN history for ${sub.vin}. Results are cached — refresh only if you need a fresh check.`
+                : `Live Kredo VIN check for ${sub.vin}. R${KREDO_VIN_HISTORY_DEALER_COST_ZAR} per lookup, billed to your next invoice. Cache hits are free.`}
             </Text>
 
             <TouchableOpacity
