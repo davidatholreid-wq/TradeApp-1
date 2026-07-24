@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import { Pressable, TouchableOpacity } from "@/src/components/HapticButtons";
 import { View, Text, StyleSheet, ScrollView, Image, Platform, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -19,6 +19,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { spacing, radius, fonts } from "@/src/theme";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { useAuth } from "@/src/context/AuthContext";
+import { apiFetch } from "@/src/api";
 
 // ---------------------------------------------------------------------------
 // Home / Landing screen — dealer + admin.
@@ -44,7 +45,7 @@ const HERO_TILE_LIFESTYLE = require("../../assets/brands/hero_lifestyle.jpg");
 const REWARDS_TILE_LIFESTYLE = require("../../assets/brands/rewards_lifestyle.jpg");
 
 type PagePoint = { icon?: keyof typeof Ionicons.glyphMap; text: string };
-type PageAd = { image: number; label?: string };
+type PageAd = { image: number | { uri: string }; label?: string };
 
 // A tile has ONE front page + N interior pages. Front = title/icon/CTA.
 // Interior pages are either bullet points (Trade with Confidence + Earn
@@ -60,7 +61,7 @@ type Tile = {
   frontImage?: number; // Optional lifestyle image behind the front page.
 };
 
-const TILES: Tile[] = [
+const BASE_TILES: Tile[] = [
   {
     key: "trade",
     icon: "shield-checkmark",
@@ -162,6 +163,37 @@ export default function HomeScreen() {
         { key: "rewards", label: "Rewards", hint: "Earn points & vouchers", icon: "gift-outline", to: "/(app)/rewards" },
       ];
 
+  // Live-loaded advertising slots — replace the hardcoded 3 ads on the
+  // "Advertising" tile with whatever the admin has configured via the
+  // Admin Cockpit → Advertising module. If none are configured yet we
+  // fall back to the bundled sample ads so the tile is never empty.
+  type ActiveAd = { slot_number: number; image_base64: string; dealership_name?: string | null };
+  const [activeAds, setActiveAds] = useState<ActiveAd[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await apiFetch("/api/ads/active");
+        if (!cancelled && Array.isArray(r?.ads)) setActiveAds(r.ads);
+      } catch { /* ignore — falls back to bundled sample ads */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const tiles: Tile[] = useMemo(() => {
+    if (!activeAds.length) return BASE_TILES;
+    return BASE_TILES.map((t) => {
+      if (t.key !== "ads") return t;
+      return {
+        ...t,
+        ads: activeAds.map((a) => ({
+          image: { uri: a.image_base64 },
+          label: a.dealership_name || undefined,
+        })),
+      };
+    });
+  }, [activeAds]);
+
   return (
     <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
       <ScrollView
@@ -239,7 +271,7 @@ export default function HomeScreen() {
 
           {/* Flip-tiles */}
           <View style={styles.cardsWrap}>
-            {TILES.map((t) => (
+            {tiles.map((t) => (
               <View key={t.key} style={styles.tileCol}>
                 <FlipTile tile={t} styles={styles} colors={colors} />
               </View>

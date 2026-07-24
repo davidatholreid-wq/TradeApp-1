@@ -11,6 +11,7 @@ import BillingScreen from "@/app/(app)/billing";
 import DealersScreen from "@/app/(app)/dealers";
 import KredoTestScreen from "@/app/(app)/kredo-test";
 import AdminRewardsScreen from "@/src/components/AdminRewardsScreen";
+import AdminAdvertisingScreen from "@/src/components/AdminAdvertisingScreen";
 import PhotoCarousel, { CarouselPhoto } from "@/src/components/PhotoCarousel";
 import ConditionRatingInfoModal from "@/src/components/ConditionRatingInfoModal";
 import { computeServiceGap, formatMonthsAgo, formatKm } from "@/src/utils/format";
@@ -200,7 +201,7 @@ function formatReportName(type: string): string {
 }
 
 type Bucket = "incoming" | "priced" | "archived";
-type CockpitView = "submissions" | "dealers" | "billing" | "rewards" | "kredo";
+type CockpitView = "submissions" | "dealers" | "billing" | "rewards" | "kredo" | "ads";
 
 export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }) {
   const colors = useThemeColors();
@@ -518,6 +519,16 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 <Text style={styles.betaPillText}>BETA</Text>
               </View>
             </TouchableOpacity>
+            <TouchableOpacity
+              testID="cockpit-view-ads"
+              style={[styles.viewBtn, view === "ads" && styles.viewBtnActive]}
+              onPress={() => setView("ads")}
+            >
+              <Ionicons name="megaphone" size={14} color={view === "ads" ? colors.onPrimary : colors.text} />
+              <Text style={[styles.viewBtnText, view === "ads" && styles.viewBtnTextActive]}>
+                Advertising
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
         <View style={styles.topbarRight}>
@@ -558,6 +569,10 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
       ) : view === "kredo" ? (
         <View style={{ flex: 1 }}>
           <KredoTestScreen />
+        </View>
+      ) : view === "ads" ? (
+        <View style={{ flex: 1 }}>
+          <AdminAdvertisingScreen />
         </View>
       ) : (
       <View style={styles.body}>
