@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback } from "react";
-import { Pressable } from "@/src/components/HapticButtons";
-import { View, Text, StyleSheet, ScrollView, Image, Platform } from "react-native";
+import { Pressable, TouchableOpacity } from "@/src/components/HapticButtons";
+import { View, Text, StyleSheet, ScrollView, Image, Platform, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import Animated, {
@@ -14,10 +14,11 @@ import Animated, {
 import { Ionicons } from "@expo/vector-icons";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { LinearGradient } from "expo-linear-gradient";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 
 import { spacing, radius, fonts } from "@/src/theme";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
+import { useAuth } from "@/src/context/AuthContext";
 
 // ---------------------------------------------------------------------------
 // Home / Landing screen — dealer + admin.
@@ -99,8 +100,19 @@ const TILES: Tile[] = [
 
 export default function HomeScreen() {
   const colors = useThemeColors();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { width } = useWindowDimensions();
+  // Above this, we switch to a website-style layout: constrained max width,
+  // three-column tile grid, quick-actions row across the top.
+  const isWide = width >= 900;
+  const styles = useMemo(() => makeStyles(colors, isWide), [colors, isWide]);
   const insets = useBottomTabBarHeight();
+  const router = useRouter();
+  const { user } = useAuth();
+
+  const firstName =
+    user?.dealer_info?.first_name?.trim() ||
+    user?.name?.split(" ")[0] ||
+    (user?.email ? user.email.split("@")[0] : "");
 
   const heroPlayer = useVideoPlayer(HERO_VIDEO, (p) => {
     p.loop = true;
@@ -115,36 +127,119 @@ export default function HomeScreen() {
     }, [heroPlayer]),
   );
 
+  // Quick-action cards — the primary tasks a dealer/admin comes here to do.
+  // Keeps parity with the bottom-tab bar but promotes them above the fold on
+  // web so the landing page feels like a real dashboard.
+  type QuickAction = {
+    key: string;
+    label: string;
+    hint: string;
+    icon: keyof typeof Ionicons.glyphMap;
+    to: string;
+  };
+  const isAdmin = user?.role === "admin";
+  const quickActions: QuickAction[] = isAdmin
+    ? [
+        { key: "subs", label: "Submissions", hint: "Price & review dealer submissions", icon: "list-outline", to: "/(app)/submissions" },
+        { key: "dealers", label: "Dealers", hint: "Approve, edit and manage accounts", icon: "people-outline", to: "/(app)/dealers" },
+        { key: "billing", label: "Billing", hint: "Invoices, credits & receipts", icon: "cash-outline", to: "/(app)/billing" },
+        { key: "rewards", label: "Rewards", hint: "Points, referrals & voucher requests", icon: "gift-outline", to: "/(app)/rewards" },
+      ]
+    : [
+        { key: "submit", label: "Submit a Vehicle", hint: "Get a confirmed cover price in 90 s", icon: "add-circle-outline", to: "/(app)/submit" },
+        { key: "mine", label: "My Vehicles", hint: "Track submitted vehicles & prices", icon: "car-outline", to: "/(app)/submissions" },
+        { key: "billing", label: "Billing", hint: "Invoices & report charges", icon: "receipt-outline", to: "/(app)/billing" },
+        { key: "rewards", label: "Rewards", hint: "Earn points & vouchers", icon: "gift-outline", to: "/(app)/rewards" },
+      ];
+
   return (
     <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
       <ScrollView
         contentContainerStyle={[styles.scroll, { paddingBottom: insets + spacing.xl }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Hero video */}
-        <View style={styles.heroWrap}>
-          <Image source={HERO_POSTER} style={styles.heroPoster} resizeMode="cover" />
-          <VideoView
-            player={heroPlayer}
-            style={styles.hero}
-            contentFit="cover"
-            nativeControls={false}
-            allowsFullscreen={false}
-            allowsPictureInPicture={false}
-            accessibilityLabel="Fourbuy Car Buying Co. hero video"
-          />
-        </View>
+        <View style={styles.pageMax}>
+          {/* Welcome header — greets the user by first name and grounds the
+              page as a proper dashboard rather than a marketing splash. */}
+          <View style={styles.welcomeRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.welcomeEyebrow}>
+                {isAdmin ? "ADMIN COCKPIT" : "DEALER PORTAL"}
+              </Text>
+              <Text style={styles.welcomeTitle} numberOfLines={1}>
+                {firstName ? `Welcome back, ${firstName}` : "Welcome back"}
+              </Text>
+              <Text style={styles.welcomeSub} numberOfLines={2}>
+                {isAdmin
+                  ? "Manage submissions, dealers and rewards from one place."
+                  : "Submit a vehicle for a guaranteed cover price in under 90 seconds."}
+              </Text>
+            </View>
+          </View>
 
-        {/* Flip-tiles */}
-        <View style={styles.cardsWrap}>
-          {TILES.map((t) => (
-            <FlipTile key={t.key} tile={t} styles={styles} colors={colors} />
-          ))}
-        </View>
+          {/* Hero video — capped height on wide screens so it stops swallowing
+              the whole viewport, and full-bleed 16:9 on phones. */}
+          <View style={styles.heroWrap}>
+            <Image source={HERO_POSTER} style={styles.heroPoster} resizeMode="cover" />
+            <VideoView
+              player={heroPlayer}
+              style={styles.hero}
+              contentFit="cover"
+              nativeControls={false}
+              allowsFullscreen={false}
+              allowsPictureInPicture={false}
+              accessibilityLabel="Fourbuy Car Buying Co. hero video"
+            />
+          </View>
 
-        <View style={styles.hintRow}>
-          <Ionicons name="finger-print-outline" size={14} color={colors.textSecondary} />
-          <Text style={styles.hintText}>Tap any card to flip through — one point at a time.</Text>
+          {/* Quick-actions grid — always visible on web, hidden on phones
+              (they already have the bottom tab bar). */}
+          {isWide ? (
+            <View style={styles.quickGrid}>
+              {quickActions.map((qa) => (
+                <TouchableOpacity
+                  key={qa.key}
+                  style={styles.quickCard}
+                  onPress={() => router.push(qa.to as never)}
+                  accessibilityRole="button"
+                  accessibilityLabel={qa.label}
+                >
+                  <View style={styles.quickIconChip}>
+                    <Ionicons name={qa.icon} size={20} color={colors.text} />
+                  </View>
+                  <Text style={styles.quickCardLabel}>{qa.label}</Text>
+                  <Text style={styles.quickCardHint} numberOfLines={2}>{qa.hint}</Text>
+                  <View style={styles.quickCardCta}>
+                    <Text style={styles.quickCardCtaText}>Open</Text>
+                    <Ionicons name="arrow-forward" size={12} color={colors.text} />
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
+
+          {/* Section heading above the marketing tiles on wide — helps
+              signpost that the below area is the pitch, not primary UI. */}
+          {isWide ? (
+            <View style={styles.sectionHead}>
+              <Text style={styles.sectionEyebrow}>WHY FOURBUY</Text>
+              <Text style={styles.sectionTitle}>Everything you need to trade with confidence</Text>
+            </View>
+          ) : null}
+
+          {/* Flip-tiles */}
+          <View style={styles.cardsWrap}>
+            {TILES.map((t) => (
+              <View key={t.key} style={styles.tileCol}>
+                <FlipTile tile={t} styles={styles} colors={colors} />
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.hintRow}>
+            <Ionicons name="finger-print-outline" size={14} color={colors.textSecondary} />
+            <Text style={styles.hintText}>Tap any card to flip through — one point at a time.</Text>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -326,172 +421,306 @@ function TilePage({ tile, pageIdx, styles, colors }: { tile: Tile; pageIdx: numb
 // ---------------------------------------------------------------------------
 // Styles
 // ---------------------------------------------------------------------------
-const TILE_HEIGHT = 220;
+const TILE_HEIGHT_MOBILE = 220;
+const TILE_HEIGHT_WIDE = 260;
+const PAGE_MAX_WIDTH = 1200;
 
-const makeStyles = (colors: Palette) => StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
-  scroll: { paddingHorizontal: spacing.md, paddingTop: spacing.sm },
-  heroWrap: {
-    width: "100%", aspectRatio: 16 / 9, borderRadius: radius.lg, overflow: "hidden",
-    marginBottom: spacing.lg, backgroundColor: colors.paper,
-    ...Platform.select({
-      ios: { shadowColor: "#000", shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } },
-      android: { elevation: 3 },
-    }),
-  },
-  hero: { width: "100%", height: "100%" },
-  heroPoster: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, width: "100%", height: "100%" },
+const makeStyles = (colors: Palette, isWide: boolean) => {
+  const TILE_HEIGHT = isWide ? TILE_HEIGHT_WIDE : TILE_HEIGHT_MOBILE;
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: colors.bg },
+    scroll: {
+      paddingHorizontal: isWide ? spacing.xl : spacing.md,
+      paddingTop: isWide ? spacing.xl : spacing.sm,
+      alignItems: "center", // centres pageMax on wide screens
+    },
+    // On wide screens everything sits inside a centred column with a max
+    // width — otherwise the mobile design stretches full-bleed and looks
+    // like a phone dumped in the middle of a desktop.
+    pageMax: {
+      width: "100%",
+      maxWidth: PAGE_MAX_WIDTH,
+      gap: isWide ? spacing.xl : spacing.md,
+    },
 
-  cardsWrap: { gap: spacing.md },
+    // Welcome header ------------------------------------------------------
+    welcomeRow: {
+      flexDirection: "row",
+      alignItems: "flex-end",
+      gap: spacing.md,
+    },
+    welcomeEyebrow: {
+      color: colors.textSecondary,
+      fontSize: 11,
+      letterSpacing: 2.2,
+      fontWeight: "700",
+      marginBottom: 4,
+    },
+    welcomeTitle: {
+      ...fonts.h1,
+      color: colors.text,
+      fontSize: isWide ? 32 : 24,
+      letterSpacing: -0.5,
+    },
+    welcomeSub: {
+      color: colors.textSecondary,
+      fontSize: isWide ? 15 : 13,
+      lineHeight: 22,
+      marginTop: 4,
+      maxWidth: 560,
+    },
 
-  tileOuter: {
-    height: TILE_HEIGHT,
-    borderRadius: radius.lg,
-    backgroundColor: colors.paper,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: "hidden",
-    ...Platform.select({
-      ios: { shadowColor: "#000", shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
-      android: { elevation: 3 },
-    }),
-  },
-  tileFace: {
-    position: "absolute",
-    top: 0, left: 0, right: 0, bottom: 0,
-    backfaceVisibility: "hidden",
-    padding: spacing.md,
-  },
-  // Applied to the "next" face on top of tileFace. Guarantees the back
-  // face is invisible on first paint on web (before reanimated has a
-  // chance to set the animated opacity), so full-bleed content on the
-  // back face doesn't bleed through the current front page.
-  tileFaceHiddenInitial: { opacity: 0 },
+    // Hero video ----------------------------------------------------------
+    heroWrap: {
+      width: "100%",
+      aspectRatio: 16 / 9,
+      maxHeight: isWide ? 360 : undefined,
+      borderRadius: radius.lg,
+      overflow: "hidden",
+      backgroundColor: colors.paper,
+      ...Platform.select({
+        ios: { shadowColor: "#000", shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } },
+        android: { elevation: 3 },
+      }),
+    },
+    hero: { width: "100%", height: "100%" },
+    heroPoster: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, width: "100%", height: "100%" },
 
-  // Front page
-  pageFront: {
-    flex: 1,
-    padding: spacing.sm,
-    justifyContent: "center",
-    alignItems: "flex-start",
-    gap: spacing.sm,
-  },
-  iconChip: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: "#fff",
-    alignItems: "center", justifyContent: "center",
-  },
-  frontTitle: { ...fonts.h1, color: colors.text, fontSize: 22 },
-  frontSub: { ...fonts.small, color: colors.textSecondary, fontSize: 13 },
+    // Quick-actions grid (web only) --------------------------------------
+    quickGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: spacing.md,
+    },
+    quickCard: {
+      // 4-up on wide screens with the grid gap.
+      flexBasis: `${(100 - 3 * 2) / 4}%`,
+      flexGrow: 1,
+      minWidth: 220,
+      backgroundColor: colors.paper,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: spacing.lg,
+      gap: spacing.xs,
+    },
+    quickIconChip: {
+      width: 40, height: 40, borderRadius: 20,
+      backgroundColor: colors.card,
+      borderWidth: 1, borderColor: colors.border,
+      alignItems: "center", justifyContent: "center",
+      marginBottom: spacing.sm,
+    },
+    quickCardLabel: {
+      color: colors.text,
+      fontSize: 16,
+      fontWeight: "800",
+      letterSpacing: -0.2,
+    },
+    quickCardHint: {
+      color: colors.textSecondary,
+      fontSize: 12,
+      lineHeight: 17,
+    },
+    quickCardCta: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      marginTop: spacing.sm,
+    },
+    quickCardCtaText: {
+      color: colors.text,
+      fontSize: 11,
+      fontWeight: "700",
+      letterSpacing: 1,
+      textTransform: "uppercase",
+    },
 
-  // Bullet point page
-  pagePoint: { flex: 1, padding: spacing.sm, gap: spacing.md, justifyContent: "space-between" },
-  pointNumRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  pointNumChip: {
-    width: 28, height: 28, borderRadius: 14,
-    backgroundColor: colors.primary,
-    alignItems: "center", justifyContent: "center",
-  },
-  pointNumText: { color: colors.onPrimary || "#000", fontSize: 13, fontWeight: "800" },
-  pointEyebrow: { ...fonts.eyebrow, color: colors.textSecondary, fontSize: 11, letterSpacing: 1 },
-  pointBody: { flex: 1, flexDirection: "row", gap: spacing.md, alignItems: "flex-start", paddingRight: spacing.sm },
-  pointIconChip: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: "#fff",
-    alignItems: "center", justifyContent: "center",
-    marginTop: 4,
-  },
-  pointText: { flex: 1, color: colors.text, fontSize: 15, lineHeight: 21, fontWeight: "500" },
+    // Section head above tiles (web only) --------------------------------
+    sectionHead: {
+      marginTop: spacing.sm,
+    },
+    sectionEyebrow: {
+      color: colors.textSecondary,
+      fontSize: 11,
+      letterSpacing: 2.2,
+      fontWeight: "700",
+      marginBottom: 4,
+    },
+    sectionTitle: {
+      ...fonts.h1,
+      color: colors.text,
+      fontSize: isWide ? 24 : 20,
+      letterSpacing: -0.3,
+    },
 
-  // Footer page
-  pageFooter: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.sm, padding: spacing.md },
-  footerText: {
-    color: colors.text,
-    fontSize: 17,
-    fontStyle: "italic",
-    fontWeight: "600",
-    textAlign: "center",
-    lineHeight: 24,
-  },
+    // Tile grid ----------------------------------------------------------
+    cardsWrap: {
+      flexDirection: isWide ? "row" : "column",
+      flexWrap: "wrap",
+      gap: spacing.md,
+    },
+    tileCol: isWide
+      ? {
+          // 3-up on wide screens (each ~1/3 minus gap).
+          flexBasis: `${(100 - 2 * 2) / 3}%`,
+          flexGrow: 1,
+          minWidth: 280,
+        }
+      : {
+          // On phones the wrap is column-oriented — full-width per tile.
+          width: "100%",
+        },
 
-  // Ad page — full-bleed image with a small "ADVERTISING" pill top-left.
-  pageAd: {
-    position: "absolute",
-    top: -spacing.md,
-    left: -spacing.md,
-    right: -spacing.md,
-    bottom: -spacing.md,
-    overflow: "hidden",
-  },
-  adBadge: {
-    position: "absolute",
-    top: spacing.md + 4,
-    left: spacing.md + 4,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radius.pill,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    zIndex: 2,
-  },
-  adBadgeText: { color: "#fff", fontSize: 9, fontWeight: "800", letterSpacing: 0.6 },
-  adImg: { width: "100%", height: "100%" },
+    tileOuter: {
+      height: TILE_HEIGHT,
+      borderRadius: radius.lg,
+      backgroundColor: colors.paper,
+      borderWidth: 1,
+      borderColor: colors.border,
+      overflow: "hidden",
+      ...Platform.select({
+        ios: { shadowColor: "#000", shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+        android: { elevation: 3 },
+      }),
+    },
+    tileFace: {
+      position: "absolute",
+      top: 0, left: 0, right: 0, bottom: 0,
+      backfaceVisibility: "hidden",
+      padding: spacing.md,
+    },
+    // Applied to the "next" face on top of tileFace. Guarantees the back
+    // face is invisible on first paint on web (before reanimated has a
+    // chance to set the animated opacity), so full-bleed content on the
+    // back face doesn't bleed through the current front page.
+    tileFaceHiddenInitial: { opacity: 0 },
 
-  // Lifestyle-image front (Trade with Confidence tile).
-  pageFrontImageWrap: {
-    position: "absolute",
-    top: -spacing.md,
-    left: -spacing.md,
-    right: -spacing.md,
-    bottom: -spacing.md,
-    overflow: "hidden",
-  },
-  frontBgImage: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, width: "100%", height: "100%" },
-  pageFrontOverlay: {
-    position: "absolute",
-    top: spacing.md + spacing.sm,
-    left: spacing.md + spacing.sm,
-    right: "45%",
-    bottom: spacing.lg + 8,
-    justifyContent: "flex-end",
-    gap: spacing.xs,
-  },
-  iconChipOnImage: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: "#FFFFFF",
-    alignItems: "center", justifyContent: "center",
-    marginBottom: spacing.xs,
-  },
-  frontTitleOnImage: {
-    ...fonts.h1,
-    color: "#FFFFFF",
-    fontSize: 22,
-    lineHeight: 26,
-    textShadowColor: "rgba(0,0,0,0.55)",
-    textShadowRadius: 6,
-  },
-  frontSubOnImage: {
-    ...fonts.small,
-    color: "rgba(255,255,255,0.88)",
-    fontSize: 13,
-    lineHeight: 18,
-    textShadowColor: "rgba(0,0,0,0.55)",
-    textShadowRadius: 4,
-  },
+    // Front page
+    pageFront: {
+      flex: 1,
+      padding: spacing.sm,
+      justifyContent: "center",
+      alignItems: "flex-start",
+      gap: spacing.sm,
+    },
+    iconChip: {
+      width: 44, height: 44, borderRadius: 22,
+      backgroundColor: "#fff",
+      alignItems: "center", justifyContent: "center",
+    },
+    frontTitle: { ...fonts.h1, color: colors.text, fontSize: 22 },
+    frontSub: { ...fonts.small, color: colors.textSecondary, fontSize: 13 },
 
-  // Pagination dots at the bottom-centre of every tile.
-  dots: {
-    position: "absolute",
-    bottom: 10, left: 0, right: 0,
-    flexDirection: "row",
-    gap: 5,
-    justifyContent: "center",
-  },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.borderLight },
-  dotActive: { backgroundColor: colors.text, width: 14 },
+    // Bullet point page
+    pagePoint: { flex: 1, padding: spacing.sm, gap: spacing.md, justifyContent: "space-between" },
+    pointNumRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+    pointNumChip: {
+      width: 28, height: 28, borderRadius: 14,
+      backgroundColor: colors.primary,
+      alignItems: "center", justifyContent: "center",
+    },
+    pointNumText: { color: colors.onPrimary || "#000", fontSize: 13, fontWeight: "800" },
+    pointEyebrow: { ...fonts.eyebrow, color: colors.textSecondary, fontSize: 11, letterSpacing: 1 },
+    pointBody: { flex: 1, flexDirection: "row", gap: spacing.md, alignItems: "flex-start", paddingRight: spacing.sm },
+    pointIconChip: {
+      width: 40, height: 40, borderRadius: 20,
+      backgroundColor: "#fff",
+      alignItems: "center", justifyContent: "center",
+      marginTop: 4,
+    },
+    pointText: { flex: 1, color: colors.text, fontSize: 15, lineHeight: 21, fontWeight: "500" },
 
-  hintRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: spacing.lg, opacity: 0.85 },
-  hintText: { ...fonts.small, color: colors.textSecondary, fontSize: 12 },
-});
+    // Footer page
+    pageFooter: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.sm, padding: spacing.md },
+    footerText: {
+      color: colors.text,
+      fontSize: 17,
+      fontStyle: "italic",
+      fontWeight: "600",
+      textAlign: "center",
+      lineHeight: 24,
+    },
+
+    // Ad page — full-bleed image with a small "ADVERTISING" pill top-left.
+    pageAd: {
+      position: "absolute",
+      top: -spacing.md,
+      left: -spacing.md,
+      right: -spacing.md,
+      bottom: -spacing.md,
+      overflow: "hidden",
+    },
+    adBadge: {
+      position: "absolute",
+      top: spacing.md + 4,
+      left: spacing.md + 4,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: radius.pill,
+      backgroundColor: "rgba(0,0,0,0.55)",
+      zIndex: 2,
+    },
+    adBadgeText: { color: "#fff", fontSize: 9, fontWeight: "800", letterSpacing: 0.6 },
+    adImg: { width: "100%", height: "100%" },
+
+    // Lifestyle-image front (Trade with Confidence tile).
+    pageFrontImageWrap: {
+      position: "absolute",
+      top: -spacing.md,
+      left: -spacing.md,
+      right: -spacing.md,
+      bottom: -spacing.md,
+      overflow: "hidden",
+    },
+    frontBgImage: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, width: "100%", height: "100%" },
+    pageFrontOverlay: {
+      position: "absolute",
+      top: spacing.md + spacing.sm,
+      left: spacing.md + spacing.sm,
+      right: "45%",
+      bottom: spacing.lg + 8,
+      justifyContent: "flex-end",
+      gap: spacing.xs,
+    },
+    iconChipOnImage: {
+      width: 36, height: 36, borderRadius: 18,
+      backgroundColor: "#FFFFFF",
+      alignItems: "center", justifyContent: "center",
+      marginBottom: spacing.xs,
+    },
+    frontTitleOnImage: {
+      ...fonts.h1,
+      color: "#FFFFFF",
+      fontSize: 22,
+      lineHeight: 26,
+      textShadowColor: "rgba(0,0,0,0.55)",
+      textShadowRadius: 6,
+    },
+    frontSubOnImage: {
+      ...fonts.small,
+      color: "rgba(255,255,255,0.88)",
+      fontSize: 13,
+      lineHeight: 18,
+      textShadowColor: "rgba(0,0,0,0.55)",
+      textShadowRadius: 4,
+    },
+
+    // Pagination dots at the bottom-centre of every tile.
+    dots: {
+      position: "absolute",
+      bottom: 10, left: 0, right: 0,
+      flexDirection: "row",
+      gap: 5,
+      justifyContent: "center",
+    },
+    dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.borderLight },
+    dotActive: { backgroundColor: colors.text, width: 14 },
+
+    hintRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: spacing.sm, opacity: 0.85 },
+    hintText: { ...fonts.small, color: colors.textSecondary, fontSize: 12 },
+  });
+};
