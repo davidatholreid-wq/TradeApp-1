@@ -24,8 +24,6 @@ const PHOTO_ORDER: { key: PhotoKey; label: string }[] = [
   { key: "interior", label: "Interior" },
 ];
 
-const WINDSCREEN_OPTIONS = ["Perfect", "Chip Repairs", "Needs Replacement"] as const;
-type Windscreen = typeof WINDSCREEN_OPTIONS[number];
 const SERVICE_HISTORY = [
   "Full Service History with Agents",
   "Full Service History with Agents & Non-Agents",
@@ -47,6 +45,22 @@ const ACCIDENT_DAMAGE_OPTIONS = [
 ] as const;
 type AccidentDamageType = typeof ACCIDENT_DAMAGE_OPTIONS[number];
 
+// Reconditioning categories — each recon line item is tagged with one of
+// these so admins/valuers can see at a glance what area of the vehicle
+// needs money spent. "Windscreen" lives here (rather than as its own
+// condition-rating field) because chipped/cracked screens are always a
+// spend line, never just a rating.
+const RECON_CATEGORIES = [
+  "Tyres",
+  "Windscreen",
+  "Body Panels",
+  "Interior",
+  "Mechanical",
+] as const;
+type ReconCategory = typeof RECON_CATEGORIES[number];
+// Max photos a dealer can attach per recon line item.
+const MAX_RECON_PHOTOS = 5;
+
 // Colour-code a 1-10 condition rating: 1-3 red, 4-6 yellow, 7-10 green.
 // Kept muted so it plays well with the strict monochrome theme.
 const ratingColor = (n: number | null, colors: Palette): string => {
@@ -65,7 +79,9 @@ const ratingLabelFor = (n: number | null): string => {
 type WheelField =
   | "make" | "fuel_type" | "year_of_production" | "transmission"
   | "model" | "derivative" | "year_registered" | "colour"
-  | "windscreen_condition" | "service_history";
+  | "service_history"
+  // Each recon row's category picker uses "recon_category:<index>".
+  | `recon_category:${number}`;
 
 export default function SubmitVehicle() {
   const colors = useThemeColors();
@@ -106,7 +122,6 @@ export default function SubmitVehicle() {
   const [cosmeticRating, setCosmeticRating] = useState<number | null>(null);
   const [interiorRating, setInteriorRating] = useState<number | null>(null);
   const [historyRating, setHistoryRating] = useState<number | null>(null);
-  const [windscreen, setWindscreen] = useState<Windscreen | null>(null);
 
   // Service
   const [serviceHistory, setServiceHistory] = useState<ServiceHistory | null>(null);
@@ -124,9 +139,14 @@ export default function SubmitVehicle() {
   const [accidentDamage, setAccidentDamage] = useState(false);
   const [accidentTypes, setAccidentTypes] = useState<AccidentDamageType[]>([]);
 
-  // Reconditioning items — `photo` is an optional base64 data URL or a
-  // Cloudinary https URL (uploaded server-side on submission).
-  const [reconItems, setReconItems] = useState<{ label: string; amount: string; photo?: string }[]>([]);
+  // Reconditioning line items. Each is a `{category, amount, photos}` —
+  // dealers pick a category from RECON_CATEGORIES, type an estimate, and
+  // attach up to MAX_RECON_PHOTOS photos to show what work is needed.
+  const [reconItems, setReconItems] = useState<{
+    category: ReconCategory | null;
+    amount: string;
+    photos: string[];
+  }[]>([]);
 
   // Wheel state + option cache
   const [wheelField, setWheelField] = useState<WheelField | null>(null);
@@ -171,7 +191,6 @@ export default function SubmitVehicle() {
     setCosmeticRating(null);
     setInteriorRating(null);
     setHistoryRating(null);
-    setWindscreen(null);
     setServiceHistory(null);
     setLastServiceDate("");
     setLastServiceMileage("");
@@ -203,7 +222,6 @@ export default function SubmitVehicle() {
     cosmetic_condition: cosmeticRating,
     interior_condition: interiorRating,
     history_condition: historyRating,
-    windscreen_condition: windscreen,
     service_history: serviceHistory,
     last_service_date: lastServiceDate,
     last_service_mileage: lastServiceMileage,
@@ -214,7 +232,7 @@ export default function SubmitVehicle() {
     accident_damage: accidentDamage,
     accident_damage_types: accidentTypes,
     recon_items: reconItems,
-  }), [make, fuelType, yearOfProduction, transmission, model, derivative, yearRegistered, licenseDisk, colour, vin, engineNo, mechanicalRating, cosmeticRating, interiorRating, historyRating, windscreen, serviceHistory, lastServiceDate, lastServiceMileage, photos, mileage, paintEvidence, paintQuality, accidentDamage, accidentTypes, reconItems]);
+  }), [make, fuelType, yearOfProduction, transmission, model, derivative, yearRegistered, licenseDisk, colour, vin, engineNo, mechanicalRating, cosmeticRating, interiorRating, historyRating, serviceHistory, lastServiceDate, lastServiceMileage, photos, mileage, paintEvidence, paintQuality, accidentDamage, accidentTypes, reconItems]);
 
   /** Restore all form fields from a saved draft payload. */
   const applyDraft = useCallback((d: any) => {
@@ -233,7 +251,6 @@ export default function SubmitVehicle() {
     setCosmeticRating(d.cosmetic_condition ?? null);
     setInteriorRating(d.interior_condition ?? null);
     setHistoryRating(d.history_condition ?? null);
-    setWindscreen(d.windscreen_condition ?? null);
     setServiceHistory(d.service_history ?? null);
     setLastServiceDate(d.last_service_date ?? "");
     setLastServiceMileage(d.last_service_mileage ?? "");
@@ -251,7 +268,30 @@ export default function SubmitVehicle() {
     setPaintQuality(d.paint_quality ?? null);
     setAccidentDamage(!!d.accident_damage);
     setAccidentTypes(Array.isArray(d.accident_damage_types) ? d.accident_damage_types : []);
-    setReconItems(Array.isArray(d.recon_items) ? d.recon_items : []);
+    // Recon items — migrate legacy `{label, photo}` shape (single photo,
+    // free-text label) into the new `{category, amount, photos[]}` shape
+    // so old drafts still load without losing data.
+    setReconItems(
+      Array.isArray(d.recon_items)
+        ? d.recon_items.map((r: any) => {
+            const category = (RECON_CATEGORIES as readonly string[]).includes(r?.category)
+              ? (r.category as ReconCategory)
+              : null;
+            const photos: string[] = Array.isArray(r?.photos)
+              ? r.photos.filter((p: any) => typeof p === "string" && p)
+              : [];
+            // Legacy: single `photo` string → put it in photos[0].
+            if (photos.length === 0 && typeof r?.photo === "string" && r.photo) {
+              photos.push(r.photo);
+            }
+            return {
+              category,
+              amount: r?.amount != null ? String(r.amount) : "",
+              photos,
+            };
+          })
+        : [],
+    );
   }, []);
 
   // Load draft when navigated to with ?draft=<id>. Runs once on mount / when id changes.
@@ -366,7 +406,13 @@ export default function SubmitVehicle() {
 
   const openWheel = async (field: WheelField) => {
     // For the discrete pickers, we don't need to hit the API.
-    if (field !== "windscreen_condition" && field !== "service_history" && field !== "colour" && field !== "year_registered") {
+    // Recon-category wheel is also discrete (fixed 5-option list).
+    const isDiscrete =
+      field === "service_history" ||
+      field === "colour" ||
+      field === "year_registered" ||
+      (typeof field === "string" && field.startsWith("recon_category:"));
+    if (!isDiscrete) {
       await fetchOptions({});
     }
     setWheelField(field);
@@ -474,13 +520,30 @@ export default function SubmitVehicle() {
       );
     });
 
-  const addReconItem = () => setReconItems((r) => [...r, { label: "", amount: "", photo: "" }]);
-  const updateReconItem = (i: number, patch: Partial<{ label: string; amount: string; photo: string }>) => setReconItems((r) => r.map((x, ix) => (ix === i ? { ...x, ...patch } : x)));
+  const addReconItem = () =>
+    setReconItems((r) => [...r, { category: null, amount: "", photos: [] }]);
+  const updateReconItem = (
+    i: number,
+    patch: Partial<{ category: ReconCategory | null; amount: string; photos: string[] }>,
+  ) => setReconItems((r) => r.map((x, ix) => (ix === i ? { ...x, ...patch } : x)));
   const removeReconItem = (i: number) => setReconItems((r) => r.filter((_, ix) => ix !== i));
-  const pickReconPhoto = async (i: number) => {
+  const addReconPhoto = async (i: number) => {
     const b64 = await promptPickImage();
-    if (b64) updateReconItem(i, { photo: b64 });
+    if (!b64) return;
+    setReconItems((r) =>
+      r.map((x, ix) =>
+        ix !== i
+          ? x
+          : { ...x, photos: [...(x.photos || []), b64].slice(0, MAX_RECON_PHOTOS) },
+      ),
+    );
   };
+  const removeReconPhoto = (i: number, pIdx: number) =>
+    setReconItems((r) =>
+      r.map((x, ix) =>
+        ix !== i ? x : { ...x, photos: (x.photos || []).filter((_p, px) => px !== pIdx) },
+      ),
+    );
   const reconTotal = useMemo(() => reconItems.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0), [reconItems]);
 
   const validate = (): string | null => {
@@ -501,10 +564,18 @@ export default function SubmitVehicle() {
       if (!cosmeticRating) return "Please rate the cosmetic appearance.";
       if (!interiorRating) return "Please rate the interior condition.";
       if (!historyRating) return "Please rate the general condition.";
-      if (!windscreen) return "Please choose the windscreen condition.";
       if (!serviceHistory) return "Please choose the service history.";
       if (paintEvidence && !paintQuality) return "Choose the paintwork quality (Excellent, Fair or Poor).";
       if (accidentDamage && accidentTypes.length === 0) return "Select at least one type of previous accident damage.";
+      // If a recon line has an amount but no category (or vice versa),
+      // stop the dealer submitting so we don't lose or mis-label spend.
+      for (let i = 0; i < reconItems.length; i++) {
+        const r = reconItems[i];
+        const amt = parseFloat(r.amount);
+        const hasAmt = !isNaN(amt) && amt > 0;
+        if (r.category && !hasAmt) return `Recon line ${i + 1}: please enter an amount.`;
+        if (hasAmt && !r.category) return `Recon line ${i + 1}: please choose a category.`;
+      }
     }
     return null;
   };
@@ -546,7 +617,6 @@ export default function SubmitVehicle() {
           cosmetic_condition: unseen ? 5 : cosmeticRating,
           interior_condition: unseen ? 5 : interiorRating,
           history_condition: unseen ? 5 : historyRating,
-          windscreen_condition: unseen ? null : windscreen,
           service_history: unseen ? null : serviceHistory,
           last_service_date: unseen ? null : (lastServiceDate || null),
           last_service_mileage: unseen ? null : (lastServiceMileage ? parseInt(lastServiceMileage) : null),
@@ -555,7 +625,18 @@ export default function SubmitVehicle() {
           paint_quality: unseen ? null : (paintEvidence ? paintQuality : null),
           accident_damage: unseen ? null : accidentDamage,
           accident_damage_types: unseen ? [] : (accidentDamage ? accidentTypes : []),
-          reconditioning_items: unseen ? [] : reconItems.filter(r => r.label.trim() && parseFloat(r.amount) > 0).map(r => ({ label: r.label.trim(), amount_zar: parseFloat(r.amount), photo: r.photo || null })),
+          reconditioning_items: unseen
+            ? []
+            : reconItems
+                .filter((r) => r.category && parseFloat(r.amount) > 0)
+                .map((r) => ({
+                  // `category` is the new canonical tag; `label` is also
+                  // set for backwards compat with existing PDF/admin views.
+                  category: r.category,
+                  label: r.category as string,
+                  amount_zar: parseFloat(r.amount),
+                  photos: (r.photos || []).slice(0, MAX_RECON_PHOTOS),
+                })),
           billing_accepted: true,
         }),
       });
@@ -630,9 +711,20 @@ export default function SubmitVehicle() {
         return { title: "Year Registered", options: yrs, value: yearRegistered, onSelect: setYearRegistered };
       }
       case "colour": return { title: "Colour", options: COLOURS, value: colour, onSelect: setColour };
-      case "windscreen_condition": return { title: "Windscreen", options: [...WINDSCREEN_OPTIONS], value: windscreen, onSelect: (v: any) => setWindscreen(v as Windscreen) };
       case "service_history": return { title: "Service History", options: [...SERVICE_HISTORY], value: serviceHistory, onSelect: (v: any) => setServiceHistory(v as ServiceHistory) };
-      default: return { title: "", options: [], value: null, onSelect: () => {} };
+      default: {
+        // Dynamic recon-category picker: "recon_category:<index>".
+        if (typeof wheelField === "string" && wheelField.startsWith("recon_category:")) {
+          const idx = parseInt(wheelField.split(":")[1] || "0", 10);
+          return {
+            title: "Recon Category",
+            options: [...RECON_CATEGORIES],
+            value: reconItems[idx]?.category ?? null,
+            onSelect: (v: any) => updateReconItem(idx, { category: v as ReconCategory }),
+          };
+        }
+        return { title: "", options: [], value: null, onSelect: () => {} };
+      }
     }
   };
 
@@ -827,8 +919,6 @@ export default function SubmitVehicle() {
           </View>
           <RatingDots value={historyRating} onChange={setHistoryRating} />
 
-          <Field label="Windscreen" value={windscreen} onPress={() => openWheel("windscreen_condition")} testID="pick-windscreen" hint="Choose windscreen condition" />
-
           <Text style={styles.sectionTitle}>SERVICE HISTORY</Text>
           <Field label="Service History" value={serviceHistory} hint="Choose service history" onPress={() => openWheel("service_history")} testID="pick-service" />
           <View style={styles.row2}>
@@ -952,37 +1042,86 @@ export default function SubmitVehicle() {
           ) : null}
 
           <Text style={styles.sectionTitle}>RECONDITIONING COSTS</Text>
-          <Text style={styles.sectionHint}>Itemise what you would need to spend to get this car to showroom condition.</Text>
+          <Text style={styles.sectionHint}>
+            Add a line per area of the vehicle that needs work. Pick a category,
+            enter your estimate, and attach up to {MAX_RECON_PHOTOS} photos to
+            show what needs to be done.
+          </Text>
           {reconItems.map((item, i) => (
-            <View key={i} style={styles.reconRow}>
-              <TextInput style={[styles.input, { flex: 2 }]} value={item.label} onChangeText={(v) => updateReconItem(i, { label: v })} placeholder="e.g. Paint front bumper" placeholderTextColor={colors.textDisabled} />
-              <TextInput style={[styles.input, { flex: 1 }]} value={item.amount} onChangeText={(v) => updateReconItem(i, { amount: v })} placeholder="R" placeholderTextColor={colors.textDisabled} keyboardType="numeric" />
-              {item.photo ? (
+            <View key={i} style={styles.reconCard}>
+              <View style={styles.reconCardHeadRow}>
                 <TouchableOpacity
-                  style={styles.reconPhotoThumbWrap}
-                  onPress={() => updateReconItem(i, { photo: "" })}
-                  testID={`recon-photo-${i}`}
+                  testID={`recon-category-${i}`}
+                  style={[styles.input, styles.reconCategoryBtn, !item.category && styles.reconCategoryBtnEmpty]}
+                  onPress={() => openWheel(`recon_category:${i}` as WheelField)}
                 >
-                  <Image source={{ uri: item.photo }} style={styles.reconPhotoThumb} />
-                  <View style={styles.reconPhotoBadge}>
-                    <Ionicons name="close" size={10} color="#fff" />
-                  </View>
+                  <Text
+                    style={[styles.reconCategoryText, !item.category && styles.reconCategoryTextEmpty]}
+                    numberOfLines={1}
+                  >
+                    {item.category || "Choose area"}
+                  </Text>
+                  <Ionicons name="chevron-down" size={14} color={colors.textSecondary} />
                 </TouchableOpacity>
-              ) : (
+                <TextInput
+                  style={[styles.input, styles.reconAmountInput]}
+                  value={item.amount}
+                  onChangeText={(v) => updateReconItem(i, { amount: v })}
+                  placeholder="R"
+                  placeholderTextColor={colors.textDisabled}
+                  keyboardType="numeric"
+                  testID={`recon-amount-${i}`}
+                />
                 <TouchableOpacity
-                  style={styles.reconPhotoBtn}
-                  onPress={() => pickReconPhoto(i)}
-                  testID={`recon-photo-${i}`}
+                  style={styles.reconRemove}
+                  onPress={() => removeReconItem(i)}
+                  testID={`recon-remove-${i}`}
                 >
-                  <Ionicons name="camera-outline" size={16} color={colors.text} />
+                  <Ionicons name="close" size={16} color={colors.danger} />
                 </TouchableOpacity>
-              )}
-              <TouchableOpacity style={styles.reconRemove} onPress={() => removeReconItem(i)}><Ionicons name="close" size={16} color={colors.danger} /></TouchableOpacity>
+              </View>
+
+              {/* Photo strip — up to MAX_RECON_PHOTOS thumbnails, then an
+                  Add button. Tapping a thumbnail removes that photo. */}
+              <View style={styles.reconPhotoStrip}>
+                {(item.photos || []).map((p, pIdx) => (
+                  <TouchableOpacity
+                    key={pIdx}
+                    style={styles.reconPhotoThumbWrap}
+                    onPress={() => removeReconPhoto(i, pIdx)}
+                    testID={`recon-photo-${i}-${pIdx}`}
+                    accessibilityLabel="Tap to remove photo"
+                  >
+                    <Image source={{ uri: p }} style={styles.reconPhotoThumb} />
+                    <View style={styles.reconPhotoBadge}>
+                      <Ionicons name="close" size={10} color="#fff" />
+                    </View>
+                  </TouchableOpacity>
+                ))}
+                {(item.photos?.length ?? 0) < MAX_RECON_PHOTOS ? (
+                  <TouchableOpacity
+                    style={styles.reconPhotoAddBtn}
+                    onPress={() => addReconPhoto(i)}
+                    testID={`recon-photo-add-${i}`}
+                  >
+                    <Ionicons name="camera-outline" size={18} color={colors.text} />
+                    <Text style={styles.reconPhotoAddText}>
+                      {(item.photos?.length ?? 0) === 0
+                        ? "Add photo"
+                        : `${(item.photos?.length ?? 0)}/${MAX_RECON_PHOTOS}`}
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={styles.reconPhotoMaxText}>
+                    Max {MAX_RECON_PHOTOS} photos
+                  </Text>
+                )}
+              </View>
             </View>
           ))}
           <TouchableOpacity style={styles.reconAdd} onPress={addReconItem} testID="add-recon">
             <Ionicons name="add" size={16} color={colors.text} />
-            <Text style={styles.reconAddText}>ADD LINE ITEM</Text>
+            <Text style={styles.reconAddText}>ADD RECON LINE</Text>
           </TouchableOpacity>
           {reconTotal > 0 ? <Text style={styles.reconTotal}>Total reconditioning: R {reconTotal.toFixed(2)}</Text> : null}
           </>
@@ -1252,9 +1391,80 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   checkText: { color: colors.text, fontSize: 13, flex: 1 },
 
   reconRow: { flexDirection: "row", gap: 6, alignItems: "center", marginBottom: 6 },
+  // New card-style recon item container (one per line).
+  reconCard: {
+    backgroundColor: colors.paper,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  reconCardHeadRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  reconCategoryBtn: {
+    flex: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+  },
+  reconCategoryBtnEmpty: {
+    borderStyle: "dashed",
+  },
+  reconCategoryText: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "700",
+    flex: 1,
+  },
+  reconCategoryTextEmpty: {
+    color: colors.textDisabled,
+    fontWeight: "500",
+  },
+  reconAmountInput: {
+    flex: 1,
+    minHeight: 44,
+    textAlign: "right",
+    fontVariant: ["tabular-nums"],
+  },
+  reconPhotoStrip: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  reconPhotoAddBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    minHeight: 46,
+  },
+  reconPhotoAddText: {
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+  },
+  reconPhotoMaxText: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontStyle: "italic",
+    alignSelf: "center",
+  },
   reconRemove: { width: 30, height: 30, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.danger + "55", backgroundColor: colors.danger + "12", borderRadius: radius.sm },
   reconPhotoBtn: { width: 30, height: 30, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, backgroundColor: colors.paper, borderRadius: radius.sm },
-  reconPhotoThumbWrap: { width: 30, height: 30, borderRadius: radius.sm, overflow: "hidden", borderWidth: 1, borderColor: colors.border, position: "relative" },
+  reconPhotoThumbWrap: { width: 46, height: 46, borderRadius: radius.sm, overflow: "hidden", borderWidth: 1, borderColor: colors.border, position: "relative" },
   reconPhotoThumb: { width: "100%", height: "100%" },
   reconPhotoBadge: { position: "absolute", top: -2, right: -2, backgroundColor: colors.danger, width: 14, height: 14, borderRadius: 7, alignItems: "center", justifyContent: "center" },
   reconAdd: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, padding: 10, borderWidth: 1, borderStyle: "dashed", borderColor: colors.border, borderRadius: radius.sm, marginTop: 4 },

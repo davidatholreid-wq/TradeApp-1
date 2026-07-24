@@ -21,7 +21,15 @@ import ConditionRatingInfoModal from "@/src/components/ConditionRatingInfoModal"
 import BrandLogo from "@/src/components/BrandLogo";
 import { formatZAR, computeServiceGap, formatMonthsAgo, formatKm } from "@/src/utils/format";
 
-type ReconItem = { label: string; amount_zar: number; photo?: string | null };
+type ReconItem = {
+  // Legacy free-text label + single photo, and new category + multi-photo.
+  // Both are supported here so we can render historical submissions unchanged.
+  label: string;
+  category?: string | null;
+  amount_zar: number;
+  photo?: string | null;
+  photos?: string[];
+};
 
 type Submission = {
   id: string;
@@ -579,10 +587,17 @@ export default function VehicleDetail() {
       label: p.label,
     })).filter((p) => !!p.uri);
     // Append any reconditioning photos so tapping a recon thumbnail opens
-    // the shared full-screen carousel.
-    const reconPhotos: CarouselPhoto[] = (sub.reconditioning_items || [])
-      .filter((r) => !!r.photo)
-      .map((r) => ({ uri: r.photo as string, label: `Recon · ${r.label}` }));
+    // the shared full-screen carousel. Supports both new multi-photo
+    // (`photos: []`) and legacy single (`photo: string`) shapes.
+    const reconPhotos: CarouselPhoto[] = (sub.reconditioning_items || []).flatMap((r) => {
+      const label = r.category || r.label || "Recon";
+      const list = Array.isArray(r.photos) && r.photos.length > 0
+        ? r.photos
+        : r.photo
+          ? [r.photo]
+          : [];
+      return list.map((uri) => ({ uri: uri as string, label: `Recon · ${label}` }));
+    });
     return [...main, ...reconPhotos];
   }, [sub]);
 
@@ -1275,7 +1290,6 @@ export default function VehicleDetail() {
               <DetailRow label="Tyres" value={sub.tyre_condition ? `${sub.tyre_condition} / 10` : "—"} />
             </>
           )}
-          <DetailRow label="Windscreen" value={sub.windscreen_condition ?? "—"} />
           <DetailRow
             label="Previous Accident Damage"
             value={sub.accident_damage ? "Yes" : "None"}
@@ -1351,24 +1365,40 @@ export default function VehicleDetail() {
           <>
             <Text style={styles.sectionTitle}>Reconditioning Estimate</Text>
             <View style={styles.detailsList}>
-              {sub.reconditioning_items.map((r, i) => (
-                <View key={i} style={styles.reconRow}>
-                  {r.photo ? (
-                    <TouchableOpacity
-                      onPress={() => {
-                        const idx = carouselPhotos.findIndex((c) => c.uri === r.photo);
-                        if (idx >= 0) setCarouselIdx(idx);
-                      }}
-                      style={styles.reconThumbWrap}
-                      testID={`recon-thumb-${i}`}
-                    >
-                      <Image source={{ uri: r.photo }} style={styles.reconThumb} />
-                    </TouchableOpacity>
-                  ) : null}
-                  <Text style={styles.reconLabel}>{r.label}</Text>
-                  <Text style={styles.reconAmount}>R {r.amount_zar.toLocaleString()}</Text>
-                </View>
-              ))}
+              {sub.reconditioning_items.map((r, i) => {
+                // Support both new multi-photo and legacy single-photo shapes.
+                const photos: string[] = Array.isArray(r.photos) && r.photos.length > 0
+                  ? (r.photos as string[])
+                  : r.photo
+                    ? [r.photo]
+                    : [];
+                const heading = r.category || r.label || "Reconditioning";
+                return (
+                  <View key={i} style={styles.reconCardRow}>
+                    <View style={styles.reconHeadRow}>
+                      <Text style={styles.reconLabel}>{heading}</Text>
+                      <Text style={styles.reconAmount}>R {r.amount_zar.toLocaleString()}</Text>
+                    </View>
+                    {photos.length > 0 ? (
+                      <View style={styles.reconPhotoStripDetail}>
+                        {photos.map((uri, pIdx) => (
+                          <TouchableOpacity
+                            key={pIdx}
+                            onPress={() => {
+                              const idx = carouselPhotos.findIndex((c) => c.uri === uri);
+                              if (idx >= 0) setCarouselIdx(idx);
+                            }}
+                            style={styles.reconThumbWrap}
+                            testID={`recon-thumb-${i}-${pIdx}`}
+                          >
+                            <Image source={{ uri }} style={styles.reconThumb} />
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    ) : null}
+                  </View>
+                );
+              })}
               <View style={styles.reconTotalRow}>
                 <Text style={styles.reconTotalLabel}>TOTAL</Text>
                 <Text style={styles.reconTotalValue}>
@@ -3298,7 +3328,24 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   infoValueMono: { color: colors.text, fontSize: 12, fontWeight: "700", flex: 1, textAlign: "right", fontFamily: fonts.mono },
 
   reconRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colors.border },
-  reconThumbWrap: { width: 32, height: 32, borderRadius: radius.sm, overflow: "hidden", borderWidth: 1, borderColor: colors.border, marginRight: 8 },
+  reconCardRow: {
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: spacing.sm,
+  },
+  reconHeadRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  reconPhotoStripDetail: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  reconThumbWrap: { width: 56, height: 56, borderRadius: radius.sm, overflow: "hidden", borderWidth: 1, borderColor: colors.border },
   reconThumb: { width: "100%", height: "100%" },
   reconLabel: { color: colors.text, fontSize: 13, flex: 1 },
   reconAmount: { color: colors.text, fontSize: 14, fontWeight: "700", fontFamily: fonts.number, fontVariant: ["tabular-nums"] },

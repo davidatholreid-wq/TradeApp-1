@@ -15,7 +15,13 @@ import PhotoCarousel, { CarouselPhoto } from "@/src/components/PhotoCarousel";
 import ConditionRatingInfoModal from "@/src/components/ConditionRatingInfoModal";
 import { computeServiceGap, formatMonthsAgo, formatKm } from "@/src/utils/format";
 
-type ReconItem = { label: string; amount_zar: number; photo?: string | null };
+type ReconItem = {
+  label: string;
+  category?: string | null;
+  amount_zar: number;
+  photo?: string | null;
+  photos?: string[];
+};
 
 type Submission = {
   id: string;
@@ -269,9 +275,15 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
       uri: resolvePhoto(selected.photos, p.key, p.fallback),
       label: p.label,
     })).filter((p) => !!p.uri);
-    const reconPhotos: CarouselPhoto[] = (selected.reconditioning_items || [])
-      .filter((r: any) => !!r?.photo)
-      .map((r: any) => ({ uri: r.photo as string, label: `Recon · ${r.label}` }));
+    const reconPhotos: CarouselPhoto[] = (selected.reconditioning_items || []).flatMap((r: any) => {
+      const label = r?.category || r?.label || "Recon";
+      const list: string[] = Array.isArray(r?.photos) && r.photos.length > 0
+        ? r.photos.filter((x: any) => typeof x === "string" && x)
+        : r?.photo
+          ? [r.photo]
+          : [];
+      return list.map((uri) => ({ uri, label: `Recon · ${label}` }));
+    });
     return [...main, ...reconPhotos];
   }, [selected]);
 
@@ -774,7 +786,6 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                     <DetailRow label="Tyres" value={selected.tyre_condition ? `${selected.tyre_condition} / 10` : "—"} />
                   </>
                 )}
-                <DetailRow label="Windscreen" value={selected.windscreen_condition ?? "—"} />
                 <DetailRow
                   label="Previous Accident Damage"
                   value={selected.accident_damage ? "Yes" : "None"}
@@ -870,26 +881,41 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 <>
                   <Text style={styles.groupTitle}>Reconditioning Estimate</Text>
                   <View style={styles.detailsList}>
-                    {selected.reconditioning_items.map((r, i) => (
-                      <View key={i} style={styles.detailRow}>
-                        {r.photo ? (
-                          <TouchableOpacity
-                            onPress={() => {
-                              const idx = carouselPhotos.findIndex((c) => c.uri === r.photo);
-                              if (idx >= 0) setCarouselIdx(idx);
-                            }}
-                            style={styles.reconThumbWrap}
-                            testID={`admin-recon-thumb-${i}`}
-                          >
-                            <Image source={{ uri: r.photo }} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
-                          </TouchableOpacity>
-                        ) : null}
-                        <Text style={[styles.detailRowLabel, { flex: 1 }]}>{r.label}</Text>
-                        <Text style={[styles.detailRowValue, { fontFamily: fonts.mono }]}>
-                          R {r.amount_zar.toLocaleString()}
-                        </Text>
-                      </View>
-                    ))}
+                    {selected.reconditioning_items.map((r: any, i) => {
+                      const photos: string[] = Array.isArray(r?.photos) && r.photos.length > 0
+                        ? r.photos.filter((x: any) => typeof x === "string" && x)
+                        : r?.photo
+                          ? [r.photo]
+                          : [];
+                      const heading = r?.category || r?.label || "Reconditioning";
+                      return (
+                        <View key={i} style={styles.adminReconCard}>
+                          <View style={styles.adminReconHeadRow}>
+                            <Text style={[styles.detailRowLabel, { flex: 1 }]}>{heading}</Text>
+                            <Text style={[styles.detailRowValue, { fontFamily: fonts.mono }]}>
+                              R {r.amount_zar.toLocaleString()}
+                            </Text>
+                          </View>
+                          {photos.length > 0 ? (
+                            <View style={styles.adminReconPhotoStrip}>
+                              {photos.map((uri, pIdx) => (
+                                <TouchableOpacity
+                                  key={pIdx}
+                                  onPress={() => {
+                                    const idx = carouselPhotos.findIndex((c) => c.uri === uri);
+                                    if (idx >= 0) setCarouselIdx(idx);
+                                  }}
+                                  style={styles.reconThumbWrap}
+                                  testID={`admin-recon-thumb-${i}-${pIdx}`}
+                                >
+                                  <Image source={{ uri }} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          ) : null}
+                        </View>
+                      );
+                    })}
                     <View style={styles.reconTotalRow}>
                       <Text style={styles.detailRowLabel}>Total</Text>
                       <Text style={styles.reconTotal}>
@@ -2010,13 +2036,29 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
   reconTotal: { color: "#fff", fontFamily: fonts.number, fontVariant: ["tabular-nums"], fontWeight: "800", fontSize: 20, letterSpacing: -0.2 },
   reconThumbWrap: {
-    width: 40,
-    height: 40,
+    width: 56,
+    height: 56,
     borderRadius: radius.sm,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: colors.border,
-    marginRight: 4,
+  },
+  adminReconCard: {
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: spacing.sm,
+  },
+  adminReconHeadRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  adminReconPhotoStrip: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
   },
 
   dealerBox: {

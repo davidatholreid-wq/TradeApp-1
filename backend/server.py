@@ -1326,10 +1326,11 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         ]:
             if not (1 <= rating <= 10):
                 raise HTTPException(400, f"{name.title()} condition must be 1-10")
-        if not payload.windscreen_condition:
-            raise HTTPException(400, "Windscreen condition is required")
         if not payload.service_history:
             raise HTTPException(400, "Service history is required")
+        # NOTE: windscreen is no longer a required condition field. If the
+        # windscreen is damaged the dealer records it as a reconditioning
+        # line item ("Windscreen" category) instead.
     total_recon = sum((r.get("amount_zar", 0) or 0) for r in payload.reconditioning_items)
     sub_id = str(uuid.uuid4())
     reference = await next_reference_number()
@@ -1350,20 +1351,52 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         folder=f"fourbuy/submissions/{sub_id}",
         public_id="license_disk_photo",
     )
-    # Reconditioning items may carry an optional per-line photo (base64 data
-    # URL from the mobile picker). Upload each to Cloudinary and store the
-    # secure URL alongside the label & amount.
+    # Reconditioning items may carry EITHER a legacy single `photo` (old
+    # clients) OR a `photos` list of up to 5 base64 data URLs (new clients).
+    # We upload every base64 photo to Cloudinary and normalise storage so
+    # downstream code (mobile, web admin, PDF) can just read `photos`.
     recon_folder = f"fourbuy/submissions/{sub_id}/recon"
     recon_items_uploaded: list[dict] = []
     for idx, item in enumerate(payload.reconditioning_items or []):
         clean = dict(item)
-        photo_val = clean.get("photo")
-        if _looks_like_base64_image(photo_val):
-            clean["photo"] = upload_image_to_cloudinary(
-                photo_val, folder=recon_folder, public_id=f"item_{idx}",
-            )
-        elif not photo_val:
-            clean["photo"] = None
+
+        # Collect every candidate photo — the new `photos` list first,
+        # falling back to the legacy single `photo` slot.
+        raw_photos: list = []
+        if isinstance(clean.get("photos"), list):
+            raw_photos.extend([p for p in clean["photos"] if p])
+        if clean.get("photo"):
+            raw_photos.append(clean["photo"])
+
+        uploaded_photos: list[str] = []
+        for pidx, ph in enumerate(raw_photos[:5]):
+            if _looks_like_base64_image(ph):
+                url = upload_image_to_cloudinary(
+                    ph, folder=recon_folder,
+                    public_id=f"item_{idx}_photo_{pidx}",
+                )
+                if url:
+                    uploaded_photos.append(url)
+            elif isinstance(ph, str) and ph.startswith("http"):
+                uploaded_photos.append(ph)
+
+        clean["photos"] = uploaded_photos
+        # Keep legacy `photo` field pointing at the first image so any
+        # unmigrated read-side code (older mobile/web build) still sees a
+        # thumbnail.
+        clean["photo"] = uploaded_photos[0] if uploaded_photos else None
+
+        # If a category was supplied, mirror it into `label` for
+        # backwards compatibility with the existing PDF / admin views
+        # that render `label`. The frontend also allows a custom `note`
+        # if the dealer wants to add detail (e.g. "left front tyre").
+        cat = clean.get("category")
+        if cat and not clean.get("label"):
+            clean["label"] = cat
+        elif cat and clean.get("label") and clean["label"] != cat:
+            # keep both — label was set explicitly, category is separate.
+            pass
+
         recon_items_uploaded.append(clean)
     dealership_id = await _get_user_dealership_id(current)
     dealer_first = current["dealer_info"].get("first_name", "")
@@ -2746,7 +2779,6 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
                 ["Interior (25%)", _P(f"{i_} / 10")],
                 ["General (20%)", _P(f"{h_} / 10")],
             ])
-        c_rows.append(["Windscreen", _P(sub.get("windscreen_condition") or "—")])
         c_rows.append(["Accident Damage", _P("Yes" if sub.get("accident_damage") else "None")])
         if sub.get("accident_damage") and sub.get("accident_damage_types"):
             c_rows.append(["Damage Types", _P(", ".join(sub.get("accident_damage_types") or []))])
