@@ -75,13 +75,26 @@ def _clean(s: Optional[str]) -> Optional[str]:
 
 
 def _extract_label_value_pairs(html: str) -> dict[str, str]:
-    """Find ``<th class="label-column">LABEL</th> ... <td>VALUE</td>`` pairs.
+    """Find every ``label -> value`` pair in the JLR OSH document.
 
-    JLR's OSH page renders both the vehicle-details and last-service tables
-    with the same shape, which lets us collect every labelled field in a
-    single pass and pick out the ones we want by label.
+    JLR renders vehicle-details in two different layouts depending on
+    which tab you're on:
+
+    1. ``/home`` uses the classic table layout with
+       ``<th class="label-column">LABEL</th><td>VALUE</td>``.
+
+    2. ``/service-history`` uses a Bootstrap grid with
+       ``<div class="…theme-coloured…"><strong>LABEL:</strong></div>
+       <div …><span>VALUE</span></div>`` (or a variant where the value
+       sits in a sibling ``<span>`` directly under the label wrapper).
+
+    We collect from both patterns in a single pass and key everything
+    lower-cased so downstream code can pick fields out by label without
+    knowing which page the HTML came from.
     """
     pairs: dict[str, str] = {}
+
+    # (1) Classic table layout — <th class="label-column"> / <td>
     for m in re.finditer(
         r'<th[^>]*class="label-column"[^>]*>(?P<label>[^<]+)</th>\s*(?:<td[^>]*>(?P<value>[\s\S]*?)</td>)',
         html,
@@ -90,6 +103,20 @@ def _extract_label_value_pairs(html: str) -> dict[str, str]:
         label = _clean(m.group("label")) or ""
         value = _clean(m.group("value")) or ""
         if label:
+            pairs[label.lower()] = value
+
+    # (2) Bootstrap-grid layout used on /service-history — the label is
+    # inside a `theme-coloured` cell as `<strong>Label:</strong>` and the
+    # value is the next sibling column. Two flavours handled:
+    #   (a) same row, two columns: label div + value div (Model, Engine, ...)
+    #   (b) stacked: label div then a sibling <span> (Registration country)
+    for m in re.finditer(
+        r'(?is)<div[^>]*class="[^"]*theme-coloured[^"]*"[^>]*>\s*<strong>\s*(?P<label>[^<:]+?)\s*:?\s*</strong>\s*</div>\s*(?P<tail>(?:<div[^>]*>[\s\S]*?</div>|<span[^>]*>[\s\S]*?</span>))',
+        html,
+    ):
+        label = _clean(m.group("label")) or ""
+        value = _clean(m.group("tail")) or ""
+        if label and value and label.lower() not in pairs:
             pairs[label.lower()] = value
     return pairs
 
@@ -368,32 +395,27 @@ async def fetch_landrover_osh(vin: str, *, country_label: str = "South Africa",
                 # If the home page succeeded, click through to the
                 # SERVICE HISTORY tab and merge its extra data — the full
                 # per-service table + richer vehicle details (Engine,
-                # Colour, Warranty Start Date, Registration Country). The
-                # tab is the second nav item; JLR routes it under
-                # /service-history?token=<session>.
+                # Colour, Warranty Start Date, Registration Country).
                 if parsed.get("status") == "ok":
                     try:
-                        # Prefer clicking by visible text so we're
-                        # resilient to href/token changes. Fall back to a
-                        # direct navigation if the click doesn't take us
-                        # to /service-history.
-                        try:
-                            await page.get_by_text(
-                                "Service History", exact=True
-                            ).first.click(timeout=6000)
-                        except Exception:
-                            await page.goto(
-                                result_url.replace("/home", "/service-history"),
-                                wait_until="domcontentloaded",
-                                timeout=15000,
-                            )
-                        try:
-                            await page.wait_for_url(
-                                re.compile(r"osh\.landrover\.com/service-history", re.I),
-                                timeout=15000,
-                            )
-                        except Exception:
-                            pass
+                        # Direct URL rewrite is far more reliable than
+                        # clicking the nav-tab — JLR keeps the session
+                        # token in the query string, so we just swap the
+                        # path segment and let their server redirect us
+                        # to the tabbed view. If it 404s, we still have
+                        # the /home data already parsed.
+                        sh_target = re.sub(
+                            r"osh\.landrover\.com/home",
+                            "osh.landrover.com/service-history",
+                            result_url,
+                            count=1,
+                            flags=re.I,
+                        )
+                        await page.goto(
+                            sh_target,
+                            wait_until="domcontentloaded",
+                            timeout=20000,
+                        )
                         try:
                             await page.wait_for_load_state("networkidle", timeout=10000)
                         except Exception:
