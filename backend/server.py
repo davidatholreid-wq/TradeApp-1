@@ -3758,6 +3758,205 @@ def _warranty_label(status: Optional[str], legacy_bool: Optional[bool]) -> str:
     return "Not answered"
 
 
+def _zar(n: Optional[float]) -> str:
+    """Format a Rand value as `R123 456` or `—` when null."""
+    if n is None:
+        return "—"
+    try:
+        return f"R{int(round(float(n))):,}".replace(",", " ")
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _market_analysis_context(sub: dict) -> str:
+    """Build the enriched Vehicle-context block sent to GPT-5.2 for the
+    market analysis. Combines everything the app already knows about the
+    car — Kredo trade/retail values, VIN accident history, BMW/JLR
+    factory data, service history, paint & recon — into a compact,
+    prompt-friendly report so the model can ground its answer instead of
+    guessing from make/model/year alone. Missing pieces are omitted
+    silently so the prompt stays tight for cars with limited data.
+    """
+    lines: list[str] = ["Vehicle:"]
+
+    # -- Core identity & condition ---------------------------------------
+    lines.append(f"- Make: {sub.get('make_name')}")
+    lines.append(f"- Model: {sub.get('model_name')}")
+    lines.append(f"- Derivative: {sub.get('derivative_name')}")
+    lines.append(f"- Year of production: {sub.get('year')}")
+    if sub.get("year_registered") and sub.get("year_registered") != sub.get("year"):
+        lines.append(f"- Year registered: {sub.get('year_registered')}")
+    try:
+        km = int(sub.get("mileage") or 0)
+        lines.append(f"- Mileage: {km:,} km")
+        # Mileage per year vs SA average (~20,000 km/year is the common yardstick)
+        yr = sub.get("year") or sub.get("year_registered")
+        if yr:
+            age = max(1, datetime.now(timezone.utc).year - int(yr))
+            per_year = km / age
+            avg_delta = per_year - 20000
+            deviation = "typical"
+            if avg_delta < -6000:
+                deviation = f"below-average (~{int(per_year):,} km/yr)"
+            elif avg_delta > 6000:
+                deviation = f"above-average (~{int(per_year):,} km/yr)"
+            else:
+                deviation = f"average (~{int(per_year):,} km/yr)"
+            lines.append(f"- Mileage vs SA average: {deviation}")
+    except Exception:
+        pass
+    lines.append(f"- Colour: {sub.get('colour')}")
+
+    # Ratings: prefer granular scores when present, otherwise legacy overall
+    ratings = []
+    for key, label in (
+        ("mechanical_condition", "Mechanical"),
+        ("cosmetic_condition", "Cosmetic"),
+        ("interior_condition", "Interior"),
+        ("history_condition", "History"),
+    ):
+        val = sub.get(key)
+        if val is not None:
+            ratings.append(f"{label} {val}/10")
+    if ratings:
+        lines.append(f"- Condition ratings: {', '.join(ratings)}")
+    elif sub.get("condition") is not None:
+        lines.append(f"- Condition: {sub.get('condition')}/10")
+
+    # -- Warranty & Maintenance Plan -------------------------------------
+    lines.append(
+        f"- Factory warranty: {_warranty_label(sub.get('factory_warranty_status'), sub.get('factory_warranty'))}"
+    )
+    lines.append(
+        f"- Maintenance plan: {_warranty_label(sub.get('maintenance_plan_status'), None)}"
+    )
+
+    # -- Service history (dealer-declared) --------------------------------
+    if sub.get("service_history"):
+        lines.append(f"- Service history (declared): {sub['service_history']}")
+    if sub.get("last_service_date"):
+        lines.append(f"- Last service date: {sub['last_service_date']}")
+    if sub.get("last_service_mileage"):
+        lines.append(f"- Last service mileage: {sub['last_service_mileage']} km")
+
+    # -- Paint & accident (dealer-declared) -------------------------------
+    if sub.get("paint_evidence"):
+        lines.append(
+            f"- Paint evidence: Yes ({sub.get('paint_quality') or 'quality unrated'})"
+        )
+    else:
+        lines.append("- Paint evidence: None reported")
+    if sub.get("accident_damage"):
+        types = sub.get("accident_damage_types") or []
+        lines.append(
+            f"- Dealer-declared accident damage: Yes ({', '.join(types) if types else 'unspecified'})"
+        )
+    else:
+        lines.append("- Dealer-declared accident damage: None reported")
+
+    # -- Reconditioning (money needed to retail-ready) --------------------
+    recon_items = sub.get("reconditioning_items") or []
+    recon_total = sub.get("reconditioning_total_zar")
+    if recon_items or recon_total:
+        cat_lines = []
+        for r in recon_items:
+            amt = r.get("amount_zar") or 0
+            lbl = r.get("category") or r.get("label") or "Other"
+            if amt:
+                cat_lines.append(f"{lbl} {_zar(amt)}")
+        cat_str = ", ".join(cat_lines) if cat_lines else "no line items"
+        lines.append(
+            f"- Reconditioning required: total {_zar(recon_total)} ({cat_str})"
+        )
+
+    # -- Kredo TrueTrade values (SA industry benchmark) -------------------
+    mv = sub.get("market_values") or {}
+    if (mv.get("status") or "ok") == "ok" and (mv.get("retail_price_zar") or mv.get("adjusted_retail_zar")):
+        lines.append("- Kredo TrueTrade values (SA benchmark for this M&M code):")
+        if mv.get("mm_code"):
+            lines.append(f"    · M&M code: {mv['mm_code']}")
+        if mv.get("new_price_zar"):
+            lines.append(f"    · Original list price: {_zar(mv['new_price_zar'])}")
+        if mv.get("retail_price_zar"):
+            lines.append(f"    · Book retail: {_zar(mv['retail_price_zar'])}")
+        if mv.get("market_price_zar"):
+            lines.append(f"    · Market: {_zar(mv['market_price_zar'])}")
+        if mv.get("adjusted_retail_zar"):
+            lines.append(f"    · Adjusted retail (this unit): {_zar(mv['adjusted_retail_zar'])}")
+        if mv.get("adjusted_trade_zar"):
+            lines.append(f"    · Adjusted trade (this unit): {_zar(mv['adjusted_trade_zar'])}")
+
+    # -- Kredo CarTrust / VIN accident-claim history ----------------------
+    kct = (sub.get("reports") or {}).get("kredo_cartrust") or {}
+    ct_payload = kct.get("callback_payload") or {}
+    ct_json_raw = ct_payload.get("cartrust_json") if ct_payload else None
+    if isinstance(ct_json_raw, str):
+        try:
+            import json as _json_std
+            ct_data = _json_std.loads(ct_json_raw)
+        except Exception:
+            ct_data = None
+    elif isinstance(ct_json_raw, dict):
+        ct_data = ct_json_raw
+    else:
+        ct_data = None
+    if ct_data:
+        cc = ct_data.get("claim_count") or ct_data.get("accident_count")
+        if cc is not None:
+            lines.append(f"- Kredo CarTrust: {cc} recorded insurance/accident claim(s)")
+
+    # Also consider VIN-history report if ordered
+    for r in (sub.get("report_orders_snapshot") or []):
+        if r.get("type") == "kredo_vin_history":
+            data = r.get("result_data") or {}
+            cc = data.get("claim_count")
+            if cc is not None:
+                lines.append(f"- Kredo VIN accident/claim history: {cc} claim(s) on file")
+
+    # -- BMW factory options (Bimmervin) ---------------------------------
+    bs = sub.get("bimmer_spec") or {}
+    if bs:
+        counts = bs.get("option_counts") or {}
+        opts = bs.get("options") or []
+        premium_hits = []
+        opt_str_all = " ".join(str(o).lower() for o in opts) if opts else ""
+        for keyword, label in [
+            ("m sport", "M Sport package"),
+            ("m-sport", "M Sport package"),
+            ("sunroof", "Sunroof"),
+            ("panorama", "Panoramic roof"),
+            ("harman", "Harman/Kardon audio"),
+            ("head-up", "Head-Up display"),
+            ("head up", "Head-Up display"),
+            ("adaptive cruise", "Adaptive cruise"),
+            ("laser", "Laser headlights"),
+            ("individual", "BMW Individual finish"),
+        ]:
+            if keyword in opt_str_all and label not in premium_hits:
+                premium_hits.append(label)
+        total_opts = counts.get("total") or len(opts)
+        if total_opts:
+            hits_str = f" — notable: {', '.join(premium_hits[:5])}" if premium_hits else ""
+            lines.append(
+                f"- BMW factory options (Bimmervin): {total_opts} options fitted{hits_str}"
+            )
+
+    # -- JLR OSH service history (Land Rover / Range Rover / Jaguar) -----
+    losh = sub.get("landrover_osh") or {}
+    services = losh.get("services") or []
+    if services or losh.get("alerts"):
+        recent = services[0] if services else {}
+        alerts = losh.get("alerts") or []
+        parts = [f"{len(services)} JLR service records on file"]
+        if recent.get("service_date"):
+            parts.append(f"most recent {recent['service_date']}")
+        if alerts:
+            parts.append(f"{len(alerts)} active alert(s)")
+        lines.append(f"- JLR Online Service History: {'; '.join(parts)}")
+
+    return "\n".join(lines) + "\n\nProvide the JSON market analysis for the South African market."
+
+
 @api_router.post("/submissions/{sub_id}/market-analysis")
 async def market_analysis(sub_id: str, current: dict = Depends(get_current_user)):
     sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0, "photos": 0})
@@ -3768,35 +3967,43 @@ async def market_analysis(sub_id: str, current: dict = Depends(get_current_user)
     if not EMERGENT_LLM_KEY:
         raise HTTPException(500, "LLM key not configured")
 
+    # Look up delivered report orders so the prompt can factor in
+    # Kredo VIN history / accident data if a report was ordered.
+    try:
+        report_orders_list = await db.report_orders.find(
+            {"submission_id": sub_id, "status": "delivered"}, {"_id": 0}
+        ).to_list(50)
+        sub["report_orders_snapshot"] = report_orders_list
+    except Exception:
+        sub["report_orders_snapshot"] = []
+
     system_prompt = (
         "You are a South African used-car market analyst with deep knowledge of pricing on autotrader.co.za "
-        "and cars.co.za for the local ZAR (Rand) market. Given a specific vehicle's specs, provide a concise "
-        "market overview in this exact JSON format (no markdown, only valid JSON):\n"
+        "and cars.co.za for the local ZAR (Rand) market. You will be given a full dossier for a specific "
+        "vehicle including its Kredo TrueTrade book values (the SA industry benchmark), Kredo CarTrust accident "
+        "history, factory options (BMW) or online service history (JLR), dealer-declared condition, service "
+        "history, warranty status, paint evidence, and reconditioning still required to make it retail-ready.\n\n"
+        "GROUND YOUR ANSWER in the dossier. When Kredo TrueTrade values are provided, treat them as the "
+        "authoritative reference for retail/trade — your `retail_price_estimate_zar` and `trade_price_estimate_zar` "
+        "should be within roughly ±10% of Kredo's adjusted retail/trade unless recon costs, accident claims, "
+        "high mileage, or expired warranty justify a bigger discount. Deduct reconditioning cost from retail. "
+        "Deduct meaningful amounts for accident claims on file. Reward Active Factory Warranty and Active "
+        "Maintenance Plan with a small premium. Reward premium factory options and full JLR service history.\n\n"
+        "Return ONLY valid JSON (no markdown, no code fences) in this exact shape:\n"
         "{\n"
         '  "estimated_market_range_zar": {"low": <int>, "high": <int>, "typical": <int>},\n'
         '  "trade_price_estimate_zar": <int>,\n'
         '  "retail_price_estimate_zar": <int>,\n'
         '  "listings_summary": "<2-3 sentences about how many similar vehicles are typically listed on autotrader.co.za and cars.co.za and their price patterns>",\n'
-        '  "key_factors": ["<factor 1>", "<factor 2>", "<factor 3>"],\n'
+        '  "key_factors": ["<factor 1>", "<factor 2>", "<factor 3>", "<factor 4>"],\n'
+        '  "kredo_alignment": "<1-2 sentences on whether your estimate lines up with the Kredo TrueTrade values in the dossier, and why any deviation>",\n'
+        '  "recon_impact_zar": <int, how much reconditioning cost you deducted from retail>,\n'
         '  "confidence": "low|medium|high",\n'
-        '  "disclaimer": "Prices based on general market knowledge (no live scraping)."\n'
+        '  "disclaimer": "Prices based on Kredo TrueTrade benchmark plus general market knowledge (no live scraping)."\n'
         "}\n"
-        "Consider mileage, year, condition, warranty status, maintenance plan status, and accident damage. Trade should be 15-20% below retail."
+        "Trade should be 15-20% below retail unless the dossier justifies otherwise. Round all rand values to the nearest R1 000."
     )
-    prompt = (
-        f"Vehicle:\n"
-        f"- Make: {sub['make_name']}\n"
-        f"- Model: {sub['model_name']}\n"
-        f"- Derivative: {sub['derivative_name']}\n"
-        f"- Year: {sub['year']}\n"
-        f"- Mileage: {sub['mileage']:,} km\n"
-        f"- Colour: {sub['colour']}\n"
-        f"- Condition: {sub['condition']}/10\n"
-        f"- Factory warranty: {_warranty_label(sub.get('factory_warranty_status'), sub.get('factory_warranty'))}\n"
-        f"- Maintenance plan: {_warranty_label(sub.get('maintenance_plan_status'), None)}\n"
-        f"- Accident damage: {'Yes' if sub['accident_damage'] else 'None reported'}\n"
-        f"\nProvide the JSON market analysis for the South African market."
-    )
+    prompt = _market_analysis_context(sub)
 
     try:
         chat = LlmChat(

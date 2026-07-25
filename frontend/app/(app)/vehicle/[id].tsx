@@ -150,6 +150,8 @@ type MarketAnalysis = {
   retail_price_estimate_zar?: number;
   listings_summary?: string;
   key_factors?: string[];
+  kredo_alignment?: string;
+  recon_impact_zar?: number;
   confidence?: "low" | "medium" | "high";
   disclaimer?: string;
   raw?: string;
@@ -1588,6 +1590,21 @@ export default function VehicleDetail() {
                   </View>
                 ))}
               </View>
+            ) : null}
+
+            {sub.market_analysis.analysis.kredo_alignment ? (
+              <View style={styles.factorsBox}>
+                <Text style={styles.factorsTitle}>KREDO ALIGNMENT</Text>
+                <Text style={styles.factorText}>
+                  {sub.market_analysis.analysis.kredo_alignment}
+                </Text>
+              </View>
+            ) : null}
+
+            {sub.market_analysis.analysis.recon_impact_zar ? (
+              <Text style={styles.confidence}>
+                Recon adjustment: −R {sub.market_analysis.analysis.recon_impact_zar.toLocaleString()}
+              </Text>
             ) : null}
 
             {sub.market_analysis.analysis.confidence ? (
