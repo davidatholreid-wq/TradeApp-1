@@ -1639,8 +1639,9 @@ export default function VehicleDetail() {
           make={sub.make_name}
           model={sub.model_name}
           derivative={sub.derivative_name}
-          year={sub.year}
-          mileage={sub.mileage}
+          year={sub.year_of_production ?? sub.year}
+          yearFrom={sub.variant_manufacture_range?.min ?? null}
+          yearTo={sub.variant_manufacture_range?.max ?? null}
         />
 
         {/* Tyre Replacement Estimate — admin-only */}

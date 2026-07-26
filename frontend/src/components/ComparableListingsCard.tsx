@@ -17,8 +17,14 @@ type Props = {
   make?: string;
   model?: string;
   derivative?: string;
+  /** Fallback single year (year of production) used when no full range
+   *  is available. Ignored if `yearFrom` / `yearTo` are set. */
   year?: number | null;
-  mileage?: number | null;
+  /** Optional manufacture-year range for the selected derivative — from
+   *  the Kredo `variant_manufacture_range`. When present, we search
+   *  the full run of the model instead of a single production year. */
+  yearFrom?: number | null;
+  yearTo?: number | null;
 };
 
 // Kredo model / derivative names carry chassis suffixes like "5 SERIES
@@ -61,31 +67,37 @@ function slugCarsCoZa(s: string): string {
   return encodeURIComponent(s.trim().replace(/\s+/g, "-"));
 }
 
-// Mileage search band = ±20% around this car (rounded to nearest 5 000 km).
-// Falls back to a sensible open-ended band if mileage is missing.
-function mileageBand(mileageKm?: number | null): { low: number; high: number } {
-  const m = Number(mileageKm || 0);
-  if (!m || m <= 0) return { low: 0, high: 300000 };
-  const round5 = (n: number) => Math.max(0, Math.round(n / 5000) * 5000);
-  return { low: round5(m * 0.8), high: round5(m * 1.2) };
+// Resolve the year range to feed into AutoTrader's `year=X-to-Y` filter.
+// Uses the Kredo variant manufacture range when available (so the search
+// covers the whole production run of that derivative, matching the
+// verification we already do on year-registered vs year-manufactured),
+// otherwise falls back to the single `year` prop.
+function resolveYearRange(p: Props): { from: number; to: number } | null {
+  const from = p.yearFrom != null ? Number(p.yearFrom) : null;
+  const to = p.yearTo != null ? Number(p.yearTo) : null;
+  if (from && to && from <= to) return { from, to };
+  if (from) return { from, to: from };
+  if (to) return { from: to, to };
+  if (p.year) return { from: Number(p.year), to: Number(p.year) };
+  return null;
 }
 
-// AutoTrader.co.za: path + `-to-` filter format.
-//   /cars-for-sale/bmw/m5?year=2019-to-2019&mileage=105000-to-155000
+// AutoTrader.co.za: path + `-to-` year filter format.
+//   /cars-for-sale/bmw/m5?year=2018-to-2020
 function buildAutoTraderUrl(p: Props): string | null {
   const make = cleanText(p.make);
   const modelToken = bestModelDesignator(p.model, p.derivative);
   if (!make || !modelToken) return null;
-  const { low, high } = mileageBand(p.mileage);
+  const range = resolveYearRange(p);
   const qs = new URLSearchParams();
-  if (p.year) qs.set("year", `${p.year}-to-${p.year}`);
-  qs.set("mileage", `${low}-to-${high}`);
-  return `https://www.autotrader.co.za/cars-for-sale/${slugAT(make)}/${slugAT(modelToken)}?${qs.toString()}`;
+  if (range) qs.set("year", `${range.from}-to-${range.to}`);
+  const suffix = qs.toString();
+  return `https://www.autotrader.co.za/cars-for-sale/${slugAT(make)}/${slugAT(modelToken)}${suffix ? `?${suffix}` : ""}`;
 }
 
 // cars.co.za: path-based search under /usedcars/{Make}/{Model}/. Their
-// year / mileage query-string params aren't publicly documented, so we
-// only pre-fill make + model — the user tunes year/mileage on-site.
+// year query-string params aren't publicly documented, so we only
+// pre-fill make + model and the user tunes year on-site.
 //   /usedcars/BMW/M5/
 function buildCarsCoZaUrl(p: Props): string | null {
   const make = cleanText(p.make);
@@ -128,9 +140,12 @@ export default function ComparableListingsCard(props: Props) {
 
   if (!autoTrader && !carsCoZa) return null;
 
-  const { low, high } = mileageBand(props.mileage);
-  const yearStr = props.year ? String(props.year) : "Any year";
-  const mileageStr = `${low.toLocaleString()} – ${high.toLocaleString()} km`;
+  const range = resolveYearRange(props);
+  const yearStr = range
+    ? range.from === range.to
+      ? String(range.from)
+      : `${range.from} – ${range.to}`
+    : "any year";
   const searchLbl = searchLabel(props);
 
   return (
@@ -142,14 +157,13 @@ export default function ComparableListingsCard(props: Props) {
       <Text style={styles.help}>
         Opens live listings for{" "}
         <Text style={{ fontWeight: "700", color: colors.text }}>{searchLbl}</Text>
-        {props.year ? (
+        {range ? (
           <>
-            {" "}filtered to <Text style={{ fontWeight: "700", color: colors.text }}>{yearStr}</Text>
+            {" "}across the full model run{" "}
+            <Text style={{ fontWeight: "700", color: colors.text }}>({yearStr})</Text>
           </>
         ) : null}
-        {" "}with a mileage window of{" "}
-        <Text style={{ fontWeight: "700", color: colors.text }}>{mileageStr}</Text>{" "}
-        so you can eyeball the cheapest live example on the market.
+        , so you can eyeball the cheapest live example on the market.
       </Text>
 
       <View style={styles.actionsRow}>
@@ -166,7 +180,13 @@ export default function ComparableListingsCard(props: Props) {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.btnTitle}>AutoTrader.co.za</Text>
-              <Text style={styles.btnSub}>Year + mileage pre-filtered</Text>
+              <Text style={styles.btnSub}>
+                {range && range.from !== range.to
+                  ? `Year range ${range.from}–${range.to} applied`
+                  : range
+                    ? `Year ${range.from} applied`
+                    : "Model listing"}
+              </Text>
             </View>
             <Ionicons name="open-outline" size={18} color={colors.text} />
           </TouchableOpacity>
@@ -185,7 +205,7 @@ export default function ComparableListingsCard(props: Props) {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.btnTitle}>cars.co.za</Text>
-              <Text style={styles.btnSub}>Model landing (filter year/km on-site)</Text>
+              <Text style={styles.btnSub}>Model listing (filter year on-site)</Text>
             </View>
             <Ionicons name="open-outline" size={18} color={colors.text} />
           </TouchableOpacity>
