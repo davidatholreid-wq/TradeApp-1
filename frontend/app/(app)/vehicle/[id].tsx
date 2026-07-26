@@ -1046,6 +1046,16 @@ export default function VehicleDetail() {
           <DetailRow label="Transmission" value={sub.transmission ?? "—"} />
           <DetailRow label="Fuel Type" value={sub.fuel_type ?? "—"} />
           <DetailRow label="Colour" value={sub.colour} />
+          {sub.variant_manufacture_range && sub.variant_manufacture_range.min && sub.variant_manufacture_range.max ? (
+            <DetailRow
+              label="Model Year Run"
+              value={
+                sub.variant_manufacture_range.min === sub.variant_manufacture_range.max
+                  ? String(sub.variant_manufacture_range.min)
+                  : `${sub.variant_manufacture_range.min} – ${sub.variant_manufacture_range.max}`
+              }
+            />
+          ) : null}
           <DetailRow
             label="Year of Production"
             value={String(sub.year_of_production ?? sub.year)}

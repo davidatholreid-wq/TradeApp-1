@@ -64,6 +64,7 @@ type SubmissionFull = Submission & {
   year_of_production?: number;
   transmission?: string;
   year_registered?: number;
+  variant_manufacture_range?: { min?: number; max?: number } | null;
   // Legacy fields
   exterior_condition?: number;
   tyre_condition?: number;
@@ -777,6 +778,16 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 <DetailRow label="Fuel Type" value={selected.fuel_type ?? "—"} />
                 <DetailRow label="Colour" value={selected.colour} />
                 <DetailRow label="Rim Size" value={selected.rim_size ? `${selected.rim_size}″` : "—"} />
+                {selected.variant_manufacture_range && selected.variant_manufacture_range.min && selected.variant_manufacture_range.max ? (
+                  <DetailRow
+                    label="Model Year Run"
+                    value={
+                      selected.variant_manufacture_range.min === selected.variant_manufacture_range.max
+                        ? String(selected.variant_manufacture_range.min)
+                        : `${selected.variant_manufacture_range.min} – ${selected.variant_manufacture_range.max}`
+                    }
+                  />
+                ) : null}
                 <DetailRow label="Year of Production" value={String(selected.year_of_production ?? selected.year)} last />
               </View>
 
