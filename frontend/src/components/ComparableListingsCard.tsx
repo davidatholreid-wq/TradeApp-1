@@ -16,16 +16,28 @@ import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 type Props = {
   make?: string;
   model?: string;
+  derivative?: string;
   year?: number | null;
   mileage?: number | null;
 };
 
-// Kredo model names carry chassis suffixes like "5 SERIES (F10)" that
-// don't match AutoTrader / cars.co.za search catalogues. Strip anything
-// in parentheses (chassis code) and any trailing punctuation.
-function cleanModel(model?: string): string {
-  const s = (model || "").replace(/\([^)]*\)/g, "").replace(/\s{2,}/g, " ").trim();
-  return s;
+// Kredo model / derivative names carry chassis suffixes like "5 SERIES
+// (F10)" or "M5 M-DCT (F90)" that don't match AutoTrader / cars.co.za
+// search catalogues. Strip anything in parentheses (chassis codes) and
+// any trailing punctuation.
+function cleanText(s?: string): string {
+  return (s || "").replace(/\([^)]*\)/g, "").replace(/\s{2,}/g, " ").trim();
+}
+
+// Build the free-text search keyword: prefer the more specific
+// `make + derivative` string (e.g. "BMW M5 M-DCT") when a derivative is
+// available, otherwise fall back to `make + model` (e.g. "BMW 5 Series").
+function searchKeyword(p: Props): string {
+  const make = cleanText(p.make);
+  const der = cleanText(p.derivative);
+  const model = cleanText(p.model);
+  if (der) return [make, der].filter(Boolean).join(" ");
+  return [make, model].filter(Boolean).join(" ");
 }
 
 // Mileage search band = ±20% around this car (rounded to nearest 5 000 km).
@@ -37,32 +49,29 @@ function mileageBand(mileageKm?: number | null): { low: number; high: number } {
   return { low: round5(m * 0.8), high: round5(m * 1.2) };
 }
 
-// AutoTrader.co.za uses SEO-friendly path segments for make/model + query
-// params for year / mileage bands.
-//   /cars-for-sale/BMW/5-SERIES?year=2019-2019&mileage=100000-160000
+// AutoTrader.co.za free-text search + year + mileage filters.
+//   /cars-for-sale?keyword=BMW+M5+M-DCT&year=2019-2019&mileage=105000-155000
 function buildAutoTraderUrl(p: Props): string | null {
-  const model = cleanModel(p.model);
-  if (!p.make || !model) return null;
-  const slug = (s: string) => encodeURIComponent(s.trim().replace(/\s+/g, "-"));
+  const kw = searchKeyword(p);
+  if (!kw) return null;
   const { low, high } = mileageBand(p.mileage);
-  const year = p.year;
   const qs = new URLSearchParams();
-  if (year) qs.set("year", `${year}-${year}`);
+  qs.set("keyword", kw);
+  if (p.year) qs.set("year", `${p.year}-${p.year}`);
   qs.set("mileage", `${low}-${high}`);
-  return `https://www.autotrader.co.za/cars-for-sale/${slug(p.make)}/${slug(model)}?${qs.toString()}`;
+  return `https://www.autotrader.co.za/cars-for-sale?${qs.toString()}`;
 }
 
-// cars.co.za uses PascalCase query params on /carsforsale/.
-//   /carsforsale/?Manufacturer=BMW&Model=5+SERIES
+// cars.co.za free-text search + year + mileage filters.
+//   /carsforsale/?SearchText=BMW+M5+M-DCT
 //     &YearRange.From=2019&YearRange.To=2019
-//     &KilometreRange.From=100000&KilometreRange.To=160000
+//     &KilometreRange.From=105000&KilometreRange.To=155000
 function buildCarsCoZaUrl(p: Props): string | null {
-  const model = cleanModel(p.model);
-  if (!p.make || !model) return null;
+  const kw = searchKeyword(p);
+  if (!kw) return null;
   const { low, high } = mileageBand(p.mileage);
   const qs = new URLSearchParams();
-  qs.set("Manufacturer", p.make);
-  qs.set("Model", model);
+  qs.set("SearchText", kw);
   if (p.year) {
     qs.set("YearRange.From", String(p.year));
     qs.set("YearRange.To", String(p.year));
@@ -103,7 +112,7 @@ export default function ComparableListingsCard(props: Props) {
   const { low, high } = mileageBand(props.mileage);
   const yearStr = props.year ? String(props.year) : "Any year";
   const mileageStr = `${low.toLocaleString()} – ${high.toLocaleString()} km`;
-  const modelLabel = cleanModel(props.model) || props.model || "";
+  const searchLabel = searchKeyword(props) || `${props.make || ""} ${props.model || ""}`.trim();
 
   return (
     <View style={styles.card}>
@@ -112,9 +121,10 @@ export default function ComparableListingsCard(props: Props) {
         <Text style={styles.title}>Compare Live Listings</Text>
       </View>
       <Text style={styles.help}>
-        Opens {props.make} {modelLabel} listings pre-filtered to {yearStr} and
-        similar mileage ({mileageStr}) so you can eyeball the cheapest live
-        example on the market.
+        Searches <Text style={{ fontWeight: "700", color: colors.text }}>{searchLabel}</Text>{" "}
+        with the year set to <Text style={{ fontWeight: "700", color: colors.text }}>{yearStr}</Text>{" "}
+        and mileage filtered to <Text style={{ fontWeight: "700", color: colors.text }}>{mileageStr}</Text>,
+        so you can eyeball the cheapest live example on the market.
       </Text>
 
       <View style={styles.actionsRow}>

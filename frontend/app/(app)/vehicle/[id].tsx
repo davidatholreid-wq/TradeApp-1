@@ -1638,6 +1638,7 @@ export default function VehicleDetail() {
         <ComparableListingsCard
           make={sub.make_name}
           model={sub.model_name}
+          derivative={sub.derivative_name}
           year={sub.year}
           mileage={sub.mileage}
         />
