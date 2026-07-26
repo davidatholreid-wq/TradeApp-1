@@ -19,6 +19,7 @@ import { decodeLicenseDisk } from "@/src/utils/licenseDisk";
 import PhotoCarousel, { CarouselPhoto } from "@/src/components/PhotoCarousel";
 import ConditionRatingInfoModal from "@/src/components/ConditionRatingInfoModal";
 import BrandLogo from "@/src/components/BrandLogo";
+import ComparableListingsCard from "@/src/components/ComparableListingsCard";
 import { formatZAR, computeServiceGap, formatMonthsAgo, formatKm } from "@/src/utils/format";
 
 type ReconItem = {
@@ -1630,6 +1631,16 @@ export default function VehicleDetail() {
             </Text>
           </View>
         )}
+
+        {/* Compare Live Listings — deep-links into AutoTrader / cars.co.za
+            search results pre-filtered to comparable stock. No scraping,
+            just a hand-off to the live sites. */}
+        <ComparableListingsCard
+          make={sub.make_name}
+          model={sub.model_name}
+          year={sub.year}
+          mileage={sub.mileage}
+        />
 
         {/* Tyre Replacement Estimate — admin-only */}
         {isAdmin ? (
