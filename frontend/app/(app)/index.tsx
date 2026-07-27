@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useEffect } from "react";
+import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { Pressable, TouchableOpacity } from "@/src/components/HapticButtons";
 import { View, Text, StyleSheet, ScrollView, Image, Platform, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -273,7 +273,12 @@ export default function HomeScreen() {
           <View style={styles.cardsWrap}>
             {tiles.map((t) => (
               <View key={t.key} style={styles.tileCol}>
-                <FlipTile tile={t} styles={styles} colors={colors} />
+                <FlipTile
+                  tile={t}
+                  styles={styles}
+                  colors={colors}
+                  autoRotateMs={t.key === "ads" ? 5000 : 0}
+                />
               </View>
             ))}
           </View>
@@ -295,9 +300,13 @@ type FlipTileProps = {
   tile: Tile;
   styles: ReturnType<typeof makeStyles>;
   colors: Palette;
+  // When >0, the tile auto-advances to the next page every N ms. A manual
+  // tap resets the timer so users don't get skipped mid-read. Set to 0
+  // (default) for tap-only tiles.
+  autoRotateMs?: number;
 };
 
-function FlipTile({ tile, styles, colors }: FlipTileProps) {
+function FlipTile({ tile, styles, colors, autoRotateMs = 0 }: FlipTileProps) {
   // Total pages = 1 (front) + points/ads + optional footer.
   const totalPages = 1 + (tile.points?.length ?? tile.ads?.length ?? 0) + (tile.footer ? 1 : 0);
   const [idx, setIdx] = useState(0);
@@ -308,7 +317,7 @@ function FlipTile({ tile, styles, colors }: FlipTileProps) {
     setIdx((prev) => (prev + 1) % totalPages);
   }, [totalPages]);
 
-  const onTap = useCallback(() => {
+  const flipToNext = useCallback(() => {
     rot.value = withSequence(
       withTiming(1, { duration: 220, easing: Easing.in(Easing.cubic) }, () => {
         runOnJS(setNext)();
@@ -320,6 +329,29 @@ function FlipTile({ tile, styles, colors }: FlipTileProps) {
       withTiming(1, { duration: 260 }),
     );
   }, [rot, scale, setNext]);
+
+  // Auto-rotate: for the Advertising tile we cycle without requiring a
+  // tap so dealers always see fresh advertisers even when idle. The timer
+  // is reset on every manual tap (interaction wins over the automation
+  // so users can never be "skipped" mid-read). Paused when the tab is
+  // hidden to save battery / avoid off-screen animation.
+  const lastTapAtRef = useRef<number>(0);
+  useEffect(() => {
+    if (!autoRotateMs || autoRotateMs <= 0) return;
+    if (totalPages < 2) return;
+    const id = setInterval(() => {
+      // If the user tapped recently, skip this tick — gives them a grace
+      // window to keep reading whatever they just flipped to.
+      if (Date.now() - lastTapAtRef.current < autoRotateMs) return;
+      flipToNext();
+    }, autoRotateMs);
+    return () => clearInterval(id);
+  }, [autoRotateMs, flipToNext, totalPages]);
+
+  const onTap = useCallback(() => {
+    lastTapAtRef.current = Date.now();
+    flipToNext();
+  }, [flipToNext]);
 
   const faceStyle = useAnimatedStyle(() => {
     const deg = rot.value * 180;
