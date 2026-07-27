@@ -6544,6 +6544,16 @@ app.add_middleware(
 # ============ Startup seed ============
 @app.on_event("startup")
 async def seed_data():
+    # Ensure Playwright chromium browser is installed for the JLR OSH scraper.
+    # This runs as a background task so it never blocks startup — if the
+    # browser is already present the check is instant, otherwise the
+    # download completes before the first dealer orders a Land Rover report.
+    try:
+        from services.playwright_bootstrap import ensure_playwright_chromium
+        asyncio.create_task(ensure_playwright_chromium())
+    except Exception:
+        logger.exception("Could not schedule Playwright chromium bootstrap")
+
     # Seed admin
     existing_admin = await db.users.find_one({"email": ADMIN_EMAIL.lower()})
     if not existing_admin:

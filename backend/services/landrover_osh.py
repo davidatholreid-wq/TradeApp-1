@@ -306,6 +306,15 @@ async def fetch_landrover_osh(vin: str, *, country_label: str = "South Africa",
     if len(vin) != 17:
         return {"status": "error", "error": "VIN must be 17 characters."}
 
+    # Self-heal: if Playwright's chromium build is missing (e.g. after
+    # a playwright package upgrade against a stale /pw-browsers cache),
+    # transparently reinstall it before the first real launch.
+    try:
+        from services.playwright_bootstrap import ensure_playwright_chromium
+        await ensure_playwright_chromium()
+    except Exception:
+        logger.exception("ensure_playwright_chromium bootstrap failed (continuing)")
+
     try:
         async with async_playwright() as pw:
             try:
