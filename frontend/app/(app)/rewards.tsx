@@ -36,6 +36,14 @@ type LedgerEntry = {
   referral_of_reference?: string | null;
   referral_of_user_id?: string | null;
 };
+type ReferredDealer = {
+  id: string;
+  name: string;
+  dealership?: string | null;
+  joined_at?: string | null;
+  status: "active" | "suspended" | "archived";
+  points_earned_from: number;
+};
 type RewardsSummary = {
   label: string;
   balance: number;
@@ -47,6 +55,8 @@ type RewardsSummary = {
   totals: { earned: number; spent: number; refunded: number };
   ledger: LedgerEntry[];
   redemptions: Redemption[];
+  referral_code?: string | null;
+  referred_dealers?: ReferredDealer[];
 };
 
 export default function RewardsScreen() {
@@ -177,6 +187,58 @@ export default function RewardsScreen() {
           <Stat label="SPENT" value={data.totals.spent} />
           <Stat label="REFUNDED" value={data.totals.refunded} />
         </View>
+
+        {/* Referred dealers — every dealer who joined Fourbuy via THIS
+            user's referral code. Shows safe fields only (name, dealership,
+            join date, status, points earned from them) — never leaks
+            email/phone/ID. */}
+        {data.referred_dealers && data.referred_dealers.length > 0 ? (
+          <>
+            <View style={styles.referredHeaderRow}>
+              <Text style={styles.sectionTitle}>Dealers you&apos;ve referred</Text>
+              {data.referral_code ? (
+                <View style={styles.referredCodePill}>
+                  <Ionicons name="ribbon" size={11} color={colors.text} />
+                  <Text style={styles.referredCodePillText}>{data.referral_code}</Text>
+                </View>
+              ) : null}
+            </View>
+            <Text style={styles.referredHint}>
+              You earn one point every time a dealer you referred earns a Fourbuy Reward point — for the lifetime of their account.
+            </Text>
+            {data.referred_dealers.map((d) => {
+              const joined = (d.joined_at || "").slice(0, 10);
+              const statusColor =
+                d.status === "active" ? colors.success
+                : d.status === "suspended" ? colors.warning
+                : colors.textDisabled;
+              return (
+                <View key={d.id} style={styles.referredCard} testID={`referred-dealer-${d.id}`}>
+                  <View style={styles.referredAvatar}>
+                    <Ionicons name="person-outline" size={18} color={colors.textSecondary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.referredName} numberOfLines={1}>{d.name}</Text>
+                    {d.dealership ? (
+                      <Text style={styles.referredDealership} numberOfLines={1}>{d.dealership}</Text>
+                    ) : null}
+                    <View style={styles.referredMetaRow}>
+                      <View style={[styles.referredStatusDot, { backgroundColor: statusColor }]} />
+                      <Text style={styles.referredMetaText}>
+                        {d.status === "active" ? "Active" : d.status === "suspended" ? "Suspended" : "Archived"}
+                        {joined ? `  ·  joined ${joined}` : ""}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.referredPointsBox}>
+                    <Text style={styles.referredPointsValue}>+{d.points_earned_from}</Text>
+                    <Text style={styles.referredPointsLabel}>pts</Text>
+                  </View>
+                </View>
+              );
+            })}
+          </>
+        ) : null}
 
         {/* Redemptions */}
         {data.redemptions.length > 0 ? (
@@ -368,6 +430,76 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   statLabel: { color: colors.textSecondary, fontSize: 10, fontWeight: "800", letterSpacing: 1 },
   statValue: { color: colors.text, fontSize: 18, fontWeight: "800", fontFamily: fonts.number, marginTop: 4 },
   sectionTitle: { color: colors.text, fontSize: 13, fontWeight: "800", letterSpacing: 1, marginTop: spacing.md, marginBottom: 4 },
+  referredHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  referredCodePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+    marginTop: spacing.md,
+    marginBottom: 4,
+  },
+  referredCodePillText: {
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1,
+    fontFamily: fonts.mono,
+  },
+  referredHint: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, marginBottom: 6 },
+  referredCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.card,
+    padding: spacing.md,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: 8,
+  },
+  referredAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.paper,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  referredName: { color: colors.text, fontSize: 14, fontWeight: "700" },
+  referredDealership: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
+  referredMetaRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 4 },
+  referredStatusDot: { width: 7, height: 7, borderRadius: 4 },
+  referredMetaText: { color: colors.textDisabled, fontSize: 11 },
+  referredPointsBox: {
+    minWidth: 54,
+    alignItems: "flex-end",
+    justifyContent: "center",
+  },
+  referredPointsValue: {
+    color: colors.success,
+    fontSize: 16,
+    fontWeight: "900",
+    fontFamily: fonts.number,
+  },
+  referredPointsLabel: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 1,
+  },
   redemptionCard: { backgroundColor: colors.card, padding: spacing.md, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, marginBottom: 8 },
   redRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.sm },
   redAmount: { color: colors.text, fontSize: 15, fontWeight: "800" },

@@ -5180,6 +5180,61 @@ async def rewards_me(current: dict = Depends(get_current_user)):
     total_spent = sum(abs(int(e.get("delta") or 0)) for e in ledger if e.get("type") == "spend")
     total_refunded = sum(int(e.get("delta") or 0) for e in ledger if e.get("type") == "refund")
     total_referred = sum(int(e.get("delta") or 0) for e in ledger if e.get("type") == "referral_earn")
+
+    # Referred dealers list — every dealer who signed up via *this* user's
+    # referral code. Never exposes email / phone / SA-ID; only safe display
+    # fields so the referrer can see their "network" in the Rewards tab.
+    referred_users_cursor = db.users.find(
+        {"referred_by_user_id": current["id"], "role": "dealer"},
+        {
+            "_id": 0,
+            "id": 1,
+            "dealer_info": 1,
+            "dealership_id": 1,
+            "active": 1,
+            "archived_at": 1,
+            "created_at": 1,
+        },
+    ).sort("created_at", -1)
+    referred_users = await referred_users_cursor.to_list(500)
+    referred_dealers: list[dict] = []
+    # Pre-compute per-referee points earned by the current user, in one pass.
+    points_by_referee: dict[str, int] = {}
+    for row in ledger:
+        if row.get("type") == "referral_earn":
+            rid = row.get("referral_of_user_id")
+            if rid:
+                points_by_referee[rid] = points_by_referee.get(rid, 0) + int(row.get("delta") or 0)
+    # Batch-fetch dealership names for the referees.
+    dship_ids = {u.get("dealership_id") for u in referred_users if u.get("dealership_id")}
+    dship_map: dict[str, str] = {}
+    if dship_ids:
+        async for dship in db.dealerships.find(
+            {"id": {"$in": list(dship_ids)}},
+            {"_id": 0, "id": 1, "name": 1},
+        ):
+            dship_map[dship["id"]] = dship.get("name") or ""
+
+    for u in referred_users:
+        info = u.get("dealer_info") or {}
+        first = (info.get("first_name") or "").strip()
+        last = (info.get("last_name") or "").strip()
+        name = (first + " " + last).strip() or "Fourbuy dealer"
+        if u.get("archived_at"):
+            status = "archived"
+        elif u.get("active") is False:
+            status = "suspended"
+        else:
+            status = "active"
+        referred_dealers.append({
+            "id": u["id"],
+            "name": name,
+            "dealership": dship_map.get(u.get("dealership_id") or "", None),
+            "joined_at": u.get("created_at"),
+            "status": status,
+            "points_earned_from": int(points_by_referee.get(u["id"], 0)),
+        })
+
     return {
         "label": REWARD_POINT_LABEL,
         "balance": balance,
@@ -5196,6 +5251,8 @@ async def rewards_me(current: dict = Depends(get_current_user)):
         },
         "ledger": ledger,
         "redemptions": redemptions,
+        "referral_code": current.get("referral_code"),
+        "referred_dealers": referred_dealers,
     }
 
 
