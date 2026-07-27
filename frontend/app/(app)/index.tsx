@@ -120,8 +120,12 @@ export default function HomeScreen() {
     (user?.email ? user.email.split("@")[0] : "");
 
   const heroPlayer = useVideoPlayer(HERO_VIDEO, (p) => {
-    // Latest client-supplied hero video is a one-shot cinematic — no loop.
-    p.loop = false;
+    // Client-supplied 10-second cinematic. We loop it so the hero panel
+    // is always showing motion rather than freezing on the (dark) final
+    // frame — especially important on web, where the tab may sit on
+    // Home for extended periods and a static black rectangle reads as
+    // "video is broken".
+    p.loop = true;
     p.muted = true;
     p.play();
   });
