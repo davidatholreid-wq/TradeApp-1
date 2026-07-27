@@ -794,8 +794,44 @@ async def login(payload: LoginRequest):
     # Ensure legacy dealer users have a dealership_id — the startup migration
     # covers this too, but a lazy fallback keeps login robust on fresh dumps.
     dealership_id = None
+    referral_code = user.get("referral_code")
+    referred_by_payload = None
     if user["role"] == "dealer":
         dealership_id = await _get_user_dealership_id(user)
+        # Lazily assign a lifetime referral code to any dealer that doesn't
+        # already have one, so the Profile screen renders it immediately
+        # after login (instead of only after the next /auth/me refresh).
+        if not referral_code:
+            async def _code_exists(c: str) -> bool:
+                return (await db.users.count_documents({"referral_code": c})) > 0
+            referral_code = await allocate_unique_code(_code_exists)
+            await db.users.update_one(
+                {"id": user["id"]}, {"$set": {"referral_code": referral_code}}
+            )
+        # Mirror the /auth/me referred_by enrichment so the Profile screen
+        # can render "Referred by …" without waiting for a second call.
+        rb_id = user.get("referred_by_user_id")
+        if rb_id:
+            referrer = await db.users.find_one(
+                {"id": rb_id},
+                {"_id": 0, "dealer_info": 1, "dealership_id": 1, "referral_code": 1},
+            )
+            if referrer:
+                info = referrer.get("dealer_info") or {}
+                first = (info.get("first_name") or "").strip()
+                last = (info.get("last_name") or "").strip()
+                name = (first + " " + last).strip() or "a Fourbuy dealer"
+                rb_dship_name = None
+                if referrer.get("dealership_id"):
+                    rdship = await db.dealerships.find_one(
+                        {"id": referrer["dealership_id"]}, {"_id": 0, "name": 1}
+                    )
+                    rb_dship_name = (rdship or {}).get("name")
+                referred_by_payload = {
+                    "name": name,
+                    "dealership": rb_dship_name,
+                    "code": user.get("referred_by_code") or referrer.get("referral_code"),
+                }
     return {
         "token": token,
         "user": {
@@ -810,6 +846,8 @@ async def login(payload: LoginRequest):
             "profile_pic": user.get("profile_pic"),
             "cover_photo": user.get("cover_photo"),
             "dealership_id": dealership_id,
+            "referral_code": referral_code,
+            "referred_by": referred_by_payload,
         },
     }
 
