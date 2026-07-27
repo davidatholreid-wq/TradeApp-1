@@ -51,16 +51,20 @@ function slugAT(s: string): string {
 
 // Split the derivative into meaningful search keywords for AutoTrader.
 // Strips technical noise that rarely appears in listing descriptions AND
-// that we can express as proper AutoTrader filters instead:
+// that we express as proper AutoTrader filters instead:
 //   - Engine displacements: "2.0T", "3.0", "1.5", "1.6D", "2.2di"
 //   - Drivetrain codes: "4x4", "4WD", "AWD", "RWD", "FWD", "2WD"
 //   - Engine tech: "TDI", "TSI", "GDI", "EcoBoost", etc.
 //   - Transmission codes: "A/T", "M/T", "AT", "MT", "DCT", "DSG", "CVT",
-//     "AMT", "DCTM" — these are the AutoTrader `transmission=` filter
+//     "AMT", "PDK" (already applied via `transmission=` filter)
+//   - Fuel-family words: "Petrol", "Diesel", "Hybrid", "Electric", "EV"
+//     (already applied via `fueltype=` filter — including them here would
+//     cause AutoTrader to require the word in the listing description
+//     too, which many franchise dealers omit)
 // Everything else (model name, trim tier, sport suffix) is kept so
 // AutoTrader's fuzzy match can narrow the listings.
 // Example: "Tank 300 2.0T Super Luxury Hybrid 4x4 A/T"
-//   -> ["Tank", "300", "Super", "Luxury", "Hybrid"]
+//   -> ["Tank", "300", "Super", "Luxury"]
 function derivativeKeywords(derivative?: string, model?: string): string[] {
   const der = cleanText(derivative);
   const base = der || cleanText(model);
@@ -70,6 +74,7 @@ function derivativeKeywords(derivative?: string, model?: string): string[] {
     /^4x4$|^4wd$|^awd$|^rwd$|^fwd$|^2wd$/i,    // drivetrain
     /^tdi$|^tsi$|^gdi$|^crdi$|^bluetec$|^ecoboost$/i, // engine tech
     /^a\/t$|^m\/t$|^at$|^mt$|^dct$|^dsg$|^cvt$|^amt$|^dctm$|^tiptronic$|^s-?tronic$|^pdk$/i, // transmission
+    /^petrol$|^gasoline$|^diesel$|^hybrid$|^electric$|^ev$|^lpg$|^hydrogen$/i, // fuel (already a filter)
   ];
   return base
     .split(/\s+/)
@@ -136,12 +141,12 @@ function normaliseTransmission(raw?: string | null): string | null {
 
 // AutoTrader.co.za deep link: land on the make page (which is guaranteed
 // to exist on their catalogue for every brand) with year + fuel +
-// transmission filters applied, and put the trimmed derivative keywords
-// into `keyword=` so AutoTrader's fuzzy match narrows to the specific
-// submodel. If `keyword` is ignored the user is still on the correctly
-// filtered make landing page.
-//   /cars-for-sale/gwm?keyword=Tank+300+Super+Luxury+Hybrid
-//     &year=2024-to-2026&fueltype=Hybrid&transmission=Automatic
+// transmission filters applied, and each derivative token as its own
+// `keyword=` pill so AutoTrader AND-matches them individually (as seen
+// in their Filter Search UI where each pill narrows results further).
+//   /cars-for-sale/gwm?keyword=Tank&keyword=300&keyword=Super
+//     &keyword=Luxury&year=2024-to-2026&fueltype=Hybrid
+//     &transmission=Automatic
 function buildAutoTraderUrl(p: Props): string | null {
   const make = cleanText(p.make);
   if (!make) return null;
@@ -150,7 +155,9 @@ function buildAutoTraderUrl(p: Props): string | null {
   const fuel = normaliseFuel(p.fuelType);
   const trans = normaliseTransmission(p.transmission);
   const qs = new URLSearchParams();
-  if (kws.length) qs.set("keyword", kws.join(" "));
+  // One separate `keyword=` entry per token — AutoTrader treats each as
+  // an individual filter pill rather than one long phrase.
+  for (const k of kws) qs.append("keyword", k);
   if (range) qs.set("year", `${range.from}-to-${range.to}`);
   if (fuel) qs.set("fueltype", fuel);
   if (trans) qs.set("transmission", trans);
