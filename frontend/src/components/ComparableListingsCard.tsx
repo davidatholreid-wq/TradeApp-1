@@ -20,6 +20,10 @@ type Props = {
   /** Fuel type from the submission (e.g. "Petrol", "Diesel", "Hybrid",
    *  "Electric"). Applied as an AutoTrader filter when present. */
   fuelType?: string | null;
+  /** Transmission from the submission (e.g. "Automatic", "Manual").
+   *  Applied as an AutoTrader filter so we don't have to rely on
+   *  ambiguous keyword matches like "A/T" vs "Auto". */
+  transmission?: string | null;
   /** Fallback single year (year of production) used when no full range
    *  is available. Ignored if `yearFrom` / `yearTo` are set. */
   year?: number | null;
@@ -46,21 +50,26 @@ function slugAT(s: string): string {
 }
 
 // Split the derivative into meaningful search keywords for AutoTrader.
-// Strips technical noise that rarely appears in listing descriptions:
+// Strips technical noise that rarely appears in listing descriptions AND
+// that we can express as proper AutoTrader filters instead:
 //   - Engine displacements: "2.0T", "3.0", "1.5", "1.6D", "2.2di"
 //   - Drivetrain codes: "4x4", "4WD", "AWD", "RWD", "FWD", "2WD"
-//   - Chassis codes (already removed via cleanText's parentheses stripping)
-// Everything else (model name, trim tier, gearbox code, sport suffix) is
-// kept so AutoTrader's fuzzy match can narrow the listings.
-// Example: "Tank 300 2.0T Super Luxury 4x4" -> ["Tank", "300", "Super", "Luxury"]
+//   - Engine tech: "TDI", "TSI", "GDI", "EcoBoost", etc.
+//   - Transmission codes: "A/T", "M/T", "AT", "MT", "DCT", "DSG", "CVT",
+//     "AMT", "DCTM" — these are the AutoTrader `transmission=` filter
+// Everything else (model name, trim tier, sport suffix) is kept so
+// AutoTrader's fuzzy match can narrow the listings.
+// Example: "Tank 300 2.0T Super Luxury Hybrid 4x4 A/T"
+//   -> ["Tank", "300", "Super", "Luxury", "Hybrid"]
 function derivativeKeywords(derivative?: string, model?: string): string[] {
   const der = cleanText(derivative);
   const base = der || cleanText(model);
   if (!base) return [];
   const stripPatterns: RegExp[] = [
-    /^\d+\.\d+[a-z]*$/i,           // 2.0T, 3.0, 1.5, 1.6D, 2.2di, 2.0TDI
-    /^4x4$|^4wd$|^awd$|^rwd$|^fwd$|^2wd$/i, // drivetrain
+    /^\d+\.\d+[a-z]*$/i,                       // 2.0T, 3.0, 1.5, 1.6D, 2.2di
+    /^4x4$|^4wd$|^awd$|^rwd$|^fwd$|^2wd$/i,    // drivetrain
     /^tdi$|^tsi$|^gdi$|^crdi$|^bluetec$|^ecoboost$/i, // engine tech
+    /^a\/t$|^m\/t$|^at$|^mt$|^dct$|^dsg$|^cvt$|^amt$|^dctm$|^tiptronic$|^s-?tronic$|^pdk$/i, // transmission
   ];
   return base
     .split(/\s+/)
@@ -113,23 +122,38 @@ function normaliseFuel(raw?: string | null): string | null {
   return map[s] ?? (s.charAt(0).toUpperCase() + s.slice(1));
 }
 
+// Normalise transmission to AutoTrader's exact filter value. Everything
+// non-manual maps to "Automatic" (Kredo returns "Automatic" for every
+// auto-family box — DCT, DSG, CVT, AMT etc. — so this mostly passes
+// through, but we defensively bucket common synonyms).
+function normaliseTransmission(raw?: string | null): string | null {
+  if (!raw) return null;
+  const s = String(raw).trim().toLowerCase();
+  if (!s) return null;
+  if (s === "manual" || s === "m/t" || s === "mt") return "Manual";
+  return "Automatic";
+}
+
 // AutoTrader.co.za deep link: land on the make page (which is guaranteed
-// to exist on their catalogue for every brand) with year + fuel filters
-// applied, and put the model/derivative into a `keyword` search param so
-// AutoTrader's own free-text search narrows to the specific submodel
-// (e.g. GWM Tank 300 vs Tank 500). If `keyword` is ignored the user is
-// still on the correctly-filtered make landing page.
-//   /cars-for-sale/gwm?keyword=Tank+300&year=2023-to-2024&fueltype=Petrol
+// to exist on their catalogue for every brand) with year + fuel +
+// transmission filters applied, and put the trimmed derivative keywords
+// into `keyword=` so AutoTrader's fuzzy match narrows to the specific
+// submodel. If `keyword` is ignored the user is still on the correctly
+// filtered make landing page.
+//   /cars-for-sale/gwm?keyword=Tank+300+Super+Luxury+Hybrid
+//     &year=2024-to-2026&fueltype=Hybrid&transmission=Automatic
 function buildAutoTraderUrl(p: Props): string | null {
   const make = cleanText(p.make);
   if (!make) return null;
-  const keyword = searchKeyword(p.model, p.derivative);
+  const kws = derivativeKeywords(p.derivative, p.model);
   const range = resolveYearRange(p);
   const fuel = normaliseFuel(p.fuelType);
+  const trans = normaliseTransmission(p.transmission);
   const qs = new URLSearchParams();
-  if (keyword) qs.set("keyword", keyword);
+  if (kws.length) qs.set("keyword", kws.join(" "));
   if (range) qs.set("year", `${range.from}-to-${range.to}`);
   if (fuel) qs.set("fueltype", fuel);
+  if (trans) qs.set("transmission", trans);
   const suffix = qs.toString();
   return `https://www.autotrader.co.za/cars-for-sale/${slugAT(make)}${suffix ? `?${suffix}` : ""}`;
 }
@@ -172,6 +196,7 @@ export default function ComparableListingsCard(props: Props) {
     : "any year";
   const searchLbl = searchLabel(props);
   const fuel = normaliseFuel(props.fuelType);
+  const trans = normaliseTransmission(props.transmission);
 
   // Compact "chips" that describe what's pre-applied. Each derivative
   // keyword becomes its own chip so dealers can see exactly which words
@@ -180,6 +205,7 @@ export default function ComparableListingsCard(props: Props) {
   const chips: string[] = [...kwTokens];
   if (range) chips.push(range.from === range.to ? `${range.from}` : `${range.from}–${range.to}`);
   if (fuel) chips.push(fuel);
+  if (trans) chips.push(trans);
 
   return (
     <View style={styles.card}>
@@ -199,6 +225,11 @@ export default function ComparableListingsCard(props: Props) {
         {fuel ? (
           <>
             {" "}running on <Text style={{ fontWeight: "700", color: colors.text }}>{fuel}</Text>
+          </>
+        ) : null}
+        {trans ? (
+          <>
+            {" "}with <Text style={{ fontWeight: "700", color: colors.text }}>{trans}</Text> transmission
           </>
         ) : null}
         , so you can eyeball the cheapest live example on the market.
@@ -231,6 +262,7 @@ export default function ComparableListingsCard(props: Props) {
               kwTokens.length ? kwTokens.join(" · ") : null,
               range ? (range.from === range.to ? `Year ${range.from}` : `Years ${range.from}–${range.to}`) : null,
               fuel,
+              trans,
             ].filter(Boolean).join(" · ") || "Model listing"}
           </Text>
         </View>
