@@ -130,15 +130,34 @@ export default function HomeScreen() {
     p.play();
   });
 
+  // Watchdog: some web browsers (Safari, and Chrome in restricted power
+  // modes) opportunistically pause muted background <video> elements to
+  // save battery / CPU. Because the hero video is decorative-but-critical
+  // (product reads as broken if it's frozen), poll every 1.5 s and
+  // re-issue `play()` if the underlying element has been paused by
+  // anything other than the user themselves. Very cheap — a boolean read
+  // plus a no-op play() when already playing. Cleaned up on unmount.
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const id = setInterval(() => {
+      try {
+        if (!heroPlayer.playing) heroPlayer.play();
+      } catch { /* no-op */ }
+    }, 1500);
+    return () => clearInterval(id);
+  }, [heroPlayer]);
+
   useFocusEffect(
     useCallback(() => {
       // Rewind and play once every time the Home tab is re-focused so
       // dealers see the intro from the start, not mid-way through.
+      // NOTE: we intentionally do NOT pause on unfocus — pausing here
+      // was causing the hero panel to sometimes stay stopped when
+      // React Navigation re-focused the tab out-of-order on web.
       try {
         heroPlayer.currentTime = 0;
         heroPlayer.play();
       } catch { /* no-op */ }
-      return () => { try { heroPlayer.pause(); } catch { /* no-op */ } };
     }, [heroPlayer]),
   );
 
