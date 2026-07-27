@@ -144,9 +144,13 @@ function normaliseTransmission(raw?: string | null): string | null {
 // transmission filters applied, and each derivative token as its own
 // `keyword=` pill so AutoTrader AND-matches them individually (as seen
 // in their Filter Search UI where each pill narrows results further).
+// We also pre-apply `dealerrating=3` so buyers only see listings from
+// dealers with an AutoTrader star rating of 3 or more — protects the
+// dealer from time-wasters and low-quality sellers when comparing
+// against a valuation.
 //   /cars-for-sale/gwm?keyword=Tank&keyword=300&keyword=Super
 //     &keyword=Luxury&year=2024-to-2026&fueltype=Hybrid
-//     &transmission=Automatic
+//     &transmission=Automatic&dealerrating=3
 function buildAutoTraderUrl(p: Props): string | null {
   const make = cleanText(p.make);
   if (!make) return null;
@@ -161,6 +165,11 @@ function buildAutoTraderUrl(p: Props): string | null {
   if (range) qs.set("year", `${range.from}-to-${range.to}`);
   if (fuel) qs.set("fueltype", fuel);
   if (trans) qs.set("transmission", trans);
+  // Dealer Rating filter — AutoTrader exposes this as the lowercase
+  // `dealerrating` query key (values 1..4). We always pin it to 3+ so
+  // dealers using Fourbuy never end up comparing their guaranteed
+  // Cover Price against listings from low-rated sellers.
+  qs.set("dealerrating", "3");
   const suffix = qs.toString();
   return `https://www.autotrader.co.za/cars-for-sale/${slugAT(make)}${suffix ? `?${suffix}` : ""}`;
 }
@@ -213,6 +222,10 @@ export default function ComparableListingsCard(props: Props) {
   if (range) chips.push(range.from === range.to ? `${range.from}` : `${range.from}–${range.to}`);
   if (fuel) chips.push(fuel);
   if (trans) chips.push(trans);
+  // Every generated URL pins `dealerrating=3` so buyers only see listings
+  // from AutoTrader-rated 3-star-plus dealers — surface it as a chip so
+  // dealers know why some listings won't appear.
+  chips.push("3★+ dealers");
 
   return (
     <View style={styles.card}>
