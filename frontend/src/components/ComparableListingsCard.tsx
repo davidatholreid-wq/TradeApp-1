@@ -38,31 +38,22 @@ function cleanText(s?: string): string {
   return (s || "").replace(/\([^)]*\)/g, "").replace(/\s{2,}/g, " ").trim();
 }
 
-// Extract the most specific "model designator" for the AutoTrader URL
-// path. AutoTrader indexes M-cars, AMG cars, RS cars etc. as their own
-// model (`/cars-for-sale/bmw/m5`, `/mercedes-benz/c63`, `/audi/rs3`),
-// so using the first word of the Kredo derivative works well for those.
-// BUT for cars where the derivative starts with an engine size (e.g.
-// "2.8 GD-6 Legend RS 4x4" for a Toyota Hilux) that first word is
-// meaningless as a URL segment. Only use the derivative firstword when
-// it starts with a letter — otherwise fall back to the cleaned Kredo
-// model name.
-function bestModelDesignator(model?: string, derivative?: string): string {
-  const der = cleanText(derivative);
-  if (der) {
-    const first = der.split(/\s+/)[0];
-    if (first && /^[A-Za-z]/.test(first)) {
-      return first;
-    }
-  }
-  return cleanText(model);
-}
-
 // Slugify for AutoTrader path segments: lowercase, hyphenated, URL-safe.
 function slugAT(s: string): string {
   return encodeURIComponent(
     s.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "")
   );
+}
+
+// Build the free-text keyword to place into AutoTrader's search box.
+// Uses the derivative (which is already specific enough — e.g. "M5
+// M-DCT", "Tank 300 2.0T", "C63 AMG"). Falls back to model when there
+// is no derivative on file. We deliberately keep this short so
+// AutoTrader's fuzzy match still finds listings.
+function searchKeyword(model?: string, derivative?: string): string {
+  const der = cleanText(derivative);
+  if (der) return der;
+  return cleanText(model);
 }
 
 // Resolve the year range to feed into AutoTrader's `year=X-to-Y` filter.
@@ -104,25 +95,31 @@ function normaliseFuel(raw?: string | null): string | null {
   return map[s] ?? (s.charAt(0).toUpperCase() + s.slice(1));
 }
 
-// AutoTrader.co.za: path + `-to-` year filter + fueltype filter.
-//   /cars-for-sale/bmw/m5?year=2018-to-2020&fueltype=Petrol
+// AutoTrader.co.za deep link: land on the make page (which is guaranteed
+// to exist on their catalogue for every brand) with year + fuel filters
+// applied, and put the model/derivative into a `keyword` search param so
+// AutoTrader's own free-text search narrows to the specific submodel
+// (e.g. GWM Tank 300 vs Tank 500). If `keyword` is ignored the user is
+// still on the correctly-filtered make landing page.
+//   /cars-for-sale/gwm?keyword=Tank+300&year=2023-to-2024&fueltype=Petrol
 function buildAutoTraderUrl(p: Props): string | null {
   const make = cleanText(p.make);
-  const modelToken = bestModelDesignator(p.model, p.derivative);
-  if (!make || !modelToken) return null;
+  if (!make) return null;
+  const keyword = searchKeyword(p.model, p.derivative);
   const range = resolveYearRange(p);
   const fuel = normaliseFuel(p.fuelType);
   const qs = new URLSearchParams();
+  if (keyword) qs.set("keyword", keyword);
   if (range) qs.set("year", `${range.from}-to-${range.to}`);
   if (fuel) qs.set("fueltype", fuel);
   const suffix = qs.toString();
-  return `https://www.autotrader.co.za/cars-for-sale/${slugAT(make)}/${slugAT(modelToken)}${suffix ? `?${suffix}` : ""}`;
+  return `https://www.autotrader.co.za/cars-for-sale/${slugAT(make)}${suffix ? `?${suffix}` : ""}`;
 }
 
 function searchLabel(p: Props): string {
   const make = cleanText(p.make);
-  const modelToken = bestModelDesignator(p.model, p.derivative);
-  return [make, modelToken].filter(Boolean).join(" ");
+  const kw = searchKeyword(p.model, p.derivative);
+  return [make, kw].filter(Boolean).join(" ");
 }
 
 async function open(url: string) {
@@ -160,6 +157,8 @@ export default function ComparableListingsCard(props: Props) {
 
   // Compact "chips" that describe what filters we've pre-applied.
   const chips: string[] = [];
+  const kw = searchKeyword(props.model, props.derivative);
+  if (kw) chips.push(`"${kw}"`);
   if (range) chips.push(range.from === range.to ? `Year ${range.from}` : `Years ${range.from}–${range.to}`);
   if (fuel) chips.push(fuel);
 
