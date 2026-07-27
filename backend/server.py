@@ -4949,14 +4949,22 @@ def _ad_public_full(slot: dict) -> dict:
 
 @api_router.get("/admin/ads")
 async def admin_list_ads(current: dict = Depends(require_admin)):
-    """List all 10 advertising slots (fills in empty placeholders)."""
+    """List all 10 advertising slots (fills in empty placeholders).
+
+    We include the full `image_base64` for each populated slot so the
+    admin cockpit's grid view can render the actual thumbnails without
+    a second round-trip per card. Payload is still small in practice
+    because there are only ever 10 slots and each image is capped at
+    the configured `AD_MAX_IMAGE_BYTES` (3 MB) by the upload path.
+    """
     docs = {
         d["slot_number"]: d
         async for d in db.advertising_slots.find({}, {"_id": 0})
     }
     out = []
     for n in range(1, AD_SLOT_COUNT + 1):
-        out.append(_ad_public(docs.get(n) or {"slot_number": n}))
+        raw = docs.get(n)
+        out.append(_ad_public_full(raw) if raw else _ad_public({"slot_number": n}))
     return {
         "slots": out,
         "total_slots": AD_SLOT_COUNT,

@@ -238,7 +238,7 @@ function SlotCard({
     >
       <View style={styles.cardImgWrap}>
         {slot.has_image && slot.image_base64 ? (
-          <Image source={{ uri: slot.image_base64 }} style={styles.cardImg} resizeMode="cover" />
+          <Image source={{ uri: slot.image_base64 }} style={styles.cardImg} resizeMode="contain" />
         ) : (
           <View style={styles.cardImgEmpty}>
             <Ionicons name="image-outline" size={30} color={colors.textSecondary} />
@@ -436,7 +436,7 @@ function SlotEditorModal({
               </Text>
               <View style={styles.imagePreviewWrap}>
                 {imageDataUrl ? (
-                  <Image source={{ uri: imageDataUrl }} style={styles.imagePreview} resizeMode="cover" />
+                  <Image source={{ uri: imageDataUrl }} style={styles.imagePreview} resizeMode="contain" />
                 ) : (
                   <View style={styles.imagePreviewEmpty}>
                     <Ionicons name="cloud-upload-outline" size={36} color={colors.textSecondary} />

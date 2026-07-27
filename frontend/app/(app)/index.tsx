@@ -430,7 +430,7 @@ function TilePage({ tile, pageIdx, styles, colors }: { tile: Tile; pageIdx: numb
     if (!ad) return null;
     return (
       <View style={styles.pageAd}>
-        <Image source={ad.image} style={styles.adImg} resizeMode="cover" />
+        <Image source={ad.image} style={styles.adImg} resizeMode="contain" />
         <View style={styles.adBadge}>
           <Ionicons name="megaphone-outline" size={10} color="#fff" />
           <Text style={styles.adBadgeText}>ADVERTISING</Text>
@@ -685,6 +685,11 @@ const makeStyles = (colors: Palette, isWide: boolean) => {
     },
 
     // Ad page — full-bleed image with a small "ADVERTISING" pill top-left.
+    // Uses `resizeMode="contain"` (see TilePage) so the advertiser's whole
+    // image is always visible, matching the 16:10 upload spec, and centres
+    // on a black backdrop when the aspect ratio doesn't perfectly match
+    // the tile. Prevents important content (logos, headlines, callouts)
+    // from being cropped off the edges on phones.
     pageAd: {
       position: "absolute",
       top: -spacing.md,
@@ -692,6 +697,9 @@ const makeStyles = (colors: Palette, isWide: boolean) => {
       right: -spacing.md,
       bottom: -spacing.md,
       overflow: "hidden",
+      backgroundColor: "#000",
+      alignItems: "center",
+      justifyContent: "center",
     },
     adBadge: {
       position: "absolute",
