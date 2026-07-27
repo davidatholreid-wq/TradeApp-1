@@ -121,14 +121,16 @@ class TestSAIDValidation:
         assert r.status_code == 400, r.text
         assert "13" in r.text
 
-    def test_invalid_luhn_rejected(self, s, admin_token):
+    def test_invalid_luhn_now_accepted(self, s, admin_token):
+        """Luhn checksum enforcement was intentionally removed to reduce
+        false rejections on legacy IDs. A bad-Luhn ID with a valid DoB
+        should now be accepted."""
         r = s.post(
             f"{API}/admin/dealerships/{FORD_BRYANSTON_ID}/users",
             json=_invite_payload(_random_email("luhn"), sa_id=SA_ID_BAD_LUHN),
             headers=_admin_hdr(admin_token),
         )
-        assert r.status_code == 400, r.text
-        assert "checksum" in r.text.lower() or "check" in r.text.lower()
+        assert r.status_code == 200, r.text
 
     def test_invalid_date_rejected(self, s, admin_token):
         r = s.post(

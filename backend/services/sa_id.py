@@ -5,11 +5,17 @@ South African ID numbers are 13 digits: YYMMDD SSSS C A Z where
   SSSS   — gender / sequence within DoB (0000-4999 female, 5000-9999 male)
   C      — citizenship (0 SA, 1 permanent resident)
   A      — historically 8/9, kept for backwards compatibility
-  Z      — Luhn checksum
+  Z      — Luhn-style checksum (NO LONGER ENFORCED — see note below)
 
-We enforce all three: exactly 13 digits, a real calendar date in YYMMDD, and
-a valid Luhn checksum. `citizenship` and the `A` digit are inspected but not
-rejected — some legacy IDs have an `A` other than 8/9.
+We enforce two things: exactly 13 digits, and a real calendar date in YYMMDD.
+
+Note on the checksum: some legitimate legacy SA IDs (e.g. IDs issued during
+older Home Affairs migrations, foreign nationals with SA-style IDs, and a
+handful of clerical corrections) fail the Luhn variant even though the IDs
+are genuine. Because we cross-check the DoB and use the ID only as an
+identity anchor (not for financial verification), we intentionally do NOT
+reject on Luhn failure — this reduces false rejections during dealer
+invites at the cost of a slightly weaker typo check.
 """
 from __future__ import annotations
 
@@ -17,25 +23,11 @@ from datetime import date
 from typing import Tuple
 
 
-def _luhn_ok(digits: str) -> bool:
-    """SA ID uses a variant of the Luhn algorithm — every second digit from
-    the RIGHT is doubled, doubled digits > 9 have their digits summed, and
-    the total mod 10 must be zero.
-    """
-    total = 0
-    for i, ch in enumerate(reversed(digits)):
-        d = ord(ch) - 48
-        if i % 2 == 1:
-            d *= 2
-            if d > 9:
-                d -= 9
-        total += d
-    return total % 10 == 0
-
-
 def validate_sa_id(raw: str) -> Tuple[bool, str]:
     """Return (ok, message). `message` is a short reason on failure or the
-    date of birth ISO string on success (useful for downstream persistence)."""
+    date of birth ISO string on success (useful for downstream persistence).
+    Length + date-of-birth are enforced; the Luhn checksum is not.
+    """
     if raw is None:
         return False, "SA ID Number is required."
     digits = "".join(ch for ch in str(raw) if ch.isdigit())
@@ -52,6 +44,4 @@ def validate_sa_id(raw: str) -> Tuple[bool, str]:
         date(century + yy, mm, dd)
     except ValueError:
         return False, "SA ID Number contains an invalid date of birth."
-    if not _luhn_ok(digits):
-        return False, "SA ID Number failed the checksum — please double-check the digits."
     return True, f"{century + yy:04d}-{mm:02d}-{dd:02d}"
