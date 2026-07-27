@@ -2784,10 +2784,21 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
         return Paragraph(str(text) if text is not None else "—", val_mono_style if mono else val_style)
 
     # LEFT column: Vehicle details + identity (VIN / engine).
+    vmr = sub.get("variant_manufacture_range") or {}
+    vmr_txt = None
+    if vmr.get("min") or vmr.get("max"):
+        lo, hi = vmr.get("min"), vmr.get("max")
+        vmr_txt = f"{lo}—{hi}" if lo and hi and lo != hi else f"{lo or hi}"
     v_rows = [
         ["Make", _P(sub.get("make_name") or "—")],
         ["Model", _P(sub.get("model_name") or "—")],
         ["Derivative", _P(sub.get("derivative_name") or "—")],
+    ]
+    if vmr_txt:
+        # "Model Year Run" mirrors the on-screen block placed just above
+        # Year Reg / Year Prod — helps buyers spot MY-variant carry-overs.
+        v_rows.append(["Model Year Run", _P(vmr_txt)])
+    v_rows.extend([
         ["Year Reg.", _P(str(sub.get("year_registered") or sub.get("year") or "—"))],
         ["Year Prod.", _P(str(sub.get("year_of_production") or sub.get("year") or "—"))],
         ["Mileage", _P(f"{int(sub.get('mileage') or 0):,} km")],
@@ -2796,7 +2807,7 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
         ["Colour", _P(sub.get("colour") or "—")],
         ["VIN", _P(sub.get("vin") or "—", mono=True)],
         ["Engine No.", _P(sub.get("engine_number") or "—", mono=True)],
-    ]
+    ])
     # Rebalance columns so the value cell has more room to wrap.
     v_label_w = 26 * mm
     v_value_w = 66 * mm
@@ -3116,27 +3127,79 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
             story.append(Paragraph("No factory options returned for this VIN.", small))
 
     # ============ AI MARKET ANALYSIS ============
-    ma = sub.get("market_analysis") or {}
+    # The analysis payload lives at `sub.market_analysis.analysis.*`
+    # (the outer object also carries `generated_at` + `model`). Historic
+    # code here read the wrong schema (`estimated_value.low_zar` etc.)
+    # and produced an empty section. This renderer mirrors the on-screen
+    # panel so admins / dealers see the same numbers + reasoning on the
+    # printed PDF.
+    ma_wrap = sub.get("market_analysis") or {}
+    ma = ma_wrap.get("analysis") if isinstance(ma_wrap.get("analysis"), dict) else {}
     if ma:
         story.append(Paragraph("AI MARKET ANALYSIS", section_title))
-        ma_rows = []
-        est = ma.get("estimated_value") or {}
-        low, high, mid = est.get("low_zar"), est.get("high_zar"), est.get("mid_zar")
-        if low or high:
-            ma_rows.append(["Estimated Retail Range", f"{_fmt_zar(low)} — {_fmt_zar(high)}"])
-        if mid:
-            ma_rows.append(["Recommended Trade Price", _fmt_zar(mid)])
+        # Model / generated stamp — small caption on top.
+        stamp_bits: list[str] = []
+        if ma_wrap.get("generated_at"):
+            stamp_bits.append(f"Generated {str(ma_wrap['generated_at'])[:19].replace('T', ' ')} UTC")
+        if ma_wrap.get("model"):
+            stamp_bits.append(f"Model: {ma_wrap['model']}")
         if ma.get("confidence"):
-            ma_rows.append(["Confidence", (ma.get("confidence") or "—").upper()])
-        if ma.get("summary"):
-            ma_rows.append(["Summary", ma.get("summary")])
+            stamp_bits.append(f"Confidence: {ma['confidence'].upper()}")
+        if stamp_bits:
+            story.append(Paragraph(" · ".join(stamp_bits), small))
+            story.append(Spacer(1, 3))
+
+        # Number rows — mirror on-screen "Estimated Market Range /
+        # Trade / Retail" panel.
+        rng = ma.get("estimated_market_range_zar") or {}
+        ma_rows: list = []
+        if rng.get("low") is not None or rng.get("high") is not None:
+            ma_rows.append([
+                "Estimated Market Range",
+                _P(f"{_fmt_zar(rng.get('low'))} — {_fmt_zar(rng.get('high'))}"),
+            ])
+        if rng.get("typical") is not None:
+            ma_rows.append(["Typical Market Value", _P(_fmt_zar(rng.get("typical")))])
+        if ma.get("trade_price_estimate_zar") is not None:
+            ma_rows.append(["Trade Estimate", _P(_fmt_zar(ma.get("trade_price_estimate_zar")))])
+        if ma.get("retail_price_estimate_zar") is not None:
+            ma_rows.append(["Retail Estimate", _P(_fmt_zar(ma.get("retail_price_estimate_zar")))])
+        if ma.get("recon_impact_zar") is not None:
+            ma_rows.append(["Recon Adjustment", _P(f"− {_fmt_zar(ma.get('recon_impact_zar'))}")])
         if ma_rows:
-            t_ma = Table(
-                [[k, Paragraph(str(v), body)] for k, v in ma_rows],
-                colWidths=[46 * mm, 140 * mm],
-            )
+            t_ma = Table(ma_rows, colWidths=[52 * mm, 132 * mm])
             t_ma.setStyle(_row_style())
             story.append(t_ma)
+            story.append(Spacer(1, 4))
+
+        # Listings summary paragraph.
+        if ma.get("listings_summary"):
+            story.append(Paragraph("<b>Listings summary</b>", body))
+            story.append(Paragraph(str(ma.get("listings_summary")), body))
+            story.append(Spacer(1, 3))
+
+        # Key factors bullet list — one of the most useful takeaways for
+        # a buyer at inspection.
+        kf = ma.get("key_factors") or []
+        if kf:
+            story.append(Paragraph("<b>Key factors</b>", body))
+            for f in kf:
+                story.append(Paragraph(f"•  {f}", small))
+            story.append(Spacer(1, 3))
+
+        # Kredo alignment explanation.
+        if ma.get("kredo_alignment"):
+            story.append(Paragraph("<b>Kredo alignment</b>", body))
+            story.append(Paragraph(str(ma.get("kredo_alignment")), body))
+            story.append(Spacer(1, 3))
+
+        # Disclaimer — tiny grey text so admins know how the estimate was
+        # derived.
+        if ma.get("disclaimer"):
+            disc_style = ParagraphStyle(
+                "disc", parent=small, textColor=MUTED, fontSize=6.5, leading=8,
+            )
+            story.append(Paragraph(str(ma.get("disclaimer")), disc_style))
 
     # ============ TYRE ESTIMATE ============
     tyre_wrap = sub.get("tyre_estimate") or {}
@@ -3246,6 +3309,40 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
                     t_v.setStyle(_row_style())
                     story.append(t_v)
 
+                # Latest service — dedicated panel that mirrors the on-
+                # screen "Latest Service Detail" card, including the
+                # Service Items bullet list which was previously never
+                # rendered on the PDF.
+                ls = data.get("last_service") or {}
+                if isinstance(ls, dict) and any(ls.get(k) for k in
+                        ("type", "distance", "date", "job_number",
+                         "repairer_name", "repairer_location", "service_items")):
+                    services_local = data.get("services") or []
+                    ls_title = "LATEST SERVICE DETAIL" if services_local else "LAST SERVICE RECORDED"
+                    story.append(Spacer(1, 4))
+                    story.append(Paragraph(ls_title, section_title))
+                    ls_rows: list = []
+                    for lbl, key in [
+                        ("Type", "type"), ("Distance", "distance"), ("Date", "date"),
+                        ("Job Number", "job_number"),
+                        ("Repairer", "repairer_name"),
+                        ("Location", "repairer_location"),
+                        ("Repairer Type", "repairer_type"),
+                    ]:
+                        val = ls.get(key)
+                        if val:
+                            ls_rows.append([lbl, _P(str(val))])
+                    if ls_rows:
+                        t_ls = Table(ls_rows, colWidths=[46 * mm, 140 * mm])
+                        t_ls.setStyle(_row_style())
+                        story.append(t_ls)
+                    items = ls.get("service_items") or []
+                    if isinstance(items, list) and items:
+                        story.append(Spacer(1, 2))
+                        story.append(Paragraph("<b>Service items</b>", body))
+                        for item in items:
+                            story.append(Paragraph(f"•  {item}", small))
+
                 services = data.get("services") or []
                 if services:
                     story.append(Paragraph(f"SERVICE HISTORY ({len(services)})", section_title))
@@ -3279,6 +3376,25 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
                     story.append(Paragraph(f"ALERTS ({len(alerts)})", section_title))
                     for a in alerts:
                         story.append(Paragraph(f"• {a}", body))
+
+                # Provenance footer — captured timestamp + a clickable
+                # deep link back to the JLR OSH page for auditability.
+                prov_bits: list[str] = []
+                if data.get("captured_at"):
+                    prov_bits.append(
+                        f"Captured {str(data['captured_at'])[:19].replace('T', ' ')} UTC"
+                    )
+                if data.get("source"):
+                    prov_bits.append(f"Source: {data['source']}")
+                url = data.get("service_history_url") or data.get("result_url")
+                if url:
+                    prov_bits.append(f'<a href="{url}"><u>View on JLR OSH</u></a>')
+                if prov_bits:
+                    prov_style = ParagraphStyle(
+                        "prov", parent=small, textColor=MUTED, fontSize=6.5, leading=8,
+                    )
+                    story.append(Spacer(1, 3))
+                    story.append(Paragraph(" · ".join(prov_bits), prov_style))
                 continue  # skip the generic renderer for this report
 
             # -------- Kredo VIN history — accident/claim list --------
