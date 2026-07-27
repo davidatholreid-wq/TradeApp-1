@@ -404,17 +404,30 @@ export default function VehicleDetail() {
     // will actually hit Kredo (i.e., no cache yet OR they tapped Refresh).
     const willBill = !isAdmin && (refresh || !kredoHistory);
     if (willBill) {
-      const proceed = await new Promise<boolean>((resolve) => {
-        Alert.alert(
-          "Accident / Claim History",
-          `A live Kredo VIN accident-and-claim check for ${sub.vin} will be added to your next invoice at R${KREDO_VIN_HISTORY_DEALER_COST_ZAR}. Continue?`,
-          [
-            { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
-            { text: `Charge R${KREDO_VIN_HISTORY_DEALER_COST_ZAR}`, style: "default", onPress: () => resolve(true) },
-          ],
-          { cancelable: true, onDismiss: () => resolve(false) },
-        );
-      });
+      // React Native Web's Alert.alert() polyfill silently discards
+      // multi-button `onPress` callbacks, so the confirmation Promise
+      // never resolves on web (the button click just did nothing).
+      // Branch on Platform to use the native `window.confirm()` there,
+      // and keep the rich Alert on iOS/Android.
+      const confirmMessage =
+        `A live Kredo VIN accident-and-claim check for ${sub.vin} will be added to your next invoice at R${KREDO_VIN_HISTORY_DEALER_COST_ZAR}. Continue?`;
+      let proceed = false;
+      if (Platform.OS === "web") {
+        const w = (globalThis as unknown as { window?: Window & { confirm?: (m: string) => boolean } }).window;
+        proceed = typeof w?.confirm === "function" ? !!w.confirm(confirmMessage) : true;
+      } else {
+        proceed = await new Promise<boolean>((resolve) => {
+          Alert.alert(
+            "Accident / Claim History",
+            confirmMessage,
+            [
+              { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+              { text: `Charge R${KREDO_VIN_HISTORY_DEALER_COST_ZAR}`, style: "default", onPress: () => resolve(true) },
+            ],
+            { cancelable: true, onDismiss: () => resolve(false) },
+          );
+        });
+      }
       if (!proceed) return;
     }
     setKredoLoading(true);
@@ -3431,6 +3444,9 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
 
   photoGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   photoSlot: {
+    // Native / narrow web: 2-up square tiles (unchanged).
+    // Wide web: fixed 180×135 4:3 tiles matching the admin cockpit layout
+    // so the dealer detail page doesn't render photos ~600 px wide.
     width: "48%",
     aspectRatio: 1,
     borderRadius: radius.md,
@@ -3440,6 +3456,9 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     borderColor: colors.border,
     alignItems: "center",
     justifyContent: "center",
+    ...(Platform.OS === "web"
+      ? { width: 180, aspectRatio: 4 / 3 } as const
+      : {}),
   },
   photoImg: { width: "100%", height: "100%" },
   photoOverlay: {

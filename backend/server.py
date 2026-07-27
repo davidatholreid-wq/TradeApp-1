@@ -3251,9 +3251,18 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
                     story.append(Paragraph(f"SERVICE HISTORY ({len(services)})", section_title))
                     srv_rows = [["Date", "Odometer", "Repairer", "Job No.", "Details"]]
                     for s in services:
+                        odo = s.get("odometer")
+                        odo_str = "—"
+                        if odo:
+                            odo_str = str(odo).strip()
+                            # Some JLR pages return "84089 km" already suffixed;
+                            # only append the unit when it's a bare number so we
+                            # don't emit "84089 km km" in the PDF cell.
+                            if not odo_str.lower().endswith("km"):
+                                odo_str = f"{odo_str} km"
                         srv_rows.append([
                             _P(s.get("job_date") or "—"),
-                            _P(f"{s.get('odometer')} km" if s.get("odometer") else "—"),
+                            _P(odo_str),
                             _P(s.get("repairer") or "—"),
                             _P(s.get("job_number") or "—"),
                             _P(s.get("details") or "—"),
@@ -6177,13 +6186,16 @@ async def kredo_vin_history(
             }}},
         )
         # Dealer billing — one charge per (submission, kredo_vin_history)
-        # even if they hit refresh again later.
-        if not is_admin:
-            dealer_id = current.get("dealership_id")
-            existing_bill = await db.report_orders.find_one(
-                {"submission_id": payload.submission_id, "type": "kredo_vin_history"}
-            )
-            if not existing_bill and dealer_id:
+        # even if they hit refresh again later. We ALWAYS update the
+        # `result_data` field so the valuation PDF can render the full
+        # accident-and-claim details on its own page (the PDF renderer
+        # skips report_orders rows whose `result_data` is None).
+        dealer_id = current.get("dealership_id")
+        existing_bill = await db.report_orders.find_one(
+            {"submission_id": payload.submission_id, "type": "kredo_vin_history"}
+        )
+        if not existing_bill:
+            if not is_admin and dealer_id:
                 await db.report_orders.insert_one({
                     "id": str(uuid.uuid4()),
                     "submission_id": payload.submission_id,
@@ -6197,12 +6209,23 @@ async def kredo_vin_history(
                     "ordered_by": current["id"],
                     "delivered_at": now,
                     "note": "Kredo VIN accident / claim history live lookup.",
+                    "result_data": normalised,
                 })
                 billed_amount = KREDO_VIN_HISTORY_DEALER_COST_ZAR
                 logger.info(
                     "kredo_vin_history: billed R%s to dealer %s for sub %s",
                     int(billed_amount), dealer_id, payload.submission_id,
                 )
+        else:
+            # Refresh / cache hit — keep the delivered `result_data`
+            # up-to-date so the PDF always renders the latest fetch.
+            await db.report_orders.update_one(
+                {"id": existing_bill["id"]},
+                {"$set": {
+                    "result_data": normalised,
+                    "delivered_at": now,
+                }},
+            )
 
     return {
         "result": normalised,
