@@ -50,6 +50,16 @@ export default function Dealers() {
   // (which is outside a bottom-tab navigator).
   const tabBarHeight = useContext(BottomTabBarHeightContext) ?? 0;
   const [dealers, setDealers] = useState<Dealer[]>([]);
+  // Master dealership list — fetched in parallel with /admin/dealers so we
+  // can render dealerships that have NO users yet (otherwise a freshly
+  // onboarded dealership disappears until its first user is invited).
+  type DealershipStub = {
+    id: string;
+    name: string;
+    address?: string;
+    active?: boolean;
+  };
+  const [allDealerships, setAllDealerships] = useState<DealershipStub[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [editing, setEditing] = useState<Dealer | null>(null);
@@ -153,10 +163,19 @@ export default function Dealers() {
   const load = useCallback(
     async (withArchived: boolean) => {
       try {
-        const data = await apiFetch(
-          `/api/admin/dealers${withArchived ? "?include_archived=true" : ""}`
+        const [dealersRes, dshipsRes] = await Promise.all([
+          apiFetch(`/api/admin/dealers${withArchived ? "?include_archived=true" : ""}`),
+          apiFetch(`/api/admin/dealerships`),
+        ]);
+        setDealers(dealersRes.dealers || []);
+        setAllDealerships(
+          (dshipsRes.dealerships || []).map((d: any) => ({
+            id: d.id,
+            name: d.name,
+            address: d.address,
+            active: d.active !== false,
+          }))
         );
-        setDealers(data.dealers || []);
       } catch (e) {
         console.log(e);
       } finally {
@@ -283,6 +302,9 @@ export default function Dealers() {
   // Bundle dealers by dealership so the admin sees a single "team" card per
   // dealership with all its users nested. Users without a dealership_id
   // (legacy / mid-migration) get their own "solo" group keyed by user id.
+  // Empty dealerships (0 users) are also rendered as group headers so a
+  // freshly onboarded dealership shows up immediately, even before its
+  // first user is invited.
   const groups = useMemo(() => {
     const map = new Map<string, {
       dealership_id: string;
@@ -309,8 +331,21 @@ export default function Dealers() {
         });
       }
     }
+    // Add every dealership that has NO users yet so it still gets a header
+    // and the admin can invite the first user from the same UI.
+    for (const ds of allDealerships) {
+      if (!map.has(ds.id)) {
+        map.set(ds.id, {
+          dealership_id: ds.id,
+          dealership_name: ds.name,
+          dealership_active: ds.active !== false,
+          dealership_address: ds.address,
+          users: [],
+        });
+      }
+    }
     return Array.from(map.values()).sort((a, b) => a.dealership_name.localeCompare(b.dealership_name));
-  }, [dealers]);
+  }, [dealers, allDealerships]);
 
   const toggleDealershipActive = async (groupId: string, currentActive: boolean) => {
     // Skip synthetic "solo:" IDs — those are for pre-migration users that
