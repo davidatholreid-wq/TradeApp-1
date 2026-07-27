@@ -45,15 +45,33 @@ function slugAT(s: string): string {
   );
 }
 
-// Build the free-text keyword to place into AutoTrader's search box.
-// Uses the derivative (which is already specific enough — e.g. "M5
-// M-DCT", "Tank 300 2.0T", "C63 AMG"). Falls back to model when there
-// is no derivative on file. We deliberately keep this short so
-// AutoTrader's fuzzy match still finds listings.
-function searchKeyword(model?: string, derivative?: string): string {
+// Split the derivative into meaningful search keywords for AutoTrader.
+// Strips technical noise that rarely appears in listing descriptions:
+//   - Engine displacements: "2.0T", "3.0", "1.5", "1.6D", "2.2di"
+//   - Drivetrain codes: "4x4", "4WD", "AWD", "RWD", "FWD", "2WD"
+//   - Chassis codes (already removed via cleanText's parentheses stripping)
+// Everything else (model name, trim tier, gearbox code, sport suffix) is
+// kept so AutoTrader's fuzzy match can narrow the listings.
+// Example: "Tank 300 2.0T Super Luxury 4x4" -> ["Tank", "300", "Super", "Luxury"]
+function derivativeKeywords(derivative?: string, model?: string): string[] {
   const der = cleanText(derivative);
-  if (der) return der;
-  return cleanText(model);
+  const base = der || cleanText(model);
+  if (!base) return [];
+  const stripPatterns: RegExp[] = [
+    /^\d+\.\d+[a-z]*$/i,           // 2.0T, 3.0, 1.5, 1.6D, 2.2di, 2.0TDI
+    /^4x4$|^4wd$|^awd$|^rwd$|^fwd$|^2wd$/i, // drivetrain
+    /^tdi$|^tsi$|^gdi$|^crdi$|^bluetec$|^ecoboost$/i, // engine tech
+  ];
+  return base
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter((t) => t && !stripPatterns.some((re) => re.test(t)));
+}
+
+// Build the AutoTrader `keyword=` query value — a space-separated list
+// of the filtered derivative tokens.
+function searchKeyword(model?: string, derivative?: string): string {
+  return derivativeKeywords(derivative, model).join(" ");
 }
 
 // Resolve the year range to feed into AutoTrader's `year=X-to-Y` filter.
@@ -155,11 +173,12 @@ export default function ComparableListingsCard(props: Props) {
   const searchLbl = searchLabel(props);
   const fuel = normaliseFuel(props.fuelType);
 
-  // Compact "chips" that describe what filters we've pre-applied.
-  const chips: string[] = [];
-  const kw = searchKeyword(props.model, props.derivative);
-  if (kw) chips.push(`"${kw}"`);
-  if (range) chips.push(range.from === range.to ? `Year ${range.from}` : `Years ${range.from}–${range.to}`);
+  // Compact "chips" that describe what's pre-applied. Each derivative
+  // keyword becomes its own chip so dealers can see exactly which words
+  // are being searched — e.g. Tank · 300 · Super · Luxury.
+  const kwTokens = derivativeKeywords(props.derivative, props.model);
+  const chips: string[] = [...kwTokens];
+  if (range) chips.push(range.from === range.to ? `${range.from}` : `${range.from}–${range.to}`);
   if (fuel) chips.push(fuel);
 
   return (
@@ -207,8 +226,12 @@ export default function ComparableListingsCard(props: Props) {
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.btnTitle}>AutoTrader.co.za</Text>
-          <Text style={styles.btnSub}>
-            {chips.length ? chips.join(" · ") + " applied" : "Model listing"}
+          <Text style={styles.btnSub} numberOfLines={2}>
+            {[
+              kwTokens.length ? kwTokens.join(" · ") : null,
+              range ? (range.from === range.to ? `Year ${range.from}` : `Years ${range.from}–${range.to}`) : null,
+              fuel,
+            ].filter(Boolean).join(" · ") || "Model listing"}
           </Text>
         </View>
         <Ionicons name="open-outline" size={18} color={colors.text} />
