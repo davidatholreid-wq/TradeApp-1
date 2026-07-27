@@ -16,7 +16,7 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useRouter } from "expo-router";
 
-import { spacing, radius, fonts } from "@/src/theme";
+import { spacing, radius, fonts, BRAND } from "@/src/theme";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { useAuth } from "@/src/context/AuthContext";
 import { apiFetch } from "@/src/api";
@@ -131,14 +131,14 @@ export default function HomeScreen() {
   });
 
   // Watchdog: some web browsers (Safari, and Chrome in restricted power
-  // modes) opportunistically pause muted background <video> elements to
-  // save battery / CPU. Because the hero video is decorative-but-critical
-  // (product reads as broken if it's frozen), poll every 1.5 s and
-  // re-issue `play()` if the underlying element has been paused by
-  // anything other than the user themselves. Very cheap — a boolean read
-  // plus a no-op play() when already playing. Cleaned up on unmount.
+  // modes) opportunistically pause muted background <video> elements. On
+  // web we now render a static brand logo instead of the video (see the
+  // hero panel below), so this watchdog only runs on native — where the
+  // OS video pipeline generally honours `loop = true`, but a belt-and-
+  // braces re-play() keeps the panel alive if the player is ever paused
+  // by a system-level interruption (incoming call, PiP switch, etc.).
   useEffect(() => {
-    if (Platform.OS !== "web") return;
+    if (Platform.OS === "web") return;
     const id = setInterval(() => {
       try {
         if (!heroPlayer.playing) heroPlayer.play();
@@ -242,19 +242,37 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          {/* Hero video — capped height on wide screens so it stops swallowing
-              the whole viewport, and full-bleed 16:9 on phones. */}
+          {/* Hero panel — capped height on wide screens so it stops swallowing
+              the whole viewport, and full-bleed 16:9 on phones.
+              • Native (iOS / Android): looping cinematic video.
+              • Web: static Fourbuy Car Buying Co. logo on a solid brand
+                backdrop. Web video autoplay is unreliable across
+                browsers / power modes, and the client asked to fall
+                back to a clean logo lockup there. */}
           <View style={styles.heroWrap}>
-            <Image source={HERO_POSTER} style={styles.heroPoster} resizeMode="cover" />
-            <VideoView
-              player={heroPlayer}
-              style={styles.hero}
-              contentFit="cover"
-              nativeControls={false}
-              allowsFullscreen={false}
-              allowsPictureInPicture={false}
-              accessibilityLabel="Fourbuy Car Buying Co. hero video"
-            />
+            {Platform.OS === "web" ? (
+              <View style={styles.heroLogoBg}>
+                <Image
+                  source={BRAND.logo}
+                  style={styles.heroLogoImg}
+                  resizeMode="contain"
+                  accessibilityLabel="Fourbuy Car Buying Co."
+                />
+              </View>
+            ) : (
+              <>
+                <Image source={HERO_POSTER} style={styles.heroPoster} resizeMode="cover" />
+                <VideoView
+                  player={heroPlayer}
+                  style={styles.hero}
+                  contentFit="cover"
+                  nativeControls={false}
+                  allowsFullscreen={false}
+                  allowsPictureInPicture={false}
+                  accessibilityLabel="Fourbuy Car Buying Co. hero video"
+                />
+              </>
+            )}
           </View>
 
           {/* Quick-actions grid — always visible on web, hidden on phones
@@ -582,6 +600,23 @@ const makeStyles = (colors: Palette, isWide: boolean) => {
     },
     hero: { width: "100%", height: "100%" },
     heroPoster: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, width: "100%", height: "100%" },
+    // Web-only fallback — a full-bleed brand lockup replaces the video
+    // there because muted autoplay is unreliable across browsers /
+    // power modes. Dark backdrop matches the app's cinematic feel and
+    // lets the white-text logo read cleanly.
+    heroLogoBg: {
+      width: "100%",
+      height: "100%",
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "#0A0A0A",
+      paddingHorizontal: spacing.xl,
+    },
+    heroLogoImg: {
+      width: "70%",
+      height: "70%",
+      maxWidth: 520,
+    },
 
     // Quick-actions grid (web only) --------------------------------------
     quickGrid: {
