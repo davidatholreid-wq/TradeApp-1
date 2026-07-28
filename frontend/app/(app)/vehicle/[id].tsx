@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, TouchableOpacity } from "@/src/components/HapticButtons";
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Image, TextInput, Modal, KeyboardAvoidingView, Platform, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Image, TextInput, Modal, KeyboardAvoidingView, Platform, Alert, LayoutAnimation, UIManager } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -9,6 +9,64 @@ import * as WebBrowser from "expo-web-browser";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { spacing, radius, fonts } from "@/src/theme";
+
+// LayoutAnimation is opt-in on Android — enable it once at module load
+// so the collapsible section animations feel smooth on all platforms.
+if (Platform.OS === "android" && UIManager?.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+// ---------------------------------------------------------------------------
+// CollapsibleSection — a lightweight header + children wrapper used across
+// the valuation page to hide long-form details (AI market analysis, live
+// listings, tyre estimate etc.) behind an expand/collapse chevron. Keeps
+// the vertical scroll short and lets dealers reveal only the panels they
+// care about.
+// ---------------------------------------------------------------------------
+type CollapsibleSectionProps = {
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  right?: React.ReactNode;
+  summary?: string;
+  children?: React.ReactNode;
+  colors: any;
+  styles: any;
+  testID?: string;
+};
+function CollapsibleSection({
+  title, open, onToggle, right, summary, children, colors, styles, testID,
+}: CollapsibleSectionProps) {
+  return (
+    <View style={styles.collapsibleWrap} testID={testID}>
+      <Pressable
+        onPress={onToggle}
+        style={({ pressed }) => [
+          styles.collapsibleHeader,
+          pressed && { opacity: 0.85 },
+        ]}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={`${open ? "Collapse" : "Expand"} ${title}`}
+        testID={testID ? `${testID}-toggle` : undefined}
+      >
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={styles.collapsibleTitle} numberOfLines={1}>{title}</Text>
+          {summary && !open ? (
+            <Text style={styles.collapsibleSummary} numberOfLines={1}>{summary}</Text>
+          ) : null}
+        </View>
+        {right ? <View style={{ marginRight: spacing.sm }}>{right}</View> : null}
+        <Ionicons
+          name={open ? "chevron-up" : "chevron-down"}
+          size={18}
+          color={colors.textSecondary}
+        />
+      </Pressable>
+      {open ? <View style={styles.collapsibleBody}>{children}</View> : null}
+    </View>
+  );
+}
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { apiFetch } from "@/src/api";
 import { storage } from "@/src/utils/storage";
@@ -233,6 +291,30 @@ export default function VehicleDetail() {
   const router = useRouter();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+
+  // Which of the collapsible content blocks are currently expanded. All
+  // sections start closed by default so the valuation screen looks tidy
+  // on first load — dealers/admin tap to reveal the details they want.
+  // Persisted only in-memory; a hard refresh resets to the defaults.
+  const [openSections, setOpenSections] = useState<Set<string>>(
+    () => new Set<string>(["reports", "market-values"]),
+  );
+  const toggleSection = useCallback((key: string) => {
+    // Small LayoutAnimation for smooth reveal on both native and web.
+    if (Platform.OS !== "web" && LayoutAnimation) {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    }
+    setOpenSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+  const isOpen = useCallback(
+    (key: string) => openSections.has(key),
+    [openSections],
+  );
 
   const [sub, setSub] = useState<Submission | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1562,36 +1644,49 @@ export default function VehicleDetail() {
           </>
         ) : null}
 
-        {/* AI Market Analysis */}
-        <View style={styles.analysisHeader}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.sectionTitle}>AI Market Analysis</Text>
-            {sub.market_analysis?.generated_at ? (
-              <Text style={styles.analysisTs}>
-                Generated {new Date(sub.market_analysis.generated_at).toLocaleString()}
-              </Text>
-            ) : null}
-          </View>
-          <TouchableOpacity
-            testID="market-analysis-button"
-            style={[styles.analysisBtn, analysing && { opacity: 0.6 }]}
-            onPress={handleMarketAnalysis}
-            disabled={analysing}
-          >
-            {analysing ? (
-              <ActivityIndicator color={colors.primary} size="small" />
-            ) : (
-              <>
-                <Ionicons name="sparkles" size={14} color={colors.primary} />
-                <Text style={styles.analysisBtnText}>
-                  {sub.market_analysis ? "Refresh" : "Analyse"}
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
+        {/* AI Market Analysis — collapsed by default. The section
+            header ships a "Refresh"/"Analyse" action on the right, and
+            a one-line summary chip when collapsed so dealers can see
+            at a glance whether an analysis has been generated. */}
+        <CollapsibleSection
+          title="AI Market Analysis"
+          open={isOpen("ai")}
+          onToggle={() => toggleSection("ai")}
+          summary={
+            sub.market_analysis?.analysis?.estimated_market_range_zar
+              ? `R ${sub.market_analysis.analysis.estimated_market_range_zar.low.toLocaleString()} — R ${sub.market_analysis.analysis.estimated_market_range_zar.high.toLocaleString()}`
+              : (sub.market_analysis?.generated_at ? "Analysis ready" : "Not yet analysed")
+          }
+          right={
+            <TouchableOpacity
+              testID="market-analysis-button"
+              style={[styles.analysisBtn, analysing && { opacity: 0.6 }]}
+              onPress={(e) => { e.stopPropagation?.(); handleMarketAnalysis(); }}
+              disabled={analysing}
+            >
+              {analysing ? (
+                <ActivityIndicator color={colors.primary} size="small" />
+              ) : (
+                <>
+                  <Ionicons name="sparkles" size={14} color={colors.primary} />
+                  <Text style={styles.analysisBtnText}>
+                    {sub.market_analysis ? "Refresh" : "Analyse"}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          }
+          colors={colors}
+          styles={styles}
+          testID="ai-market-analysis"
+        >
+          {sub.market_analysis?.generated_at ? (
+            <Text style={[styles.analysisTs, { marginBottom: spacing.sm }]}>
+              Generated {new Date(sub.market_analysis.generated_at).toLocaleString()}
+            </Text>
+          ) : null}
 
-        {sub.market_analysis?.analysis ? (
+          {sub.market_analysis?.analysis ? (
           <View style={styles.analysisCard} testID="market-analysis-card">
             {sub.market_analysis.analysis.estimated_market_range_zar ? (
               <View style={styles.rangeBox}>
@@ -1689,20 +1784,31 @@ export default function VehicleDetail() {
             </Text>
           </View>
         )}
+        </CollapsibleSection>
 
-        {/* Compare Live Listings — deep-links into AutoTrader / cars.co.za
-            search results pre-filtered to comparable stock. No scraping,
-            just a hand-off to the live sites. */}
-        <ComparableListingsCard
-          make={sub.make_name}
-          model={sub.model_name}
-          derivative={sub.derivative_name}
-          fuelType={sub.fuel_type}
-          transmission={sub.transmission}
-          year={sub.year_of_production ?? sub.year}
-          yearFrom={sub.variant_manufacture_range?.min ?? null}
-          yearTo={sub.variant_manufacture_range?.max ?? null}
-        />
+        {/* Compare Live Listings — deep-links into AutoTrader search
+            results pre-filtered to comparable stock. Collapsible so it
+            doesn't stretch the valuation page. */}
+        <CollapsibleSection
+          title="Compare Live Listings"
+          open={isOpen("live-listings")}
+          onToggle={() => toggleSection("live-listings")}
+          summary="Open the same-derivative results on AutoTrader"
+          colors={colors}
+          styles={styles}
+          testID="compare-listings"
+        >
+          <ComparableListingsCard
+            make={sub.make_name}
+            model={sub.model_name}
+            derivative={sub.derivative_name}
+            fuelType={sub.fuel_type}
+            transmission={sub.transmission}
+            year={sub.year_of_production ?? sub.year}
+            yearFrom={sub.variant_manufacture_range?.min ?? null}
+            yearTo={sub.variant_manufacture_range?.max ?? null}
+          />
+        </CollapsibleSection>
 
         {/* Tyre Replacement Estimate — admin-only */}
         {isAdmin ? (
@@ -1839,10 +1945,22 @@ export default function VehicleDetail() {
           </>
         ) : null}
 
-        {/* VIN-linked Reports — order or view */}
+        {/* VIN-linked Reports — order or view. Collapsible; opens by
+            default because ordering is a primary dealer action. */}
         {sub.status === "priced" ? (
-          <View style={styles.reportsSection} testID="reports-section">
-            <Text style={styles.sectionTitle}>Order a VIN-Linked Report</Text>
+          <CollapsibleSection
+            title="Order a VIN-Linked Report"
+            open={isOpen("reports")}
+            onToggle={() => toggleSection("reports")}
+            summary={
+              (sub.report_orders || []).length > 0
+                ? `${(sub.report_orders || []).length} report${(sub.report_orders || []).length === 1 ? "" : "s"} ordered`
+                : (isAdmin ? "No reports ordered yet" : "Tap to view available reports")
+            }
+            colors={colors}
+            styles={styles}
+            testID="reports-section"
+          >
         {/* VIN-linked report ordering — only when a VIN was entered/scanned.
                 Admins never see the "Order" buttons: they can only view reports
                 the dealer has already ordered. */}
@@ -2053,7 +2171,7 @@ export default function VehicleDetail() {
                 ) : null}
               </>
             ) : null}
-          </View>
+          </CollapsibleSection>
         ) : null}
 
         {/* CarTrust PDF ordering is now rendered inline in the "Order a
@@ -3443,6 +3561,42 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     marginTop: spacing.lg,
     marginBottom: spacing.sm,
   },
+  // ─── Collapsible section styles ─────────────────────────────────────
+  collapsibleWrap: {
+    marginTop: spacing.md,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    overflow: "hidden",
+  },
+  collapsibleHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    minHeight: 52,
+    gap: spacing.sm,
+  },
+  collapsibleTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+  collapsibleSummary: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  collapsibleBody: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
+    paddingTop: 0,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  // ────────────────────────────────────────────────────────────────────
 
   infoCard: {
     backgroundColor: colors.card,
