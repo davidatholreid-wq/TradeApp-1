@@ -1083,7 +1083,14 @@ export default function VehicleDetail() {
           <DetailRow label="Make" value={sub.make_name} />
           <DetailRow label="Model" value={sub.model_name} />
           <DetailRow label="Derivative" value={sub.derivative_name} />
-          <DetailRow label="Mileage" value={`${sub.mileage.toLocaleString()} km`} />
+          <DetailRow
+            label="Mileage"
+            value={
+              typeof sub.mileage === "number" && Number.isFinite(sub.mileage)
+                ? `${sub.mileage.toLocaleString()} km`
+                : "—"
+            }
+          />
           <DetailRow label="Transmission" value={sub.transmission ?? "—"} />
           <DetailRow label="Fuel Type" value={sub.fuel_type ?? "—"} />
           <DetailRow label="Colour" value={sub.colour} />
