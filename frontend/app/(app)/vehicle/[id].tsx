@@ -114,7 +114,7 @@ type PriceHistoryEntry = {
 type ReportOrder = {
   id: string;
   submission_id: string;
-  type: "lightstone_verification" | "lightstone_repair" | "car_vertical" | "bmw_options" | "landrover_osh";
+  type: "lightstone_verification" | "lightstone_repair" | "car_vertical" | "bmw_options" | "landrover_osh" | "kredo_vin_history";
   name: string;
   cost_zar: number;
   status: "pending" | "delivered" | "failed";
@@ -398,12 +398,15 @@ export default function VehicleDetail() {
   // KREDO_VIN_HISTORY_DEALER_COST_ZAR on the server.
   const KREDO_VIN_HISTORY_DEALER_COST_ZAR = 100;
 
-  const fetchKredoHistory = async (refresh = false) => {
+  const fetchKredoHistory = async (refresh = false, opts?: { skipConfirm?: boolean }) => {
     if (!sub?.id || !sub.vin) return;
     // Dealers must explicitly accept the R100 charge — only when this
     // will actually hit Kredo (i.e., no cache yet OR they tapped Refresh).
+    // When invoked from the unified "Order a VIN-Linked Report" flow the
+    // dealer has already confirmed the charge in the modal, so skip the
+    // second confirmation to avoid double-prompting.
     const willBill = !isAdmin && (refresh || !kredoHistory);
-    if (willBill) {
+    if (willBill && !opts?.skipConfirm) {
       // React Native Web's Alert.alert() polyfill silently discards
       // multi-button `onPress` callbacks, so the confirmation Promise
       // never resolves on web (the button click just did nothing).
@@ -749,6 +752,9 @@ export default function VehicleDetail() {
     // JLR Online Service History — live osh.landrover.com scrape, only
     // offered on Land Rover / Range Rover / Jaguar vehicles.
     landrover_osh: { name: "Land Rover / Jaguar Service History", cost_zar: 20 },
+    // Kredo VIN accident / claim history — R100 live lookup, one charge
+    // per submission, billed to the dealer's next invoice.
+    kredo_vin_history: { name: "Accident / Claim History (Kredo VIN)", cost_zar: KREDO_VIN_HISTORY_DEALER_COST_ZAR },
   };
 
   const orderedReportTypes = useMemo(
@@ -763,6 +769,28 @@ export default function VehicleDetail() {
     if ((confirmReport.type as string) === "kredo_cartrust") {
       setConfirmReport(null);
       await orderCartrust();
+      return;
+    }
+    // Kredo VIN accident / claim history — uses a dedicated live-lookup
+    // endpoint (POST /kredo/vin-history) instead of the standard reports
+    // POST. `fetchKredoHistory(true)` runs a fresh Kredo call, writes the
+    // R100 billing row into `report_orders`, and updates the cache. We
+    // then refetch the submission so `sub.report_orders` includes the
+    // new row and the card flips from "Order" to "View" instantly.
+    if ((confirmReport.type as string) === "kredo_vin_history") {
+      setConfirmReport(null);
+      setOrderingReportType("kredo_vin_history");
+      try {
+        await fetchKredoHistory(true, { skipConfirm: true });
+        // Refetch submission so the unified report list reflects the new
+        // billing row.
+        try {
+          const fresh = await apiFetch(`/api/submissions/${id}`);
+          setSub(fresh);
+        } catch { /* non-fatal */ }
+      } finally {
+        setOrderingReportType(null);
+      }
       return;
     }
     setOrderingReportType(confirmReport.type);
@@ -1851,6 +1879,13 @@ export default function VehicleDetail() {
                     if (isBimmerSupported) baseTypes.push("bmw_options");
                     // JLR OSH service history is JLR-only.
                     if (isLandroverSupported) baseTypes.push("landrover_osh");
+                    // Kredo accident / claim history — available for every
+                    // VIN. Included in this unified list so ordering, cost
+                    // display and viewing behave identically to every
+                    // other VIN-linked report.
+                    if (sub.vin && sub.vin.trim() && sub.vin.toUpperCase() !== "TBC") {
+                      baseTypes.push("kredo_vin_history");
+                    }
                     return baseTypes;
                   })()
                   .filter((t) => !isAdmin || orderedReportTypes.has(t))
@@ -2018,127 +2053,12 @@ export default function VehicleDetail() {
             VIN-Linked Report" section above — the standalone card was
             removed at the user's request. */}
 
-        {/* Kredo VIN accident/claim history — available to both admins
-            and dealers. Admins fetch for free; dealers pay a per-fetch
-            R100 charge that goes onto their next invoice. Cache hits are
-            free — the R100 is billed exactly once per submission. */}
-        {sub.vin && sub.vin.trim() && sub.vin.toUpperCase() !== "TBC" ? (
-          <View style={styles.reportsSection} testID="kredo-history-section">
-            <Text style={styles.sectionTitle}>Accident / Claim History</Text>
-            <Text style={styles.reportsHelp}>
-              {isAdmin
-                ? `Kredo VIN accident-history report for ${sub.vin}. Only visible when the dealer has ordered the report. Admins cannot order reports on behalf of a dealer.`
-                : `Live Kredo VIN check for ${sub.vin}. R${KREDO_VIN_HISTORY_DEALER_COST_ZAR} per lookup, billed to your next invoice. Cache hits are free.`}
-            </Text>
-
-            {/* Order/refresh button is dealer-only. Admins can view a
-                report the dealer has already ordered but cannot trigger
-                a fresh Kredo fetch — the backend also enforces this. */}
-            {!isAdmin ? (
-              <TouchableOpacity
-                testID="kredo-history-fetch-btn"
-                style={[
-                  styles.kredoFetchBtn,
-                  kredoLoading && styles.kredoFetchBtnDisabled,
-                ]}
-                onPress={() => fetchKredoHistory(!!kredoHistory)}
-                disabled={kredoLoading}
-                accessibilityRole="button"
-                accessibilityLabel={kredoHistory ? "Refresh accident history" : "Fetch accident history"}
-              >
-                {kredoLoading ? (
-                  <ActivityIndicator color={colors.onPrimary} size="small" />
-                ) : (
-                  <>
-                    <Ionicons
-                      name={kredoHistory ? "refresh" : "search"}
-                      size={16}
-                      color={colors.onPrimary}
-                    />
-                    <Text style={styles.kredoFetchBtnText}>
-                      {kredoHistory ? "Refresh Accident History" : "Fetch Accident History"}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            ) : null}
-
-            {!kredoHistory ? (
-              <View style={styles.kredoEmpty}>
-                <Ionicons name="alert-circle-outline" size={22} color={colors.textDisabled} />
-                <Text style={styles.kredoEmptyText}>
-                  {isAdmin
-                    ? "The dealer has not ordered an accident / claim history report for this vehicle yet."
-                    : "No history fetched yet. Tap Fetch to check for insurance claims and accident records for this VIN."}
-                </Text>
-              </View>
-            ) : kredoHistory.result.claim_count === 0 ? (
-              <View style={styles.kredoClean}>
-                <Ionicons name="checkmark-circle" size={22} color={colors.success} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.kredoCleanTitle}>No claims found</Text>
-                  <Text style={styles.kredoCleanSub}>
-                    Kredo has no insurance-claim records against this VIN.
-                    {kredoHistory.cached_at ? ` · Checked ${new Date(kredoHistory.cached_at).toLocaleString()}` : ""}
-                  </Text>
-                </View>
-              </View>
-            ) : (
-              <View>
-                <View style={styles.kredoCountBanner}>
-                  <Ionicons name="warning" size={16} color={colors.warning} />
-                  <Text style={styles.kredoCountText}>
-                    {kredoHistory.result.claim_count} claim{kredoHistory.result.claim_count === 1 ? "" : "s"} on record
-                  </Text>
-                  <Text style={styles.kredoSource}>
-                    {kredoHistory.source === "cache" ? "cached" : "live"}
-                    {kredoHistory.cached_at ? ` · ${new Date(kredoHistory.cached_at).toLocaleDateString()}` : ""}
-                  </Text>
-                </View>
-                {kredoHistory.result.claims.map((c) => (
-                  <View key={c.id} style={styles.claimCard}>
-                    <View style={styles.claimHead}>
-                      <Text style={styles.claimDate}>
-                        {c.accident_date || c.creation_date || "Unknown date"}
-                      </Text>
-                      {c.country ? <Text style={styles.claimCountry}>{c.country}</Text> : null}
-                    </View>
-                    {c.manufacturer || c.model ? (
-                      <Text style={styles.claimVehicle}>
-                        {[c.manufacturer, c.model].filter(Boolean).join(" · ")}
-                      </Text>
-                    ) : null}
-                    {c.mileage_at_claim ? (
-                      <Text style={styles.claimMeta}>
-                        {parseInt(c.mileage_at_claim, 10).toLocaleString("en-ZA")} km at claim
-                      </Text>
-                    ) : null}
-                    {c.damage_locations.length > 0 ? (
-                      <View style={styles.damageRow}>
-                        {c.damage_locations.map((d) => (
-                          <View key={d} style={styles.damageChip}>
-                            <Text style={styles.damageChipText}>{d.replace("-", " ").toUpperCase()}</Text>
-                          </View>
-                        ))}
-                        {c.glass_damage ? (
-                          <View style={[styles.damageChip, styles.damageChipGlass]}>
-                            <Ionicons name="glasses-outline" size={10} color={colors.onPrimary} />
-                            <Text style={[styles.damageChipText, { color: colors.onPrimary }]}>WINDSCREEN</Text>
-                          </View>
-                        ) : null}
-                      </View>
-                    ) : (
-                      <Text style={styles.claimMeta}>
-                        Claim record present but no specific damage location recorded.
-                      </Text>
-                    )}
-                    <Text style={styles.claimId}>Ref: {c.id}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-          </View>
-        ) : null}
+        {/* Kredo VIN accident / claim history is also now rendered
+            inline in the unified "Order a VIN-Linked Report" section
+            above so ordering, cost display (R100), pending/delivered
+            pill and the View modal are visually consistent with every
+            other VIN-linked report. The standalone panel that lived
+            here previously has been retired. */}
 
         {/* Dealer info for admin */}
         {isAdmin && sub.dealer_name ? (
@@ -2669,6 +2589,72 @@ function ReportResultBody({ data }: { data: Record<string, any> }) {
             </View>
           ))}
         </View>
+      </View>
+    );
+  }
+
+  // Kredo VIN accident / claim history — payload shape
+  // { claim_count, claims: [...], last_claim_date, ... }. Render as a
+  // clean "no claims" success card or a table of claims, matching the
+  // valuation-PDF layout so the on-screen view and the PDF are
+  // visually consistent.
+  const isKredoVin =
+    data && !sections &&
+    (typeof data.claim_count === "number"
+      || Array.isArray(data.claims)
+      || Array.isArray(data.accident_claims));
+  if (isKredoVin) {
+    const claims = ((data.claims || data.accident_claims) || []) as Array<{
+      accident_date?: string; date?: string;
+      damage?: string; area?: string;
+      odometer?: number | string;
+      insurer?: string; type?: string;
+    }>;
+    const claimCount = typeof data.claim_count === "number" ? data.claim_count : claims.length;
+    return (
+      <View>
+        {claimCount === 0 ? (
+          <View style={styles.kredoClean}>
+            <Ionicons name="checkmark-circle" size={22} color={colors.success} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.kredoCleanTitle}>No claims found</Text>
+              <Text style={styles.kredoCleanSub}>
+                Kredo has no insurance-claim records against this VIN.
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <>
+            <Text style={styles.reportSectionHeader}>
+              Claims on record ({claimCount})
+            </Text>
+            {claims.map((c, i) => (
+              <View key={`kv-${i}`} style={styles.serviceHistoryRow}>
+                <View style={styles.serviceHistoryHeadRow}>
+                  <Text style={styles.serviceHistoryDate}>
+                    {c.accident_date || c.date || "—"}
+                  </Text>
+                  <Text style={styles.serviceHistoryOdo}>
+                    {c.odometer ? `${c.odometer} km` : ""}
+                  </Text>
+                </View>
+                <Text style={styles.serviceHistoryRepairer}>
+                  {c.damage || c.area || "Reported damage"}
+                </Text>
+                <View style={styles.serviceHistoryMetaRow}>
+                  <Text style={styles.serviceHistoryDetails} numberOfLines={2}>
+                    {c.insurer || c.type || ""}
+                  </Text>
+                </View>
+              </View>
+            ))}
+            {data.last_claim_date ? (
+              <Text style={[styles.viewReportBody, { marginTop: spacing.sm }]}>
+                Last claim: {String(data.last_claim_date)}
+              </Text>
+            ) : null}
+          </>
+        )}
       </View>
     );
   }
