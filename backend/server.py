@@ -3793,6 +3793,158 @@ async def _build_report_pdf(sub: dict, order: dict) -> bytes:
 
     data = order.get("result_data") or {}
 
+    # ------------------------------------------------------------------
+    # Type-specific rich renderers (JLR OSH, Kredo VIN, BMW factory
+    # options). These payloads don't use the generic `summary` +
+    # `sections` schema, so without a dedicated branch the whole
+    # dossier would render as just the header banner. Structure mirrors
+    # the on-screen report cards.
+    # ------------------------------------------------------------------
+    def _sub_row_style() -> TableStyle:
+        return TableStyle([
+            ("FONT", (0, 0), (-1, -1), "Helvetica", 9.5),
+            ("FONT", (0, 0), (0, -1), "Helvetica-Bold", 9.5),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.25, rl_colors.lightgrey),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ])
+
+    if report_type == "landrover_osh" and isinstance(data, dict):
+        v = data.get("vehicle") or {}
+        v_rows = []
+        for lbl, k in [
+            ("VIN", "vin"), ("Model", "model_name"), ("Model Year", "model_year"),
+            ("Engine", "engine"), ("Colour", "colour"),
+            ("Warranty Start", "warranty_start_date"),
+            ("Registration Country", "registration_country"),
+        ]:
+            if v.get(k):
+                v_rows.append([lbl, Paragraph(str(v[k]), body)])
+        if v_rows:
+            story.append(Paragraph("VEHICLE", h_section))
+            tv = Table(v_rows, colWidths=[45*mm, 130*mm])
+            tv.setStyle(_sub_row_style())
+            story.append(tv)
+
+        ls = data.get("last_service") or {}
+        if isinstance(ls, dict) and any(ls.get(k) for k in
+                ("type", "distance", "date", "job_number",
+                 "repairer_name", "repairer_location", "service_items")):
+            services_local = data.get("services") or []
+            ls_title = "LATEST SERVICE DETAIL" if services_local else "LAST SERVICE RECORDED"
+            story.append(Paragraph(ls_title, h_section))
+            ls_rows = []
+            for lbl, key in [
+                ("Type", "type"), ("Distance", "distance"), ("Date", "date"),
+                ("Job Number", "job_number"),
+                ("Repairer", "repairer_name"),
+                ("Location", "repairer_location"),
+                ("Repairer Type", "repairer_type"),
+            ]:
+                val = ls.get(key)
+                if val:
+                    ls_rows.append([lbl, Paragraph(str(val), body)])
+            if ls_rows:
+                t_ls = Table(ls_rows, colWidths=[45*mm, 130*mm])
+                t_ls.setStyle(_sub_row_style())
+                story.append(t_ls)
+            items = ls.get("service_items") or []
+            if isinstance(items, list) and items:
+                story.append(Spacer(1, 4))
+                story.append(Paragraph("<b>Service items</b>", body))
+                for item in items:
+                    story.append(Paragraph(f"•&nbsp;&nbsp;{item}", body))
+
+        services = data.get("services") or []
+        if services:
+            story.append(Paragraph(f"SERVICE HISTORY ({len(services)})", h_section))
+            srv_rows = [["Date", "Odometer", "Repairer", "Job No.", "Details"]]
+            for s in services:
+                odo = s.get("odometer")
+                odo_str = "—"
+                if odo:
+                    odo_str = str(odo).strip()
+                    if not odo_str.lower().endswith("km"):
+                        odo_str = f"{odo_str} km"
+                srv_rows.append([
+                    Paragraph(s.get("job_date") or "—", body),
+                    Paragraph(odo_str, body),
+                    Paragraph(s.get("repairer") or "—", body),
+                    Paragraph(s.get("job_number") or "—", body),
+                    Paragraph(s.get("details") or "—", body),
+                ])
+            t_s = Table(srv_rows, colWidths=[22*mm, 22*mm, 50*mm, 22*mm, 62*mm], repeatRows=1)
+            ts = _sub_row_style()
+            ts.add("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 8.5)
+            ts.add("BACKGROUND", (0, 0), (-1, 0), rl_colors.HexColor("#F5F5F5"))
+            t_s.setStyle(ts)
+            story.append(t_s)
+
+        alerts = data.get("alerts") or []
+        if alerts:
+            story.append(Paragraph(f"ALERTS ({len(alerts)})", h_section))
+            for a in alerts:
+                story.append(Paragraph(f"•&nbsp;&nbsp;{a}", body))
+
+        prov_bits = []
+        if data.get("captured_at"):
+            prov_bits.append(
+                f"Captured {str(data['captured_at'])[:19].replace('T', ' ')} UTC"
+            )
+        if data.get("source"):
+            prov_bits.append(f"Source: {data['source']}")
+        url = data.get("service_history_url") or data.get("result_url")
+        if url:
+            prov_bits.append(f'<a href="{url}"><u>View on JLR OSH</u></a>')
+        if prov_bits:
+            story.append(Spacer(1, 6))
+            story.append(Paragraph(" · ".join(prov_bits), small))
+
+    elif report_type == "kredo_vin_history" and isinstance(data, dict):
+        summary_bits = []
+        if data.get("claim_count") is not None:
+            summary_bits.append(f"Claim count: {data['claim_count']}")
+        if data.get("last_claim_date"):
+            summary_bits.append(f"Last claim: {data['last_claim_date']}")
+        if summary_bits:
+            story.append(Paragraph("SUMMARY", h_section))
+            story.append(Paragraph(" · ".join(summary_bits), body))
+        claims = data.get("claims") or data.get("accident_claims") or []
+        story.append(Paragraph("ACCIDENT / CLAIM HISTORY", h_section))
+        if claims:
+            c_rows = [["Date", "Damage", "Mileage", "Insurer / Type"]]
+            for cl in claims:
+                c_rows.append([
+                    Paragraph(str(cl.get("accident_date") or cl.get("date") or "—"), body),
+                    Paragraph(str(cl.get("damage") or cl.get("area") or "—"), body),
+                    Paragraph(f"{cl.get('odometer')} km" if cl.get("odometer") else "—", body),
+                    Paragraph(str(cl.get("insurer") or cl.get("type") or "—"), body),
+                ])
+            t_c = Table(c_rows, colWidths=[26*mm, 74*mm, 24*mm, 54*mm], repeatRows=1)
+            ts = _sub_row_style()
+            ts.add("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 8.5)
+            ts.add("BACKGROUND", (0, 0), (-1, 0), rl_colors.HexColor("#F5F5F5"))
+            t_c.setStyle(ts)
+            story.append(t_c)
+        else:
+            story.append(Paragraph("No claims recorded for this VIN.", body))
+
+    elif report_type == "bmw_options" and isinstance(data, dict):
+        # BMW factory-option list.
+        opts = data.get("options") or []
+        if data.get("report_date"):
+            story.append(Paragraph("SUMMARY", h_section))
+            story.append(Paragraph(f"Report date: {data.get('report_date')}", body))
+        if opts:
+            story.append(Paragraph(f"FACTORY OPTIONS ({len(opts)})", h_section))
+            for o in opts:
+                code = o.get("code") or ""
+                desc = o.get("description") or o.get("name") or ""
+                story.append(Paragraph(f"•&nbsp;&nbsp;<b>{code}</b> — {desc}", body))
+        elif not data.get("summary") and not data.get("sections"):
+            story.append(Paragraph("No factory options returned for this VIN.", body))
+
     # Summary paragraph
     if data.get("summary"):
         story.append(Paragraph("SUMMARY", h_section))
