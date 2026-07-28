@@ -1931,9 +1931,10 @@ export default function VehicleDetail() {
 
                 {/* Kredo CarTrust report — treated like any other VIN-linked
                     report, but with its own async pending/completed flow
-                    (see orderCartrust / cartrust state above). Available to
-                    both admins and dealers; admins can order/refresh. */}
-                {(
+                    (see orderCartrust / cartrust state above). Admins see
+                    the card only when the dealer has already ordered it —
+                    admins cannot order CarTrust on behalf of a dealer. */}
+                {(!isAdmin || cartrust) ? (
                   <View style={styles.reportCard} testID="cartrust-card">
                     <View style={{ flex: 1, marginRight: spacing.sm }}>
                       <Text style={styles.reportName}>{REPORT_CATALOG.kredo_cartrust.name}</Text>
@@ -1983,7 +1984,10 @@ export default function VehicleDetail() {
                         <ActivityIndicator color={colors.text} size="small" />
                         <Text style={styles.reportOrderedBadgeText}>Ordered</Text>
                       </View>
-                    ) : (
+                    ) : !isAdmin ? (
+                      // Order button — dealer only. Admins never see this
+                      // (the card as a whole is hidden until the dealer
+                      // has an active/completed order).
                       <TouchableOpacity
                         testID="cartrust-order-btn"
                         style={[styles.orderBtn, cartrustLoading && styles.docBtnDisabled]}
@@ -2002,9 +2006,9 @@ export default function VehicleDetail() {
                           <Text style={styles.orderBtnText}>Order</Text>
                         )}
                       </TouchableOpacity>
-                    )}
+                    ) : null}
                   </View>
-                )}
+                ) : null}
               </>
             ) : null}
           </View>
@@ -2023,42 +2027,49 @@ export default function VehicleDetail() {
             <Text style={styles.sectionTitle}>Accident / Claim History</Text>
             <Text style={styles.reportsHelp}>
               {isAdmin
-                ? `Kredo VIN history for ${sub.vin}. Results are cached — refresh only if you need a fresh check.`
+                ? `Kredo VIN accident-history report for ${sub.vin}. Only visible when the dealer has ordered the report. Admins cannot order reports on behalf of a dealer.`
                 : `Live Kredo VIN check for ${sub.vin}. R${KREDO_VIN_HISTORY_DEALER_COST_ZAR} per lookup, billed to your next invoice. Cache hits are free.`}
             </Text>
 
-            <TouchableOpacity
-              testID="kredo-history-fetch-btn"
-              style={[
-                styles.kredoFetchBtn,
-                kredoLoading && styles.kredoFetchBtnDisabled,
-              ]}
-              onPress={() => fetchKredoHistory(!!kredoHistory)}
-              disabled={kredoLoading}
-              accessibilityRole="button"
-              accessibilityLabel={kredoHistory ? "Refresh accident history" : "Fetch accident history"}
-            >
-              {kredoLoading ? (
-                <ActivityIndicator color={colors.onPrimary} size="small" />
-              ) : (
-                <>
-                  <Ionicons
-                    name={kredoHistory ? "refresh" : "search"}
-                    size={16}
-                    color={colors.onPrimary}
-                  />
-                  <Text style={styles.kredoFetchBtnText}>
-                    {kredoHistory ? "Refresh Accident History" : "Fetch Accident History"}
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
+            {/* Order/refresh button is dealer-only. Admins can view a
+                report the dealer has already ordered but cannot trigger
+                a fresh Kredo fetch — the backend also enforces this. */}
+            {!isAdmin ? (
+              <TouchableOpacity
+                testID="kredo-history-fetch-btn"
+                style={[
+                  styles.kredoFetchBtn,
+                  kredoLoading && styles.kredoFetchBtnDisabled,
+                ]}
+                onPress={() => fetchKredoHistory(!!kredoHistory)}
+                disabled={kredoLoading}
+                accessibilityRole="button"
+                accessibilityLabel={kredoHistory ? "Refresh accident history" : "Fetch accident history"}
+              >
+                {kredoLoading ? (
+                  <ActivityIndicator color={colors.onPrimary} size="small" />
+                ) : (
+                  <>
+                    <Ionicons
+                      name={kredoHistory ? "refresh" : "search"}
+                      size={16}
+                      color={colors.onPrimary}
+                    />
+                    <Text style={styles.kredoFetchBtnText}>
+                      {kredoHistory ? "Refresh Accident History" : "Fetch Accident History"}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            ) : null}
 
             {!kredoHistory ? (
               <View style={styles.kredoEmpty}>
                 <Ionicons name="alert-circle-outline" size={22} color={colors.textDisabled} />
                 <Text style={styles.kredoEmptyText}>
-                  No history fetched yet. Tap Fetch to check for insurance claims and accident records for this VIN.
+                  {isAdmin
+                    ? "The dealer has not ordered an accident / claim history report for this vehicle yet."
+                    : "No history fetched yet. Tap Fetch to check for insurance claims and accident records for this VIN."}
                 </Text>
               </View>
             ) : kredoHistory.result.claim_count === 0 ? (

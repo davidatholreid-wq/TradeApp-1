@@ -6376,20 +6376,31 @@ async def kredo_vin_history(
     """Fetch (or return cached) Kredo VIN history.
 
     Access rules:
-    * Admins may fetch any VIN — free.
-    * Dealers may fetch VINs only on submissions belonging to their own
-      dealership. Each FRESH lookup is billed **R100** to the dealership
-      on their next invoice. Cache hits are free — the R100 charge is
-      recorded exactly once per (submission, VIN) via `report_orders`.
+    * **Dealers only** may trigger a fresh Kredo lookup — each new fetch
+      is billed R100 to the dealership. Cache hits are free and re-used
+      across the dealer's app and web sessions.
+    * **Admins may only view cached data** the dealer has already
+      ordered. Admin requests are forced to `cache_only` mode — if the
+      dealer hasn't ordered it, the admin sees `result=None` and the
+      accident-history panel stays hidden. This keeps reports strictly
+      dealer-initiated and prevents admin-side "shadow ordering".
 
     Modes:
     * `cache_only=True`  → return cached result if present, else `null`.
       Never touches Kredo. Used to auto-populate the screen on mount.
     * `refresh=False` (default) → return cached result if present; otherwise
-      call Kredo and cache + bill the fresh response.
-    * `refresh=True` → always call Kredo. Rewrites the cache. Billed.
+      call Kredo and cache + bill the fresh response (dealer only).
+    * `refresh=True` → always call Kredo. Rewrites the cache. Billed (dealer only).
     """
     is_admin = current.get("role") == "admin"
+    # Admins are hard-gated to cache-only. A fresh fetch would either
+    # trigger billing (unfair) or bypass billing (revenue leak) and would
+    # let admins see reports the dealer never ordered — the user's product
+    # rule is "the report must only be visible to the admin if the user
+    # has ordered the report".
+    if is_admin:
+        payload.cache_only = True
+        payload.refresh = False
     vin = (payload.vin or "").strip().upper()
     if not vin:
         raise HTTPException(400, "vin is required")
@@ -6585,17 +6596,27 @@ async def kredo_cartrust_order(
 ):
     """Order a CarTrust PDF report for a submission.
 
-    Dealer users may only order for their own submissions; admins may order
-    for any. Kredo processes the request asynchronously and will POST to
+    Only the owning dealer may place the order — admins can VIEW a
+    delivered CarTrust report but cannot order one on behalf of a
+    dealer. This mirrors the same rule the `/submissions/{id}/reports`
+    endpoint enforces for other VIN reports (JLR OSH, BMW options,
+    etc.), so admins never appear to have "shadow-ordered" a report the
+    dealer didn't ask for.
+
+    Kredo processes the request asynchronously and will POST to
     `/api/kredo/cartrust/callback` when the PDF is ready.
     """
+    if current.get("role") == "admin":
+        raise HTTPException(
+            403,
+            "Admins cannot order reports on behalf of a dealer. The dealer must place the order themselves.",
+        )
     sub = await db.submissions.find_one({"id": payload.submission_id}, {"_id": 0})
     if not sub:
         raise HTTPException(404, "Submission not found")
-    # Access control — admins can order any, dealers only their own dealership.
-    if current.get("role") != "admin":
-        if sub.get("dealership_id") != current.get("dealership_id"):
-            raise HTTPException(403, "You cannot order a report for another dealership")
+    # Access control — dealers only their own dealership.
+    if sub.get("dealership_id") != current.get("dealership_id"):
+        raise HTTPException(403, "You cannot order a report for another dealership")
 
     vin = (sub.get("vin") or "").strip().upper()
     if not vin or vin == "TBC":
