@@ -200,6 +200,14 @@ REPORT_CATALOG = {
             "JAGUAR",
         ],
     },
+    # Kredo VIN accident / claim history — live lookup, per-lookup
+    # dealer charge. Front-end also references this via the same
+    # REPORT_CATALOG so the "OPEN FULL REPORT PDF" download endpoint
+    # accepts it.
+    "kredo_vin_history": {
+        "name": "Accident / Claim History (Kredo VIN)",
+        "cost_zar": 100.0,
+    },
 }
 
 
@@ -3403,20 +3411,39 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
                 summary_bits = []
                 if data.get("claim_count") is not None:
                     summary_bits.append(f"Claim count: {data['claim_count']}")
+                elif claims:
+                    summary_bits.append(f"Claim count: {len(claims)}")
                 if data.get("last_claim_date"):
                     summary_bits.append(f"Last claim: {data['last_claim_date']}")
                 if summary_bits:
                     story.append(Paragraph(" · ".join(summary_bits), body))
                 if claims:
-                    rows = [["Date", "Damage", "Mileage", "Insurer / Type"]]
+                    rows = [["Date", "Vehicle", "Mileage", "Damage", "Ref"]]
                     for c in claims:
+                        date_str = c.get("accident_date") or c.get("creation_date") or "—"
+                        mfr = c.get("manufacturer") or ""
+                        mdl = c.get("model") or ""
+                        vehicle_line = (mfr + " " + mdl).strip() or "—"
+                        mileage_raw = c.get("mileage_at_claim")
+                        try:
+                            mileage_num = int(mileage_raw) if mileage_raw not in (None, "") else None
+                        except (TypeError, ValueError):
+                            mileage_num = None
+                        mileage_str = f"{mileage_num:,} km" if mileage_num is not None else "—"
+                        locs = list(c.get("damage_locations") or [])
+                        if c.get("glass_damage"):
+                            locs.append("Windscreen")
+                        damage_str = ", ".join(
+                            l.replace("-", " ").title() for l in locs
+                        ) or "—"
                         rows.append([
-                            _P(str(c.get("accident_date") or c.get("date") or "—")),
-                            _P(str(c.get("damage") or c.get("area") or "—")),
-                            _P(f"{c.get('odometer')} km" if c.get("odometer") else "—"),
-                            _P(str(c.get("insurer") or c.get("type") or "—")),
+                            _P(str(date_str)),
+                            _P(vehicle_line),
+                            _P(mileage_str),
+                            _P(damage_str),
+                            _P(str(c.get("id") or "—")),
                         ])
-                    t_c = Table(rows, colWidths=[24 * mm, 76 * mm, 24 * mm, 62 * mm], repeatRows=1)
+                    t_c = Table(rows, colWidths=[22 * mm, 32 * mm, 22 * mm, 68 * mm, 42 * mm], repeatRows=1)
                     ts = _row_style()
                     ts.add("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 7)
                     ts.add("BACKGROUND", (0, 0), (-1, 0), PAPER)
@@ -3902,26 +3929,46 @@ async def _build_report_pdf(sub: dict, order: dict) -> bytes:
             story.append(Paragraph(" · ".join(prov_bits), small))
 
     elif report_type == "kredo_vin_history" and isinstance(data, dict):
-        summary_bits = []
-        if data.get("claim_count") is not None:
-            summary_bits.append(f"Claim count: {data['claim_count']}")
+        # Real Kredo VIN payload shape:
+        #   { claim_count, claims: [{ id, creation_date, accident_date,
+        #     country, manufacturer, model, mileage_at_claim,
+        #     damage_locations: [str], glass_damage }] }
+        claims = data.get("claims") or data.get("accident_claims") or []
+        claim_count = data.get("claim_count")
+        if claim_count is None:
+            claim_count = len(claims)
+        summary_bits = [f"Claim count: {claim_count}"]
         if data.get("last_claim_date"):
             summary_bits.append(f"Last claim: {data['last_claim_date']}")
-        if summary_bits:
-            story.append(Paragraph("SUMMARY", h_section))
-            story.append(Paragraph(" · ".join(summary_bits), body))
-        claims = data.get("claims") or data.get("accident_claims") or []
+        story.append(Paragraph("SUMMARY", h_section))
+        story.append(Paragraph(" · ".join(summary_bits), body))
+
         story.append(Paragraph("ACCIDENT / CLAIM HISTORY", h_section))
         if claims:
-            c_rows = [["Date", "Damage", "Mileage", "Insurer / Type"]]
+            c_rows = [["Date", "Vehicle", "Mileage", "Damage", "Ref"]]
             for cl in claims:
+                date_str = cl.get("accident_date") or cl.get("creation_date") or "—"
+                mfr = cl.get("manufacturer") or ""
+                mdl = cl.get("model") or ""
+                vehicle_line = (mfr + " " + mdl).strip() or "—"
+                mileage_raw = cl.get("mileage_at_claim")
+                try:
+                    mileage_num = int(mileage_raw) if mileage_raw not in (None, "") else None
+                except (TypeError, ValueError):
+                    mileage_num = None
+                mileage_str = f"{mileage_num:,} km" if mileage_num is not None else "—"
+                locs = list(cl.get("damage_locations") or [])
+                if cl.get("glass_damage"):
+                    locs.append("Windscreen")
+                damage_str = ", ".join(l.replace("-", " ").title() for l in locs) or "—"
                 c_rows.append([
-                    Paragraph(str(cl.get("accident_date") or cl.get("date") or "—"), body),
-                    Paragraph(str(cl.get("damage") or cl.get("area") or "—"), body),
-                    Paragraph(f"{cl.get('odometer')} km" if cl.get("odometer") else "—", body),
-                    Paragraph(str(cl.get("insurer") or cl.get("type") or "—"), body),
+                    Paragraph(str(date_str), body),
+                    Paragraph(vehicle_line, body),
+                    Paragraph(mileage_str, body),
+                    Paragraph(damage_str, body),
+                    Paragraph(str(cl.get("id") or "—"), body),
                 ])
-            t_c = Table(c_rows, colWidths=[26*mm, 74*mm, 24*mm, 54*mm], repeatRows=1)
+            t_c = Table(c_rows, colWidths=[24*mm, 34*mm, 22*mm, 62*mm, 36*mm], repeatRows=1)
             ts = _sub_row_style()
             ts.add("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 8.5)
             ts.add("BACKGROUND", (0, 0), (-1, 0), rl_colors.HexColor("#F5F5F5"))

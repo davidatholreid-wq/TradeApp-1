@@ -2473,12 +2473,22 @@ export default function VehicleDetail() {
                   This report was ordered but no result payload is attached yet.
                 </Text>
               )}
-              <View style={styles.mockBanner}>
-                <Ionicons name="information-circle-outline" size={16} color={colors.textDisabled} />
-                <Text style={styles.mockBannerText}>
-                  MOCK DATA — real provider APIs will replace this content once integrated.
-                </Text>
-              </View>
+              {/* Legacy Lightstone / Car Vertical integrations are still
+                  fixture-backed; show the MOCK DATA note only for those.
+                  JLR OSH, BMW Options, Kredo VIN accident history and
+                  Kredo CarTrust are all live provider integrations. */}
+              {viewingReport && (
+                viewingReport.type === "lightstone_verification"
+                || viewingReport.type === "lightstone_repair"
+                || viewingReport.type === "car_vertical"
+              ) ? (
+                <View style={styles.mockBanner}>
+                  <Ionicons name="information-circle-outline" size={16} color={colors.textDisabled} />
+                  <Text style={styles.mockBannerText}>
+                    MOCK DATA — real provider APIs will replace this content once integrated.
+                  </Text>
+                </View>
+              ) : null}
             </ScrollView>
 
             {viewingReport?.status === "delivered" ? (
@@ -2600,11 +2610,14 @@ function ReportResultBody({ data }: { data: Record<string, any> }) {
     );
   }
 
-  // Kredo VIN accident / claim history — payload shape
-  // { claim_count, claims: [...], last_claim_date, ... }. Render as a
-  // clean "no claims" success card or a table of claims, matching the
-  // valuation-PDF layout so the on-screen view and the PDF are
-  // visually consistent.
+  // Kredo VIN accident / claim history — real payload shape from
+  // services/kredo_client.py is:
+  //   { claim_count, claims: [{ id, creation_date, accident_date,
+  //     country, manufacturer, model, mileage_at_claim,
+  //     damage_locations: string[], glass_damage }] }
+  // Render each claim with its date, vehicle line, mileage, and a
+  // chip strip of damage locations (matches the on-screen claim card
+  // that used to live in the standalone panel).
   const isKredoVin =
     data && !sections &&
     (typeof data.claim_count === "number"
@@ -2612,10 +2625,15 @@ function ReportResultBody({ data }: { data: Record<string, any> }) {
       || Array.isArray(data.accident_claims));
   if (isKredoVin) {
     const claims = ((data.claims || data.accident_claims) || []) as Array<{
-      accident_date?: string; date?: string;
-      damage?: string; area?: string;
-      odometer?: number | string;
-      insurer?: string; type?: string;
+      id?: string;
+      accident_date?: string | null;
+      creation_date?: string | null;
+      country?: string | null;
+      manufacturer?: string | null;
+      model?: string | null;
+      mileage_at_claim?: string | number | null;
+      damage_locations?: string[];
+      glass_damage?: boolean;
     }>;
     const claimCount = typeof data.claim_count === "number" ? data.claim_count : claims.length;
     return (
@@ -2635,26 +2653,53 @@ function ReportResultBody({ data }: { data: Record<string, any> }) {
             <Text style={styles.reportSectionHeader}>
               Claims on record ({claimCount})
             </Text>
-            {claims.map((c, i) => (
-              <View key={`kv-${i}`} style={styles.serviceHistoryRow}>
-                <View style={styles.serviceHistoryHeadRow}>
-                  <Text style={styles.serviceHistoryDate}>
-                    {c.accident_date || c.date || "—"}
-                  </Text>
-                  <Text style={styles.serviceHistoryOdo}>
-                    {c.odometer ? `${c.odometer} km` : ""}
-                  </Text>
+            {claims.map((c, i) => {
+              const dateStr = c.accident_date || c.creation_date || "Unknown date";
+              const vehicleLine = [c.manufacturer, c.model].filter(Boolean).join(" · ");
+              const mileageNum = typeof c.mileage_at_claim === "string"
+                ? parseInt(c.mileage_at_claim, 10)
+                : (typeof c.mileage_at_claim === "number" ? c.mileage_at_claim : NaN);
+              const mileageStr = Number.isFinite(mileageNum)
+                ? `${mileageNum.toLocaleString("en-ZA")} km at claim`
+                : null;
+              const locs = c.damage_locations || [];
+              return (
+                <View key={c.id || `kv-${i}`} style={styles.claimCard}>
+                  <View style={styles.claimHead}>
+                    <Text style={styles.claimDate}>{dateStr}</Text>
+                    {c.country ? <Text style={styles.claimCountry}>{c.country}</Text> : null}
+                  </View>
+                  {vehicleLine ? (
+                    <Text style={styles.claimVehicle}>{vehicleLine}</Text>
+                  ) : null}
+                  {mileageStr ? (
+                    <Text style={styles.claimMeta}>{mileageStr}</Text>
+                  ) : null}
+                  {locs.length > 0 ? (
+                    <View style={styles.damageRow}>
+                      {locs.map((d) => (
+                        <View key={d} style={styles.damageChip}>
+                          <Text style={styles.damageChipText}>{d.replace(/-/g, " ").toUpperCase()}</Text>
+                        </View>
+                      ))}
+                      {c.glass_damage ? (
+                        <View style={[styles.damageChip, styles.damageChipGlass]}>
+                          <Ionicons name="glasses-outline" size={10} color={colors.onPrimary} />
+                          <Text style={[styles.damageChipText, { color: colors.onPrimary }]}>
+                            WINDSCREEN
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  ) : (
+                    <Text style={styles.claimMeta}>
+                      Claim record present but no specific damage location recorded.
+                    </Text>
+                  )}
+                  {c.id ? <Text style={styles.claimId}>Ref: {c.id}</Text> : null}
                 </View>
-                <Text style={styles.serviceHistoryRepairer}>
-                  {c.damage || c.area || "Reported damage"}
-                </Text>
-                <View style={styles.serviceHistoryMetaRow}>
-                  <Text style={styles.serviceHistoryDetails} numberOfLines={2}>
-                    {c.insurer || c.type || ""}
-                  </Text>
-                </View>
-              </View>
-            ))}
+              );
+            })}
             {data.last_claim_date ? (
               <Text style={[styles.viewReportBody, { marginTop: spacing.sm }]}>
                 Last claim: {String(data.last_claim_date)}
