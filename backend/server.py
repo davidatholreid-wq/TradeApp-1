@@ -3180,6 +3180,19 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
             story.append(t_ma)
             story.append(Spacer(1, 4))
 
+        # Year positioning + Mileage positioning paragraphs — new
+        # first-class narrative fields so the dealer can see exactly how
+        # the year of production and the mileage moved the price against
+        # comparable AutoTrader listings.
+        if ma.get("year_positioning"):
+            story.append(Paragraph("<b>Year positioning</b>", body))
+            story.append(Paragraph(str(ma.get("year_positioning")), body))
+            story.append(Spacer(1, 3))
+        if ma.get("mileage_positioning"):
+            story.append(Paragraph("<b>Mileage positioning</b>", body))
+            story.append(Paragraph(str(ma.get("mileage_positioning")), body))
+            story.append(Spacer(1, 3))
+
         # Listings summary paragraph.
         if ma.get("listings_summary"):
             story.append(Paragraph("<b>Listings summary</b>", body))
@@ -4402,16 +4415,30 @@ async def market_analysis(sub_id: str, current: dict = Depends(get_current_user)
         "keywords, same model-year run, same fuel type, same transmission, dealerrating>=3) and scanned the "
         "full result set.\n\n"
         "PRICING METHOD — follow this exactly:\n"
-        "1. Collect the price distribution for the AutoTrader search result set, keeping only listings whose "
-        "   mileage is within ±25% of this vehicle's mileage (adjust proportionally: higher-mileage cars sit "
-        "   lower in the distribution, lower-mileage cars sit higher).\n"
-        "2. Set `retail_price_estimate_zar` = the market-appropriate retail for THIS car at THIS mileage on "
-        "   AutoTrader — i.e. what the average AutoTrader dealer would list this car at today. Round to R1 000.\n"
-        "3. Compute `trade_price_estimate_zar` = round(retail * 0.85 / 1000) * 1000 — a strict 15 %% margin "
+        "1. Scan the ENTIRE AutoTrader result set for the search. This spans the full model-year run because "
+        "   the same derivative was produced across several years — you'll see cars from several years, at "
+        "   different mileages, all at once.\n"
+        "2. YEAR is a first-class pricing driver. Group the listings by year of production and understand the "
+        "   year-band price ladder before doing anything else — a same-derivative car one year newer is "
+        "   typically 8-12 %% more expensive at the same mileage; one year older, 8-12 %% cheaper. Extremes "
+        "   (5+ years apart) widen further. Use your knowledge of SA depreciation curves for this specific "
+        "   segment and make.\n"
+        "3. Find the sub-set of listings that share THIS vehicle's exact year of production — those are the "
+        "   PRIMARY comparables. If there are few or none in that year, extend one year in either direction "
+        "   and adjust upward/downward using the year ladder from step 2.\n"
+        "4. Within the primary-year comparables, apply mileage adjustment: listings whose mileage is within "
+        "   ±25 %% of this vehicle's mileage are the closest competitors. Higher-mileage listings sit lower "
+        "   in the year's distribution, lower-mileage listings sit higher — a rough SA rule is R0.70–R1.20 "
+        "   per additional km beyond a same-year median, scaled by segment.\n"
+        "5. Set `retail_price_estimate_zar` = the market-appropriate retail for THIS car at THIS year and "
+        "   THIS mileage on AutoTrader — i.e. what the average AutoTrader dealer would list this exact car at "
+        "   today, positioned correctly in its year-and-mileage cell. Round to R1 000.\n"
+        "6. Compute `trade_price_estimate_zar` = round(retail * 0.85 / 1000) * 1000 — a strict 15 %% margin "
         "   below your retail estimate. This is what a Fourbuy dealer should pay.\n"
-        "4. Set `estimated_market_range_zar.low` and `.high` to the 10th and 90th percentile of the filtered "
-        "   AutoTrader distribution; `.typical` = your retail estimate.\n"
-        "5. `recon_impact_zar` should be the reconditioning total from the dossier if present, otherwise 0. "
+        "7. Set `estimated_market_range_zar.low` and `.high` to the 10th and 90th percentile of the "
+        "   FULL AutoTrader distribution across the model-year run (not just the primary year), so the "
+        "   dealer sees the wider market context; `.typical` = your retail estimate for THIS year/mileage.\n"
+        "8. `recon_impact_zar` should be the reconditioning total from the dossier if present, otherwise 0. "
         "   Deduct this from retail only if the dossier indicates the car is being sold as-is; otherwise the "
         "   dealer absorbs it separately and retail is unchanged.\n\n"
         "OUTPUT — return ONLY valid JSON (no markdown, no code fences) in this exact shape:\n"
@@ -4419,16 +4446,18 @@ async def market_analysis(sub_id: str, current: dict = Depends(get_current_user)
         '  "estimated_market_range_zar": {"low": <int>, "high": <int>, "typical": <int>},\n'
         '  "trade_price_estimate_zar": <int>,   // retail * 0.85, rounded to R1 000\n'
         '  "retail_price_estimate_zar": <int>,\n'
-        '  "listings_summary": "<2-3 sentences about how many similar vehicles are typically listed on autotrader.co.za for these filters and how the price distribution looks against year and mileage>",\n'
+        '  "year_positioning": "<1-2 sentences on how this vehicle\'s year of production sits inside the model-year run\'s AutoTrader price ladder — e.g. \'2020 examples list around R780k, our 2018 is 2 years older and typically 18 %% lower which lands it near R640k before mileage\'>",\n'
+        '  "mileage_positioning": "<1-2 sentences on how this vehicle\'s mileage compares to the median for its year on AutoTrader, and the rand adjustment applied>",\n'
+        '  "listings_summary": "<2-3 sentences about how many similar vehicles are typically listed on autotrader.co.za for these filters and how price varies by year and mileage across the result set>",\n'
         '  "key_factors": ["<factor 1>", "<factor 2>", "<factor 3>", "<factor 4>"],\n'
         '  "margin_pct": 15,\n'
         '  "recon_impact_zar": <int>,\n'
         '  "confidence": "low|medium|high",\n'
-        '  "disclaimer": "Retail benchmarked against the AutoTrader.co.za search results for the same derivative, model-year run, fuel, transmission and 3+ star dealers. Trade = retail − 15%%."\n'
+        '  "disclaimer": "Retail benchmarked against the AutoTrader.co.za search results for the same derivative, positioned inside its year-of-production band and adjusted for mileage. Trade = retail − 15%%."\n'
         "}\n"
         "Do NOT include a `kredo_alignment` field or reference Kredo values in the answer. If the dossier "
         "contains Kredo trade/retail lines, treat them as advisory context only — they must not shift your "
-        "estimate away from what AutoTrader listings support."
+        "estimate away from what AutoTrader listings support for this year and mileage."
     )
     prompt = _market_analysis_context(sub)
 

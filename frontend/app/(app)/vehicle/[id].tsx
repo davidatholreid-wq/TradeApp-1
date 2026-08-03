@@ -207,9 +207,12 @@ type MarketAnalysis = {
   estimated_market_range_zar?: { low: number; high: number; typical: number };
   trade_price_estimate_zar?: number;
   retail_price_estimate_zar?: number;
+  year_positioning?: string;
+  mileage_positioning?: string;
   listings_summary?: string;
   key_factors?: string[];
   kredo_alignment?: string;
+  margin_pct?: number;
   recon_impact_zar?: number;
   confidence?: "low" | "medium" | "high";
   disclaimer?: string;
@@ -1729,6 +1732,24 @@ export default function VehicleDetail() {
                 </View>
               ) : null}
             </View>
+
+            {sub.market_analysis.analysis.year_positioning ? (
+              <View style={styles.factorsBox}>
+                <Text style={styles.factorsTitle}>YEAR POSITIONING</Text>
+                <Text style={styles.factorText}>
+                  {sub.market_analysis.analysis.year_positioning}
+                </Text>
+              </View>
+            ) : null}
+
+            {sub.market_analysis.analysis.mileage_positioning ? (
+              <View style={styles.factorsBox}>
+                <Text style={styles.factorsTitle}>MILEAGE POSITIONING</Text>
+                <Text style={styles.factorText}>
+                  {sub.market_analysis.analysis.mileage_positioning}
+                </Text>
+              </View>
+            ) : null}
 
             {sub.market_analysis.analysis.listings_summary ? (
               <Text style={styles.summary}>{sub.market_analysis.analysis.listings_summary}</Text>
