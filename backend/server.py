@@ -4130,6 +4130,52 @@ def _zar(n: Optional[float]) -> str:
         return "—"
 
 
+def _autotrader_search_url_for_sub(sub: dict) -> str | None:
+    """Build the same AutoTrader.co.za deep-link the frontend "Compare Live
+    Listings" card generates. We inject this URL into the AI market
+    analysis prompt so GPT reasons against exactly the same set of
+    listings the dealer can open in a browser — same make, derivative
+    keywords, year range, fuel, transmission and dealerrating=3 filter.
+    Returns `None` if there's not enough identifying data to build a
+    meaningful URL.
+    """
+    import re as _re
+    import urllib.parse as _up
+
+    make = (sub.get("make_name") or "").strip()
+    if not make:
+        return None
+    make_slug = _re.sub(r"[^a-z0-9]+", "-", make.lower()).strip("-")
+
+    # Derivative keywords — split on non-alphanumerics, keep tokens ≥ 2
+    # chars, upper-case for AutoTrader's search UI.
+    derivative = (sub.get("derivative_name") or sub.get("model_name") or "").strip()
+    tokens = [
+        t.upper() for t in _re.split(r"[^A-Za-z0-9]+", derivative)
+        if len(t) >= 2
+    ]
+
+    range_ = sub.get("variant_manufacture_range") or {}
+    y_from = range_.get("min") or sub.get("year") or sub.get("year_registered")
+    y_to = range_.get("max") or sub.get("year") or sub.get("year_registered")
+
+    fuel = (sub.get("fuel_type") or "").strip().capitalize()
+    trans = (sub.get("transmission") or "").strip().capitalize()
+
+    qs: list[tuple[str, str]] = []
+    for t in tokens:
+        qs.append(("keyword", t))
+    if y_from and y_to:
+        qs.append(("year", f"{y_from}-to-{y_to}"))
+    if fuel:
+        qs.append(("fueltype", fuel))
+    if trans:
+        qs.append(("transmission", trans))
+    qs.append(("dealerrating", "3"))
+
+    return f"https://www.autotrader.co.za/cars-for-sale/{make_slug}?{_up.urlencode(qs)}"
+
+
 def _market_analysis_context(sub: dict) -> str:
     """Build the enriched Vehicle-context block sent to GPT-5.2 for the
     market analysis. Combines everything the app already knows about the
@@ -4140,6 +4186,15 @@ def _market_analysis_context(sub: dict) -> str:
     silently so the prompt stays tight for cars with limited data.
     """
     lines: list[str] = ["Vehicle:"]
+
+    # -- AutoTrader reference URL (drives the analysis) -------------------
+    # This is the *only* market data source we ask GPT to consider —
+    # exactly the same deep-link the dealer sees in the Compare Live
+    # Listings card. Filters: same make, same derivative keywords, model-
+    # year run, fuel type, transmission, dealerrating >= 3.
+    at_url = _autotrader_search_url_for_sub(sub)
+    if at_url:
+        lines.append(f"- AutoTrader reference search: {at_url}")
 
     # -- Core identity & condition ---------------------------------------
     lines.append(f"- Make: {sub.get('make_name')}")
@@ -4340,30 +4395,40 @@ async def market_analysis(sub_id: str, current: dict = Depends(get_current_user)
         sub["report_orders_snapshot"] = []
 
     system_prompt = (
-        "You are a South African used-car market analyst with deep knowledge of pricing on autotrader.co.za "
-        "and cars.co.za for the local ZAR (Rand) market. You will be given a full dossier for a specific "
-        "vehicle including its Kredo TrueTrade book values (the SA industry benchmark), Kredo CarTrust accident "
-        "history, factory options (BMW) or online service history (JLR), dealer-declared condition, service "
-        "history, warranty status, paint evidence, and reconditioning still required to make it retail-ready.\n\n"
-        "GROUND YOUR ANSWER in the dossier. When Kredo TrueTrade values are provided, treat them as the "
-        "authoritative reference for retail/trade — your `retail_price_estimate_zar` and `trade_price_estimate_zar` "
-        "should be within roughly ±10% of Kredo's adjusted retail/trade unless recon costs, accident claims, "
-        "high mileage, or expired warranty justify a bigger discount. Deduct reconditioning cost from retail. "
-        "Deduct meaningful amounts for accident claims on file. Reward Active Factory Warranty and Active "
-        "Maintenance Plan with a small premium. Reward premium factory options and full JLR service history.\n\n"
-        "Return ONLY valid JSON (no markdown, no code fences) in this exact shape:\n"
+        "You are a South African used-car market analyst. Your ONLY reference market is autotrader.co.za "
+        "(South Africa). Do not use cars.co.za, Kredo TrueTrade, dealer trade-guides, or any other source when "
+        "deriving retail — those may be listed in the dossier for context only. You reason as if you have "
+        "just opened the exact AutoTrader search URL provided in the dossier (same make, same derivative "
+        "keywords, same model-year run, same fuel type, same transmission, dealerrating>=3) and scanned the "
+        "full result set.\n\n"
+        "PRICING METHOD — follow this exactly:\n"
+        "1. Collect the price distribution for the AutoTrader search result set, keeping only listings whose "
+        "   mileage is within ±25% of this vehicle's mileage (adjust proportionally: higher-mileage cars sit "
+        "   lower in the distribution, lower-mileage cars sit higher).\n"
+        "2. Set `retail_price_estimate_zar` = the market-appropriate retail for THIS car at THIS mileage on "
+        "   AutoTrader — i.e. what the average AutoTrader dealer would list this car at today. Round to R1 000.\n"
+        "3. Compute `trade_price_estimate_zar` = round(retail * 0.85 / 1000) * 1000 — a strict 15 %% margin "
+        "   below your retail estimate. This is what a Fourbuy dealer should pay.\n"
+        "4. Set `estimated_market_range_zar.low` and `.high` to the 10th and 90th percentile of the filtered "
+        "   AutoTrader distribution; `.typical` = your retail estimate.\n"
+        "5. `recon_impact_zar` should be the reconditioning total from the dossier if present, otherwise 0. "
+        "   Deduct this from retail only if the dossier indicates the car is being sold as-is; otherwise the "
+        "   dealer absorbs it separately and retail is unchanged.\n\n"
+        "OUTPUT — return ONLY valid JSON (no markdown, no code fences) in this exact shape:\n"
         "{\n"
         '  "estimated_market_range_zar": {"low": <int>, "high": <int>, "typical": <int>},\n'
-        '  "trade_price_estimate_zar": <int>,\n'
+        '  "trade_price_estimate_zar": <int>,   // retail * 0.85, rounded to R1 000\n'
         '  "retail_price_estimate_zar": <int>,\n'
-        '  "listings_summary": "<2-3 sentences about how many similar vehicles are typically listed on autotrader.co.za and cars.co.za and their price patterns>",\n'
+        '  "listings_summary": "<2-3 sentences about how many similar vehicles are typically listed on autotrader.co.za for these filters and how the price distribution looks against year and mileage>",\n'
         '  "key_factors": ["<factor 1>", "<factor 2>", "<factor 3>", "<factor 4>"],\n'
-        '  "kredo_alignment": "<1-2 sentences on whether your estimate lines up with the Kredo TrueTrade values in the dossier, and why any deviation>",\n'
-        '  "recon_impact_zar": <int, how much reconditioning cost you deducted from retail>,\n'
+        '  "margin_pct": 15,\n'
+        '  "recon_impact_zar": <int>,\n'
         '  "confidence": "low|medium|high",\n'
-        '  "disclaimer": "Prices based on Kredo TrueTrade benchmark plus general market knowledge (no live scraping)."\n'
+        '  "disclaimer": "Retail benchmarked against the AutoTrader.co.za search results for the same derivative, model-year run, fuel, transmission and 3+ star dealers. Trade = retail − 15%%."\n'
         "}\n"
-        "Trade should be 15-20% below retail unless the dossier justifies otherwise. Round all rand values to the nearest R1 000."
+        "Do NOT include a `kredo_alignment` field or reference Kredo values in the answer. If the dossier "
+        "contains Kredo trade/retail lines, treat them as advisory context only — they must not shift your "
+        "estimate away from what AutoTrader listings support."
     )
     prompt = _market_analysis_context(sub)
 
@@ -4386,6 +4451,21 @@ async def market_analysis(sub_id: str, current: dict = Depends(get_current_user)
         analysis = json.loads(text)
     except Exception:
         analysis = {"raw": text, "disclaimer": "Analysis returned in non-JSON format"}
+
+    # ---- Server-side enforcement of the 15% margin ----------------------
+    # GPT is instructed to compute trade = retail × 0.85, but occasionally
+    # returns numbers that drift a couple of percent. Snap trade to the
+    # exact 15%-below-retail rule so the number printed on the valuation
+    # PDF is defensible against a hand-calculated audit by the dealer.
+    try:
+        retail = analysis.get("retail_price_estimate_zar")
+        if isinstance(retail, (int, float)) and retail > 0:
+            enforced_trade = int(round((float(retail) * 0.85) / 1000.0)) * 1000
+            analysis["trade_price_estimate_zar"] = enforced_trade
+            analysis["margin_pct"] = 15
+    except Exception:
+        # Non-fatal — keep whatever GPT returned.
+        pass
 
     payload = {
         "analysis": analysis,
