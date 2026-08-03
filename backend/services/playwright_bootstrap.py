@@ -92,15 +92,23 @@ async def _try_launch_chromium() -> Optional[Exception]:
 async def _run_playwright_install() -> tuple[int, str]:
     """Run ``playwright install chromium`` in a subprocess. Returns
     ``(returncode, tail_of_output)``.
+
+    We invoke via ``sys.executable -m playwright ...`` rather than the
+    ``playwright`` CLI on PATH — this guarantees we're using the exact
+    playwright module the running FastAPI process imports (avoids
+    virtualenv-vs-system-python drift where the CLI shim can no-op
+    silently when the environments disagree).
     """
+    import sys
     env = os.environ.copy()
     # Preserve the pre-configured browsers path so we install into
     # the same directory the runtime reads from.
     env.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/pw-browsers")
 
-    exe = shutil.which("playwright") or "playwright"
     proc = await asyncio.create_subprocess_exec(
-        exe,
+        sys.executable,
+        "-m",
+        "playwright",
         "install",
         "chromium",
         stdout=asyncio.subprocess.PIPE,
@@ -113,6 +121,10 @@ async def _run_playwright_install() -> tuple[int, str]:
         proc.kill()
         return -1, "playwright install chromium timed out after 5 minutes"
     tail = (stdout or b"").decode(errors="replace")[-1500:]
+    logger.info(
+        "playwright install chromium exited with rc=%s. Output tail:\n%s",
+        proc.returncode, tail,
+    )
     return proc.returncode or 0, tail
 
 
