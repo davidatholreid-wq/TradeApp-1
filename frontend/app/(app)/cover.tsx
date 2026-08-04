@@ -113,27 +113,27 @@ export default function GiveCoverScreen() {
         update is billed R10.
       </Text>
 
-      {/* Tab switch — Cars available to cover / Cover given */}
+      {/* Tab switch — Available to Cover / Cover given */}
       <View style={styles.tabRow}>
         <TouchableOpacity
           testID="cover-tab-available"
           style={[
             styles.tabBtn,
             { borderColor: colors.border, backgroundColor: colors.card },
-            tab === "available" && { backgroundColor: colors.primary, borderColor: colors.primary },
+            tab === "available" && { borderColor: colors.primary, borderWidth: 2 },
           ]}
           onPress={() => setTab("available")}
         >
           <Ionicons
             name="car-sport-outline"
             size={15}
-            color={tab === "available" ? colors.onPrimary : colors.textSecondary}
+            color={tab === "available" ? colors.text : colors.textSecondary}
           />
           <Text style={[
             styles.tabBtnText,
-            { color: tab === "available" ? colors.onPrimary : colors.textSecondary },
+            { color: tab === "available" ? colors.text : colors.textSecondary },
           ]}>
-            Cars available · {available.length}
+            Available to Cover · {available.length}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -141,18 +141,18 @@ export default function GiveCoverScreen() {
           style={[
             styles.tabBtn,
             { borderColor: colors.border, backgroundColor: colors.card },
-            tab === "given" && { backgroundColor: colors.primary, borderColor: colors.primary },
+            tab === "given" && { borderColor: colors.primary, borderWidth: 2 },
           ]}
           onPress={() => setTab("given")}
         >
           <Ionicons
             name="checkmark-done-outline"
             size={15}
-            color={tab === "given" ? colors.onPrimary : colors.textSecondary}
+            color={tab === "given" ? colors.text : colors.textSecondary}
           />
           <Text style={[
             styles.tabBtnText,
-            { color: tab === "given" ? colors.onPrimary : colors.textSecondary },
+            { color: tab === "given" ? colors.text : colors.textSecondary },
           ]}>
             Cover given · {given.length}
           </Text>
