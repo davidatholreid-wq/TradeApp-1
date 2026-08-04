@@ -856,6 +856,7 @@ async def login(payload: LoginRequest):
             "dealership_id": dealership_id,
             "referral_code": referral_code,
             "referred_by": referred_by_payload,
+            "is_pricing_agent": bool(user.get("is_pricing_agent")),
         },
     }
 
@@ -907,6 +908,7 @@ async def me(current: dict = Depends(get_current_user)):
                     "dealership": rb_dship_name,
                     "code": current.get("referred_by_code") or referrer.get("referral_code"),
                 }
+    current["is_pricing_agent"] = bool(current.get("is_pricing_agent"))
     return {"user": current}
 
 
@@ -7093,6 +7095,234 @@ async def kredo_cartrust_pdf(
             "Cache-Control": "private, max-age=300",
         },
     )
+
+
+# ============ Cover Offers (Pricing Agents) ============
+# A pricing-agent is a special dealer who can price other dealers'
+# submissions. Their offers ("covers") are binding-subject-to-inspection,
+# billed R10 per cover placed. The Fourbuy admin Offer / admin_pricing
+# are stripped from what they see so they price without anchoring.
+
+COVER_OFFER_COST_ZAR = 10.0
+
+
+def _sanitise_sub_for_pricing_agent(sub: dict) -> dict:
+    """Return a copy of the submission dict with fields hidden that a
+    pricing agent must NOT see: the Fourbuy admin Offer, admin_pricing,
+    and any other Fourbuy-side price signals. Everything else (photos,
+    condition, recon, warranty, VIN reports, AI market analysis,
+    AutoTrader deep link, service history etc.) stays visible.
+    """
+    hidden = {"admin_pricing", "offer_to_dealer_zar", "fourbuy_offer_zar",
+              "admin_notes", "admin_price_zar"}
+    return {k: v for k, v in sub.items() if k not in hidden}
+
+
+@api_router.patch("/admin/users/{user_id}/pricing-agent")
+async def admin_toggle_pricing_agent(
+    user_id: str,
+    payload: dict,
+    current: dict = Depends(require_admin),
+):
+    """Admin-only toggle for a user's `is_pricing_agent` flag."""
+    enabled = bool(payload.get("enabled"))
+    result = await db.users.update_one(
+        {"id": user_id, "role": "dealer"},
+        {"$set": {"is_pricing_agent": enabled}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(404, "Dealer user not found")
+    return {"ok": True, "user_id": user_id, "is_pricing_agent": enabled}
+
+
+async def require_pricing_agent(current: dict = Depends(get_current_user)) -> dict:
+    if not current.get("is_pricing_agent"):
+        raise HTTPException(403, "This action is available to pricing agents only.")
+    return current
+
+
+@api_router.get("/cover/submissions")
+async def list_cover_submissions(current: dict = Depends(require_pricing_agent)):
+    """List submissions available for a pricing agent to price.
+
+    Rules: status in {pending, priced}, not a draft, and NOT owned by
+    this agent's dealership (they can't cover their own stock).
+    """
+    my_dealership = current.get("dealership_id")
+    cursor = db.submissions.find(
+        {
+            "status": {"$in": ["pending", "priced"]},
+            "dealership_id": {"$ne": my_dealership},
+        },
+        {
+            "_id": 0, "id": 1, "reference": 1, "make_name": 1, "model_name": 1,
+            "derivative_name": 1, "year_of_production": 1, "year_registered": 1,
+            "mileage": 1, "status": 1, "photos": 1, "vin": 1, "colour": 1,
+            "fuel_type": 1, "transmission": 1, "created_at": 1,
+        },
+    ).sort("created_at", -1)
+    subs = await cursor.to_list(500)
+    # Attach my own cover for each (if any) — so the UI can flip the
+    # button to "Cover placed · R<amount>".
+    my_covers = await db.cover_offers.find(
+        {"agent_user_id": current["id"]},
+        {"_id": 0, "submission_id": 1, "price_zar": 1, "created_at": 1},
+    ).to_list(1000)
+    covers_by_sub = {c["submission_id"]: c for c in my_covers}
+    for s in subs:
+        c = covers_by_sub.get(s["id"])
+        s["my_cover"] = c if c else None
+    return {"submissions": subs}
+
+
+@api_router.get("/cover/submissions/{sub_id}")
+async def get_cover_submission(sub_id: str, current: dict = Depends(require_pricing_agent)):
+    sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+    if sub.get("dealership_id") == current.get("dealership_id"):
+        raise HTTPException(403, "You cannot cover your own stock.")
+    if sub.get("status") == "draft":
+        raise HTTPException(404, "Draft submissions cannot be covered.")
+    # Load its report_orders — pricing agents see the reports the owning
+    # dealer ordered (JLR OSH, BMW options, Kredo accident, CarTrust).
+    reports = await db.report_orders.find(
+        {"submission_id": sub_id}, {"_id": 0}
+    ).to_list(50)
+    my_cover = await db.cover_offers.find_one(
+        {"submission_id": sub_id, "agent_user_id": current["id"]},
+        {"_id": 0},
+    )
+    return {
+        "submission": _sanitise_sub_for_pricing_agent(sub),
+        "report_orders": reports,
+        "my_cover": my_cover,
+        "cover_cost_zar": COVER_OFFER_COST_ZAR,
+    }
+
+
+@api_router.post("/submissions/{sub_id}/covers")
+async def place_cover_offer(
+    sub_id: str,
+    payload: dict,
+    current: dict = Depends(require_pricing_agent),
+):
+    """Place a binding cover offer. Billed R10 to the agent's dealership
+    on their next invoice. One cover per (agent, submission) — repeat
+    calls are rejected (offers are binding and cannot be withdrawn).
+    """
+    try:
+        price = int(payload.get("price_zar") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Invalid price_zar")
+    if price <= 0:
+        raise HTTPException(400, "price_zar must be a positive integer")
+    sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+    if sub.get("dealership_id") == current.get("dealership_id"):
+        raise HTTPException(403, "You cannot cover your own stock.")
+    if sub.get("status") == "draft":
+        raise HTTPException(400, "This submission is a draft.")
+    # One-shot: covers are binding and cannot be withdrawn.
+    existing = await db.cover_offers.find_one(
+        {"submission_id": sub_id, "agent_user_id": current["id"]}
+    )
+    if existing:
+        raise HTTPException(409, "You have already placed a binding cover on this submission.")
+    now = datetime.now(timezone.utc)
+    cover_id = str(uuid.uuid4())
+    offer = {
+        "id": cover_id,
+        "submission_id": sub_id,
+        "agent_user_id": current["id"],
+        "agent_dealership_id": current.get("dealership_id"),
+        "price_zar": price,
+        "note": (payload.get("note") or "").strip() or None,
+        "status": "active",
+        "created_at": now,
+        "binding_caveat": (
+            "Cover is binding subject to physical inspection of the vehicle "
+            "and confirmation that all details in the submission (mileage, "
+            "condition, service history, accident/claim status, warranty and "
+            "reconditioning) are accurate."
+        ),
+    }
+    await db.cover_offers.insert_one(offer)
+    # Strip the ObjectId that motor mutates into the dict before returning.
+    offer_out = {k: v for k, v in offer.items() if k != "_id"}
+    # Bill R10 to the pricing-agent's dealership — one report_orders row
+    # per cover so it lands on their next invoice alongside other reports.
+    await db.report_orders.insert_one({
+        "id": str(uuid.uuid4()),
+        "submission_id": sub_id,
+        "dealer_id": current.get("dealership_id"),
+        "type": "cover_offer",
+        "name": f"Cover Offer · {sub.get('reference') or sub_id[:8]}",
+        "cost_zar": COVER_OFFER_COST_ZAR,
+        "status": "delivered",
+        "ordered_at": now,
+        "ordered_by": current["id"],
+        "delivered_at": now,
+        "note": f"Cover of R{price:,} placed on submission {sub.get('reference')}.",
+        "cover_offer_id": cover_id,
+    })
+    return {"ok": True, "cover": offer_out, "billed_zar": COVER_OFFER_COST_ZAR}
+
+
+@api_router.get("/submissions/{sub_id}/covers")
+async def list_covers_for_submission(sub_id: str, current: dict = Depends(get_current_user)):
+    """List covers on a submission. Visible to (a) the submission owner's
+    dealership, (b) admins, (c) the pricing agent who placed each cover.
+    Not visible to other pricing agents to prevent price scanning.
+    """
+    sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0, "dealership_id": 1})
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+    is_admin = current.get("role") == "admin"
+    is_owner = sub.get("dealership_id") and sub["dealership_id"] == current.get("dealership_id")
+    if not (is_admin or is_owner):
+        # Pricing agent: only their own cover on this sub.
+        if current.get("is_pricing_agent"):
+            own = await db.cover_offers.find_one(
+                {"submission_id": sub_id, "agent_user_id": current["id"]},
+                {"_id": 0},
+            )
+            return {"covers": [own] if own else []}
+        raise HTTPException(403, "Not authorised.")
+    covers = await db.cover_offers.find(
+        {"submission_id": sub_id}, {"_id": 0},
+    ).sort("price_zar", -1).to_list(100)
+    # Enrich with agent name + WhatsApp phone from the user record.
+    agent_ids = list({c["agent_user_id"] for c in covers})
+    agents = {}
+    if agent_ids:
+        async for u in db.users.find(
+            {"id": {"$in": agent_ids}},
+            {"_id": 0, "id": 1, "dealer_info": 1, "dealership_id": 1},
+        ):
+            info = u.get("dealer_info") or {}
+            agents[u["id"]] = {
+                "name": (
+                    (info.get("first_name") or "") + " " + (info.get("last_name") or "")
+                ).strip() or "Pricing agent",
+                "phone": info.get("phone") or "",
+                "dealership_id": u.get("dealership_id"),
+            }
+    # Attach dealership names in one batch.
+    dship_ids = list({a["dealership_id"] for a in agents.values() if a.get("dealership_id")})
+    dship_map: dict[str, str] = {}
+    if dship_ids:
+        async for d in db.dealerships.find(
+            {"id": {"$in": dship_ids}}, {"_id": 0, "id": 1, "name": 1},
+        ):
+            dship_map[d["id"]] = d.get("name") or ""
+    for c in covers:
+        a = agents.get(c["agent_user_id"], {})
+        c["agent_name"] = a.get("name")
+        c["agent_phone"] = a.get("phone")
+        c["agent_dealership_name"] = dship_map.get(a.get("dealership_id") or "")
+    return {"covers": covers}
 
 
 # ============ Health (real) ============

@@ -228,6 +228,37 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
   const [carouselIdx, setCarouselIdx] = useState<number | null>(null);
   const [conditionInfoOpen, setConditionInfoOpen] = useState(false);
 
+  // Cover Offers received on the selected submission — placed by Pricing
+  // Agents. Admins see them alongside the Offer History for full context.
+  type CoverOffer = {
+    id: string;
+    price_zar: number;
+    note?: string | null;
+    created_at: string;
+    agent_name?: string | null;
+    agent_phone?: string | null;
+    agent_dealership_name?: string | null;
+  };
+  const [coverOffers, setCoverOffers] = useState<CoverOffer[]>([]);
+  useEffect(() => {
+    if (!selectedId) {
+      setCoverOffers([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await apiFetch(`/api/submissions/${selectedId}/covers`);
+        if (!cancelled) setCoverOffers((r?.covers as CoverOffer[]) || []);
+      } catch {
+        if (!cancelled) setCoverOffers([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
+
   const loadList = useCallback(async () => {
     try {
       const data = await apiFetch("/api/admin/submissions");
@@ -1558,6 +1589,69 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                       </View>
                     );
                   })()}
+                </View>
+              ) : null}
+
+              {/* ================= COVER OFFERS RECEIVED ================= */}
+              {coverOffers.length > 0 ? (
+                <View style={styles.analysisBox}>
+                  <Text style={styles.boxTitle}>COVER OFFERS RECEIVED · {coverOffers.length}</Text>
+                  <Text style={[styles.offerNote, { marginBottom: spacing.sm }]}>
+                    Binding cover from Fourbuy Pricing Agents · subject to physical inspection.
+                  </Text>
+                  {coverOffers.map((c) => {
+                    const phoneDigits = (c.agent_phone || "").replace(/[^0-9]/g, "");
+                    const waNumber = phoneDigits.startsWith("27")
+                      ? phoneDigits
+                      : phoneDigits.startsWith("0")
+                        ? "27" + phoneDigits.slice(1)
+                        : phoneDigits;
+                    const waMessage = encodeURIComponent(
+                      `Hi ${c.agent_name || "there"}, regarding your cover of R${c.price_zar.toLocaleString()} on ${selected?.reference || "our vehicle"} (${[selected?.make_name, selected?.model_name].filter(Boolean).join(" ")}).`
+                    );
+                    const waUrl = waNumber ? `https://wa.me/${waNumber}?text=${waMessage}` : null;
+                    return (
+                      <View key={c.id} style={styles.offerRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.offerPrice}>{fmtZar(c.price_zar)}</Text>
+                          <Text style={styles.offerNote}>
+                            {c.agent_name || "Pricing agent"}
+                            {c.agent_dealership_name ? ` · ${c.agent_dealership_name}` : ""}
+                          </Text>
+                          {c.note ? (
+                            <Text style={styles.offerNote}>{c.note}</Text>
+                          ) : null}
+                        </View>
+                        <View style={{ alignItems: "flex-end", gap: 6 }}>
+                          <Text style={styles.offerMeta}>
+                            {new Date(c.created_at).toLocaleString("en-ZA")}
+                          </Text>
+                          {waUrl ? (
+                            <TouchableOpacity
+                              testID={`admin-cover-whatsapp-${c.id}`}
+                              onPress={() => {
+                                if (typeof window !== "undefined") {
+                                  window.open(waUrl, "_blank");
+                                }
+                              }}
+                              style={{
+                                flexDirection: "row", alignItems: "center", gap: 6,
+                                backgroundColor: "#25D366",
+                                paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.sm,
+                              }}
+                            >
+                              <Ionicons name="logo-whatsapp" size={14} color="#fff" />
+                              <Text style={{ color: "#fff", fontSize: 11, fontWeight: "800" }}>
+                                WhatsApp
+                              </Text>
+                            </TouchableOpacity>
+                          ) : c.agent_phone ? (
+                            <Text style={styles.offerMeta}>{c.agent_phone}</Text>
+                          ) : null}
+                        </View>
+                      </View>
+                    );
+                  })}
                 </View>
               ) : null}
 

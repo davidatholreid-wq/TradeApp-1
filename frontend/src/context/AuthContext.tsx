@@ -9,6 +9,7 @@ export type User = {
   email: string;
   role: "dealer" | "admin";
   active?: boolean;
+  is_pricing_agent?: boolean;
   agreement_accepted_at?: string | null;
   dealer_info?: { first_name: string; last_name: string; phone: string; job_title?: string | null };
   company_info?: { company_name: string; company_address: string };

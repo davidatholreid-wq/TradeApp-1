@@ -463,6 +463,22 @@ export default function VehicleDetail() {
   const [kredoHistory, setKredoHistory] = useState<KredoHistory | null>(null);
   const [kredoLoading, setKredoLoading] = useState(false);
 
+  // Cover Offers received on this submission (from Pricing Agents).
+  // Visible only to the owning dealer + admins — the backend enforces
+  // this and simply returns [] for non-authorised users.
+  type CoverOffer = {
+    id: string;
+    price_zar: number;
+    note?: string | null;
+    status?: string;
+    created_at: string;
+    agent_name?: string | null;
+    agent_phone?: string | null;
+    agent_dealership_name?: string | null;
+    binding_caveat?: string | null;
+  };
+  const [coverOffers, setCoverOffers] = useState<CoverOffer[]>([]);
+
   // Kredo CarTrust PDF (async report, order + webhook + Cloudinary hosted)
   type CartrustReport = {
     status: "pending" | "completed" | "failed";
@@ -601,6 +617,21 @@ export default function VehicleDetail() {
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sub?.id, cartrust?.status]);
+
+  // Load Cover Offers received on this submission — backend gates the
+  // response so pricing agents / other dealers get [] here.
+  const loadCoverOffers = useCallback(async () => {
+    if (!sub?.id) return;
+    try {
+      const r = await apiFetch(`/api/submissions/${sub.id}/covers`);
+      setCoverOffers((r?.covers as CoverOffer[]) || []);
+    } catch {
+      // 403s expected for non-owners; ignore.
+    }
+  }, [sub?.id]);
+  useEffect(() => {
+    loadCoverOffers();
+  }, [loadCoverOffers]);
 
   const orderCartrust = async () => {
     if (!sub?.id) return;
@@ -1266,6 +1297,84 @@ export default function VehicleDetail() {
             <Text style={styles.pendingText}>AWAITING PRICE OFFER</Text>
           </View>
         )}
+
+        {/* Cover Offers Received — binding offers placed by Pricing Agents
+            on this submission. Visible to the owning dealer + admins only
+            (the backend simply returns [] to everyone else). Each row
+            shows the agent's name, dealership, cover price, and a
+            WhatsApp CTA that opens a chat pre-filled with the vehicle
+            reference. Sorted by price desc by the backend. */}
+        {coverOffers.length > 0 ? (
+          <View style={styles.coverOffersBox} testID="cover-offers-received">
+            <View style={styles.coverOffersHeader}>
+              <Ionicons name="shield-checkmark" size={18} color={colors.primary} />
+              <Text style={styles.coverOffersTitle}>
+                Cover Offers Received ({coverOffers.length})
+              </Text>
+            </View>
+            <Text style={styles.coverOffersSub}>
+              Binding cover from Fourbuy Pricing Agents · subject to physical inspection.
+            </Text>
+            {coverOffers.map((c, idx) => {
+              const phoneDigits = (c.agent_phone || "").replace(/[^0-9]/g, "");
+              // South-African local numbers → E.164 for wa.me (drop leading 0, add 27).
+              const waNumber =
+                phoneDigits.startsWith("27")
+                  ? phoneDigits
+                  : phoneDigits.startsWith("0")
+                    ? "27" + phoneDigits.slice(1)
+                    : phoneDigits;
+              const waMessage = encodeURIComponent(
+                `Hi ${c.agent_name || "there"}, this is regarding your cover of R${c.price_zar.toLocaleString()} on ${sub.reference || "our vehicle"} (${[sub.make_name, sub.model_name].filter(Boolean).join(" ")}).`
+              );
+              const waUrl = waNumber ? `https://wa.me/${waNumber}?text=${waMessage}` : null;
+              return (
+                <View
+                  key={c.id}
+                  style={[
+                    styles.coverOfferRow,
+                    idx === coverOffers.length - 1 && { borderBottomWidth: 0 },
+                  ]}
+                  testID={`cover-offer-${c.id}`}
+                >
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.coverOfferPrice}>
+                      R{c.price_zar.toLocaleString()}
+                    </Text>
+                    <Text style={styles.coverOfferAgent} numberOfLines={1}>
+                      {c.agent_name || "Pricing agent"}
+                      {c.agent_dealership_name ? ` · ${c.agent_dealership_name}` : ""}
+                    </Text>
+                    <Text style={styles.coverOfferDate}>
+                      {new Date(c.created_at).toLocaleString()}
+                    </Text>
+                    {c.note ? (
+                      <Text style={styles.coverOfferNote}>{c.note}</Text>
+                    ) : null}
+                  </View>
+                  {waUrl ? (
+                    <TouchableOpacity
+                      testID={`cover-offer-whatsapp-${c.id}`}
+                      style={styles.whatsappBtn}
+                      onPress={() => {
+                        if (Platform.OS === "web") {
+                          (globalThis as any).window?.open?.(waUrl, "_blank");
+                        } else {
+                          Linking.openURL(waUrl).catch(() => {});
+                        }
+                      }}
+                    >
+                      <Ionicons name="logo-whatsapp" size={18} color="#fff" />
+                      <Text style={styles.whatsappBtnText}>WhatsApp</Text>
+                    </TouchableOpacity>
+                  ) : c.agent_phone ? (
+                    <Text style={styles.coverOfferPhone}>{c.agent_phone}</Text>
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
 
         {/* Price history log — every offer / update the admin has made, most
             recent first. Visible to both admins and the owning dealer for
@@ -3206,6 +3315,85 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   // Price history log
   priceHistoryBox: {
     marginBottom: spacing.md,
+  },
+  // Cover Offers Received (Pricing Agents)
+  coverOffersBox: {
+    marginBottom: spacing.md,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
+  coverOffersHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  coverOffersTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+  coverOffersSub: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
+    marginBottom: spacing.sm,
+  },
+  coverOfferRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  coverOfferPrice: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: "800",
+    fontFamily: fonts.number,
+    fontVariant: ["tabular-nums"],
+  },
+  coverOfferAgent: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  coverOfferDate: {
+    color: colors.textDisabled,
+    fontSize: 10,
+    fontFamily: fonts.mono,
+    marginTop: 2,
+  },
+  coverOfferNote: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    marginTop: 4,
+    fontStyle: "italic",
+  },
+  coverOfferPhone: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontFamily: fonts.mono,
+  },
+  whatsappBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#25D366",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.sm,
+  },
+  whatsappBtnText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.3,
   },
   priceHistoryRow: {
     flexDirection: "row",

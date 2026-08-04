@@ -14,6 +14,7 @@ export default function AppLayout() {
   const { width } = useWindowDimensions();
   const isDealer = user?.role === "dealer";
   const isAdmin = user?.role === "admin";
+  const isPricingAgent = !!user?.is_pricing_agent;
 
   // Wide-screen web admin cockpit
   if (Platform.OS === "web" && isAdmin && width >= 1024) {
@@ -113,6 +114,18 @@ export default function AppLayout() {
         />
         <Tabs.Screen name="vehicle/[id]" options={{ href: null }} />
         <Tabs.Screen name="scan" options={{ href: null }} />
+        <Tabs.Screen
+          name="cover"
+          options={{
+            title: "Give Cover",
+            // Pricing agents only — hidden from all other users.
+            href: isPricingAgent ? "/cover" : null,
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="shield-checkmark" color={color} size={size} />
+            ),
+          }}
+        />
+        <Tabs.Screen name="cover/[id]" options={{ href: null }} />
         <Tabs.Screen
           name="kredo-test"
           options={{

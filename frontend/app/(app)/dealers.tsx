@@ -15,6 +15,7 @@ type Dealer = {
   id: string;
   email: string;
   active?: boolean;
+  is_pricing_agent?: boolean;
   archived_at?: string | null;
   agreement_accepted_at?: string | null;
   dealer_info: { first_name: string; last_name: string; phone: string; job_title?: string | null };
@@ -293,6 +294,22 @@ export default function Dealers() {
     }
   };
 
+  const [savingPricingAgentId, setSavingPricingAgentId] = useState<string | null>(null);
+  const togglePricingAgent = async (dealer: Dealer, next: boolean) => {
+    setSavingPricingAgentId(dealer.id);
+    try {
+      await apiFetch(`/api/admin/users/${dealer.id}/pricing-agent`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: next }),
+      });
+      setDealers((prev) => prev.map((d) => (d.id === dealer.id ? { ...d, is_pricing_agent: next } : d)));
+    } catch (e: any) {
+      showError(e.message || "Could not update pricing agent status");
+    } finally {
+      setSavingPricingAgentId(null);
+    }
+  };
+
   const [savingDealershipId, setSavingDealershipId] = useState<string | null>(null);
   // Dealership groups start collapsed — the admin taps a header to reveal
   // the users nested underneath, mirroring the billing screen's UX.
@@ -566,6 +583,22 @@ export default function Dealers() {
                     onValueChange={(v) => toggleActive(item, v)}
                     trackColor={{ false: colors.border, true: colors.neon }}
                     thumbColor={isActive ? "#000" : colors.textSecondary}
+                  />
+                )}
+              </View>
+              <View style={styles.activeCol}>
+                <Text style={styles.activeLabel}>
+                  {item.is_pricing_agent ? "COVER AGENT" : "NOT AGENT"}
+                </Text>
+                {savingPricingAgentId === item.id ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Switch
+                    testID={`dealer-pricing-agent-toggle-${item.id}`}
+                    value={!!item.is_pricing_agent}
+                    onValueChange={(v) => togglePricingAgent(item, v)}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                    thumbColor={item.is_pricing_agent ? "#fff" : colors.textSecondary}
                   />
                 )}
               </View>
