@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, TouchableOpacity } from "@/src/components/HapticButtons";
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Image, TextInput, Modal, KeyboardAvoidingView, Platform, Alert, LayoutAnimation, UIManager } from "react-native";
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Image, TextInput, Modal, KeyboardAvoidingView, Platform, Alert, LayoutAnimation, UIManager, Keyboard } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -494,6 +494,19 @@ export default function VehicleDetail() {
   >(null);
   const [placingCover, setPlacingCover] = useState(false);
   const [coverPriceInput, setCoverPriceInput] = useState("");
+
+  // Track keyboard height so the cover-placement bar lifts above the
+  // on-screen keyboard on native. On web the browser reflows the layout
+  // automatically so we skip the listeners.
+  const [kbHeight, setKbHeight] = useState(0);
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const s = Keyboard.addListener(showEvt, (e) => setKbHeight(e?.endCoordinates?.height || 0));
+    const h = Keyboard.addListener(hideEvt, () => setKbHeight(0));
+    return () => { s.remove(); h.remove(); };
+  }, []);
 
   // Kredo CarTrust PDF (async report, order + webhook + Cloudinary hosted)
   type CartrustReport = {
@@ -2514,7 +2527,7 @@ export default function VehicleDetail() {
           Locked to the bottom of the viewport so the agent can enter a
           cover price while continuing to scroll the vehicle detail. */}
       {isCoverMode && coverMeta ? (
-        <View style={styles.coverPlaceBar} testID="cover-place-bar">
+        <View style={[styles.coverPlaceBar, { bottom: kbHeight }]} testID="cover-place-bar">
           {coverMeta.my_cover ? (
             <View style={{ flex: 1 }}>
               <Text style={styles.coverPlacedTitle}>
@@ -2573,7 +2586,7 @@ export default function VehicleDetail() {
                 disabled={placingCover}
               >
                 {placingCover ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color={colors.onPrimary} />
                 ) : (
                   <Text style={styles.coverBtnText}>Place Cover</Text>
                 )}
@@ -3568,7 +3581,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     minWidth: 120,
   },
   coverBtnText: {
-    color: "#fff",
+    color: colors.onPrimary,
     fontWeight: "800",
     letterSpacing: 0.3,
   },

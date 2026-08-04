@@ -14,7 +14,6 @@ export default function AppLayout() {
   const { width } = useWindowDimensions();
   const isDealer = user?.role === "dealer";
   const isAdmin = user?.role === "admin";
-  const isPricingAgent = !!user?.is_pricing_agent;
 
   // Wide-screen web admin cockpit
   if (Platform.OS === "web" && isAdmin && width >= 1024) {
@@ -31,6 +30,11 @@ export default function AppLayout() {
     );
   }
 
+  // Streamlined bottom tab bar — only the three primary destinations
+  // (My Vehicles, Submit, Profile) live in the bar so it stays uncluttered
+  // and thumb-friendly. Everything else (Billing, History, Rewards, Dealers,
+  // Kredo, Give Cover, Advertising) is surfaced as flip-tiles on the home
+  // screen — see /app/(app)/index.tsx for the tile grid.
   return (
     <View style={{ flex: 1 }}>
       <Tabs
@@ -52,7 +56,7 @@ export default function AppLayout() {
             // Home landing page — reachable via the top-of-screen Fourbuy
             // logo tap on any in-app screen. Deliberately kept OUT of the
             // bottom tab bar so the tab layout stays lean; the logo is the
-            // universal "Home" affordance (mirrors how a website works).
+            // universal "Home" affordance.
             href: null,
           }}
         />
@@ -67,42 +71,9 @@ export default function AppLayout() {
           name="submit"
           options={{
             title: "Submit",
+            // Dealers only — admins don't submit vehicles.
             href: isDealer ? "/submit" : null,
             tabBarIcon: ({ color, size }) => <Ionicons name="add-circle" color={color} size={size} />,
-          }}
-        />
-        <Tabs.Screen
-          name="dealers"
-          options={{
-            title: "Dealers",
-            href: isAdmin ? "/dealers" : null,
-            tabBarIcon: ({ color, size }) => <Ionicons name="people" color={color} size={size} />,
-          }}
-        />
-        <Tabs.Screen
-          name="billing"
-          options={{
-            title: "Billing",
-            // Billing is available to everyone now — dealers see their own
-            // monthly summary, admins see the aggregate across all dealers.
-            tabBarIcon: ({ color, size }) => <Ionicons name="cash" color={color} size={size} />,
-          }}
-        />
-        <Tabs.Screen
-          name="history"
-          options={{
-            title: "History",
-            tabBarIcon: ({ color, size }) => <Ionicons name="time" color={color} size={size} />,
-          }}
-        />
-        <Tabs.Screen
-          name="rewards"
-          options={{
-            title: "Rewards",
-            // Dealers earn 1 point per billable valuation; admins view the
-            // fulfillment queue from the web dashboard, not this tab.
-            href: isDealer ? "/rewards" : null,
-            tabBarIcon: ({ color, size }) => <Ionicons name="gift" color={color} size={size} />,
           }}
         />
         <Tabs.Screen
@@ -112,29 +83,17 @@ export default function AppLayout() {
             tabBarIcon: ({ color, size }) => <Ionicons name="person-circle" color={color} size={size} />,
           }}
         />
+        {/* All secondary destinations are hidden from the tab bar and
+            reachable via the home-page tiles or their deep-links. */}
+        <Tabs.Screen name="dealers" options={{ href: null }} />
+        <Tabs.Screen name="billing" options={{ href: null }} />
+        <Tabs.Screen name="history" options={{ href: null }} />
+        <Tabs.Screen name="rewards" options={{ href: null }} />
         <Tabs.Screen name="vehicle/[id]" options={{ href: null }} />
         <Tabs.Screen name="scan" options={{ href: null }} />
-        <Tabs.Screen
-          name="cover"
-          options={{
-            title: "Give Cover",
-            // Pricing agents only — hidden from all other users.
-            href: isPricingAgent ? "/cover" : null,
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="shield-checkmark" color={color} size={size} />
-            ),
-          }}
-        />
+        <Tabs.Screen name="cover" options={{ href: null }} />
         <Tabs.Screen name="cover/[id]" options={{ href: null }} />
-        <Tabs.Screen
-          name="kredo-test"
-          options={{
-            title: "Kredo",
-            // Admin-only beta tool — hidden from dealers.
-            href: isAdmin ? "/kredo-test" : null,
-            tabBarIcon: ({ color, size }) => <Ionicons name="pricetag" color={color} size={size} />,
-          }}
-        />
+        <Tabs.Screen name="kredo-test" options={{ href: null }} />
       </Tabs>
       <AgreementModal />
     </View>

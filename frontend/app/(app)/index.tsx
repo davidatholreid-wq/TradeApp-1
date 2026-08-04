@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from "react";
-import { Pressable, TouchableOpacity } from "@/src/components/HapticButtons";
+import { Pressable } from "@/src/components/HapticButtons";
 import { View, Text, StyleSheet, ScrollView, Image, Platform, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
@@ -162,27 +162,35 @@ export default function HomeScreen() {
   );
 
   // Quick-action cards — the primary tasks a dealer/admin comes here to do.
-  // Keeps parity with the bottom-tab bar but promotes them above the fold on
-  // web so the landing page feels like a real dashboard.
+  // These render as flip tiles between the hero video and the marketing
+  // tiles below. On tap they flip briefly, then navigate. This replaces
+  // most of what used to live in the bottom tab bar (Billing, History,
+  // Rewards, Dealers, Kredo, Give Cover) so the bar stays uncluttered
+  // (My Vehicles / Submit / Profile only).
   type QuickAction = {
     key: string;
     label: string;
     hint: string;
     icon: keyof typeof Ionicons.glyphMap;
     to: string;
+    tint?: string;
   };
   const isAdmin = user?.role === "admin";
+  const isPricingAgent = !!user?.is_pricing_agent;
   const quickActions: QuickAction[] = isAdmin
     ? [
-        { key: "subs", label: "Submissions", hint: "Price & review dealer submissions", icon: "list-outline", to: "/(app)/submissions" },
-        { key: "dealers", label: "Dealers", hint: "Approve, edit and manage accounts", icon: "people-outline", to: "/(app)/dealers" },
+        { key: "dealers", label: "Dealers", hint: "Approve, edit & manage accounts", icon: "people-outline", to: "/(app)/dealers" },
         { key: "billing", label: "Billing", hint: "Invoices, credits & receipts", icon: "cash-outline", to: "/(app)/billing" },
-        { key: "rewards", label: "Rewards", hint: "Points, referrals & voucher requests", icon: "gift-outline", to: "/(app)/rewards" },
+        { key: "rewards", label: "Rewards", hint: "Points, referrals & vouchers", icon: "gift-outline", to: "/(app)/rewards" },
+        { key: "history", label: "History", hint: "Priced & archived vehicles", icon: "time-outline", to: "/(app)/history" },
+        { key: "kredo", label: "Kredo", hint: "VIN reports & CarTrust tools", icon: "pricetag-outline", to: "/(app)/kredo-test" },
       ]
     : [
-        { key: "submit", label: "Submit a Vehicle", hint: "Get a confirmed cover price in 90 s", icon: "add-circle-outline", to: "/(app)/submit" },
-        { key: "mine", label: "My Vehicles", hint: "Track submitted vehicles & prices", icon: "car-outline", to: "/(app)/submissions" },
-        { key: "billing", label: "Billing", hint: "Invoices & report charges", icon: "receipt-outline", to: "/(app)/billing" },
+        ...(isPricingAgent
+          ? [{ key: "cover", label: "Give Cover", hint: "Price blind submissions · R10 each", icon: "shield-checkmark-outline" as const, to: "/(app)/cover", tint: colors.primary }]
+          : []),
+        { key: "billing", label: "Billing", hint: "Invoices & report charges", icon: "cash-outline", to: "/(app)/billing" },
+        { key: "history", label: "History", hint: "Priced & archived vehicles", icon: "time-outline", to: "/(app)/history" },
         { key: "rewards", label: "Rewards", hint: "Earn points & vouchers", icon: "gift-outline", to: "/(app)/rewards" },
       ];
 
@@ -275,31 +283,28 @@ export default function HomeScreen() {
             )}
           </View>
 
-          {/* Quick-actions grid — always visible on web, hidden on phones
-              (they already have the bottom tab bar). */}
-          {isWide ? (
-            <View style={styles.quickGrid}>
-              {quickActions.map((qa) => (
-                <TouchableOpacity
-                  key={qa.key}
-                  style={styles.quickCard}
-                  onPress={() => router.push(qa.to as never)}
-                  accessibilityRole="button"
-                  accessibilityLabel={qa.label}
-                >
-                  <View style={styles.quickIconChip}>
-                    <Ionicons name={qa.icon} size={20} color={colors.text} />
-                  </View>
-                  <Text style={styles.quickCardLabel}>{qa.label}</Text>
-                  <Text style={styles.quickCardHint} numberOfLines={2}>{qa.hint}</Text>
-                  <View style={styles.quickCardCta}>
-                    <Text style={styles.quickCardCtaText}>Open</Text>
-                    <Ionicons name="arrow-forward" size={12} color={colors.text} />
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-          ) : null}
+          {/* Quick-nav tiles — the primary secondary-destinations
+              (Billing, History, Rewards, Dealers, Kredo, Give Cover…).
+              Rendered on every viewport so this replaces most of what
+              used to sit in the bottom tab bar. Tapping a tile briefly
+              flips it before navigating, giving the tap a satisfying
+              feel and a clear affordance that this is a portal into
+              another section of the app. */}
+          <View style={styles.quickGrid}>
+            {quickActions.map((qa) => (
+              <View key={qa.key} style={styles.quickCardCol}>
+                <NavFlipTile
+                  label={qa.label}
+                  hint={qa.hint}
+                  icon={qa.icon}
+                  tint={qa.tint}
+                  onNavigate={() => router.push(qa.to as never)}
+                  styles={styles}
+                  colors={colors}
+                />
+              </View>
+            ))}
+          </View>
 
           {/* Section heading above the marketing tiles on wide — helps
               signpost that the below area is the pitch, not primary UI. */}
@@ -331,6 +336,75 @@ export default function HomeScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// NavFlipTile — quick-navigation tile with a brief flip animation on tap
+// before navigating. Renders an icon chip, label, hint, and an "Open →"
+// caret. Used above the marketing tiles on the home page as a portal
+// into secondary sections (Billing, History, Rewards, Give Cover, etc.)
+// so the bottom tab bar can stay lean.
+// ---------------------------------------------------------------------------
+function NavFlipTile({
+  label, hint, icon, tint, onNavigate, styles, colors,
+}: {
+  label: string;
+  hint: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  tint?: string;
+  onNavigate: () => void;
+  styles: ReturnType<typeof makeStyles>;
+  colors: Palette;
+}) {
+  const rot = useSharedValue(0);
+  const scale = useSharedValue(1);
+  const faceStyle = useAnimatedStyle(() => ({
+    transform: [
+      { perspective: 900 },
+      { rotateY: `${rot.value * 180}deg` },
+      { scale: scale.value },
+    ],
+  }));
+  const onTap = useCallback(() => {
+    // Brief flip forward, run the router.push while the tile is
+    // face-down (so the navigation feels like the tile *is* the
+    // destination), then unwind so it doesn't get stuck backwards.
+    rot.value = withSequence(
+      withTiming(0.5, { duration: 140, easing: Easing.in(Easing.cubic) }, () => {
+        runOnJS(onNavigate)();
+      }),
+      withTiming(0, { duration: 300, easing: Easing.out(Easing.cubic) }),
+    );
+    scale.value = withSequence(
+      withTiming(0.96, { duration: 140 }),
+      withTiming(1, { duration: 300 }),
+    );
+  }, [rot, scale, onNavigate]);
+  return (
+    <Pressable
+      onPress={onTap}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => [{ opacity: pressed ? 0.9 : 1 }]}
+    >
+      <Animated.View style={[styles.quickCard, faceStyle]}>
+        <View
+          style={[
+            styles.quickIconChip,
+            tint ? { backgroundColor: tint + "22", borderColor: tint + "55" } : null,
+          ]}
+        >
+          <Ionicons name={icon} size={22} color={tint || colors.text} />
+        </View>
+        <Text style={styles.quickCardLabel}>{label}</Text>
+        <Text style={styles.quickCardHint} numberOfLines={2}>{hint}</Text>
+        <View style={styles.quickCardCta}>
+          <Text style={styles.quickCardCtaText}>Open</Text>
+          <Ionicons name="arrow-forward" size={12} color={colors.text} />
+        </View>
+      </Animated.View>
+    </Pressable>
   );
 }
 
@@ -618,23 +692,36 @@ const makeStyles = (colors: Palette, isWide: boolean) => {
       maxWidth: 520,
     },
 
-    // Quick-actions grid (web only) --------------------------------------
+    // Quick-nav tile grid (all viewports) --------------------------------
     quickGrid: {
       flexDirection: "row",
       flexWrap: "wrap",
-      gap: spacing.md,
+      gap: spacing.sm,
+      marginTop: spacing.sm,
     },
+    quickCardCol: isWide
+      ? {
+          // 3-up on wide screens: fill the row nicely and let overflow
+          // wrap onto a second row for 5+ items (admin).
+          flexBasis: `${(100 - 2 * 2) / 3}%`,
+          flexGrow: 1,
+          minWidth: 220,
+        }
+      : {
+          // Two-up on mobile so every tile has a comfortable touch target
+          // (~150-160dp wide at phone widths).
+          flexBasis: "48%",
+          flexGrow: 1,
+        },
     quickCard: {
-      // 4-up on wide screens with the grid gap.
-      flexBasis: `${(100 - 3 * 2) / 4}%`,
-      flexGrow: 1,
-      minWidth: 220,
       backgroundColor: colors.paper,
       borderRadius: radius.lg,
       borderWidth: 1,
       borderColor: colors.border,
-      padding: spacing.lg,
-      gap: spacing.xs,
+      padding: isWide ? spacing.lg : spacing.md,
+      gap: 2,
+      // Guarantees a comfortably-tall tap target even with a short hint.
+      minHeight: 128,
     },
     quickIconChip: {
       width: 40, height: 40, borderRadius: 20,
@@ -645,14 +732,14 @@ const makeStyles = (colors: Palette, isWide: boolean) => {
     },
     quickCardLabel: {
       color: colors.text,
-      fontSize: 16,
+      fontSize: isWide ? 16 : 15,
       fontWeight: "800",
       letterSpacing: -0.2,
     },
     quickCardHint: {
       color: colors.textSecondary,
       fontSize: 12,
-      lineHeight: 17,
+      lineHeight: 16,
     },
     quickCardCta: {
       flexDirection: "row",
