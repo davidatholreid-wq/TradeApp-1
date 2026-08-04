@@ -1145,7 +1145,7 @@ export default function VehicleDetail() {
         )}
       </View>
 
-      <ScrollView contentContainerStyle={[styles.scroll, isCoverMode && { paddingBottom: 160 }]}>
+      <ScrollView contentContainerStyle={[styles.scroll, isCoverMode && { paddingBottom: 220 }]}>
         {/* Unseen banner — loud red warning shown to both dealers and admins
             immediately at the top of the vehicle detail so the "Cover Price"
             below is never mistaken for an inspection-backed number. */}
@@ -2528,71 +2528,79 @@ export default function VehicleDetail() {
           cover price while continuing to scroll the vehicle detail. */}
       {isCoverMode && coverMeta ? (
         <View style={[styles.coverPlaceBar, { bottom: kbHeight }]} testID="cover-place-bar">
-          {coverMeta.my_cover ? (
-            <View style={{ flex: 1 }}>
-              <Text style={styles.coverPlacedTitle}>
-                Cover placed · R{coverMeta.my_cover.price_zar.toLocaleString()}
-              </Text>
-              <Text style={styles.coverPlacedSub}>
-                Binding subject to inspection. Cannot be withdrawn.
-              </Text>
-            </View>
-          ) : (
-            <>
-              <View style={{ flex: 1 }}>
-                <TextInput
-                  testID="cover-price-input"
-                  value={coverPriceInput}
-                  onChangeText={(t) => setCoverPriceInput(t.replace(/[^0-9]/g, ""))}
-                  placeholder="Enter your cover (R)"
-                  placeholderTextColor={colors.textDisabled}
-                  keyboardType="numeric"
-                  style={styles.coverInput}
-                />
-                <Text style={styles.coverBillNote}>
-                  R{coverMeta.cover_cost_zar} billed on submit. Binding subject to inspection.
+          <View style={{ flex: 1 }}>
+            {coverMeta.my_cover ? (
+              <>
+                <Text style={styles.coverPlacedTitle} testID="cover-placed-summary">
+                  Cover placed · R{coverMeta.my_cover.price_zar.toLocaleString()}
                 </Text>
-              </View>
-              <TouchableOpacity
-                testID="cover-submit-btn"
-                style={[styles.coverBtn, placingCover && { opacity: 0.6 }]}
-                onPress={async () => {
-                  const n = parseInt(coverPriceInput.replace(/[^0-9]/g, ""), 10);
-                  if (!n || n <= 0) {
-                    Alert.alert("Enter a valid amount", "Please enter your cover price in Rand.");
-                    return;
-                  }
-                  const cost = coverMeta.cover_cost_zar;
-                  const proceed = await confirmAsync(
-                    "Confirm binding cover",
-                    `Cover of R${n.toLocaleString()}. You'll be billed R${cost} to your next invoice. Cover is binding subject to physical inspection and confirmation that all submission details are accurate.`,
-                    "Confirm",
-                  );
-                  if (!proceed) return;
-                  setPlacingCover(true);
-                  try {
-                    await apiFetch(`/api/submissions/${sub!.id}/covers`, {
-                      method: "POST",
-                      body: JSON.stringify({ price_zar: n }),
-                    });
-                    await loadCoverMeta();
-                    Alert.alert("Cover placed", `Your binding cover of R${n.toLocaleString()} has been recorded. R${cost} was added to your next invoice.`);
-                  } catch (e: any) {
-                    Alert.alert("Cover", e?.message || "Could not place cover.");
-                  } finally {
-                    setPlacingCover(false);
-                  }
-                }}
-                disabled={placingCover}
-              >
-                {placingCover ? (
-                  <ActivityIndicator color={colors.onPrimary} />
-                ) : (
-                  <Text style={styles.coverBtnText}>Place Cover</Text>
-                )}
-              </TouchableOpacity>
-            </>
-          )}
+                <Text style={styles.coverPlacedSub}>
+                  Binding subject to inspection. Update below (R{coverMeta.cover_cost_zar} per change).
+                </Text>
+              </>
+            ) : null}
+            <TextInput
+              testID="cover-price-input"
+              value={coverPriceInput}
+              onChangeText={(t) => setCoverPriceInput(t.replace(/[^0-9]/g, ""))}
+              placeholder={coverMeta.my_cover ? "Update cover (R)" : "Enter your cover (R)"}
+              placeholderTextColor={colors.textDisabled}
+              keyboardType="numeric"
+              style={[styles.coverInput, coverMeta.my_cover && { marginTop: 6 }]}
+            />
+            <Text style={styles.coverBillNote}>
+              R{coverMeta.cover_cost_zar} billed on submit. Binding subject to inspection.
+            </Text>
+          </View>
+          <TouchableOpacity
+            testID="cover-submit-btn"
+            style={[styles.coverBtn, placingCover && { opacity: 0.6 }]}
+            onPress={async () => {
+              const n = parseInt(coverPriceInput.replace(/[^0-9]/g, ""), 10);
+              if (!n || n <= 0) {
+                Alert.alert("Enter a valid amount", "Please enter your cover price in Rand.");
+                return;
+              }
+              const cost = coverMeta.cover_cost_zar;
+              const isUpdate = !!coverMeta.my_cover;
+              const proceed = await confirmAsync(
+                isUpdate ? "Confirm cover update" : "Confirm binding cover",
+                isUpdate
+                  ? `Update your binding cover to R${n.toLocaleString()}. You'll be billed R${cost} to your next invoice for this update. Cover is binding subject to physical inspection.`
+                  : `Cover of R${n.toLocaleString()}. You'll be billed R${cost} to your next invoice. Cover is binding subject to physical inspection and confirmation that all submission details are accurate.`,
+                "Confirm",
+              );
+              if (!proceed) return;
+              setPlacingCover(true);
+              try {
+                await apiFetch(`/api/submissions/${sub!.id}/covers`, {
+                  method: "POST",
+                  body: JSON.stringify({ price_zar: n }),
+                });
+                setCoverPriceInput("");
+                await loadCoverMeta();
+                Alert.alert(
+                  isUpdate ? "Cover updated" : "Cover placed",
+                  isUpdate
+                    ? `Your binding cover is now R${n.toLocaleString()}. R${cost} was added to your next invoice.`
+                    : `Your binding cover of R${n.toLocaleString()} has been recorded. R${cost} was added to your next invoice.`,
+                );
+              } catch (e: any) {
+                Alert.alert("Cover", e?.message || "Could not save cover.");
+              } finally {
+                setPlacingCover(false);
+              }
+            }}
+            disabled={placingCover}
+          >
+            {placingCover ? (
+              <ActivityIndicator color={colors.onPrimary} />
+            ) : (
+              <Text style={styles.coverBtnText}>
+                {coverMeta.my_cover ? "Update" : "Place Cover"}
+              </Text>
+            )}
+          </TouchableOpacity>
         </View>
       ) : null}
 

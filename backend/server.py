@@ -7205,6 +7205,24 @@ async def list_cover_submissions(current: dict = Depends(require_pricing_agent))
     for s in subs:
         c = covers_by_sub.get(s["id"])
         s["my_cover"] = c if c else None
+        # Derive a single "thumbnail" URL from whichever photo role is
+        # present first — the frontend list card renders this. `photos`
+        # in Fourbuy submissions is a dict keyed by role
+        # (front / driver_side / passenger_side / rear / interior) so
+        # we can't just do `photos[0]`.
+        photos = s.get("photos")
+        thumb = None
+        if isinstance(photos, dict):
+            for k in ("front", "driver_side", "passenger_side", "rear", "interior"):
+                if photos.get(k):
+                    thumb = photos[k]
+                    break
+            if not thumb:
+                # Fallback: first non-empty value.
+                thumb = next((v for v in photos.values() if v), None)
+        elif isinstance(photos, list):
+            thumb = photos[0] if photos else None
+        s["thumbnail"] = thumb
     return {"submissions": subs}
 
 
@@ -7240,9 +7258,12 @@ async def place_cover_offer(
     payload: dict,
     current: dict = Depends(require_pricing_agent),
 ):
-    """Place a binding cover offer. Billed R10 to the agent's dealership
-    on their next invoice. One cover per (agent, submission) — repeat
-    calls are rejected (offers are binding and cannot be withdrawn).
+    """Place OR update a binding cover offer.
+
+    Each call bills R10 to the agent's dealership on their next invoice —
+    including updates to an existing cover (the update is treated as a
+    fresh binding cover attempt with its own R10 charge). Previous prices
+    are pushed onto the offer's `history[]` for full auditability.
     """
     try:
         price = int(payload.get("price_zar") or 0)
@@ -7257,50 +7278,78 @@ async def place_cover_offer(
         raise HTTPException(403, "You cannot cover your own stock.")
     if sub.get("status") == "draft":
         raise HTTPException(400, "This submission is a draft.")
-    # One-shot: covers are binding and cannot be withdrawn.
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    note = (payload.get("note") or "").strip() or None
     existing = await db.cover_offers.find_one(
         {"submission_id": sub_id, "agent_user_id": current["id"]}
     )
     if existing:
-        raise HTTPException(409, "You have already placed a binding cover on this submission.")
-    now = datetime.now(timezone.utc)
-    cover_id = str(uuid.uuid4())
-    offer = {
-        "id": cover_id,
-        "submission_id": sub_id,
-        "agent_user_id": current["id"],
-        "agent_dealership_id": current.get("dealership_id"),
-        "price_zar": price,
-        "note": (payload.get("note") or "").strip() or None,
-        "status": "active",
-        "created_at": now,
-        "binding_caveat": (
-            "Cover is binding subject to physical inspection of the vehicle "
-            "and confirmation that all details in the submission (mileage, "
-            "condition, service history, accident/claim status, warranty and "
-            "reconditioning) are accurate."
-        ),
-    }
-    await db.cover_offers.insert_one(offer)
-    # Strip the ObjectId that motor mutates into the dict before returning.
-    offer_out = {k: v for k, v in offer.items() if k != "_id"}
+        # UPDATE path — push previous price to history, replace price/note,
+        # bill another R10. Cover remains binding subject to inspection.
+        prev_history = existing.get("history") or []
+        prev_history.append({
+            "price_zar": existing.get("price_zar"),
+            "note": existing.get("note"),
+            "at": existing.get("updated_at") or existing.get("created_at"),
+        })
+        await db.cover_offers.update_one(
+            {"id": existing["id"]},
+            {"$set": {
+                "price_zar": price,
+                "note": note,
+                "updated_at": now_iso,
+                "history": prev_history,
+            }},
+        )
+        cover_id = existing["id"]
+        billing_note = (
+            f"Cover updated to R{price:,} on submission {sub.get('reference')} "
+            f"(previous R{existing.get('price_zar'):,})."
+        )
+    else:
+        # First-time cover.
+        cover_id = str(uuid.uuid4())
+        offer = {
+            "id": cover_id,
+            "submission_id": sub_id,
+            "agent_user_id": current["id"],
+            "agent_dealership_id": current.get("dealership_id"),
+            "price_zar": price,
+            "note": note,
+            "status": "active",
+            "created_at": now_iso,
+            "updated_at": now_iso,
+            "history": [],
+            "binding_caveat": (
+                "Cover is binding subject to physical inspection of the vehicle "
+                "and confirmation that all details in the submission (mileage, "
+                "condition, service history, accident/claim status, warranty and "
+                "reconditioning) are accurate."
+            ),
+        }
+        await db.cover_offers.insert_one(offer)
+        billing_note = f"Cover of R{price:,} placed on submission {sub.get('reference')}."
     # Bill R10 to the pricing-agent's dealership — one report_orders row
-    # per cover so it lands on their next invoice alongside other reports.
+    # per cover placement / update so it lands on their next invoice
+    # alongside other reports. This is the source of truth for billing.
     await db.report_orders.insert_one({
         "id": str(uuid.uuid4()),
         "submission_id": sub_id,
-        "dealer_id": current.get("dealership_id"),
+        "dealer_id": current.get("id"),  # matches billing member_ids lookup
         "type": "cover_offer",
         "name": f"Cover Offer · {sub.get('reference') or sub_id[:8]}",
         "cost_zar": COVER_OFFER_COST_ZAR,
         "status": "delivered",
-        "ordered_at": now,
+        "ordered_at": now_iso,
         "ordered_by": current["id"],
-        "delivered_at": now,
-        "note": f"Cover of R{price:,} placed on submission {sub.get('reference')}.",
+        "delivered_at": now_iso,
+        "note": billing_note,
         "cover_offer_id": cover_id,
     })
-    return {"ok": True, "cover": offer_out, "billed_zar": COVER_OFFER_COST_ZAR}
+    # Return the fresh cover doc so the UI can refresh without re-fetching.
+    fresh = await db.cover_offers.find_one({"id": cover_id}, {"_id": 0})
+    return {"ok": True, "cover": fresh, "billed_zar": COVER_OFFER_COST_ZAR}
 
 
 @api_router.get("/submissions/{sub_id}/covers")
