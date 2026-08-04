@@ -53,11 +53,10 @@ export default function AppLayout() {
         <Tabs.Screen
           name="index"
           options={{
-            // Home landing page — reachable via the top-of-screen Fourbuy
-            // logo tap on any in-app screen. Deliberately kept OUT of the
-            // bottom tab bar so the tab layout stays lean; the logo is the
-            // universal "Home" affordance.
-            href: null,
+            // Home landing page — first tab so users always have a
+            // one-tap route back to the main menu / hero panel.
+            title: "Home",
+            tabBarIcon: ({ color, size }) => <Ionicons name="home" color={color} size={size} />,
           }}
         />
         <Tabs.Screen
