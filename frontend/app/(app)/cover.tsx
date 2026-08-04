@@ -19,6 +19,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/src/context/AuthContext";
 import { apiFetch } from "@/src/api";
 import { useThemeColors } from "@/src/theme/ThemeContext";
@@ -52,6 +53,7 @@ export default function GiveCoverScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const colors = useThemeColors();
+  const insets = useSafeAreaInsets();
   const [subs, setSubs] = useState<CoverSub[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -83,7 +85,7 @@ export default function GiveCoverScreen() {
 
   if (!user?.is_pricing_agent) {
     return (
-      <View style={[styles.blockedWrap, { backgroundColor: colors.background }]}>
+      <View style={[styles.blockedWrap, { backgroundColor: colors.bg }]}>
         <Ionicons name="lock-closed-outline" size={36} color={colors.textDisabled} />
         <Text style={[styles.blockedTitle, { color: colors.text }]}>Pricing Agent access only</Text>
         <Text style={[styles.blockedSub, { color: colors.textSecondary }]}>
@@ -95,8 +97,12 @@ export default function GiveCoverScreen() {
 
   return (
     <ScrollView
-      style={{ backgroundColor: colors.background }}
-      contentContainerStyle={{ padding: spacing.md, paddingBottom: 80 }}
+      style={{ backgroundColor: colors.bg }}
+      contentContainerStyle={{
+        padding: spacing.md,
+        paddingTop: Math.max(insets.top, 12) + spacing.md,
+        paddingBottom: 80,
+      }}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -105,6 +111,8 @@ export default function GiveCoverScreen() {
         />
       }
     >
+      {/* Header — simple, single-line title. Sits below the notch/status
+          bar so it never gets clipped on device. */}
       <Text style={[styles.heading, { color: colors.text }]}>Give Cover</Text>
 
       {/* Tab switch — Available to Cover / Cover given */}
@@ -284,7 +292,11 @@ export default function GiveCoverScreen() {
 }
 
 const styles = StyleSheet.create({
-  heading: { fontSize: 22, fontWeight: "800", marginBottom: 6 },
+  heading: {
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: spacing.md,
+  },
   subheading: { fontSize: 12, lineHeight: 17, marginBottom: spacing.md },
   // "How Give Cover works" explainer callout — sits below the tabs
   // to keep the primary control (Available / Given switch) at the top
