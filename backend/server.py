@@ -7285,8 +7285,9 @@ async def place_cover_offer(
         {"submission_id": sub_id, "agent_user_id": current["id"]}
     )
     if existing:
-        # UPDATE path — push previous price to history, replace price/note,
-        # bill another R10. Cover remains binding subject to inspection.
+        # UPDATE path — push previous price to history, replace price/note.
+        # Updates are NOT billed — only the initial cover placement is
+        # billed. Cover remains binding subject to inspection.
         prev_history = existing.get("history") or []
         prev_history.append({
             "price_zar": existing.get("price_zar"),
@@ -7303,10 +7304,9 @@ async def place_cover_offer(
             }},
         )
         cover_id = existing["id"]
-        billing_note = (
-            f"Cover updated to R{price:,} on submission {sub.get('reference')} "
-            f"(previous R{existing.get('price_zar'):,})."
-        )
+        # No R10 bill for updates — return early with the fresh cover doc.
+        fresh = await db.cover_offers.find_one({"id": cover_id}, {"_id": 0})
+        return {"ok": True, "cover": fresh, "billed_zar": 0}
     else:
         # First-time cover.
         cover_id = str(uuid.uuid4())
@@ -7330,9 +7330,8 @@ async def place_cover_offer(
         }
         await db.cover_offers.insert_one(offer)
         billing_note = f"Cover of R{price:,} placed on submission {sub.get('reference')}."
-    # Bill R10 to the pricing-agent's dealership — one report_orders row
-    # per cover placement / update so it lands on their next invoice
-    # alongside other reports. This is the source of truth for billing.
+    # Bill R10 to the pricing-agent — ONLY on the first-time cover
+    # placement (updates skip this via the early return above).
     await db.report_orders.insert_one({
         "id": str(uuid.uuid4()),
         "submission_id": sub_id,

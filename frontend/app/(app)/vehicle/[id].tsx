@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, TouchableOpacity } from "@/src/components/HapticButtons";
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Image, TextInput, Modal, KeyboardAvoidingView, Platform, Alert, LayoutAnimation, UIManager, Keyboard } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -494,6 +494,27 @@ export default function VehicleDetail() {
   >(null);
   const [placingCover, setPlacingCover] = useState(false);
   const [coverPriceInput, setCoverPriceInput] = useState("");
+
+  // Force the scroll view back to the top whenever we land on this
+  // page in cover-mode (or when the submission id changes). Without
+  // this, tapping a covered card from the /cover list occasionally
+  // opened the vehicle detail scrolled down to the price bar, which
+  // felt like it "jumped into the price input" instead of the top of
+  // the valuation.
+  const scrollRef = useRef<ScrollView | null>(null);
+  useEffect(() => {
+    if (!id) return;
+    // Defer until after the initial layout so RN's ScrollView has a
+    // frame to work against.
+    const t = setTimeout(() => {
+      try {
+        scrollRef.current?.scrollTo({ x: 0, y: 0, animated: false });
+      } catch {
+        // no-op
+      }
+    }, 0);
+    return () => clearTimeout(t);
+  }, [id, isCoverMode]);
 
   // Track keyboard height so the cover-placement bar lifts above the
   // on-screen keyboard on native. On web the browser reflows the layout
@@ -1145,7 +1166,10 @@ export default function VehicleDetail() {
         )}
       </View>
 
-      <ScrollView contentContainerStyle={[styles.scroll, isCoverMode && { paddingBottom: 220 }]}>
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={[styles.scroll, isCoverMode && { paddingBottom: 220 }]}
+      >
         {/* Unseen banner — loud red warning shown to both dealers and admins
             immediately at the top of the vehicle detail so the "Cover Price"
             below is never mistaken for an inspection-backed number. */}
@@ -2535,7 +2559,7 @@ export default function VehicleDetail() {
                   Cover placed · R{coverMeta.my_cover.price_zar.toLocaleString()}
                 </Text>
                 <Text style={styles.coverPlacedSub}>
-                  Binding subject to inspection. Update below (R{coverMeta.cover_cost_zar} per change).
+                  Binding subject to inspection. Updates are free — the R{coverMeta.cover_cost_zar} fee was already charged on the initial cover.
                 </Text>
               </>
             ) : null}
@@ -2549,7 +2573,9 @@ export default function VehicleDetail() {
               style={[styles.coverInput, coverMeta.my_cover && { marginTop: 6 }]}
             />
             <Text style={styles.coverBillNote}>
-              R{coverMeta.cover_cost_zar} billed on submit. Binding subject to inspection.
+              {coverMeta.my_cover
+                ? "Updates are free. Binding subject to inspection."
+                : `R${coverMeta.cover_cost_zar} billed on submit. Binding subject to inspection.`}
             </Text>
           </View>
           <TouchableOpacity
@@ -2566,7 +2592,7 @@ export default function VehicleDetail() {
               const proceed = await confirmAsync(
                 isUpdate ? "Confirm cover update" : "Confirm binding cover",
                 isUpdate
-                  ? `Update your binding cover to R${n.toLocaleString()}. You'll be billed R${cost} to your next invoice for this update. Cover is binding subject to physical inspection.`
+                  ? `Update your binding cover to R${n.toLocaleString()}. This update is free — the R${cost} cover fee was charged on the initial placement. Cover remains binding subject to physical inspection.`
                   : `Cover of R${n.toLocaleString()}. You'll be billed R${cost} to your next invoice. Cover is binding subject to physical inspection and confirmation that all submission details are accurate.`,
                 "Confirm",
               );
@@ -2582,7 +2608,7 @@ export default function VehicleDetail() {
                 Alert.alert(
                   isUpdate ? "Cover updated" : "Cover placed",
                   isUpdate
-                    ? `Your binding cover is now R${n.toLocaleString()}. R${cost} was added to your next invoice.`
+                    ? `Your binding cover is now R${n.toLocaleString()}. No additional charge for updates.`
                     : `Your binding cover of R${n.toLocaleString()} has been recorded. R${cost} was added to your next invoice.`,
                 );
               } catch (e: any) {

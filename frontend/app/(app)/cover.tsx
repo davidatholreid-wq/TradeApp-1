@@ -106,12 +106,6 @@ export default function GiveCoverScreen() {
       }
     >
       <Text style={[styles.heading, { color: colors.text }]}>Give Cover</Text>
-      <Text style={[styles.subheading, { color: colors.textSecondary }]}>
-        Place a binding cover on any submission below. Each cover costs R10 and
-        is billed to your next invoice. Covers are binding subject to physical
-        inspection. You can update a cover you&apos;ve already placed — every
-        update is billed R10.
-      </Text>
 
       {/* Tab switch — Available to Cover / Cover given */}
       <View style={styles.tabRow}>
@@ -157,6 +151,36 @@ export default function GiveCoverScreen() {
             Cover given · {given.length}
           </Text>
         </TouchableOpacity>
+      </View>
+
+      {/* How Give Cover works — friendlier callout block with icon + bullets.
+          Sits below the tabs so the primary action (switching tabs) is
+          reached first and the explainer is available on demand. */}
+      <View style={[styles.explainerCard, { backgroundColor: colors.card, borderColor: colors.primary + "55" }]}>
+        <View style={styles.explainerHeader}>
+          <View style={[styles.explainerIcon, { backgroundColor: colors.primary + "22", borderColor: colors.primary + "88" }]}>
+            <Ionicons name="shield-checkmark" size={18} color={colors.primary} />
+          </View>
+          <Text style={[styles.explainerTitle, { color: colors.text }]}>How Give Cover works</Text>
+        </View>
+        <View style={styles.explainerBulletRow}>
+          <Ionicons name="pricetag-outline" size={13} color={colors.textSecondary} />
+          <Text style={[styles.explainerBullet, { color: colors.textSecondary }]}>
+            <Text style={{ color: colors.text, fontWeight: "700" }}>R10</Text> billed once per submission when you place a cover. Updates are free.
+          </Text>
+        </View>
+        <View style={styles.explainerBulletRow}>
+          <Ionicons name="lock-closed-outline" size={13} color={colors.textSecondary} />
+          <Text style={[styles.explainerBullet, { color: colors.textSecondary }]}>
+            Your cover is <Text style={{ color: colors.text, fontWeight: "700" }}>binding</Text> subject to physical inspection of the vehicle.
+          </Text>
+        </View>
+        <View style={styles.explainerBulletRow}>
+          <Ionicons name="repeat-outline" size={13} color={colors.textSecondary} />
+          <Text style={[styles.explainerBullet, { color: colors.textSecondary }]}>
+            Change your mind? Open any car in <Text style={{ color: colors.text, fontWeight: "700" }}>Cover given</Text> and update your price — no extra charge.
+          </Text>
+        </View>
       </View>
 
       {loading ? (
@@ -262,6 +286,43 @@ export default function GiveCoverScreen() {
 const styles = StyleSheet.create({
   heading: { fontSize: 22, fontWeight: "800", marginBottom: 6 },
   subheading: { fontSize: 12, lineHeight: 17, marginBottom: spacing.md },
+  // "How Give Cover works" explainer callout — sits below the tabs
+  // to keep the primary control (Available / Given switch) at the top
+  // while still surfacing the fee + rules to first-time users.
+  explainerCard: {
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    gap: 6,
+  },
+  explainerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 4,
+  },
+  explainerIcon: {
+    width: 32, height: 32, borderRadius: 16,
+    alignItems: "center", justifyContent: "center",
+    borderWidth: 1,
+  },
+  explainerTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+  },
+  explainerBulletRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    paddingLeft: 2,
+  },
+  explainerBullet: {
+    fontSize: 12,
+    lineHeight: 17,
+    flex: 1,
+  },
   tabRow: {
     flexDirection: "row",
     gap: spacing.sm,
