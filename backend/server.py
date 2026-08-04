@@ -598,14 +598,25 @@ async def _get_user_dealership_id(user: dict) -> Optional[str]:
 async def _can_access_submission(sub: dict, user: dict) -> bool:
     """A user may access a submission when they're an admin OR when the
     submission belongs to the same dealership (all users of a dealership
-    share visibility). Falls back to the legacy `dealer_id == user.id`
-    check for pre-migration submissions that don't yet carry a
-    `dealership_id`."""
+    share visibility). Pricing agents may access ANY non-draft submission
+    that is not from their own dealership — the response is sanitised
+    downstream so they never see the Fourbuy admin offer/pricing.
+    Falls back to the legacy `dealer_id == user.id` check for
+    pre-migration submissions that don't yet carry a `dealership_id`.
+    """
     if user.get("role") == "admin":
         return True
     if sub.get("dealership_id"):
-        return sub["dealership_id"] == await _get_user_dealership_id(user)
-    return sub.get("dealer_id") == user.get("id")
+        if sub["dealership_id"] == await _get_user_dealership_id(user):
+            return True
+    elif sub.get("dealer_id") == user.get("id"):
+        return True
+    # Pricing agents: cross-dealership read-only access for cover placement.
+    if user.get("is_pricing_agent") and sub.get("status") != "draft":
+        my_dship = await _get_user_dealership_id(user)
+        if sub.get("dealership_id") and sub.get("dealership_id") != my_dship:
+            return True
+    return False
 
 
 class LoginRequest(BaseModel):
@@ -1803,6 +1814,28 @@ async def get_submission(sub_id: str, current: dict = Depends(get_current_user))
         {"submission_id": sub_id}, {"_id": 0}
     ).sort("ordered_at", -1).to_list(50)
     sub["report_orders"] = reports
+    # If a pricing agent (from a different dealership) is reading the
+    # submission via the standard endpoint, strip the Fourbuy admin
+    # offer/pricing so their cover isn't anchored by our number.
+    is_owner = sub.get("dealership_id") and sub["dealership_id"] == await _get_user_dealership_id(current)
+    if (
+        current.get("role") != "admin"
+        and current.get("is_pricing_agent")
+        and not is_owner
+    ):
+        sub = _sanitise_sub_for_pricing_agent(sub)
+        # Also hide the current price banner + price history — those
+        # reveal what Fourbuy offered.
+        for k in ("price", "price_notes", "price_history", "priced_at",
+                  "declined_at", "declined_note"):
+            sub.pop(k, None)
+        # Strip cover_offer entries from report_orders — a pricing agent
+        # must never see OTHER agents' covers on the same submission.
+        agent_id = current.get("id")
+        sub["report_orders"] = [
+            r for r in (sub.get("report_orders") or [])
+            if r.get("type") != "cover_offer" or r.get("ordered_by") == agent_id
+        ]
     return {"submission": sub}
 
 

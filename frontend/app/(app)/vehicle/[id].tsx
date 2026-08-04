@@ -290,10 +290,16 @@ function confirmAsync(title: string, message: string, confirmLabel = "Confirm"):
 export default function VehicleDetail() {
   const colors = useThemeColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, cover } = useLocalSearchParams<{ id: string; cover?: string }>();
   const router = useRouter();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  // Cover-mode: pricing agent inspecting a submission to place a
+  // binding cover. Renders the SAME vehicle detail page but hides the
+  // Fourbuy offer / offer history / admin controls, and swaps the
+  // bottom action bar for a cover-placement input. Backend also
+  // sanitises the response so admin_pricing / offer numbers never leak.
+  const isCoverMode = cover === "1" || cover === "true";
 
   // Which of the collapsible content blocks are currently expanded. All
   // sections start closed by default so the valuation screen looks tidy
@@ -479,6 +485,16 @@ export default function VehicleDetail() {
   };
   const [coverOffers, setCoverOffers] = useState<CoverOffer[]>([]);
 
+  // Cover-mode meta: the pricing agent's own placed cover (if any) and
+  // the R10 cost we bill per cover placement. Only populated when
+  // `isCoverMode`. Kept out of `coverOffers` because that array is for
+  // the OWNER's Cover Offers Received panel.
+  const [coverMeta, setCoverMeta] = useState<
+    { my_cover: { price_zar: number; created_at: string; note?: string | null } | null; cover_cost_zar: number } | null
+  >(null);
+  const [placingCover, setPlacingCover] = useState(false);
+  const [coverPriceInput, setCoverPriceInput] = useState("");
+
   // Kredo CarTrust PDF (async report, order + webhook + Cloudinary hosted)
   type CartrustReport = {
     status: "pending" | "completed" | "failed";
@@ -632,6 +648,24 @@ export default function VehicleDetail() {
   useEffect(() => {
     loadCoverOffers();
   }, [loadCoverOffers]);
+
+  // Cover-mode: pull my own cover + billing cost from the cover endpoint.
+  const loadCoverMeta = useCallback(async () => {
+    if (!sub?.id || !isCoverMode) return;
+    try {
+      const r = await apiFetch(`/api/cover/submissions/${sub.id}`);
+      setCoverMeta({
+        my_cover: r?.my_cover || null,
+        cover_cost_zar: r?.cover_cost_zar ?? 10,
+      });
+    } catch {
+      // Non-agents will get 403 — leave meta null so the bottom bar
+      // stays hidden.
+    }
+  }, [sub?.id, isCoverMode]);
+  useEffect(() => {
+    loadCoverMeta();
+  }, [loadCoverMeta]);
 
   const orderCartrust = async () => {
     if (!sub?.id) return;
@@ -1098,7 +1132,7 @@ export default function VehicleDetail() {
         )}
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={[styles.scroll, isCoverMode && { paddingBottom: 160 }]}>
         {/* Unseen banner — loud red warning shown to both dealers and admins
             immediately at the top of the vehicle detail so the "Cover Price"
             below is never mistaken for an inspection-backed number. */}
@@ -1264,8 +1298,9 @@ export default function VehicleDetail() {
           })}
         </View>
 
-        {/* Status banner */}
-        {sub.status === "priced" ? (
+        {/* Status banner — hidden in cover-mode so pricing agents aren't
+            anchored by any Fourbuy offer/price state. */}
+        {isCoverMode ? null : sub.status === "priced" ? (
           <View style={styles.priceBanner} testID="price-banner">
             <View>
               <Text style={styles.priceLabel}>OFFER RECEIVED</Text>
@@ -1304,7 +1339,7 @@ export default function VehicleDetail() {
             shows the agent's name, dealership, cover price, and a
             WhatsApp CTA that opens a chat pre-filled with the vehicle
             reference. Sorted by price desc by the backend. */}
-        {coverOffers.length > 0 ? (
+        {coverOffers.length > 0 && !isCoverMode ? (
           <View style={styles.coverOffersBox} testID="cover-offers-received">
             <View style={styles.coverOffersHeader}>
               <Ionicons name="shield-checkmark" size={18} color={colors.primary} />
@@ -1379,7 +1414,7 @@ export default function VehicleDetail() {
         {/* Price history log — every offer / update the admin has made, most
             recent first. Visible to both admins and the owning dealer for
             full transparency. Hidden entirely when there's no history yet. */}
-        {sub.price_history && sub.price_history.length > 0 ? (
+        {sub.price_history && sub.price_history.length > 0 && !isCoverMode ? (
           <View style={styles.priceHistoryBox} testID="price-history">
             <Text style={styles.sectionTitle}>Offer History</Text>
             {sub.price_history
@@ -1440,8 +1475,9 @@ export default function VehicleDetail() {
           </View>
         ) : null}
 
-        {/* Open Valuation PDF — always available once an offer has been received */}
-        {sub.status === "priced" ? (
+        {/* Open Valuation PDF — always available once an offer has been received.
+            Hidden in cover mode because the PDF exposes the Fourbuy admin offer. */}
+        {sub.status === "priced" && !isCoverMode ? (
           <View style={styles.reportsSection}>
             <TouchableOpacity
               testID="download-valuation-pdf"
@@ -2079,13 +2115,13 @@ export default function VehicleDetail() {
             default because ordering is a primary dealer action. */}
         {sub.status === "priced" ? (
           <CollapsibleSection
-            title="Order a VIN-Linked Report"
+            title={isAdmin || isCoverMode ? "VIN-Linked Reports" : "Order a VIN-Linked Report"}
             open={isOpen("reports")}
             onToggle={() => toggleSection("reports")}
             summary={
-              (sub.report_orders || []).length > 0
-                ? `${(sub.report_orders || []).length} report${(sub.report_orders || []).length === 1 ? "" : "s"} ordered`
-                : (isAdmin ? "No reports ordered yet" : "Tap to view available reports")
+              (sub.report_orders || []).filter((r) => r.type !== "cover_offer").length > 0
+                ? `${(sub.report_orders || []).filter((r) => r.type !== "cover_offer").length} report${(sub.report_orders || []).filter((r) => r.type !== "cover_offer").length === 1 ? "" : "s"} ordered`
+                : ((isAdmin || isCoverMode) ? "No reports ordered yet" : "Tap to view available reports")
             }
             colors={colors}
             styles={styles}
@@ -2096,21 +2132,29 @@ export default function VehicleDetail() {
                 the dealer has already ordered. */}
             {sub.vin && sub.vin.trim() && sub.vin.toUpperCase() !== "TBC" ? (
               <>
-                {isAdmin ? (
-                  // Admin: hide the order UI. Show ordered reports (if any) or a
-                  // small hint that the dealer hasn't purchased any yet.
+                {isAdmin || isCoverMode ? (
+                  // Admin / cover-mode: no ordering UI. Show reports the
+                  // owning dealer has already purchased, or a small hint
+                  // that none have been ordered yet.
                   (sub.report_orders || []).length > 0 ? (
                     <>
-                      <Text style={styles.reportsSubhead}>VIN reports ordered by dealer</Text>
+                      <Text style={styles.reportsSubhead}>
+                        {isCoverMode ? "VIN reports ordered by the seller" : "VIN reports ordered by dealer"}
+                      </Text>
                       <Text style={styles.reportsHelp}>
-                        Verified against VIN {sub.vin}. Admins can view results but cannot order reports on behalf of a dealer.
+                        Verified against VIN {sub.vin}.
+                        {isCoverMode
+                          ? " Pricing agents can view results but cannot order new reports."
+                          : " Admins can view results but cannot order reports on behalf of a dealer."}
                       </Text>
                     </>
                   ) : (
                     <View style={styles.adminNoReports}>
                       <Ionicons name="lock-closed-outline" size={16} color={colors.textDisabled} />
                       <Text style={styles.adminNoReportsText}>
-                        VIN reports can only be ordered by the dealer. None purchased yet.
+                        {isCoverMode
+                          ? "The seller has not purchased any VIN-linked reports yet."
+                          : "VIN reports can only be ordered by the dealer. None purchased yet."}
                       </Text>
                     </View>
                   )
@@ -2143,7 +2187,7 @@ export default function VehicleDetail() {
                     }
                     return baseTypes;
                   })()
-                  .filter((t) => !isAdmin || orderedReportTypes.has(t))
+                  .filter((t) => (!isAdmin && !isCoverMode) || orderedReportTypes.has(t))
                   .map((t) => {
                     const meta = REPORT_CATALOG[t];
                     const alreadyOrdered = orderedReportTypes.has(t);
@@ -2224,7 +2268,7 @@ export default function VehicleDetail() {
                     (see orderCartrust / cartrust state above). Admins see
                     the card only when the dealer has already ordered it —
                     admins cannot order CarTrust on behalf of a dealer. */}
-                {(!isAdmin || cartrust) ? (
+                {((!isAdmin && !isCoverMode) || cartrust) ? (
                   <View style={styles.reportCard} testID="cartrust-card">
                     <View style={{ flex: 1, marginRight: spacing.sm }}>
                       <Text style={styles.reportName}>{REPORT_CATALOG.kredo_cartrust.name}</Text>
@@ -2274,7 +2318,7 @@ export default function VehicleDetail() {
                         <ActivityIndicator color={colors.text} size="small" />
                         <Text style={styles.reportOrderedBadgeText}>Ordered</Text>
                       </View>
-                    ) : !isAdmin ? (
+                    ) : !isAdmin && !isCoverMode ? (
                       // Order button — dealer only. Admins never see this
                       // (the card as a whole is hidden until the dealer
                       // has an active/completed order).
@@ -2464,6 +2508,80 @@ export default function VehicleDetail() {
 
       {/* Floating footer removed — pricing is now inline at the bottom
           of the scroll content. */}
+
+      {/* Cover-placement bottom bar — visible only when the pricing
+          agent is inspecting a submission via /vehicle/[id]?cover=1.
+          Locked to the bottom of the viewport so the agent can enter a
+          cover price while continuing to scroll the vehicle detail. */}
+      {isCoverMode && coverMeta ? (
+        <View style={styles.coverPlaceBar} testID="cover-place-bar">
+          {coverMeta.my_cover ? (
+            <View style={{ flex: 1 }}>
+              <Text style={styles.coverPlacedTitle}>
+                Cover placed · R{coverMeta.my_cover.price_zar.toLocaleString()}
+              </Text>
+              <Text style={styles.coverPlacedSub}>
+                Binding subject to inspection. Cannot be withdrawn.
+              </Text>
+            </View>
+          ) : (
+            <>
+              <View style={{ flex: 1 }}>
+                <TextInput
+                  testID="cover-price-input"
+                  value={coverPriceInput}
+                  onChangeText={(t) => setCoverPriceInput(t.replace(/[^0-9]/g, ""))}
+                  placeholder="Enter your cover (R)"
+                  placeholderTextColor={colors.textDisabled}
+                  keyboardType="numeric"
+                  style={styles.coverInput}
+                />
+                <Text style={styles.coverBillNote}>
+                  R{coverMeta.cover_cost_zar} billed on submit. Binding subject to inspection.
+                </Text>
+              </View>
+              <TouchableOpacity
+                testID="cover-submit-btn"
+                style={[styles.coverBtn, placingCover && { opacity: 0.6 }]}
+                onPress={async () => {
+                  const n = parseInt(coverPriceInput.replace(/[^0-9]/g, ""), 10);
+                  if (!n || n <= 0) {
+                    Alert.alert("Enter a valid amount", "Please enter your cover price in Rand.");
+                    return;
+                  }
+                  const cost = coverMeta.cover_cost_zar;
+                  const proceed = await confirmAsync(
+                    "Confirm binding cover",
+                    `Cover of R${n.toLocaleString()}. You'll be billed R${cost} to your next invoice. Cover is binding subject to physical inspection and confirmation that all submission details are accurate.`,
+                    "Confirm",
+                  );
+                  if (!proceed) return;
+                  setPlacingCover(true);
+                  try {
+                    await apiFetch(`/api/submissions/${sub!.id}/covers`, {
+                      method: "POST",
+                      body: JSON.stringify({ price_zar: n }),
+                    });
+                    await loadCoverMeta();
+                    Alert.alert("Cover placed", `Your binding cover of R${n.toLocaleString()} has been recorded. R${cost} was added to your next invoice.`);
+                  } catch (e: any) {
+                    Alert.alert("Cover", e?.message || "Could not place cover.");
+                  } finally {
+                    setPlacingCover(false);
+                  }
+                }}
+                disabled={placingCover}
+              >
+                {placingCover ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.coverBtnText}>Place Cover</Text>
+                )}
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      ) : null}
 
       {/* Price modal */}
       <Modal visible={priceModal} transparent animationType="slide" onRequestClose={() => setPriceModal(false)}>
@@ -3392,6 +3510,65 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   whatsappBtnText: {
     color: "#fff",
     fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+  // Cover-placement bottom bar (pricing-agent mode)
+  coverPlaceBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: spacing.md,
+    borderTopWidth: 1,
+    backgroundColor: colors.card,
+    borderTopColor: colors.border,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: -2 },
+    elevation: 8,
+  },
+  coverPlacedTitle: {
+    color: colors.success,
+    fontWeight: "800",
+    fontSize: 15,
+  },
+  coverPlacedSub: {
+    color: colors.textDisabled,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  coverInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    fontSize: 15,
+    fontWeight: "700",
+    color: colors.text,
+    backgroundColor: colors.background,
+  },
+  coverBillNote: {
+    color: colors.textDisabled,
+    fontSize: 10,
+    marginTop: 4,
+  },
+  coverBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: radius.sm,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 120,
+  },
+  coverBtnText: {
+    color: "#fff",
     fontWeight: "800",
     letterSpacing: 0.3,
   },
