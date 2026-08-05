@@ -1195,7 +1195,21 @@ export default function VehicleDetail() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.header}>
-        <TouchableOpacity testID="detail-back-button" onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity
+          testID="detail-back-button"
+          onPress={() => {
+            // In cover-mode always route back to the Give Cover listing
+            // (Cover given tab) — expo-router's `router.back()` on web
+            // sometimes falls back to `/` when history is limited, which
+            // felt like the app was "kicking" the pricing agent home.
+            if (isCoverMode) {
+              router.replace({ pathname: "/(app)/cover", params: { tab: "given" } });
+              return;
+            }
+            router.back();
+          }}
+          style={styles.backBtn}
+        >
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>

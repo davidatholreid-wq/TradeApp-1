@@ -17,7 +17,7 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
   Image, RefreshControl,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/src/context/AuthContext";
@@ -51,13 +51,24 @@ type Tab = "available" | "given";
 
 export default function GiveCoverScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ tab?: string }>();
   const { user } = useAuth();
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
   const [subs, setSubs] = useState<CoverSub[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [tab, setTab] = useState<Tab>("available");
+  const [tab, setTab] = useState<Tab>(params?.tab === "given" ? "given" : "available");
+
+  // Sync tab whenever the incoming ?tab= param changes — e.g. the
+  // back-arrow on a covered vehicle detail returns via
+  // /cover?tab=given so the pricing agent lands back on the same
+  // list they came from.
+  useEffect(() => {
+    if (params?.tab === "given" || params?.tab === "available") {
+      setTab(params.tab as Tab);
+    }
+  }, [params?.tab]);
 
   const load = useCallback(async () => {
     try {
