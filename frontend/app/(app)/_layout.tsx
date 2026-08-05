@@ -46,8 +46,23 @@ export default function AppLayout() {
             backgroundColor: colors.paper,
             borderTopColor: colors.border,
             borderTopWidth: 1,
+            // Web-specific tab-bar sizing. Expo Router's default
+            // tabBarStyle inherits a mobile-first height (~49dp) that
+            // doesn't reserve room for the label under the icon in
+            // browsers — the "Home / Profile / …" text was getting
+            // clipped at the bottom edge of the viewport. Bumping the
+            // height + bottom padding on web gives every label breathing
+            // room without changing the native app appearance.
+            ...(Platform.OS === "web"
+              ? { height: 68, paddingTop: 6, paddingBottom: 10 }
+              : {}),
           },
-          tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
+          tabBarItemStyle: Platform.OS === "web" ? { paddingVertical: 4 } : undefined,
+          tabBarLabelStyle: {
+            fontSize: 11,
+            fontWeight: "600",
+            ...(Platform.OS === "web" ? { marginBottom: 4 } : {}),
+          },
         }}
       >
         <Tabs.Screen

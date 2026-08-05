@@ -1,0 +1,49 @@
+{
+  "summary": "Frontend-only verification of bottom tab-bar label clipping fix on the web preview. Logged in as dealer Dave (pricing agent) after resetting his password via admin API (POST /api/admin/dealers/{id}/password with {new_password: ...}). Verified tab-bar at mobile 390x844 and desktop 1440x900 for the (app) group pages (home, submissions, submit, profile). RESULT: FIX IS PARTIALLY WORKING. The tab-bar container is correctly sized (h=68, padding 6/0/10 as specified) and it is fully in-viewport (no viewport clipping). BUT — only the 'Submit' tab actually shows its label. The 'Home', 'My Vehicles', and 'Profile' text labels are rendered in the DOM but each has a computed rendered height of only 1px (top=820, bottom=821 on mobile 390 viewport; top=876, bottom=877 on desktop 1440) with overflow:hidden — so visually only the icons appear for those three tabs. Screenshots confirm: mobile_390_tabbar_after_login.jpg and desktop_1440_home.jpg both show three icons with NO label plus one visible 'Submit' label. Navigation between tabs still works.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "(app)/_layout.tsx bottom Tabs",
+        "issue": "On web (both mobile 390x844 and desktop 1440x900), the labels for Home, My Vehicles, and Profile are clipped to 1px height while Submit's label renders correctly at 15px. Tab bar container is 68px with padding 6/10, but the tab-item wrappers around Home/My Vehicles/Profile icons appear to consume all the vertical space so the label is squeezed. DOM computed style shows overflow:hidden, fontSize:11px, but height:1px for those three labels. Submit tab has a slightly higher icon (top=789 vs 793 for others) which is why its 15px label fits. Reference: /app/frontend/app/(app)/_layout.tsx:56-65",
+        "testID": "n/a",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "All (app) pages",
+        "issues": [
+          "Three of four bottom-tab labels invisible on the web preview — icon-only tabs make navigation less discoverable (fails the original user complaint that the labels should be visible)."
+        ]
+      }
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/screenshots/iter37/mobile_390_tabbar_after_login.jpg",
+    "/app/test_reports/screenshots/iter37/mobile_390_home.jpg",
+    "/app/test_reports/screenshots/iter37/mobile_390_my_vehicles.jpg",
+    "/app/test_reports/screenshots/iter37/mobile_390_submit.jpg",
+    "/app/test_reports/screenshots/iter37/mobile_390_profile.jpg",
+    "/app/test_reports/screenshots/iter37/desktop_1440_home.jpg",
+    "/app/test_reports/screenshots/iter37/desktop_1440_my_vehicles.jpg",
+    "/app/test_reports/screenshots/iter37/desktop_1440_submit.jpg",
+    "/app/test_reports/screenshots/iter37/desktop_1440_profile.jpg"
+  ],
+  "action_items": [
+    "The label clipping is not fully resolved — the container grew but per-tab items still clip the label for Home/My Vehicles/Profile. Recommended fixes (pick one):\n  1) Explicitly set the tab-item height on web via tabBarItemStyle: { height: 60 } (or similar) so each item has room for icon (~27px) + label (~16px) + margin.\n  2) Remove tabBarItemStyle.paddingVertical (which is competing with the icon centring) and instead rely on the container's paddingTop/paddingBottom only.\n  3) Set tabBarLabelStyle: { lineHeight: 14 } and { marginTop: 2 } to guarantee the label has its own line box.\n  4) As a robust fallback, target the .r-... class or a global CSS injection to force `[role=\"tab\"] > div { overflow: visible; }` on web.",
+    "After applying, retest at BOTH 390x844 and 1440x900 and confirm all 4 labels (Home / My Vehicles / Submit / Profile) render with height ~15px (not 1px)."
+  ],
+  "critical_code_review_comments": [
+    "/app/frontend/app/(app)/_layout.tsx:60 — `tabBarItemStyle: Platform.OS === 'web' ? { paddingVertical: 4 } : undefined` adds 4+4=8px vertical padding to each tab item on top of the container's padding. Combined with the item's fixed height in react-navigation's web renderer, this likely causes the icon+wrapper to consume all the room and clip the label. Consider removing paddingVertical here or replacing with an explicit height."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "25% (1 of 4 labels visible)"},
+  "seed_data_creation": "Reset dealer dave@fourbuy.co.za password to Dave1234! via POST /api/admin/dealers/{id}/password (payload {new_password: 'Dave1234!'} — NOTE the payload key is `new_password`, not `password`; the credentials memo hint about /password endpoint is correct but the key name should be documented).",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The main agent will likely tweak tabBarItemStyle/tabBarLabelStyle. When re-testing, log in as dave@fourbuy.co.za / Dave1234! (reset via admin if needed — payload uses `new_password`). Set viewport to 390x844 (mobile-web) AND 1440x900 (desktop-web). Then evaluate on page: `document.querySelectorAll('*')` and find text nodes with content 'Home', 'My Vehicles', 'Submit', 'Profile' near the bottom — assert bounding rect height >= 12 for all four. Screenshot both viewports so the labels are visually confirmed. Also test on the /submissions, /submit, /profile pages and confirm the same tab bar appearance.",
+  "rca_of_issue": "The web branch adds Container: height 68, paddingTop 6, paddingBottom 10. Content area = 68 - 6 - 10 = 52px. The web branch ALSO adds tabBarItemStyle { paddingVertical: 4 } => 4+4=8px inside each tab item, leaving 52 - 8 = 44px for icon+label per item. Icon renders at ~27px, label needs ~15px + marginBottom 4 = 19px, total 46px — exceeds 44px by ~2px, and because the item wrapper has overflow:hidden the label collapses to 1px. The Submit tab happens to render 4px higher (its icon container is slightly smaller) which gives it exactly enough room, which is why only Submit's label shows. Removing tabBarItemStyle.paddingVertical OR increasing container height to ~72-76 should fix this."
+}
