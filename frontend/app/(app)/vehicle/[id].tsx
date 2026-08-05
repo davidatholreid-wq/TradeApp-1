@@ -606,19 +606,27 @@ export default function VehicleDetail() {
     }
   };
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const loadSub = useCallback(async () => {
+    setLoadError(null);
+    try {
+      const data = await apiFetch(`/api/submissions/${id}`);
+      setSub(data.submission);
+    } catch (e: any) {
+      // Don't kick the user away on a transient failure — leaving the
+      // user stranded on the home page was very disorienting. Instead
+      // show an inline error card with a Retry button so they can
+      // recover without losing navigation context.
+      setLoadError(e?.message || "Could not load this vehicle.");
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
   useEffect(() => {
-    (async () => {
-      try {
-        const data = await apiFetch(`/api/submissions/${id}`);
-        setSub(data.submission);
-      } catch (e: any) {
-        Alert.alert("Error", e.message);
-        router.back();
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [id, router]);
+    if (!id) return;
+    setLoading(true);
+    loadSub();
+  }, [id, loadSub]);
 
   // Auto-load cached Kredo VIN history for admins on mount. `cache_only`
   // means we NEVER hit Kredo on page load — only surface a previously
@@ -1137,6 +1145,46 @@ export default function VehicleDetail() {
   };
 
   if (loading || !sub) {
+    // Loading state OR "no submission yet" — split into a proper error
+    // card when the initial load failed so the user gets a clear
+    // "something went wrong" affordance with Retry + Back buttons
+    // instead of getting silently bounced to the home screen.
+    if (loadError) {
+      return (
+        <SafeAreaView style={styles.safe} edges={["top"]}>
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+              <Ionicons name="chevron-back" size={24} color={colors.text} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle} numberOfLines={1}>Vehicle</Text>
+            <BrandLogo size="xs" linkToHome />
+          </View>
+          <View style={[styles.center, { padding: spacing.lg, gap: spacing.md }]}>
+            <Ionicons name="alert-circle-outline" size={40} color={colors.textDisabled} />
+            <Text style={{ color: colors.text, fontSize: 16, fontWeight: "800", textAlign: "center" }}>
+              We couldn&apos;t load this vehicle
+            </Text>
+            <Text style={{ color: colors.textSecondary, fontSize: 13, textAlign: "center", lineHeight: 19 }}>
+              {loadError}
+            </Text>
+            <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm }}>
+              <TouchableOpacity
+                onPress={() => { setLoading(true); loadSub(); }}
+                style={{ paddingHorizontal: 18, paddingVertical: 10, borderRadius: radius.sm, backgroundColor: colors.primary }}
+              >
+                <Text style={{ color: colors.onPrimary, fontWeight: "800" }}>Retry</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => router.back()}
+                style={{ paddingHorizontal: 18, paddingVertical: 10, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border }}
+              >
+                <Text style={{ color: colors.text, fontWeight: "700" }}>Go back</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </SafeAreaView>
+      );
+    }
     return (
       <View style={styles.center}>
         <ActivityIndicator color={colors.primary} />

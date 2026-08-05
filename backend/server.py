@@ -1798,7 +1798,16 @@ async def get_submission(sub_id: str, current: dict = Depends(get_current_user))
     if not await _can_access_submission(sub, current):
         raise HTTPException(403, "Not authorized")
     # Prevent dealers from opening an archived submission from a stale link.
-    if current["role"] != "admin" and compute_bucket(sub) == "archived":
+    # Pricing agents accessing OTHER dealerships' submissions must not be
+    # blocked here — the whole point of Give Cover is that they can still
+    # place a binding cover on older/archived stock (and they need the
+    # detail page to update / review existing covers).
+    is_owner_dealer = (
+        current.get("role") == "dealer"
+        and sub.get("dealership_id")
+        and sub["dealership_id"] == await _get_user_dealership_id(current)
+    )
+    if is_owner_dealer and compute_bucket(sub) == "archived":
         raise HTTPException(404, "Submission not found")
     sub["bucket"] = compute_bucket(sub)
     # Lazy-fetch + cache Kredo market values (new list / retail / trade /
