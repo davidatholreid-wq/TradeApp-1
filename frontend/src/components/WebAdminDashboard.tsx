@@ -204,14 +204,14 @@ function formatReportName(type: string): string {
 }
 
 type Bucket = "incoming" | "priced" | "archived";
-type CockpitView = "submissions" | "dealers" | "billing" | "rewards" | "kredo" | "ads";
+type CockpitView = "home" | "submissions" | "dealers" | "billing" | "rewards" | "kredo" | "ads";
 
 export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }) {
   const colors = useThemeColors();
   const themeMode = useThemeMode();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { width } = useWindowDimensions();
-  const [view, setView] = useState<CockpitView>("submissions");
+  const [view, setView] = useState<CockpitView>("home");
   const [subs, setSubs] = useState<Submission[]>([]);
   const [counts, setCounts] = useState<Record<Bucket, number>>({ incoming: 0, priced: 0, archived: 0 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -501,6 +501,16 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
           <View style={{ width: 12 }} />
           <View style={styles.viewSwitch}>
             <TouchableOpacity
+              testID="cockpit-view-home"
+              style={[styles.viewBtn, view === "home" && styles.viewBtnActive]}
+              onPress={() => setView("home")}
+            >
+              <Ionicons name="home" size={14} color={view === "home" ? colors.onPrimary : colors.text} />
+              <Text style={[styles.viewBtnText, view === "home" && styles.viewBtnTextActive]}>
+                Home
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               testID="cockpit-view-submissions"
               style={[styles.viewBtn, view === "submissions" && styles.viewBtnActive]}
               onPress={() => setView("submissions")}
@@ -588,7 +598,54 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
         </View>
       </View>
 
-      {view === "billing" ? (
+      {view === "home" ? (
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.homeWrap}>
+          <View style={styles.homeHeader}>
+            <Text style={styles.homeTitle}>Admin Cockpit</Text>
+            <Text style={styles.homeSubtitle}>
+              Quick access to every Fourbuy module. Choose a tile below or use the top nav.
+            </Text>
+          </View>
+          <View style={styles.homeStatsRow}>
+            <View style={[styles.homeStatCard, { borderColor: colors.warning + "55" }]}>
+              <Text style={styles.homeStatLabel}>INCOMING</Text>
+              <Text style={[styles.homeStatValue, { color: colors.warning }]}>{pendingCount}</Text>
+            </View>
+            <View style={[styles.homeStatCard, { borderColor: colors.success + "55" }]}>
+              <Text style={styles.homeStatLabel}>PRICED</Text>
+              <Text style={[styles.homeStatValue, { color: colors.success }]}>{pricedCount}</Text>
+            </View>
+            <View style={[styles.homeStatCard, { borderColor: colors.border }]}>
+              <Text style={styles.homeStatLabel}>ARCHIVED</Text>
+              <Text style={[styles.homeStatValue, { color: colors.textSecondary }]}>{archivedCount}</Text>
+            </View>
+          </View>
+          <View style={styles.homeTilesRow}>
+            {[
+              { key: "submissions", label: "Submissions", hint: "Price & review dealer submissions", icon: "list" as const, tint: "#5B8DEF" },
+              { key: "dealers", label: "Dealers", hint: "Approve, edit & manage accounts", icon: "people" as const, tint: "#22C55E" },
+              { key: "billing", label: "Billing", hint: "Invoices, credits & receipts", icon: "cash" as const, tint: "#F59E0B" },
+              { key: "rewards", label: "Rewards", hint: "Points, referrals & vouchers", icon: "gift" as const, tint: "#F97316" },
+              { key: "kredo", label: "Kredo", hint: "VIN reports & CarTrust tools", icon: "pricetag" as const, tint: "#F43F5E" },
+              { key: "ads", label: "Advertising", hint: "Manage home-page ad tiles", icon: "megaphone" as const, tint: "#A78BFA" },
+            ].map((t) => (
+              <TouchableOpacity
+                key={t.key}
+                testID={`cockpit-home-tile-${t.key}`}
+                style={[styles.homeTile, { borderColor: t.tint + "55" }]}
+                onPress={() => setView(t.key as CockpitView)}
+                activeOpacity={0.85}
+              >
+                <View style={[styles.homeTileIconChip, { backgroundColor: t.tint + "22", borderColor: t.tint + "77" }]}>
+                  <Ionicons name={t.icon} size={26} color={t.tint} />
+                </View>
+                <Text style={styles.homeTileLabel}>{t.label}</Text>
+                <Text style={styles.homeTileHint} numberOfLines={2}>{t.hint}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </ScrollView>
+      ) : view === "billing" ? (
         <View style={{ flex: 1 }}>
           <BillingScreen />
         </View>
@@ -1764,21 +1821,42 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    // Allow the topbar to wrap onto two rows when the viewport can't
+    // fit the whole ribbon in one line — prevents the Export CSV /
+    // logout controls from being clipped on smaller desktop widths.
+    flexWrap: "wrap",
+    rowGap: spacing.sm,
+    columnGap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     backgroundColor: colors.paper,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  topbarLeft: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  topbarRight: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  logo: { width: 168, height: 58 },
-  divider: { width: 1, height: 30, backgroundColor: colors.border },
+  topbarLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    // Wrap the module switcher onto a second row when it doesn't fit
+    // beside the logo — keeps every module reachable at 1024-1280 widths.
+    flexWrap: "wrap",
+    rowGap: spacing.sm,
+    flexShrink: 1,
+  },
+  topbarRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    flexWrap: "wrap",
+    rowGap: spacing.sm,
+  },
+  logo: { width: 132, height: 46 },
+  divider: { width: 1, height: 26, backgroundColor: colors.border },
   topbarSub: {
     color: colors.textSecondary,
     fontFamily: fonts.heading,
-    letterSpacing: 3,
-    fontSize: 13,
+    letterSpacing: 2,
+    fontSize: 11,
     textTransform: "uppercase",
     fontWeight: "700",
   },
@@ -1789,17 +1867,104 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     borderRadius: radius.sm,
     backgroundColor: colors.card,
     overflow: "hidden",
+    flexWrap: "wrap",
   },
   viewBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
   },
   viewBtnActive: { backgroundColor: colors.primary },
-  viewBtnText: { color: colors.text, fontSize: 12, fontWeight: "700", letterSpacing: 0.5 },
+  viewBtnText: { color: colors.text, fontSize: 11, fontWeight: "700", letterSpacing: 0.3 },
   viewBtnTextActive: { color: colors.onPrimary, fontWeight: "800" },
+  // ----------------- Cockpit Home landing view -----------------
+  homeWrap: {
+    padding: spacing.xl,
+    gap: spacing.lg,
+    maxWidth: 1400,
+    width: "100%",
+    alignSelf: "center",
+  },
+  homeHeader: { gap: 6 },
+  homeTitle: {
+    color: colors.text,
+    fontSize: 28,
+    fontWeight: "800",
+    letterSpacing: -0.4,
+  },
+  homeSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  homeStatsRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+    flexWrap: "wrap",
+  },
+  homeStatCard: {
+    flex: 1,
+    minWidth: 180,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    backgroundColor: colors.card,
+  },
+  homeStatLabel: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    letterSpacing: 1,
+    fontWeight: "800",
+    marginBottom: 2,
+  },
+  homeStatValue: {
+    fontSize: 32,
+    fontWeight: "800",
+    fontFamily: fonts.number,
+    fontVariant: ["tabular-nums"],
+    letterSpacing: -0.5,
+  },
+  homeTilesRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+    flexWrap: "wrap",
+  },
+  homeTile: {
+    // Three-up on wide, wraps down on smaller widths.
+    flexBasis: "31%",
+    flexGrow: 1,
+    minWidth: 240,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    backgroundColor: colors.card,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    minHeight: 168,
+  },
+  homeTileIconChip: {
+    width: 60, height: 60, borderRadius: 30,
+    borderWidth: 1.5,
+    alignItems: "center", justifyContent: "center",
+    marginBottom: 4,
+  },
+  homeTileLabel: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "800",
+    letterSpacing: -0.2,
+    textAlign: "center",
+  },
+  homeTileHint: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 16,
+    textAlign: "center",
+    paddingHorizontal: 4,
+  },
   betaPill: {
     backgroundColor: colors.warning,
     borderRadius: 999,
