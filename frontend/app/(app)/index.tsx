@@ -163,35 +163,33 @@ export default function HomeScreen() {
 
   // Quick-action cards — the primary tasks a dealer/admin comes here to do.
   // These render as flip tiles between the hero video and the marketing
-  // tiles below. On tap they flip briefly, then navigate. This replaces
-  // most of what used to live in the bottom tab bar (Billing, History,
-  // Rewards, Dealers, Kredo, Give Cover) so the bar stays uncluttered
-  // (My Vehicles / Submit / Profile only).
+  // tiles below. Each tile has its own accent colour so the row reads
+  // like a legible dashboard at a glance.
   type QuickAction = {
     key: string;
     label: string;
     hint: string;
     icon: keyof typeof Ionicons.glyphMap;
     to: string;
-    tint?: string;
+    tint: string;
   };
   const isAdmin = user?.role === "admin";
   const isPricingAgent = !!user?.is_pricing_agent;
   const quickActions: QuickAction[] = isAdmin
     ? [
-        { key: "dealers", label: "Dealers", hint: "Approve, edit & manage accounts", icon: "people-outline", to: "/(app)/dealers" },
-        { key: "billing", label: "Billing", hint: "Invoices, credits & receipts", icon: "cash-outline", to: "/(app)/billing" },
-        { key: "rewards", label: "Rewards", hint: "Points, referrals & vouchers", icon: "gift-outline", to: "/(app)/rewards" },
-        { key: "history", label: "History", hint: "Priced & archived vehicles", icon: "time-outline", to: "/(app)/history" },
-        { key: "kredo", label: "Kredo", hint: "VIN reports & CarTrust tools", icon: "pricetag-outline", to: "/(app)/kredo-test" },
+        { key: "dealers", label: "Dealers", hint: "Approve, edit & manage accounts", icon: "people", to: "/(app)/dealers", tint: "#5B8DEF" },
+        { key: "billing", label: "Billing", hint: "Invoices, credits & receipts", icon: "cash", to: "/(app)/billing", tint: "#22C55E" },
+        { key: "rewards", label: "Rewards", hint: "Points, referrals & vouchers", icon: "gift", to: "/(app)/rewards", tint: "#F97316" },
+        { key: "history", label: "History", hint: "Priced & archived vehicles", icon: "time", to: "/(app)/history", tint: "#A78BFA" },
+        { key: "kredo", label: "Kredo", hint: "VIN reports & CarTrust tools", icon: "pricetag", to: "/(app)/kredo-test", tint: "#F43F5E" },
       ]
     : [
         ...(isPricingAgent
-          ? [{ key: "cover", label: "Give Cover", hint: "Price blind submissions · R10 each", icon: "shield-checkmark-outline" as const, to: "/(app)/cover", tint: colors.primary }]
+          ? [{ key: "cover", label: "Give Cover", hint: "Price blind submissions · R10 each", icon: "shield-checkmark" as const, to: "/(app)/cover", tint: "#5B8DEF" }]
           : []),
-        { key: "billing", label: "Billing", hint: "Invoices & report charges", icon: "cash-outline", to: "/(app)/billing" },
-        { key: "history", label: "History", hint: "Priced & archived vehicles", icon: "time-outline", to: "/(app)/history" },
-        { key: "rewards", label: "Rewards", hint: "Earn points & vouchers", icon: "gift-outline", to: "/(app)/rewards" },
+        { key: "billing", label: "Billing", hint: "Invoices & report charges", icon: "cash" as const, to: "/(app)/billing", tint: "#22C55E" },
+        { key: "history", label: "History", hint: "Priced & archived vehicles", icon: "time" as const, to: "/(app)/history", tint: "#A78BFA" },
+        { key: "rewards", label: "Rewards", hint: "Earn points & vouchers", icon: "gift" as const, to: "/(app)/rewards", tint: "#F97316" },
       ];
 
   // Live-loaded advertising slots — replace the hardcoded 3 ads on the
@@ -352,7 +350,7 @@ function NavFlipTile({
   label: string;
   hint: string;
   icon: keyof typeof Ionicons.glyphMap;
-  tint?: string;
+  tint: string;
   onNavigate: () => void;
   styles: ReturnType<typeof makeStyles>;
   colors: Palette;
@@ -388,21 +386,30 @@ function NavFlipTile({
       accessibilityLabel={label}
       style={({ pressed }) => [{ opacity: pressed ? 0.9 : 1 }]}
     >
-      <Animated.View style={[styles.quickCard, faceStyle]}>
+      <Animated.View style={[styles.quickCard, { borderColor: tint + "44" }, faceStyle]}>
+        {/* Soft coloured gradient wash that hints at each tile's identity
+            without dominating the card. Colour → transparent so the card
+            still reads as part of the surrounding surface. */}
+        <LinearGradient
+          colors={[tint + "33", tint + "0D", "transparent"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
+        {/* Large filled icon chip (centered) — the primary graphic hook.
+            Uses the tile's tint at 22% background + solid tint for the
+            icon so it pops on both light and dark themes. */}
         <View
           style={[
             styles.quickIconChip,
-            tint ? { backgroundColor: tint + "22", borderColor: tint + "55" } : null,
+            { backgroundColor: tint + "22", borderColor: tint + "77" },
           ]}
         >
-          <Ionicons name={icon} size={22} color={tint || colors.text} />
+          <Ionicons name={icon} size={28} color={tint} />
         </View>
-        <Text style={styles.quickCardLabel}>{label}</Text>
+        <Text style={[styles.quickCardLabel, { color: colors.text }]}>{label}</Text>
         <Text style={styles.quickCardHint} numberOfLines={2}>{hint}</Text>
-        <View style={styles.quickCardCta}>
-          <Text style={styles.quickCardCtaText}>Open</Text>
-          <Ionicons name="arrow-forward" size={12} color={colors.text} />
-        </View>
       </Animated.View>
     </Pressable>
   );
@@ -719,28 +726,39 @@ const makeStyles = (colors: Palette, isWide: boolean) => {
       borderWidth: 1,
       borderColor: colors.border,
       padding: isWide ? spacing.lg : spacing.md,
-      gap: 2,
-      // Guarantees a comfortably-tall tap target even with a short hint.
-      minHeight: 128,
+      // Centered layout — icon chip, label and hint all align down the
+      // vertical axis. Reads much cleaner than a left-aligned stack,
+      // especially on the wide-screen web layout.
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      overflow: "hidden",
+      minHeight: isWide ? 168 : 152,
     },
     quickIconChip: {
-      width: 40, height: 40, borderRadius: 20,
-      backgroundColor: colors.card,
-      borderWidth: 1, borderColor: colors.border,
+      // Bigger, bolder, more graphic — 56dp filled/outlined chip with the
+      // tile's tint colour instead of the previous neutral-grey chip.
+      width: 56, height: 56, borderRadius: 28,
+      borderWidth: 1.5,
       alignItems: "center", justifyContent: "center",
-      marginBottom: spacing.sm,
+      marginBottom: 4,
     },
     quickCardLabel: {
       color: colors.text,
-      fontSize: isWide ? 16 : 15,
+      fontSize: isWide ? 17 : 16,
       fontWeight: "800",
       letterSpacing: -0.2,
+      textAlign: "center",
     },
     quickCardHint: {
       color: colors.textSecondary,
       fontSize: 12,
       lineHeight: 16,
+      textAlign: "center",
+      paddingHorizontal: 4,
     },
+    // Legacy CTA styles (kept for backwards-compat in case a caller uses
+    // them elsewhere — unused by NavFlipTile now).
     quickCardCta: {
       flexDirection: "row",
       alignItems: "center",
