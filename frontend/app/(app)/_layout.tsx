@@ -49,12 +49,11 @@ export default function AppLayout() {
             // Web-specific tab-bar sizing. Expo Router's default
             // tabBarStyle inherits a mobile-first height (~49dp) that
             // doesn't reserve room for the label under the icon in
-            // browsers — the "Home / Profile / …" text was getting
-            // clipped at the bottom edge of the viewport. Bumping the
-            // height + bottom padding on web gives every label breathing
-            // room without changing the native app appearance.
+            // browsers — the "Home / Profile / …" labels + descenders
+            // were being clipped at the viewport bottom edge. Enough
+            // padding + height so descenders (y / p / g) have room.
             ...(Platform.OS === "web"
-              ? { height: 76, paddingTop: 8, paddingBottom: 12 }
+              ? { height: 84, paddingTop: 8, paddingBottom: 16 }
               : {}),
           },
           // Don't add extra padding on the individual item on web — it
@@ -64,10 +63,12 @@ export default function AppLayout() {
           tabBarLabelStyle: {
             fontSize: 11,
             fontWeight: "600",
-            // Explicit lineHeight + margin so labels don't get clipped
-            // on browsers that ignore RN Web's default label sizing.
+            // Web: give the label a full 16dp line-height so descenders
+            // (the "y" in "My Vehicles" was getting clipped) render in
+            // full. `includeFontPadding` is intentionally omitted so
+            // RN Web's natural font metrics apply.
             ...(Platform.OS === "web"
-              ? { marginTop: 2, marginBottom: 6, lineHeight: 14, includeFontPadding: false }
+              ? { marginTop: 2, marginBottom: 2, lineHeight: 16, minHeight: 16 }
               : {}),
           },
         }}

@@ -1,0 +1,50 @@
+{
+  "summary": "Verified bottom-tab label clipping fix on web preview at both desktop (1440x900) and mobile-web (390x844) viewports. All four tab labels ('Home', 'My Vehicles', 'Submit', 'Profile') now render fully — descenders ('y' in 'My Vehicles', 'p' in 'Profile') are visible with 24px clearance from the viewport bottom. Computed lineHeight=16px, rendered height=16px, minHeight=16px on every label at both viewports. Fix confirmed working.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/screenshots/desktop_full.png",
+    "/app/test_reports/screenshots/desktop_bottom.png",
+    "/app/test_reports/screenshots/mobile_full.png",
+    "/app/test_reports/screenshots/mobile_bottom.png"
+  ],
+  "measurements": {
+    "desktop_1440x900": {
+      "Home":        {"lineHeight": "16px", "fontSize": "11px", "height": 16, "minHeight": "16px", "bottom": 876, "viewportHeight": 900, "clearanceFromBottom": 24},
+      "My Vehicles": {"lineHeight": "16px", "fontSize": "11px", "height": 16, "minHeight": "16px", "bottom": 876, "viewportHeight": 900, "clearanceFromBottom": 24},
+      "Submit":      {"lineHeight": "16px", "fontSize": "11px", "height": 16, "minHeight": "16px", "bottom": 876, "viewportHeight": 900, "clearanceFromBottom": 24},
+      "Profile":     {"lineHeight": "16px", "fontSize": "11px", "height": 16, "minHeight": "16px", "bottom": 876, "viewportHeight": 900, "clearanceFromBottom": 24}
+    },
+    "mobile_390x844": {
+      "Home":        {"lineHeight": "16px", "fontSize": "11px", "height": 16, "minHeight": "16px", "bottom": 820, "viewportHeight": 844, "clearanceFromBottom": 24},
+      "My Vehicles": {"lineHeight": "16px", "fontSize": "11px", "height": 16, "minHeight": "16px", "bottom": 820, "viewportHeight": 844, "clearanceFromBottom": 24},
+      "Submit":      {"lineHeight": "16px", "fontSize": "11px", "height": 16, "minHeight": "16px", "bottom": 820, "viewportHeight": 844, "clearanceFromBottom": 24},
+      "Profile":     {"lineHeight": "16px", "fontSize": "11px", "height": 16, "minHeight": "16px", "bottom": 820, "viewportHeight": 844, "clearanceFromBottom": 24}
+    }
+  },
+  "acceptance_criteria_checks": {
+    "labels_fully_visible_desktop": true,
+    "labels_fully_visible_mobile": true,
+    "computed_lineHeight_gte_16px": true,
+    "computed_height_gte_16px": true,
+    "clearance_above_viewport_bottom": "24px on both viewports",
+    "descender_y_in_MyVehicles_not_clipped": true,
+    "descender_p_in_Profile_not_clipped": true
+  },
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fix in /app/frontend/app/(app)/_layout.tsx is well-scoped: web branch only (Platform.OS === 'web'), native path untouched. Container height 84 with paddingBottom 16 gives 24px of physical clearance below labels; labels themselves have symmetric line-box (16/16) and minHeight guarantees the box never collapses under font-metrics quirks."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only test)", "frontend": "100%"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Fix for bottom-tab label descender clipping on web is verified good. Container height 84 + paddingBottom 16 + tabBarLabelStyle lineHeight 16 + minHeight 16 produces labels with 24px clearance above the viewport bottom at both 1440x900 and 390x844. Screenshots at /app/test_reports/screenshots/ (desktop_bottom.png and mobile_bottom.png) show 'My Vehicles' and 'Profile' rendered with full descenders. No further changes required.",
+  "rca_of_issue": "Previous iterations set lineHeight=14 (too tight for 11px font) which caused RN-Web to compute a 9px content box and clip the descenders of 'y' (My Vehicles) and 'p' (Profile) against the tab bar's bottom edge. Iteration 40 bumps to lineHeight=16, adds minHeight=16 as a floor, and bumps container height to 84 with paddingBottom 16 — verified via getBoundingClientRect that each label now has height=16px and 24px of physical clearance from the viewport bottom, eliminating the clip."
+}
