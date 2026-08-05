@@ -98,16 +98,28 @@ export default function Profile() {
         <BrandLogo size="sm" linkToHome />
       </View>
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.md }]}>
-        {/* WhatsApp Business-style banner: cover photo + overlaid profile pic */}
+        {/* WhatsApp Business-style banner: cover photo + overlaid profile pic.
+            On desktop we need TWO wrappers — an outer positioning wrapper
+            (no overflow) so the avatar can hang below the banner, and an
+            inner clip wrapper with border-radius + overflow:hidden that
+            constrains the cover image only. Otherwise the avatar gets
+            clipped by the rounded banner. */}
         <View style={styles.banner}>
-          {user.cover_photo ? (
-            <Image source={{ uri: user.cover_photo }} style={styles.coverImg} resizeMode="cover" />
-          ) : (
-            <View style={styles.coverPlaceholder}>
-              <Ionicons name="business-outline" size={36} color={colors.textDisabled} />
-              <Text style={styles.placeholderText}>NO COVER PHOTO</Text>
-            </View>
-          )}
+          <View style={styles.coverClip}>
+            {user.cover_photo ? (
+              <Image
+                source={{ uri: user.cover_photo }}
+                style={styles.coverImg}
+                resizeMode="cover"
+                testID="profile-cover-img"
+              />
+            ) : (
+              <View style={styles.coverPlaceholder}>
+                <Ionicons name="business-outline" size={36} color={colors.textDisabled} />
+                <Text style={styles.placeholderText}>NO COVER PHOTO</Text>
+              </View>
+            )}
+          </View>
           <View style={styles.avatarWrap}>
             {user.profile_pic ? (
               <Image source={{ uri: user.profile_pic }} style={styles.avatarImg} testID="profile-avatar-img" />
@@ -330,20 +342,33 @@ const makeStyles = (colors: Palette, isWide: boolean) => StyleSheet.create({
   scroll: { padding: 0 },
 
   banner: {
-    // Desktop web: cap the banner width, add margins + rounded corners so
-    // the cover photo doesn't stretch edge-to-edge on wide monitors
-    // (its aspect ratio was designed for a mobile viewport). Mobile
-    // stays as a full-bleed 160dp banner.
+    // Outer positioning wrapper. On desktop we constrain the width and
+    // centre the banner, but crucially we DO NOT clip overflow here so
+    // that the avatar (position:absolute, bottom:-50) can hang below.
+    // The rounded/clipped cover image lives inside `coverClip`.
     ...(isWide
       ? {
-          height: 240,
           maxWidth: 1100,
           width: "100%",
           alignSelf: "center",
           marginTop: spacing.md,
           marginHorizontal: spacing.lg,
+        }
+      : {}),
+    marginBottom: 60,
+    position: "relative",
+  },
+  coverClip: {
+    // Inner container that actually holds the cover image (or placeholder)
+    // and clips it to a rounded rectangle on desktop / full-bleed banner
+    // on mobile.
+    width: "100%",
+    backgroundColor: colors.card,
+    overflow: "hidden",
+    ...(isWide
+      ? {
+          height: 220,
           borderRadius: radius.lg,
-          overflow: "hidden",
           borderWidth: 1,
           borderColor: colors.border,
         }
@@ -352,9 +377,6 @@ const makeStyles = (colors: Palette, isWide: boolean) => StyleSheet.create({
           borderBottomWidth: 1,
           borderBottomColor: colors.border,
         }),
-    backgroundColor: colors.card,
-    marginBottom: 60,
-    position: "relative",
   },
   coverImg: {
     width: "100%",
@@ -366,10 +388,15 @@ const makeStyles = (colors: Palette, isWide: boolean) => StyleSheet.create({
   avatarWrap: {
     position: "absolute",
     bottom: -50,
-    left: spacing.lg,
+    left: isWide ? spacing.lg * 2 : spacing.lg,
     padding: 4,
     backgroundColor: colors.bg,
     borderRadius: 60,
+    // Elevate above the cover clip so we don't get clipped by any parent
+    // stacking context. On web this also helps ensure the avatar renders
+    // above the banner border/shadow.
+    zIndex: 2,
+    ...(Platform.OS === "web" ? { boxShadow: "0 2px 8px rgba(0,0,0,0.15)" } as any : { elevation: 4 }),
   },
   avatarImg: {
     width: 100,
