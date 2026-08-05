@@ -485,6 +485,65 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
   const pricedCount = counts.priced;
   const archivedCount = counts.archived;
 
+  // -------- Month-to-date roll-up for the Cockpit Home landing --------
+  // Fetched from /api/admin/stats/home-mtd. Loaded once when the Home view
+  // is first rendered and refreshed each time the admin lands on Home.
+  type MtdStats = {
+    period: { start: string; end: string; month: string };
+    evaluations: { priced_count: number; billable_count: number };
+    reports: {
+      count: number;
+      amount_zar: number;
+      by_type: { type: string; name: string; count: number; amount_zar: number }[];
+    };
+    covers: { count: number; total_zar: number };
+    billing: {
+      submission_amount_zar: number;
+      report_amount_zar: number;
+      cover_fee_amount_zar: number;
+      cover_fee_count: number;
+      advertising_amount_zar: number;
+      advertising_count: number;
+      total_zar: number;
+      submission_fee_zar: number;
+    };
+  };
+  const [mtd, setMtd] = useState<MtdStats | null>(null);
+  const [mtdLoading, setMtdLoading] = useState(false);
+
+  const loadMtd = useCallback(async () => {
+    setMtdLoading(true);
+    try {
+      const data = await apiFetch("/api/admin/stats/home-mtd");
+      setMtd(data as MtdStats);
+    } catch (e) {
+      console.log(e);
+    } finally {
+      setMtdLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (view === "home") loadMtd();
+  }, [view, loadMtd]);
+
+  const monthLabel = useMemo(() => {
+    if (!mtd?.period?.month) return "This month";
+    try {
+      const [y, m] = mtd.period.month.split("-").map((x) => parseInt(x, 10));
+      const d = new Date(Date.UTC(y, m - 1, 1));
+      return d.toLocaleString(undefined, { month: "long", year: "numeric" });
+    } catch {
+      return "This month";
+    }
+  }, [mtd]);
+
+  const fmtZAR = useCallback((v: number | null | undefined) => {
+    const n = typeof v === "number" && isFinite(v) ? v : 0;
+    return `R ${n.toLocaleString("en-ZA", { maximumFractionDigits: 0 })}`;
+  }, []);
+
+
   return (
     <View style={styles.root}>
       {/* Top bar */}
@@ -620,6 +679,167 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
               <Text style={[styles.homeStatValue, { color: colors.textSecondary }]}>{archivedCount}</Text>
             </View>
           </View>
+
+          {/* Month-to-date roll-up */}
+          <View style={styles.mtdSection} testID="cockpit-mtd-section">
+            <View style={styles.mtdSectionHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.mtdSectionTitle}>Month to Date</Text>
+                <Text style={styles.mtdSectionSubtitle}>
+                  1 {monthLabel} to today
+                  {mtdLoading ? "  ·  refreshing…" : ""}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={loadMtd}
+                style={styles.mtdRefreshBtn}
+                testID="cockpit-mtd-refresh"
+                accessibilityLabel="Refresh month-to-date stats"
+              >
+                <Ionicons name="refresh" size={14} color={colors.text} />
+                <Text style={styles.mtdRefreshText}>Refresh</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.mtdKpiRow}>
+              {/* Amount Billed — full-width headline card on top */}
+              <View style={[styles.mtdKpiCard, styles.mtdKpiCardWide, { borderColor: BRAND.color + "77" }]} testID="cockpit-mtd-billed">
+                <View style={styles.mtdKpiHeader}>
+                  <Ionicons name="cash-outline" size={16} color={BRAND.color} />
+                  <Text style={styles.mtdKpiLabel}>AMOUNT BILLED</Text>
+                </View>
+                <Text style={[styles.mtdKpiValue, { color: colors.text }]}>
+                  {fmtZAR(mtd?.billing.total_zar)}
+                </Text>
+                {mtd ? (
+                  <View style={styles.mtdBreakdown}>
+                    <View style={styles.mtdBreakdownRow}>
+                      <Text style={styles.mtdBreakdownLabel}>
+                        Submissions
+                        <Text style={styles.mtdBreakdownMeta}>
+                          {"  ·  "}{mtd.evaluations.billable_count} × R
+                          {mtd.billing.submission_fee_zar.toFixed(0)}
+                        </Text>
+                      </Text>
+                      <Text style={styles.mtdBreakdownValue}>
+                        {fmtZAR(mtd.billing.submission_amount_zar)}
+                      </Text>
+                    </View>
+                    <View style={styles.mtdBreakdownRow}>
+                      <Text style={styles.mtdBreakdownLabel}>
+                        VIN Reports
+                        <Text style={styles.mtdBreakdownMeta}>
+                          {"  ·  "}{mtd.reports.count} ordered
+                        </Text>
+                      </Text>
+                      <Text style={styles.mtdBreakdownValue}>
+                        {fmtZAR(mtd.billing.report_amount_zar)}
+                      </Text>
+                    </View>
+                    <View style={styles.mtdBreakdownRow}>
+                      <Text style={styles.mtdBreakdownLabel}>
+                        Cover Fees
+                        <Text style={styles.mtdBreakdownMeta}>
+                          {"  ·  "}{mtd.billing.cover_fee_count} × R10
+                        </Text>
+                      </Text>
+                      <Text style={styles.mtdBreakdownValue}>
+                        {fmtZAR(mtd.billing.cover_fee_amount_zar)}
+                      </Text>
+                    </View>
+                    <View style={styles.mtdBreakdownRow}>
+                      <Text style={styles.mtdBreakdownLabel}>
+                        Advertising
+                        <Text style={styles.mtdBreakdownMeta}>
+                          {"  ·  "}{mtd.billing.advertising_count} slot-month
+                          {mtd.billing.advertising_count === 1 ? "" : "s"}
+                        </Text>
+                      </Text>
+                      <Text style={styles.mtdBreakdownValue}>
+                        {fmtZAR(mtd.billing.advertising_amount_zar)}
+                      </Text>
+                    </View>
+                  </View>
+                ) : (
+                  <Text style={styles.mtdBreakdownMeta}>Loading…</Text>
+                )}
+                <TouchableOpacity
+                  style={styles.mtdCardCta}
+                  onPress={() => setView("billing")}
+                  testID="cockpit-mtd-open-billing"
+                >
+                  <Text style={styles.mtdCardCtaText}>Open Billing</Text>
+                  <Ionicons name="chevron-forward" size={12} color={BRAND.color} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Second KPI row: three equal cards for Evaluations · Reports · Covers */}
+            <View style={styles.mtdKpiRow}>
+              {/* Evaluations */}
+              <View style={[styles.mtdKpiCard, { borderColor: colors.success + "55" }]} testID="cockpit-mtd-evaluations">
+                <View style={styles.mtdKpiHeader}>
+                  <Ionicons name="checkmark-done" size={16} color={colors.success} />
+                  <Text style={styles.mtdKpiLabel}>EVALUATIONS</Text>
+                </View>
+                <Text style={[styles.mtdKpiValue, { color: colors.success }]}>
+                  {mtd?.evaluations.priced_count ?? "—"}
+                </Text>
+                <Text style={styles.mtdKpiMeta}>
+                  {mtd
+                    ? `${mtd.evaluations.billable_count} billable (in 24h SLA)`
+                    : "Vehicles priced this month"}
+                </Text>
+              </View>
+
+              {/* Reports Ordered */}
+              <View style={[styles.mtdKpiCard, { borderColor: "#F43F5E55" }]} testID="cockpit-mtd-reports">
+                <View style={styles.mtdKpiHeader}>
+                  <Ionicons name="document-text-outline" size={16} color="#F43F5E" />
+                  <Text style={styles.mtdKpiLabel}>REPORTS ORDERED</Text>
+                </View>
+                <Text style={[styles.mtdKpiValue, { color: "#F43F5E" }]}>
+                  {mtd?.reports.count ?? "—"}
+                </Text>
+                <Text style={styles.mtdKpiMeta}>
+                  {mtd
+                    ? `${fmtZAR(mtd.reports.amount_zar)} in report fees`
+                    : "VIN & service-history lookups"}
+                </Text>
+                {mtd && mtd.reports.by_type.length > 0 ? (
+                  <View style={styles.mtdMiniList}>
+                    {mtd.reports.by_type.slice(0, 4).map((r) => (
+                      <View key={r.type} style={styles.mtdMiniListRow}>
+                        <Text style={styles.mtdMiniListLabel} numberOfLines={1}>
+                          {r.name}
+                        </Text>
+                        <Text style={styles.mtdMiniListValue}>
+                          {r.count} · {fmtZAR(r.amount_zar)}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+              </View>
+
+              {/* Cars Covered */}
+              <View style={[styles.mtdKpiCard, { borderColor: "#A78BFA55" }]} testID="cockpit-mtd-covers">
+                <View style={styles.mtdKpiHeader}>
+                  <Ionicons name="shield-checkmark-outline" size={16} color="#A78BFA" />
+                  <Text style={styles.mtdKpiLabel}>CARS COVERED</Text>
+                </View>
+                <Text style={[styles.mtdKpiValue, { color: "#A78BFA" }]}>
+                  {mtd?.covers.count ?? "—"}
+                </Text>
+                <Text style={styles.mtdKpiMeta}>
+                  {mtd
+                    ? `${fmtZAR(mtd.covers.total_zar)} total cover value`
+                    : "Pricing-agent covers placed"}
+                </Text>
+              </View>
+            </View>
+          </View>
+
           <View style={styles.homeTilesRow}>
             {[
               { key: "submissions", label: "Submissions", hint: "Price & review dealer submissions", icon: "list" as const, tint: "#5B8DEF" },
@@ -1925,6 +2145,163 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     fontFamily: fonts.number,
     fontVariant: ["tabular-nums"],
     letterSpacing: -0.5,
+  },
+  // ----- MTD (Month-to-date) roll-up section -----
+  mtdSection: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    backgroundColor: colors.card,
+    gap: spacing.md,
+  },
+  mtdSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  mtdSectionTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "800",
+    letterSpacing: -0.2,
+  },
+  mtdSectionSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  mtdRefreshBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  mtdRefreshText: {
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+  },
+  mtdKpiRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.md,
+  },
+  mtdKpiCard: {
+    flexBasis: "23%",
+    flexGrow: 1,
+    minWidth: 200,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    backgroundColor: colors.paper,
+    gap: 6,
+  },
+  mtdKpiCardWide: {
+    // "Amount Billed" is the headline card — always full width on its own
+    // row so the R-value + billing breakdown gets breathing room.
+    flexBasis: "100%",
+    flexGrow: 1,
+    minWidth: 280,
+  },
+  mtdKpiHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  mtdKpiLabel: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    letterSpacing: 1,
+    fontWeight: "800",
+  },
+  mtdKpiValue: {
+    fontSize: 28,
+    fontWeight: "800",
+    fontFamily: fonts.number,
+    fontVariant: ["tabular-nums"],
+    letterSpacing: -0.4,
+    marginTop: 2,
+  },
+  mtdKpiMeta: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  mtdBreakdown: {
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    gap: 6,
+  },
+  mtdBreakdownRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  mtdBreakdownLabel: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "600",
+    flex: 1,
+  },
+  mtdBreakdownMeta: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "500",
+  },
+  mtdBreakdownValue: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "800",
+    fontFamily: fonts.number,
+    fontVariant: ["tabular-nums"],
+  },
+  mtdMiniList: {
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    gap: 4,
+  },
+  mtdMiniListRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  mtdMiniListLabel: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    flex: 1,
+  },
+  mtdMiniListValue: {
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
+  mtdCardCta: {
+    marginTop: spacing.sm,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    alignSelf: "flex-start",
+  },
+  mtdCardCtaText: {
+    color: BRAND.color,
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
   },
   homeTilesRow: {
     flexDirection: "row",

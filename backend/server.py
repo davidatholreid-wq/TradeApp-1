@@ -5418,6 +5418,139 @@ async def admin_billing(
     }
 
 
+@api_router.get("/admin/stats/home-mtd")
+async def admin_home_mtd_stats(current: dict = Depends(require_admin)):
+    """Month-to-date roll-up for the Admin Cockpit Home screen.
+
+    Covers the window from the 1st of the current UTC month through *now*
+    and returns:
+      - Evaluations priced this month (with the billable-count subset).
+      - Reports ordered (count + amount, plus a per-type breakdown).
+      - Cars covered by pricing agents (count + total cover value).
+      - Full billing breakdown:
+            * submissions  (R50 × billable submissions)
+            * VIN reports  (sum of report_orders that are third-party lookups)
+            * cover fees   (R10 × initial cover placements)
+            * advertising  (R1 000 × active advertising placements)
+    """
+    now = datetime.now(timezone.utc)
+    start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+    start_iso = start.isoformat()
+    now_iso = now.isoformat()
+
+    # --- 1) Evaluations (priced submissions) in the window ------------
+    subs_cursor = db.submissions.find(
+        {"status": "priced", "priced_at": {"$gte": start_iso}},
+        {"_id": 0, "priced_at": 1, "created_at": 1, "status": 1},
+    )
+    priced_count = 0
+    billable_count = 0
+    async for s in subs_cursor:
+        priced_at = parse_iso(s.get("priced_at"))
+        if not priced_at or priced_at < start:
+            continue
+        priced_count += 1
+        if is_billable(s):
+            billable_count += 1
+    submission_amount = billable_count * BILLING_FEE_ZAR
+
+    # --- 2) report_orders in the window (VIN reports + cover + ads) ---
+    reports_cursor = db.report_orders.find(
+        {"ordered_at": {"$gte": start_iso}},
+        {"_id": 0, "type": 1, "name": 1, "cost_zar": 1, "ordered_at": 1},
+    )
+    report_count = 0
+    report_amount = 0.0
+    cover_fee_count = 0
+    cover_fee_amount = 0.0
+    ad_count = 0
+    ad_amount = 0.0
+    by_type_counts: dict = {}
+    by_type_amount: dict = {}
+    by_type_name: dict = {}
+    async for r in reports_cursor:
+        t = r.get("type") or "unknown"
+        amt = float(r.get("cost_zar") or 0)
+        if t == "cover_offer":
+            cover_fee_count += 1
+            cover_fee_amount += amt
+        elif t == "advertising":
+            ad_count += 1
+            ad_amount += amt
+        else:
+            report_count += 1
+            report_amount += amt
+            by_type_counts[t] = by_type_counts.get(t, 0) + 1
+            by_type_amount[t] = by_type_amount.get(t, 0.0) + amt
+            # Prefer catalog name → order-level name → raw type key
+            by_type_name[t] = (
+                (REPORT_CATALOG.get(t) or {}).get("name")
+                or r.get("name")
+                or t.replace("_", " ").title()
+            )
+
+    reports_by_type = [
+        {
+            "type": t,
+            "name": by_type_name.get(t, t),
+            "count": by_type_counts[t],
+            "amount_zar": round(by_type_amount[t], 2),
+        }
+        for t in sorted(by_type_counts.keys(), key=lambda k: by_type_amount[k], reverse=True)
+    ]
+
+    # --- 3) Cars covered (cover_offers created in the window) ---------
+    covers_cursor = db.cover_offers.find(
+        {"created_at": {"$gte": start_iso}},
+        {"_id": 0, "price_zar": 1, "created_at": 1},
+    )
+    covers_count = 0
+    covers_total_zar = 0
+    async for c in covers_cursor:
+        covers_count += 1
+        try:
+            covers_total_zar += int(c.get("price_zar") or 0)
+        except (TypeError, ValueError):
+            continue
+
+    # --- 4) Roll everything up ---------------------------------------
+    total_billed = round(
+        submission_amount + report_amount + cover_fee_amount + ad_amount, 2
+    )
+
+    return {
+        "period": {
+            "start": start_iso,
+            "end": now_iso,
+            "month": f"{start.year:04d}-{start.month:02d}",
+        },
+        "evaluations": {
+            "priced_count": priced_count,
+            "billable_count": billable_count,
+        },
+        "reports": {
+            "count": report_count,
+            "amount_zar": round(report_amount, 2),
+            "by_type": reports_by_type,
+        },
+        "covers": {
+            "count": covers_count,
+            "total_zar": covers_total_zar,
+        },
+        "billing": {
+            "submission_amount_zar": round(submission_amount, 2),
+            "report_amount_zar": round(report_amount, 2),
+            "cover_fee_amount_zar": round(cover_fee_amount, 2),
+            "cover_fee_count": cover_fee_count,
+            "advertising_amount_zar": round(ad_amount, 2),
+            "advertising_count": ad_count,
+            "total_zar": total_billed,
+            "submission_fee_zar": BILLING_FEE_ZAR,
+        },
+    }
+
+
+
 # ============ Home advertising slots ============
 # Ten fixed slots (1..10). Admin uploads an image per slot, assigns a
 # dealership and a duration in months. Billing is R1000 per placeholder
