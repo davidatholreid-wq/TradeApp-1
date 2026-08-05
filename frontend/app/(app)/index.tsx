@@ -161,6 +161,71 @@ export default function HomeScreen() {
     }, [heroPlayer]),
   );
 
+  // Fetch the running "Value of Cars Covered in the last 30 Days" figure
+  // so it can be surfaced on the Earn Rewards flip banner. Refreshed on
+  // every focus so the number stays live without needing a hard reload.
+  const [coversTotal30d, setCoversTotal30d] = useState<number | null>(null);
+  const loadCoversTotal = useCallback(async () => {
+    try {
+      const r = await apiFetch("/api/stats/covers-30d");
+      const t = Number((r as any)?.total_zar);
+      if (Number.isFinite(t)) setCoversTotal30d(t);
+    } catch {
+      // Non-fatal — the tile will simply hide the stat row on failure.
+    }
+  }, []);
+  useEffect(() => { loadCoversTotal(); }, [loadCoversTotal]);
+  useFocusEffect(useCallback(() => { loadCoversTotal(); }, [loadCoversTotal]));
+
+  // Live-loaded advertising slots — replace the hardcoded 3 ads on the
+  // "Advertising" tile with whatever the admin has configured via the
+  // Admin Cockpit → Advertising module. If none are configured yet we
+  // fall back to the bundled sample ads so the tile is never empty.
+  // NOTE: declared BEFORE `dynamicTiles` (below) so its useMemo dep array
+  // can reference `activeAds` without hitting a Temporal-Dead-Zone error
+  // ("Cannot access 'activeAds' before initialization").
+  type ActiveAd = { slot_number: number; image_base64: string; dealership_name?: string | null };
+  const [activeAds, setActiveAds] = useState<ActiveAd[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await apiFetch("/api/ads/active");
+        if (!cancelled && Array.isArray(r?.ads)) setActiveAds(r.ads);
+      } catch { /* ignore — falls back to bundled sample ads */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Dynamic tile list — inject two live pieces of state:
+  // (1) the "Value of Cars Covered in the last 30 Days" running figure
+  //     onto the Earn Rewards flip banner as its FIRST bullet, and
+  // (2) the admin-managed active ads onto the Advertising tile.
+  const dynamicTiles = useMemo<Tile[]>(() => {
+    return BASE_TILES.map((t) => {
+      if (t.key === "rewards" && coversTotal30d != null) {
+        const zar = `R${coversTotal30d.toLocaleString("en-ZA")}`;
+        return {
+          ...t,
+          points: [
+            { icon: "trending-up", text: `Value of Cars Covered in the last 30 Days: ${zar}` },
+            ...(t.points || []),
+          ],
+        };
+      }
+      if (t.key === "ads" && activeAds.length) {
+        return {
+          ...t,
+          ads: activeAds.map((a) => ({
+            image: { uri: a.image_base64 },
+            label: a.dealership_name || undefined,
+          })),
+        };
+      }
+      return t;
+    });
+  }, [coversTotal30d, activeAds]);
+
   // Quick-action cards — the primary tasks a dealer/admin comes here to do.
   // These render as flip tiles between the hero video and the marketing
   // tiles below. Each tile has its own accent colour so the row reads
@@ -197,36 +262,7 @@ export default function HomeScreen() {
         { key: "rewards", label: "Rewards", hint: "Earn points & vouchers", icon: "gift" as const, to: "/(app)/rewards", tint: "#F97316" },
       ];
 
-  // Live-loaded advertising slots — replace the hardcoded 3 ads on the
-  // "Advertising" tile with whatever the admin has configured via the
-  // Admin Cockpit → Advertising module. If none are configured yet we
-  // fall back to the bundled sample ads so the tile is never empty.
-  type ActiveAd = { slot_number: number; image_base64: string; dealership_name?: string | null };
-  const [activeAds, setActiveAds] = useState<ActiveAd[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await apiFetch("/api/ads/active");
-        if (!cancelled && Array.isArray(r?.ads)) setActiveAds(r.ads);
-      } catch { /* ignore — falls back to bundled sample ads */ }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  const tiles: Tile[] = useMemo(() => {
-    if (!activeAds.length) return BASE_TILES;
-    return BASE_TILES.map((t) => {
-      if (t.key !== "ads") return t;
-      return {
-        ...t,
-        ads: activeAds.map((a) => ({
-          image: { uri: a.image_base64 },
-          label: a.dealership_name || undefined,
-        })),
-      };
-    });
-  }, [activeAds]);
+  const tiles: Tile[] = dynamicTiles;
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>

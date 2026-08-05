@@ -1,0 +1,52 @@
+{
+  "summary": "Tested GET /api/stats/covers-30d + the 'Value of Cars Covered in the last 30 Days' bullet on the Earn Rewards flip banner. Backend: 4/4 pytest tests PASS — endpoint is auth-gated, returns the exact expected shape and the seeded values total_zar=11757000, count=18. Frontend: initial load was BLOCKED by a red-screen 'Cannot access activeAds before initialization' error (TDZ ordering bug in /app/frontend/app/(app)/index.tsx line 207 — dynamicTiles useMemo referenced activeAds in its dep array before activeAds was declared). Fixed by moving the activeAds useState+useEffect ABOVE the dynamicTiles useMemo. After the fix the home page loads, the Earn Rewards flip banner shows the new FIRST bullet, the four original bullets and footer still appear (7 pagination dots), and the Trade with Confidence + Advertising tiles are unaffected. NUMBER FORMAT ISSUE: user asked for a COMMA thousands separator ('R11,757,000') but the code uses `toLocaleString('en-ZA')` which in the en-ZA locale actually outputs a SPACE separator, so the bullet renders as 'R11 757 000' — see screenshot iter42_earn_bullet1.png.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "HomeScreen / Earn Rewards flip banner",
+        "issue": "Red-screen 'Cannot access activeAds before initialization' (TDZ) — dynamicTiles useMemo referenced activeAds in its dep array before activeAds was declared. Reference: /app/frontend/app/(app)/index.tsx old lines 204-207 vs 250. FIXED by testing agent — activeAds useState+useEffect moved above dynamicTiles.",
+        "testID": "n/a",
+        "priority": "CRITICAL (fixed)"
+      },
+      {
+        "component": "HomeScreen / Earn Rewards flip banner — covers-30d bullet",
+        "issue": "Number renders as 'R11 757 000' (SPACE separators) instead of the requested 'R11,757,000' (COMMA separators). Root cause: `coversTotal30d.toLocaleString('en-ZA')` — en-ZA locale uses a space thousands-separator. To match the user's spec, use `toLocaleString('en-US')` OR do explicit formatting e.g. `coversTotal30d.toString().replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',')`. Reference: /app/frontend/app/(app)/index.tsx line ~207.",
+        "testID": "n/a",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_covers_30d_stat.py",
+    "/app/test_reports/pytest/iteration_42_covers_30d.xml",
+    "/app/test_reports/screenshots/iter42_earn_front.png",
+    "/app/test_reports/screenshots/iter42_earn_bullet1.png",
+    "/app/test_reports/screenshots/iter42_final.png",
+    "/app/test_reports/screenshots/iter42_home_ok.png"
+  ],
+  "action_items": [
+    "Change the thousands-separator format on the Earn Rewards covers-30d bullet — user asked for COMMAS (R11,757,000) but toLocaleString('en-ZA') produces SPACES (R11 757 000). Suggest `toLocaleString('en-US')` or a manual regex-based comma formatter in /app/frontend/app/(app)/index.tsx around line 207.",
+    "Review the TDZ fix I applied (activeAds moved above dynamicTiles). Consider making dynamicTiles also useMemo-safely reference activeAds via a stable pattern in case the file is refactored again."
+  ],
+  "critical_code_review_comments": [
+    "TDZ hazard in HomeScreen: React Hook dependency arrays are evaluated inline on every render, so any variable referenced there must be declared earlier in the function body. The recent covers-30d change re-ordered code and put activeAds *after* dynamicTiles, tripping the TDZ error. Consider a linting rule (react-hooks/exhaustive-deps + no-use-before-define) to catch this class of bug at build time.",
+    "toLocaleString('en-ZA') is technically the correct locale for South African users, but its default thousands-separator is U+00A0 (non-breaking space), not a comma. If the product wants a comma explicitly, either force 'en-US' or use Intl.NumberFormat with an explicit config."
+  ],
+  "updated_files": [
+    "/app/frontend/app/(app)/index.tsx (moved activeAds useState+useEffect above dynamicTiles useMemo to fix TDZ red-screen)",
+    "/app/backend/tests/test_covers_30d_stat.py (new — 4 pytest cases)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "90% (feature works but number-separator format does not match user spec)"},
+  "seed_data_creation": "None — used existing seeded priced submissions (18 subs, R11,757,000 total)",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Login: dave@fourbuy.co.za / Dave1234! (may need admin reset). Endpoint GET /api/stats/covers-30d returns {total_zar, count, since} — auth required. On the home screen tap the 'Earn Rewards' flip tile once to see the covers-30d bullet as the FIRST interior page; there are 7 pagination dots (front + 5 bullets + footer). Watch out: locale 'en-ZA' formats thousands with a SPACE, not a comma.",
+  "rca_of_issue": "Two issues observed: (1) TDZ red-screen — Reproduction: log in as any dealer, navigate to /, see 'Uncaught Error: Cannot access activeAds before initialization' at index.tsx:207. Root cause: dynamicTiles useMemo dep-array `[coversTotal30d, activeAds]` (line 207) evaluated before `const [activeAds, setActiveAds] = useState<ActiveAd[]>([])` (line 250) at runtime. Mitigation applied: re-ordered so activeAds is declared before dynamicTiles. (2) Number format — Reproduction: tap the Earn Rewards tile; the new bullet reads 'Value of Cars Covered in the last 30 Days: R11 757 000' (space separators) rather than the user-requested 'R11,757,000' (comma separators). Root cause: toLocaleString('en-ZA') uses a non-breaking-space as thousands separator per the SA locale rule. Mitigation: swap to 'en-US' or a manual regex-based comma formatter — left for main agent to decide, as it's a business-logic/copy call, not a code bug."
+}

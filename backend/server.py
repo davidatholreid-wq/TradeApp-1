@@ -871,6 +871,46 @@ async def login(payload: LoginRequest):
         },
     }
 
+@api_router.get("/stats/covers-30d")
+async def public_covers_last_30_days(current: dict = Depends(get_current_user)):
+    """Sum of Fourbuy Cover Prices given to dealers in the last 30 days.
+
+    Rendered on the home-page "Earn Rewards" flip banner so every user
+    sees a live running figure of how much cover Fourbuy has issued
+    recently. Uses `priced_at` and the dealer-facing offer amount
+    (`price` / `offer_to_dealer_zar` / `admin_pricing.offer_to_dealer_zar`).
+    Auth is required (uses `get_current_user`) so the number stays behind
+    the login wall.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    cutoff_iso = cutoff.isoformat()
+    total = 0
+    count = 0
+    cursor = db.submissions.find(
+        {
+            "status": "priced",
+            "priced_at": {"$gte": cutoff_iso},
+        },
+        {"_id": 0, "price": 1, "offer_to_dealer_zar": 1, "admin_pricing": 1, "priced_at": 1},
+    )
+    async for s in cursor:
+        # Prefer the explicit `price` field (top-level, set when the admin
+        # priced the vehicle); fall back to `offer_to_dealer_zar` and then
+        # to the nested `admin_pricing.offer_to_dealer_zar`.
+        amt = s.get("price") or s.get("offer_to_dealer_zar")
+        if amt is None and isinstance(s.get("admin_pricing"), dict):
+            amt = s["admin_pricing"].get("offer_to_dealer_zar")
+        if amt is None:
+            continue
+        try:
+            total += int(amt)
+            count += 1
+        except (TypeError, ValueError):
+            continue
+    return {"total_zar": total, "count": count, "since": cutoff_iso}
+
+
+
 
 @api_router.get("/auth/me")
 async def me(current: dict = Depends(get_current_user)):
