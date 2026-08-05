@@ -40,9 +40,9 @@ const AD_MERCEDES = require("../../assets/brands/ad_mercedes.jpeg");
 
 // Lifestyle image for the "Trade with Confidence" hero tile front page.
 const HERO_TILE_LIFESTYLE = require("../../assets/brands/hero_lifestyle.jpg");
-// Lifestyle image for the "Earn Rewards" tile front page — dealer holding a
-// phone showing a Takealot voucher earned through the app.
-const REWARDS_TILE_LIFESTYLE = require("../../assets/brands/rewards_lifestyle.jpg");
+// Note: the "Earn Rewards" flip banner was removed at the user's request
+// (the rewards content now lives only on the /rewards module). The
+// rewards_lifestyle.jpg asset is kept in the repo but no longer imported.
 
 type PagePoint = { icon?: keyof typeof Ionicons.glyphMap; text: string };
 type PageAd = { image: number | { uri: string }; label?: string };
@@ -74,20 +74,6 @@ const BASE_TILES: Tile[] = [
       { icon: "shield-checkmark", text: "Fourbuy Car Buying Co, will issue you a guarantee (Subject to final inspection)" },
       { icon: "business", text: "Backed by the Fourbuy Group so you can commit to your customer TODAY!" },
       { icon: "cash", text: "One Flat Submission Fee — Cover Price holds for 14-Days" },
-    ],
-  },
-  {
-    key: "rewards",
-    icon: "gift",
-    title: "Earn Rewards",
-    subtitle: "Get paid for every submission — tap to see how",
-    footer: "Yours to keep — No Expiry, No Fineprint",
-    frontImage: REWARDS_TILE_LIFESTYLE,
-    points: [
-      { icon: "cash", text: "Earn 1 Point (R10) for every valuation submission" },
-      { icon: "people", text: "Refer another dealership with your code and earn an additional 1 Point (R10) for every valuation they submit (FOR LIFE)" },
-      { icon: "gift", text: "Redeem your points in-app for R500 TakeAlot Vouchers, sent directly to your email" },
-      { icon: "wallet", text: "Track your balance and referral link in the Rewards Tab" },
     ],
   },
   {
@@ -197,25 +183,11 @@ export default function HomeScreen() {
     return () => { cancelled = true; };
   }, []);
 
-  // Dynamic tile list — inject two live pieces of state:
-  // (1) the "Value of Cars Covered in the last 30 Days" running figure
-  //     onto the Earn Rewards flip banner as its FIRST bullet, and
-  // (2) the admin-managed active ads onto the Advertising tile.
+  // Dynamic tile list — inject the admin-managed active ads onto the
+  // Advertising tile. The "value of cars covered" figure is now rendered
+  // as its own standalone banner above the tile row (see below).
   const dynamicTiles = useMemo<Tile[]>(() => {
     return BASE_TILES.map((t) => {
-      if (t.key === "rewards" && coversTotal30d != null) {
-        // The user asked for a "comma separator at each thousand" — the
-        // en-ZA locale legitimately uses a non-breaking-space, so we
-        // use en-US which produces the requested "R11,757,000" format.
-        const zar = `R${coversTotal30d.toLocaleString("en-US")}`;
-        return {
-          ...t,
-          points: [
-            { icon: "trending-up", text: `Value of Cars Covered in the last 30 Days: ${zar}` },
-            ...(t.points || []),
-          ],
-        };
-      }
       if (t.key === "ads" && activeAds.length) {
         return {
           ...t,
@@ -227,7 +199,7 @@ export default function HomeScreen() {
       }
       return t;
     });
-  }, [coversTotal30d, activeAds]);
+  }, [activeAds]);
 
   // Quick-action cards — the primary tasks a dealer/admin comes here to do.
   // These render as flip tiles between the hero video and the marketing
@@ -347,6 +319,38 @@ export default function HomeScreen() {
               </View>
             ))}
           </View>
+
+          {/* Live "Value of Cars Covered in the last 30 Days" banner —
+              standalone stat card that sits above the marketing tiles.
+              Deliberately NOT a flip tile / not tied to rewards — it's a
+              running figure of Fourbuy's real cover activity, formatted
+              with comma thousand-separators (en-US). Hidden while the
+              stat is loading so the layout doesn't jump. */}
+          {coversTotal30d != null ? (
+            <View style={styles.coversBannerWrap}>
+              <LinearGradient
+                colors={[colors.primary + "55", colors.primary + "22", "transparent"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+                pointerEvents="none"
+              />
+              <View style={styles.coversBannerRow}>
+                <View style={styles.coversBannerIconChip}>
+                  <Ionicons name="trending-up" size={26} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.coversBannerEyebrow}>LIVE — LAST 30 DAYS</Text>
+                  <Text style={styles.coversBannerLabel}>
+                    Value of Cars Covered
+                  </Text>
+                  <Text style={styles.coversBannerValue} testID="covers-banner-value">
+                    R{coversTotal30d.toLocaleString("en-US")}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ) : null}
 
           {/* Section heading above the marketing tiles on wide — helps
               signpost that the below area is the pitch, not primary UI. */}
@@ -743,6 +747,59 @@ const makeStyles = (colors: Palette, isWide: boolean) => {
       maxWidth: 520,
     },
 
+    // "Value of Cars Covered" banner --------------------------------
+    coversBannerWrap: {
+      position: "relative",
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      borderColor: colors.primary + "55",
+      backgroundColor: colors.paper,
+      overflow: "hidden",
+      padding: isWide ? spacing.lg : spacing.md,
+      marginTop: spacing.md,
+      marginBottom: spacing.md,
+      // Slight shadow to lift the banner off the page.
+      shadowColor: "#000",
+      shadowOpacity: 0.25,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: 3,
+    },
+    coversBannerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.md,
+    },
+    coversBannerIconChip: {
+      width: 56, height: 56, borderRadius: 28,
+      backgroundColor: colors.primary + "22",
+      borderWidth: 1.5,
+      borderColor: colors.primary + "77",
+      alignItems: "center", justifyContent: "center",
+    },
+    coversBannerEyebrow: {
+      color: colors.primary,
+      fontSize: 10,
+      letterSpacing: 2,
+      fontWeight: "800",
+      textTransform: "uppercase",
+      marginBottom: 2,
+    },
+    coversBannerLabel: {
+      color: colors.textSecondary,
+      fontSize: isWide ? 14 : 13,
+      fontWeight: "600",
+      marginBottom: 2,
+    },
+    coversBannerValue: {
+      color: colors.text,
+      fontSize: isWide ? 42 : 32,
+      fontWeight: "800",
+      letterSpacing: -1,
+      fontFamily: fonts.number,
+      fontVariant: ["tabular-nums"],
+      lineHeight: isWide ? 48 : 38,
+    },
     // Quick-nav tile grid (all viewports) --------------------------------
     quickGrid: {
       flexDirection: "row",

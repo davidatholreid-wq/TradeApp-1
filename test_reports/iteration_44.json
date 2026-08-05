@@ -1,0 +1,28 @@
+{
+  "summary": "Frontend-only verification (dealer Dave, dave@fourbuy.co.za) of the removal of the 'Earn Rewards' flip banner and the new standalone 'Value of Cars Covered — Last 30 Days' stat banner on the home page. Tested at 390x900 (mobile) and 1200x900 (wide). All 5 acceptance criteria PASS: (1) NO 'Earn Rewards' text renders anywhere on the home page (count=0 on both viewports). (2) New banner is visible with eyebrow 'LIVE — LAST 30 DAYS', label 'Value of Cars Covered', and value 'R11,757,000'. (3) Banner is a plain View — no ancestor with role=button/BUTTON tag (insideButton: False). Clicking the banner does NOT change the URL — no flip, no navigation, static as required. (4) Value text char-codes = [82,49,49,44,55,53,55,44,48,48,48] — the separators are ONLY ASCII commas (U+002C = 44); no U+0020 spaces and no U+00A0 NBSPs inside the number. (5) Remaining flip tiles 'Trade with Confidence' and 'Advertising' still render (verified on wide: trade=1, adv=1) and the Trade tile responds to tap. Quick-nav tiles Get Cover, Give Cover, Billing, History, Rewards all present.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/screenshots/iter44_home_mobile.png",
+    "/app/test_reports/screenshots/iter44_home_mobile_banner.png",
+    "/app/test_reports/screenshots/iter44_home_mobile_after_tap.png",
+    "/app/test_reports/screenshots/iter44_home_wide.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "index.tsx is 1072 lines — file continues to grow; recommend extracting FlipTile / NavFlipTile / TilePage into separate modules in a follow-up refactor pass (non-blocking).",
+    "Two harmless React Native web deprecation warnings still logged on this screen ('textShadow*' style props are deprecated; Image style.resizeMode is deprecated). Pre-existing, unrelated to this change."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only per request)", "frontend": "100%"},
+  "seed_data_creation": "None — reset Dave's password via existing admin endpoint (POST /api/admin/dealers/{id}/password) so the E2E login step could run. No data seeded.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The 'Value of Cars Covered' banner testID is 'covers-banner-value' (see index.tsx line 347). Banner renders only when /api/stats/covers-30d has resolved (coversTotal30d != null), so if you need to assert layout stability while loading, expect a jump-free render because the wrapper is entirely conditional. Login submit button has testID 'login-submit-button' — use that instead of get_by_text('SIGN IN') because React Native's textTransform:uppercase-in-CSS breaks case-sensitive text selectors on web.",
+  "rca_of_issue": "N/A — feature verification, not a bug fix."
+}
