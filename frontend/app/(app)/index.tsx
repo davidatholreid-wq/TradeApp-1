@@ -184,6 +184,11 @@ export default function HomeScreen() {
         { key: "kredo", label: "Kredo", hint: "VIN reports & CarTrust tools", icon: "pricetag", to: "/(app)/kredo-test", tint: "#F43F5E" },
       ]
     : [
+        // "Get Cover" — headline dealer action (mirrors the Submit tab).
+        // Routes to /submit so the dealer can submit a vehicle and get
+        // a Fourbuy cover in <90 seconds. Uses the brand primary tint
+        // so it visibly reads as the primary CTA on the home page.
+        { key: "get-cover", label: "Get Cover", hint: "Submit a vehicle · confirmed cover in 90 s", icon: "flash" as const, to: "/(app)/submit", tint: colors.primary },
         ...(isPricingAgent
           ? [{ key: "cover", label: "Give Cover", hint: "Price blind submissions · R10 each", icon: "shield-checkmark" as const, to: "/(app)/cover", tint: "#5B8DEF" }]
           : []),

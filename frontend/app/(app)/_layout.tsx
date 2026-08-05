@@ -64,7 +64,11 @@ export default function AppLayout() {
           tabBarLabelStyle: {
             fontSize: 11,
             fontWeight: "600",
-            ...(Platform.OS === "web" ? { marginTop: 2, marginBottom: 2 } : {}),
+            // Explicit lineHeight + margin so labels don't get clipped
+            // on browsers that ignore RN Web's default label sizing.
+            ...(Platform.OS === "web"
+              ? { marginTop: 2, marginBottom: 6, lineHeight: 14, includeFontPadding: false }
+              : {}),
           },
         }}
       >

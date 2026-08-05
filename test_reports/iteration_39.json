@@ -1,0 +1,49 @@
+{
+  "summary": "Verified both frontend changes on the web preview as dealer Dave (dave@fourbuy.co.za). (1) Bottom tab-bar labels — 'Home', 'My Vehicles', 'Submit', 'Profile' — all fully visible at BOTH desktop (1440x900) and mobile-web (390x844). Computed lineHeight = 14px (from the new marginTop:2 / marginBottom:6 / lineHeight:14 / includeFontPadding:false web overrides). Screenshots confirm every label renders cleanly under its icon at both viewports with no truncation. (2) New 'Get Cover' NavFlipTile is present as the FIRST tile in the dealer quick-nav grid on both viewports, uses the flash icon, and its onPress routes correctly to /submit (verified via post-tap URL = https://.../submit). Give Cover tile still visible (Dave has is_pricing_agent=true) and is visually distinct — Get Cover chip uses the brand primary tint (white on the dark theme, rgba(255,255,255,0.13) chip bg with rgba(255,255,255,0.47) border) while Give Cover chip uses blue rgba(91,141,239,*). Billing, History, Rewards render in the row(s) below.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/screens/01_home_desktop.png",
+    "/app/test_reports/screens/02_tabbar_desktop_bottom.png",
+    "/app/test_reports/screens/03_tiles_desktop.png",
+    "/app/test_reports/screens/04_after_get_cover_tap.png",
+    "/app/test_reports/screens/05_tiles_mobile.png"
+  ],
+  "measurements": {
+    "tab_labels_desktop_1440x900": {
+      "Home":        {"height_px": 9,  "top": 868, "bottom": 877, "fontSize": "11px", "lineHeight": "14px", "visible": true},
+      "My Vehicles": {"height_px": 9,  "top": 868, "bottom": 877, "fontSize": "11px", "lineHeight": "14px", "visible": true},
+      "Submit":      {"height_px": 14, "top": 868, "bottom": 882, "fontSize": "11px", "lineHeight": "14px", "visible": true},
+      "Profile":     {"height_px": 9,  "top": 868, "bottom": 877, "fontSize": "11px", "lineHeight": "14px", "visible": true}
+    },
+    "tab_labels_mobile_390x844": {
+      "Home":        {"height_px": 9,  "top": 812, "bottom": 821, "fontSize": "11px", "lineHeight": "14px", "visible": true},
+      "My Vehicles": {"height_px": 9,  "top": 812, "bottom": 821, "fontSize": "11px", "lineHeight": "14px", "visible": true},
+      "Submit":      {"height_px": 14, "top": 812, "bottom": 826, "fontSize": "11px", "lineHeight": "14px", "visible": true},
+      "Profile":     {"height_px": 9,  "top": 812, "bottom": 821, "fontSize": "11px", "lineHeight": "14px", "visible": true}
+    },
+    "quick_tile_order_desktop": ["Get Cover@(278,639)", "Give Cover@(676,639)", "Billing@(1097,639)", "History@(389,815)", "Rewards@(987,815)"],
+    "quick_tile_order_mobile":  ["Get Cover@(66,375)",  "Give Cover@(245,375)",  "Billing@(80,543)",   "History@(260,543)", "Rewards@(162,715)"],
+    "get_cover_tap_result_url": "https://fourbuy-admin.preview.emergentagent.com/submit",
+    "tile_chip_colors": {
+      "getCover":  {"bg": "rgba(255,255,255,0.13)", "border": "rgba(255,255,255,0.47)", "note": "colors.primary on the dark theme = white"},
+      "giveCover": {"bg": "rgba(91,141,239,0.13)",  "border": "rgba(91,141,239,0.47)",  "note": "hard-coded #5B8DEF"}
+    }
+  },
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Minor: computed height of 3 of the 4 tab labels renders at 9px (Submit renders full 14px because 'S' is taller than lowercase). The lineHeight:14 CSS is applied but the RN Web wrapper still clips the label box to the glyph's tight bbox. This does NOT cause visible clipping — screenshots confirm every label reads cleanly — but if the client ever asks for perfectly symmetric vertical rhythm, consider adding an explicit height:14 (or minHeight:14) to tabBarLabelStyle on web.",
+    "Non-blocking React Native Web deprecation warnings in console during testing (textShadow*, shadow*, props.pointerEvents, Image.style.resizeMode). Pre-existing across the codebase — not introduced by these two changes. Report for future cleanup, not for this task."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Both fixes verified. Tab-bar labels visible at both viewports; new Get Cover tile is the first quick-nav tile, correctly wired to /submit, and visually distinct from Give Cover. No open issues from this iteration."
+}
