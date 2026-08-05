@@ -1,0 +1,28 @@
+{
+  "summary": "Frontend-only re-verification of the desktop Profile cover-photo layout fix (/app/frontend/app/(app)/profile.tsx). Verified via Playwright on the public preview URL logged in as dave@fourbuy.co.za (real cover photo present). At 1440x900 the banner is no longer full-bleed: measured width=1100px, height=240px, borderRadius=16px, borderTop=1px, centered with 170px side margins. Identity block + section cards (Your role, Company, Share Fourbuy, Appearance) all align to the same 1100px content column. At 390x844 the banner remains full-bleed (width=390, height=160, radius=0, no border) preserving the original mobile aesthetic. Avatar chip still overlaps bottom-left of the banner on both viewports (desktop avatar left=199,top=280 vs banner bottom=335; mobile avatar left=28,top=184 vs banner bottom=239). Everything matches the spec in the review request.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/screenshots/iter45/profile_desktop_1440.jpg",
+    "/app/test_reports/screenshots/iter45/profile_desktop_1440_full.jpg",
+    "/app/test_reports/screenshots/iter45/profile_mobile_390.jpg",
+    "/app/test_reports/screenshots/iter45/profile_mobile_390_full.jpg"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "profile.tsx is 613 lines — approaching the 700-line soft limit. Consider extracting the referral-share block and appearance/theme toggle into subcomponents in a future refactor (not blocking).",
+    "The identity block on desktop uses paddingHorizontal: spacing.lg * 2 (=48px). This intentionally aligns the name roughly with the avatar (avatar left=199, name left=218) but means the name text is inset ~48px from the banner's rounded left edge (170). Visually acceptable and matches the WhatsApp-style pattern, just noting for design review."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a", "frontend": "100%" },
+  "seed_data_creation": "None — used existing dealer dave@fourbuy.co.za (already has a real cover photo).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "To reach the profile page for future runs: (1) POST /api/auth/login with dave@fourbuy.co.za / Dave1234! (2) navigate via the login form using testIDs login-email-input, login-password-input, login-submit-button (3) then goto /profile. Note: injecting the JWT directly into localStorage under key 'app.auth.token' did NOT bypass the auth redirect — the AuthContext bootstrap seems to require going through the actual login flow (SecureStore vs AsyncStorage web wrapper mismatch on first read). Use the form flow instead.",
+  "rca_of_issue": "N/A — this iteration was a layout-fix verification, not a bug investigation. The desktop banner width and border-radius are now driven by an isWide flag (Platform.OS === 'web' && winW >= 900) computed via useWindowDimensions, and the same maxWidth: 1100 / alignSelf: 'center' constraint is applied to the identity, section and hintBox styles so the whole profile column stays consistent."
+}

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { TouchableOpacity } from "@/src/components/HapticButtons";
-import { View, Text, StyleSheet, ScrollView, Image, Share, Platform } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Image, Share, Platform, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useAuth } from "@/src/context/AuthContext";
@@ -12,7 +12,13 @@ import { useRouter } from "expo-router";
 
 export default function Profile() {
   const colors = useThemeColors();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { width: winW } = useWindowDimensions();
+  // Desktop web: the cover photo was designed as a phone-width banner
+  // (aspect ratio ~2.3:1 at 160dp tall). At >900dp viewports it stretched
+  // horrifically wide, so we cap the banner inside a padded, centered
+  // rounded card at desktop widths.
+  const isWide = Platform.OS === "web" && winW >= 900;
+  const styles = useMemo(() => makeStyles(colors, isWide), [colors, isWide]);
   const { mode, toggle } = useTheme();
   const { user, logout } = useAuth();
   const router = useRouter();
@@ -307,7 +313,7 @@ export default function Profile() {
   );
 }
 
-const makeStyles = (colors: Palette) => StyleSheet.create({
+const makeStyles = (colors: Palette, isWide: boolean) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   header: {
     flexDirection: "row",
@@ -324,14 +330,36 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   scroll: { padding: 0 },
 
   banner: {
-    height: 160,
+    // Desktop web: cap the banner width, add margins + rounded corners so
+    // the cover photo doesn't stretch edge-to-edge on wide monitors
+    // (its aspect ratio was designed for a mobile viewport). Mobile
+    // stays as a full-bleed 160dp banner.
+    ...(isWide
+      ? {
+          height: 240,
+          maxWidth: 1100,
+          width: "100%",
+          alignSelf: "center",
+          marginTop: spacing.md,
+          marginHorizontal: spacing.lg,
+          borderRadius: radius.lg,
+          overflow: "hidden",
+          borderWidth: 1,
+          borderColor: colors.border,
+        }
+      : {
+          height: 160,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
+        }),
     backgroundColor: colors.card,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
     marginBottom: 60,
     position: "relative",
   },
-  coverImg: { width: "100%", height: "100%" },
+  coverImg: {
+    width: "100%",
+    height: "100%",
+  },
   coverPlaceholder: { flex: 1, alignItems: "center", justifyContent: "center", gap: 6 },
   placeholderText: { color: colors.textDisabled, fontSize: 10, fontWeight: "800", letterSpacing: 2 },
 
@@ -365,6 +393,9 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     paddingHorizontal: spacing.lg,
     marginBottom: spacing.lg,
     marginTop: spacing.sm,
+    ...(isWide
+      ? { maxWidth: 1100, width: "100%", alignSelf: "center", paddingHorizontal: spacing.lg * 2 }
+      : {}),
   },
   name: { color: colors.text, fontSize: 24, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 0.3 },
   jobTitle: { color: colors.textSecondary, fontSize: 13, marginTop: 2, letterSpacing: 0.2, fontStyle: "italic" },
@@ -411,6 +442,9 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.md,
     marginBottom: spacing.md,
+    ...(isWide
+      ? { maxWidth: 1100, width: "100%", alignSelf: "center", marginHorizontal: "auto" }
+      : {}),
   },
   sectionTitle: {
     color: colors.text,
@@ -448,6 +482,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     borderRadius: radius.md,
     backgroundColor: colors.card,
     marginBottom: spacing.md,
+    ...(isWide ? { maxWidth: 1100, width: "100%", alignSelf: "center" } : {}),
   },
   hintText: { color: colors.textSecondary, fontSize: 12, flex: 1, lineHeight: 17 },
 
