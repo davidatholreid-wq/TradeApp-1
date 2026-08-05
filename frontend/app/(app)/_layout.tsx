@@ -54,14 +54,17 @@ export default function AppLayout() {
             // height + bottom padding on web gives every label breathing
             // room without changing the native app appearance.
             ...(Platform.OS === "web"
-              ? { height: 68, paddingTop: 6, paddingBottom: 10 }
+              ? { height: 76, paddingTop: 8, paddingBottom: 12 }
               : {}),
           },
-          tabBarItemStyle: Platform.OS === "web" ? { paddingVertical: 4 } : undefined,
+          // Don't add extra padding on the individual item on web — it
+          // shrinks the inner content area and clipped the labels of
+          // every tab except Submit to 1px. The container's own padding
+          // above is enough.
           tabBarLabelStyle: {
             fontSize: 11,
             fontWeight: "600",
-            ...(Platform.OS === "web" ? { marginBottom: 4 } : {}),
+            ...(Platform.OS === "web" ? { marginTop: 2, marginBottom: 2 } : {}),
           },
         }}
       >

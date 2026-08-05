@@ -1,0 +1,42 @@
+{
+  "summary": "Re-verified the bottom tab-bar label clipping fix in /app/frontend/app/(app)/_layout.tsx. Logged in as dealer (dave@fourbuy.co.za) and measured computed height of every tab label at BOTH desktop (1440x900) and mobile-web (390x844) viewports. All four labels — Home, My Vehicles, Submit, Profile — are now FULLY visible (heights 13px for Home/My Vehicles/Profile and 15px for Submit; matches the 11px font-size + a couple pixels of descender room). Previous iteration_37 defect (labels clipped to 1px because of tabBarItemStyle.paddingVertical) is resolved. Visual screenshots also confirm the labels render cleanly under each icon with no truncation at either viewport.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/screens/tabbar_mobile.png"
+  ],
+  "measurements": {
+    "desktop_1440x900": {
+      "viewport_height": 900,
+      "labels": {
+        "Home":       {"height_px": 13, "width_px": 28, "y": 868, "bottom": 881, "overflow": "hidden"},
+        "My Vehicles":{"height_px": 13, "width_px": 57, "y": 868, "bottom": 881, "overflow": "hidden"},
+        "Submit":     {"height_px": 15, "width_px": 34, "y": 868, "bottom": 883, "overflow": "hidden"},
+        "Profile":    {"height_px": 13, "width_px": 30, "y": 868, "bottom": 881, "overflow": "hidden"}
+      }
+    },
+    "mobile_390x844": {
+      "viewport_height": 844,
+      "labels": {
+        "Home":       {"height_px": 13, "width_px": 28, "y": 812, "bottom": 825, "overflow": "hidden"},
+        "My Vehicles":{"height_px": 13, "width_px": 57, "y": 812, "bottom": 825, "overflow": "hidden"},
+        "Submit":     {"height_px": 15, "width_px": 34, "y": 812, "bottom": 827, "overflow": "hidden"},
+        "Profile":    {"height_px": 13, "width_px": 30, "y": 812, "bottom": 825, "overflow": "hidden"}
+      }
+    }
+  },
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Tab-bar label clipping fix is verified on both desktop (1440x900) and mobile-web (390x844) viewports. Labels render at 13-15px height with bottom edge well inside viewport. No further re-testing needed for this specific bug.",
+  "rca_of_issue": "Root cause (from iteration_37): tabBarItemStyle set paddingVertical which shrank the inner item area to ~1px in every non-active tab, clipping the label. Fix (verified this iteration): removed tabBarItemStyle entirely, bumped tab-bar container to height 76 with paddingTop 8 / paddingBottom 12, and centered the label with symmetric marginTop/marginBottom of 2. Result: labels now render at their natural 13-15px height on both viewports."
+}
