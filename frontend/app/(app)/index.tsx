@@ -204,7 +204,10 @@ export default function HomeScreen() {
   const dynamicTiles = useMemo<Tile[]>(() => {
     return BASE_TILES.map((t) => {
       if (t.key === "rewards" && coversTotal30d != null) {
-        const zar = `R${coversTotal30d.toLocaleString("en-ZA")}`;
+        // The user asked for a "comma separator at each thousand" — the
+        // en-ZA locale legitimately uses a non-breaking-space, so we
+        // use en-US which produces the requested "R11,757,000" format.
+        const zar = `R${coversTotal30d.toLocaleString("en-US")}`;
         return {
           ...t,
           points: [
