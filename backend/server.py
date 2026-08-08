@@ -2073,6 +2073,29 @@ async def get_submission(sub_id: str, current: dict = Depends(get_current_user))
         # without re-computing on every field change.
         if isinstance(sub.get("deal"), dict):
             sub["deal_profit"] = _compute_deal_profit(sub["deal"])
+
+    # Enrich with the submitter's profile pic + cover photo so the
+    # detail page can show a WhatsApp-Business-style header banner
+    # without a separate request. Only exposed to non-pricing-agent
+    # viewers (owning dealership members + admin) — the sanitiser
+    # keeps pricing agents blind to who submitted the vehicle.
+    if not (
+        current.get("role") != "admin"
+        and current.get("is_pricing_agent")
+        and not is_owner
+    ):
+        submitter_uid = sub.get("submitted_by_user_id") or sub.get("dealer_id")
+        if submitter_uid:
+            submitter = await db.users.find_one(
+                {"id": submitter_uid},
+                {"_id": 0, "profile_pic": 1, "cover_photo": 1},
+            )
+            if submitter:
+                if submitter.get("profile_pic"):
+                    sub["submitter_profile_pic"] = submitter["profile_pic"]
+                if submitter.get("cover_photo"):
+                    sub["submitter_cover_photo"] = submitter["cover_photo"]
+
     return {"submission": sub}
 
 

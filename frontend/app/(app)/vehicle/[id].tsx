@@ -107,6 +107,11 @@ type Submission = {
   make_name: string;
   model_name: string;
   derivative_name: string;
+  // Optional dealer branding — populated for owner-dealership members
+  // and admins so we can show a WhatsApp-Business-style banner on the
+  // vehicle detail page. Pricing agents never receive these.
+  submitter_profile_pic?: string | null;
+  submitter_cover_photo?: string | null;
   fuel_type?: string;
   year_of_production?: number;
   transmission?: string;
@@ -1448,6 +1453,58 @@ export default function VehicleDetail() {
         ref={scrollRef}
         contentContainerStyle={[styles.scroll, isCoverMode && { paddingBottom: 220 }]}
       >
+        {/* Dealer branding banner — WhatsApp Business-style header with
+            cover photo + circular profile pic + submitter name + the
+            dealership they belong to. Only rendered outside cover mode
+            (pricing agents never see who submitted). Hidden entirely
+            when we have neither a cover nor a profile pic so we don't
+            show an empty ghost banner. */}
+        {!isCoverMode && (sub.submitter_cover_photo || sub.submitter_profile_pic || sub.submitted_by_name) ? (
+          <View style={styles.dealerBanner} testID="dealer-banner">
+            <View style={styles.dealerBannerCoverClip}>
+              {sub.submitter_cover_photo ? (
+                <Image
+                  source={{ uri: sub.submitter_cover_photo }}
+                  style={styles.dealerBannerCover}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={styles.dealerBannerCoverEmpty}>
+                  <Ionicons name="business-outline" size={22} color={colors.textDisabled} />
+                </View>
+              )}
+            </View>
+            <View style={styles.dealerBannerAvatarWrap}>
+              {sub.submitter_profile_pic ? (
+                <Image
+                  source={{ uri: sub.submitter_profile_pic }}
+                  style={styles.dealerBannerAvatar}
+                />
+              ) : (
+                <View style={styles.dealerBannerAvatarFallback}>
+                  <Ionicons name="person" size={22} color={colors.primary} />
+                </View>
+              )}
+            </View>
+            <View style={styles.dealerBannerBody}>
+              {sub.submitted_by_name ? (
+                <Text style={styles.dealerBannerName} numberOfLines={1}>
+                  {sub.submitted_by_name}
+                  {sub.submitted_by_job_title ? (
+                    <Text style={styles.dealerBannerJob}> · {sub.submitted_by_job_title}</Text>
+                  ) : null}
+                </Text>
+              ) : null}
+              {sub.company_name ? (
+                <Text style={styles.dealerBannerCompany} numberOfLines={1}>
+                  <Ionicons name="briefcase-outline" size={12} color={colors.textSecondary} />
+                  {" "}{sub.company_name}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+        ) : null}
+
         {/* Unseen banner — loud red warning shown to both dealers and admins
             immediately at the top of the vehicle detail so the "Cover Price"
             below is never mistaken for an inspection-backed number. */}
@@ -1526,10 +1583,12 @@ export default function VehicleDetail() {
           </>
         ) : null}
 
-        {/* Title */}
+        {/* Title — MAKE + DERIVATIVE only. The derivative already
+            embeds the model name (e.g. "DUSTER 1.5 dCI TECHROAD EDC")
+            so the model line would be redundant. Cleaner banner for the
+            valuation. */}
         <View style={styles.titleBox}>
           <Text style={styles.brand}>{sub.make_name}</Text>
-          <Text style={styles.model}>{sub.model_name}</Text>
           <Text style={styles.derivative}>{sub.derivative_name}</Text>
         </View>
 
@@ -3933,6 +3992,80 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     lineHeight: 15,
   },
 
+  // -------- Dealer banner (submitter profile + cover + dealership) --------
+  dealerBanner: {
+    marginBottom: spacing.md,
+    marginHorizontal: spacing.md,
+    position: "relative",
+  },
+  dealerBannerCoverClip: {
+    height: 120,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    overflow: "hidden",
+  },
+  dealerBannerCover: {
+    width: "100%",
+    height: "100%",
+  },
+  dealerBannerCoverEmpty: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.paper,
+  },
+  dealerBannerAvatarWrap: {
+    position: "absolute",
+    left: spacing.md,
+    bottom: -22,
+    padding: 3,
+    backgroundColor: colors.bg,
+    borderRadius: 40,
+    zIndex: 2,
+    ...(Platform.OS === "web"
+      ? ({ boxShadow: "0 2px 6px rgba(0,0,0,0.15)" } as any)
+      : { elevation: 3 }),
+  },
+  dealerBannerAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+  },
+  dealerBannerAvatarFallback: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.paper,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dealerBannerBody: {
+    paddingLeft: 88,
+    paddingRight: spacing.md,
+    paddingTop: 8,
+    paddingBottom: 4,
+    gap: 2,
+    minHeight: 30,
+  },
+  dealerBannerName: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "800",
+    letterSpacing: -0.2,
+  },
+  dealerBannerJob: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  dealerBannerCompany: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 0.2,
+  },
   // Reference badge — high-contrast, clean mono readout
   refBadge: {
     flexDirection: "row",
