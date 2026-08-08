@@ -168,12 +168,15 @@ function jsonArrayParam(values: (string | number)[]): string {
 //                  N-element array causes them to keep only the first
 //                  two values (min/max), so we're explicit.
 //   FuelType     — JSON-array with the canonical fuel family
-//   Transmission — JSON-array with "Automatic" or "Manual"
+//   Gearbox      — JSON-array with "Automatic" or "Manual"
+//                  (WeBuyCars labels their transmission filter panel
+//                  "Gearbox" — sending it as `Transmission=[…]` is a
+//                  silent no-op).
 //   SortBy/Order — Price_Amount ASC (cheapest first)
 //
 // Example (Toyota Corolla Cross 2022–2026 Hybrid Automatic):
 //   /buy-a-car?Make=["Toyota"]&Model=["Corolla Cross"]
-//     &Year=[2022,2026]&FuelType=["Hybrid"]&Transmission=["Automatic"]
+//     &Year=[2022,2026]&FuelType=["Hybrid"]&Gearbox=["Automatic"]
 //     &SortBy=Price_Amount&SortOrder=ASC
 function buildWeBuyCarsUrl(p: Props): string | null {
   const make = normaliseMake(p.make);
@@ -201,7 +204,10 @@ function buildWeBuyCarsUrl(p: Props): string | null {
     parts.push(`FuelType=${encodeURIComponent(jsonArrayParam([fuel]))}`);
   }
   if (trans) {
-    parts.push(`Transmission=${encodeURIComponent(jsonArrayParam([trans]))}`);
+    // WeBuyCars calls their transmission filter "Gearbox" on both the
+    // sidebar panel AND the query-string key. Using `Transmission` is
+    // a silent no-op.
+    parts.push(`Gearbox=${encodeURIComponent(jsonArrayParam([trans]))}`);
   }
   // Sort by price ascending — cheapest first, matching what the dealer
   // wants to spot when comparing against a cover offer.
