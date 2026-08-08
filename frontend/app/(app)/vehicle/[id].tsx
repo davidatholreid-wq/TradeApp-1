@@ -2850,7 +2850,34 @@ export default function VehicleDetail() {
                   </View>
                 ) : null}
               </>
-            ) : null}
+            ) : (
+              // No VIN → the dealer hasn't scanned the license disk yet.
+              // VIN-linked reports (Lightstone, Kredo, CarTrust, JLR OSH,
+              // BMW options, CarVertical) all require a VIN, so surface a
+              // clear explainer with a shortcut back to the scan flow.
+              <View style={styles.vinRequiredBox} testID="vin-required-notice">
+                <Ionicons name="scan-outline" size={20} color={colors.textSecondary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.vinRequiredTitle}>License disk required</Text>
+                  <Text style={styles.vinRequiredHint}>
+                    The VIN-Linked report requires you to capture the license
+                    disk. Scan it to unlock Lightstone, Kredo accident history,
+                    CarTrust and factory-option reports.
+                  </Text>
+                  {!isAdmin && !isCoverMode ? (
+                    <TouchableOpacity
+                      testID="scan-license-disk-cta"
+                      style={styles.vinRequiredBtn}
+                      onPress={() => router.push(`/submit?edit=${sub.id}`)}
+                      accessibilityRole="button"
+                    >
+                      <Ionicons name="scan" size={14} color={colors.onPrimary} />
+                      <Text style={styles.vinRequiredBtnText}>Capture license disk</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              </View>
+            )}
           </CollapsibleSection>
         ) : null}
 
@@ -5568,6 +5595,49 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     marginLeft: 8,
     flex: 1,
     lineHeight: 16,
+  },
+
+  // VIN-Linked report gate — shown when license disk hasn't been captured
+  vinRequiredBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.sm + 2,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+    marginTop: spacing.xs,
+  },
+  vinRequiredTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+    marginBottom: 4,
+  },
+  vinRequiredHint: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  vinRequiredBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    alignSelf: "flex-start",
+    marginTop: spacing.sm + 2,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radius.sm,
+    backgroundColor: colors.primary,
+  },
+  vinRequiredBtnText: {
+    color: colors.onPrimary,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.3,
   },
 
   // Registered-after-discontinued banner on vehicle detail
