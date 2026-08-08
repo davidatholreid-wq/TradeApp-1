@@ -13,6 +13,7 @@ import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { apiFetch } from "@/src/api";
 import WheelPicker from "@/src/components/WheelPicker";
 import MonthYearPicker, { formatIsoMonthYear } from "@/src/components/MonthYearPicker";
+import { formatMoneyInput } from "@/src/utils/format";
 import { decodeLicenseDisk, LicenseDiskInfo } from "@/src/utils/licenseDisk";
 
 type PhotoKey = "front" | "driver_side" | "passenger_side" | "rear" | "interior";
@@ -264,7 +265,7 @@ export default function SubmitVehicle() {
     setHistoryRating(d.history_condition ?? null);
     setServiceHistory(d.service_history ?? null);
     setLastServiceDate(d.last_service_date ?? "");
-    setLastServiceMileage(d.last_service_mileage ?? "");
+    setLastServiceMileage(d.last_service_mileage != null ? formatMoneyInput(String(d.last_service_mileage)) : "");
     if (d.photos && typeof d.photos === "object") {
       setPhotos({
         front: d.photos.front ?? "",
@@ -274,7 +275,7 @@ export default function SubmitVehicle() {
         interior: d.photos.interior ?? "",
       });
     }
-    setMileage(d.mileage ?? "");
+    setMileage(d.mileage != null ? formatMoneyInput(String(d.mileage)) : "");
     setPaintEvidence(!!d.paint_evidence);
     setPaintQuality(d.paint_quality ?? null);
     setAccidentDamage(!!d.accident_damage);
@@ -297,7 +298,7 @@ export default function SubmitVehicle() {
             }
             return {
               category,
-              amount: r?.amount != null ? String(r.amount) : "",
+              amount: r?.amount != null ? formatMoneyInput(String(r.amount)) : "",
               photos,
             };
           })
@@ -566,7 +567,10 @@ export default function SubmitVehicle() {
         ix !== i ? x : { ...x, photos: (x.photos || []).filter((_p, px) => px !== pIdx) },
       ),
     );
-  const reconTotal = useMemo(() => reconItems.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0), [reconItems]);
+  // Recon amounts are stored as user-typed strings (with commas for
+  // display) — strip them before parseFloat so totals & validation are
+  // correct.
+  const reconTotal = useMemo(() => reconItems.reduce((s, r) => s + (parseFloat((r.amount || "").replace(/,/g, "")) || 0), 0), [reconItems]);
 
   const validate = (): string | null => {
     if (!make || !fuelType || !yearOfProduction || !transmission || !model || !derivative) return "Please complete all vehicle spec fields.";
@@ -574,7 +578,7 @@ export default function SubmitVehicle() {
     if (variantYearRange && yearRegistered < variantYearRange.min) {
       return `Registration year cannot be earlier than ${variantYearRange.min} — the first year this variant was built.`;
     }
-    if (!mileage || isNaN(parseInt(mileage))) return "Enter mileage.";
+    if (!mileage || isNaN(parseInt(mileage.replace(/,/g, "")))) return "Enter mileage.";
     // If no VIN from scan and no manual colour picked → force colour.
     if ((!vin || vin === "TBC") && !colour) return "Please pick a colour (or scan the license disc).";
     for (const p of PHOTO_ORDER) if (!photos[p.key]) return `Photo missing: ${p.label}`;
@@ -593,7 +597,7 @@ export default function SubmitVehicle() {
       // stop the dealer submitting so we don't lose or mis-label spend.
       for (let i = 0; i < reconItems.length; i++) {
         const r = reconItems[i];
-        const amt = parseFloat(r.amount);
+        const amt = parseFloat((r.amount || "").replace(/,/g, ""));
         const hasAmt = !isNaN(amt) && amt > 0;
         if (r.category && !hasAmt) return `Recon line ${i + 1}: please enter an amount.`;
         if (hasAmt && !r.category) return `Recon line ${i + 1}: please choose a category.`;
@@ -641,8 +645,8 @@ export default function SubmitVehicle() {
           history_condition: unseen ? 5 : historyRating,
           service_history: unseen ? null : serviceHistory,
           last_service_date: unseen ? null : (lastServiceDate || null),
-          last_service_mileage: unseen ? null : (lastServiceMileage ? parseInt(lastServiceMileage) : null),
-          photos, mileage: parseInt(mileage),
+          last_service_mileage: unseen ? null : (lastServiceMileage ? parseInt(lastServiceMileage.replace(/,/g, "")) : null),
+          photos, mileage: parseInt(mileage.replace(/,/g, "")),
           paint_evidence: unseen ? null : paintEvidence,
           paint_quality: unseen ? null : (paintEvidence ? paintQuality : null),
           accident_damage: unseen ? null : accidentDamage,
@@ -650,13 +654,13 @@ export default function SubmitVehicle() {
           reconditioning_items: unseen
             ? []
             : reconItems
-                .filter((r) => r.category && parseFloat(r.amount) > 0)
+                .filter((r) => r.category && parseFloat((r.amount || "").replace(/,/g, "")) > 0)
                 .map((r) => ({
                   // `category` is the new canonical tag; `label` is also
                   // set for backwards compat with existing PDF/admin views.
                   category: r.category,
                   label: r.category as string,
-                  amount_zar: parseFloat(r.amount),
+                  amount_zar: parseFloat((r.amount || "").replace(/,/g, "")),
                   photos: (r.photos || []).slice(0, MAX_RECON_PHOTOS),
                 })),
           // Warranty & Maintenance Plan status. Unseen submissions leave
@@ -963,7 +967,7 @@ export default function SubmitVehicle() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.subLabel}>LAST SERVICE MILEAGE</Text>
-              <TextInput style={styles.input} value={lastServiceMileage} onChangeText={setLastServiceMileage} placeholder="TBC" placeholderTextColor={colors.textDisabled} keyboardType="numeric" />
+              <TextInput style={styles.input} value={lastServiceMileage} onChangeText={(t) => setLastServiceMileage(formatMoneyInput(t))} placeholder="TBC" placeholderTextColor={colors.textDisabled} keyboardType="numeric" />
             </View>
           </View>
 
@@ -1027,7 +1031,7 @@ export default function SubmitVehicle() {
           {/* --- end !unseen: CONDITION + SERVICE HISTORY --- */}
 
           <Text style={styles.sectionTitle}>ODOMETER</Text>
-          <TextInput testID="mileage-input" style={styles.input} value={mileage} onChangeText={setMileage} placeholder="Current mileage (km)" placeholderTextColor={colors.textDisabled} keyboardType="numeric" />
+          <TextInput testID="mileage-input" style={styles.input} value={mileage} onChangeText={(t) => setMileage(formatMoneyInput(t))} placeholder="Current mileage (km)" placeholderTextColor={colors.textDisabled} keyboardType="numeric" />
 
           <Text style={styles.sectionTitle}>PHOTOS</Text>
           <View style={styles.photoGrid}>
@@ -1148,7 +1152,7 @@ export default function SubmitVehicle() {
                 <TextInput
                   style={[styles.input, styles.reconAmountInput]}
                   value={item.amount}
-                  onChangeText={(v) => updateReconItem(i, { amount: v })}
+                  onChangeText={(v) => updateReconItem(i, { amount: formatMoneyInput(v) })}
                   placeholder="R"
                   placeholderTextColor={colors.textDisabled}
                   keyboardType="numeric"

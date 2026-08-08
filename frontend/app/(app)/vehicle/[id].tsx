@@ -534,17 +534,24 @@ export default function VehicleDetail() {
   const [dealSaleInput, setDealSaleInput] = useState("");
   const [dealPdfDownloading, setDealPdfDownloading] = useState(false);
   // Whenever the server-side `sub.deal` changes, mirror the numeric
-  // fields into the local text inputs so the form matches persisted state.
+  // fields into the local text inputs so the form matches persisted
+  // state. Format with comma-thousand separators for readability.
   useEffect(() => {
     const d = (sub as any)?.deal as DealInfo | null | undefined;
     setDealPurchaseInput(
-      d?.purchase_price_zar != null ? String(d.purchase_price_zar) : ""
+      d?.purchase_price_zar != null
+        ? formatMoneyString(String(d.purchase_price_zar))
+        : ""
     );
     setDealReconInput(
-      d?.recon_cost_zar != null ? String(d.recon_cost_zar) : ""
+      d?.recon_cost_zar != null
+        ? formatMoneyString(String(d.recon_cost_zar))
+        : ""
     );
     setDealSaleInput(
-      d?.sale_price_zar != null ? String(d.sale_price_zar) : ""
+      d?.sale_price_zar != null
+        ? formatMoneyString(String(d.sale_price_zar))
+        : ""
     );
   }, [
     (sub as any)?.deal?.purchase_price_zar,
@@ -559,6 +566,19 @@ export default function VehicleDetail() {
     if (!s) return null;
     const n = Number(s);
     return isFinite(n) ? n : null;
+  };
+  // Live comma-thousands formatter for numeric money inputs. Given any
+  // user-typed string, strip out everything except digits + optional
+  // decimal, then re-insert commas every three digits from the right so
+  // the value on screen reads "1,234,500" as they type. Empty input
+  // returns "" so the placeholder can show through.
+  const formatMoneyString = (raw: string): string => {
+    const cleaned = (raw || "").replace(/[^0-9.]/g, "");
+    if (!cleaned) return "";
+    // Preserve a trailing "." while the user is mid-typing decimals.
+    const [intPart, ...rest] = cleaned.split(".");
+    const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return rest.length ? `${withCommas}.${rest.join("")}` : withCommas;
   };
   const fmtZar = (v: number | null | undefined) => {
     if (v == null || !isFinite(Number(v))) return "—";
@@ -2771,7 +2791,7 @@ export default function VehicleDetail() {
                 testID="offer-price-button"
                 style={styles.priceBtn}
                 onPress={() => {
-                  setPriceInput(sub.price ? String(sub.price) : "");
+                  setPriceInput(sub.price ? formatMoneyString(String(sub.price)) : "");
                   setNotesInput(sub.price_notes || "");
                   setChangeCommentInput("");
                   setPriceModal(true);
@@ -2914,7 +2934,7 @@ export default function VehicleDetail() {
                           testID="deal-purchase-input"
                           style={styles.dealInput}
                           value={dealPurchaseInput}
-                          onChangeText={setDealPurchaseInput}
+                          onChangeText={(t) => setDealPurchaseInput(formatMoneyString(t))}
                           placeholder="0"
                           placeholderTextColor={colors.textDisabled}
                           keyboardType="numeric"
@@ -2971,7 +2991,7 @@ export default function VehicleDetail() {
                               testID="deal-recon-input"
                               style={styles.dealInput}
                               value={dealReconInput}
-                              onChangeText={setDealReconInput}
+                              onChangeText={(t) => setDealReconInput(formatMoneyString(t))}
                               placeholder="0"
                               placeholderTextColor={colors.textDisabled}
                               keyboardType="numeric"
@@ -2987,7 +3007,7 @@ export default function VehicleDetail() {
                               testID="deal-sale-input"
                               style={styles.dealInput}
                               value={dealSaleInput}
-                              onChangeText={setDealSaleInput}
+                              onChangeText={(t) => setDealSaleInput(formatMoneyString(t))}
                               placeholder="0"
                               placeholderTextColor={colors.textDisabled}
                               keyboardType="numeric"
@@ -3151,7 +3171,7 @@ export default function VehicleDetail() {
             <TextInput
               testID="cover-price-input"
               value={coverPriceInput}
-              onChangeText={(t) => setCoverPriceInput(t.replace(/[^0-9]/g, ""))}
+              onChangeText={(t) => setCoverPriceInput(formatMoneyString(t))}
               placeholder={coverMeta.my_cover ? "Update cover (R)" : "Enter your cover (R)"}
               placeholderTextColor={colors.textDisabled}
               keyboardType="numeric"
@@ -3241,7 +3261,7 @@ export default function VehicleDetail() {
               testID="price-input"
               style={styles.priceInput}
               value={priceInput}
-              onChangeText={setPriceInput}
+              onChangeText={(t) => setPriceInput(formatMoneyString(t))}
               placeholder="0"
               placeholderTextColor={colors.textDisabled}
               keyboardType="numeric"

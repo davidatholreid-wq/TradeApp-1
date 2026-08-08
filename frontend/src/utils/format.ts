@@ -37,6 +37,35 @@ export function formatKm(n: number | null | undefined): string {
 }
 
 /**
+ * Live formatter for user-typed money / integer inputs. Strips every
+ * character that isn't a digit or a decimal point, then re-inserts
+ * comma-thousand separators so an input reads "1,234,500" as the user
+ * types. Preserves a trailing "." while decimals are still being typed.
+ * Empty input returns "" so any placeholder can shine through.
+ */
+export function formatMoneyInput(raw: string): string {
+  const cleaned = (raw || "").replace(/[^0-9.]/g, "");
+  if (!cleaned) return "";
+  const [intPart, ...rest] = cleaned.split(".");
+  const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return rest.length ? `${withCommas}.${rest.join("")}` : withCommas;
+}
+
+/**
+ * Parse a comma / R / whitespace-tolerant user input back to a plain
+ * number. Returns null when the string is empty; returns NaN when the
+ * remaining characters can't be interpreted as a number (caller decides
+ * how to handle).
+ */
+export function parseMoneyInput(raw: string): number | null {
+  const s = (raw || "").trim().replace(/[Rr]/g, "").replace(/[,\s]/g, "");
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+
+/**
  * Compute the elapsed time (months) and mileage delta between the last-service
  * datapoint on a submission and today's data. Returns null slots when inputs
  * are missing or nonsensical.
