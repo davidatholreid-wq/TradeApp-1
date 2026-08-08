@@ -85,11 +85,59 @@ function normaliseMake(raw?: string): string | null {
 
 // Model / derivative Title Case. WeBuyCars models are Title-Cased in
 // their nav ("Corolla Cross", "Ranger", "3 Series") so match that.
+// Kept as a helper for future re-use; the current build path routes
+// through `deriveModelKeyword` (which also handles chassis-code /
+// grouped-family cleanup) instead.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function normaliseModel(raw?: string): string | null {
   if (!raw) return null;
   const cleaned = cleanText(raw);
   if (!cleaned) return null;
   return toTitleCase(cleaned);
+}
+
+// Derive the best WeBuyCars-friendly model keyword from BOTH the Kredo
+// `model_name` and `derivative_name` fields.
+//
+// Kredo `model_name` sometimes contains junk that breaks WeBuyCars'
+// catalogue match — chassis codes after a `/` (`DEFENDER / PUMA 90`),
+// generation labels (`5 SERIES (F10)`), or grouped families
+// (`DISCOVERY 3 / 4`).
+//
+// The `derivative_name` on the other hand almost always LEADS with the
+// clean marketing name — `DEFENDER 90 D240 SE X-DYNAMIC (177KW)`,
+// `DISCOVERY 3.0 TD6 SE`, `M5 M-DCT (F90)`. We grab the first 1–2 name
+// tokens off the derivative (skipping engine-displacement / spec
+// tokens) and fall back to the raw model when the derivative can't be
+// parsed. This gives WeBuyCars a clean, catalogue-matching model
+// filter for tricky brands (Land Rover, BMW etc.).
+function deriveModelKeyword(model?: string, derivative?: string): string | null {
+  const src = cleanText(derivative);
+  if (src) {
+    const tokens = src.split(/\s+/);
+    // Regex catch-alls for tokens we always want to drop:
+    //   engine displacement: 3.0, 2.2D, 1.5T, 2.0Tdi
+    //   drivetrain: 4x4, 4WD, AWD, RWD, FWD, 2WD
+    //   transmission: A/T, M/T, DSG, DCT, CVT, PDK
+    //   engine tech: TDI, TSI, GDI, ECOBOOST, BLUETEC, TDCI
+    //   trim / spec keywords (kept OUT of the model filter since WBC
+    //   uses these on their variant/description search, not model)
+    const stripRe = /^(\d+\.\d+[a-z]*|4x4|4wd|awd|rwd|fwd|2wd|tdi|tsi|gdi|tdci|bluetec|ecoboost|crdi|a\/t|m\/t|at|mt|dct|dsg|cvt|amt|pdk|m-dct|s-tronic|tiptronic|steptronic|dsg7|dct7|dct8)$/i;
+    const picked: string[] = [];
+    for (const raw of tokens) {
+      const t = raw.replace(/[,()]/g, "").trim();
+      if (!t) continue;
+      if (stripRe.test(t)) break; // we've hit the "spec" side of the derivative
+      picked.push(t);
+      if (picked.length >= 2) break; // two words is enough — "Defender 90", "5 Series", etc.
+    }
+    if (picked.length > 0) return toTitleCase(picked.join(" "));
+  }
+  // Fallback — clean the raw model_name (strip after `/`, strip parens).
+  const modelClean = cleanText(model || "");
+  if (!modelClean) return null;
+  const firstHalf = modelClean.split("/")[0].trim();
+  return toTitleCase(firstHalf || modelClean);
 }
 
 // Resolve the year range to feed into WeBuyCars' Year=[a,b,c] filter.
@@ -205,7 +253,7 @@ function jsonArrayParam(values: (string | number)[]): string {
 function buildWeBuyCarsUrl(p: Props): string | null {
   const make = normaliseMake(p.make);
   if (!make) return null;
-  const model = normaliseModel(p.model);
+  const model = deriveModelKeyword(p.model, p.derivative);
   const range = resolveEffectiveRange(p);
   const fuel = normaliseFuel(p.fuelType);
   const trans = normaliseTransmission(p.transmission);
@@ -263,7 +311,7 @@ export default function WeBuyCarsListingsCard(props: Props) {
   if (!url) return null;
 
   const make = normaliseMake(props.make) || "";
-  const model = normaliseModel(props.model) || "";
+  const model = deriveModelKeyword(props.model, props.derivative) || "";
   const range = resolveEffectiveRange(props);
   const yearStr = range
     ? range.from === range.to
