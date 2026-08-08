@@ -910,6 +910,85 @@ async def public_covers_last_30_days(current: dict = Depends(get_current_user)):
     return {"total_zar": total, "count": count, "since": cutoff_iso}
 
 
+@api_router.get("/stats/deal-outcomes")
+async def deal_outcomes_stats(current: dict = Depends(get_current_user)):
+    """Roll-up of deal-tracking outcomes across the caller's visible
+    submissions. Powers the Home-screen "Deal Outcomes" reporting tile.
+
+    Scope:
+      • Admin — all non-pending submissions across every dealership.
+      • Pricing agent — same scope as an admin (they see their own
+        dealership's submissions, and the Give Cover flow is separate).
+      • Dealer — submissions owned by their DEALERSHIP (any teammate).
+
+    Outcome buckets:
+      • pending   — dealer hasn't answered "Did you do the deal?" yet
+                     (deal is null OR deal.done is null/missing).
+      • deal_done — dealer answered Yes (deal.done === true).
+      • no_deal   — dealer answered No  (deal.done === false).
+
+    Also returns two derived counters that are useful on the same tile:
+      • sold          — how many "deal_done" also have deal.sold === true.
+      • gross_profit_zar — sum of profits across sold submissions (may be
+                            negative if the dealer took a loss).
+
+    We deliberately EXCLUDE `status == "pending"` submissions from every
+    bucket because the deal-tracking UI is hidden until the vehicle is
+    priced — nothing to record an outcome against yet.
+    """
+    role = current.get("role")
+    # Build the mongo filter for submissions we should count.
+    query: dict = {"status": {"$ne": "pending"}}
+    if role != "admin":
+        my_dship = await _get_user_dealership_id(current)
+        if my_dship:
+            query["$or"] = [
+                {"dealership_id": my_dship},
+                # Legacy submissions without dealership_id — fall back to
+                # the ownership check.
+                {"dealer_id": current.get("id")},
+            ]
+        else:
+            query["dealer_id"] = current.get("id")
+
+    pending = 0
+    deal_done = 0
+    no_deal = 0
+    sold = 0
+    profit_total = 0
+    cursor = db.submissions.find(
+        query,
+        {"_id": 0, "deal": 1, "status": 1, "dealership_id": 1, "dealer_id": 1},
+    )
+    async for s in cursor:
+        deal = s.get("deal") or {}
+        done_val = deal.get("done")
+        if done_val is True:
+            deal_done += 1
+            if deal.get("sold") is True:
+                sold += 1
+                # Reuse the same helper the vehicle detail page uses so
+                # this figure ALWAYS matches the P&L rendered elsewhere.
+                p = _compute_deal_profit(deal).get("profit_zar")
+                if isinstance(p, (int, float)):
+                    profit_total += int(p)
+        elif done_val is False:
+            no_deal += 1
+        else:
+            pending += 1
+
+    total = pending + deal_done + no_deal
+    return {
+        "pending": pending,
+        "deal_done": deal_done,
+        "no_deal": no_deal,
+        "sold": sold,
+        "total": total,
+        "gross_profit_zar": profit_total,
+    }
+
+
+
 
 
 @api_router.get("/auth/me")

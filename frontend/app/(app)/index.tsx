@@ -163,6 +163,31 @@ export default function HomeScreen() {
   useEffect(() => { loadCoversTotal(); }, [loadCoversTotal]);
   useFocusEffect(useCallback(() => { loadCoversTotal(); }, [loadCoversTotal]));
 
+  // Deal-outcomes reporting tile — counts of submissions grouped by
+  // whether the dealer marked "did the deal", "no deal", or hasn't yet
+  // answered ("pending outcome"). Scoped to the caller's dealership on
+  // the backend; admins see every dealership rolled up. Refreshes on
+  // every focus so leaving-and-returning updates the numbers.
+  type DealOutcomes = {
+    pending: number;
+    deal_done: number;
+    no_deal: number;
+    sold: number;
+    total: number;
+    gross_profit_zar: number;
+  };
+  const [dealOutcomes, setDealOutcomes] = useState<DealOutcomes | null>(null);
+  const loadDealOutcomes = useCallback(async () => {
+    try {
+      const r = await apiFetch("/api/stats/deal-outcomes");
+      if (r && typeof r === "object") setDealOutcomes(r as DealOutcomes);
+    } catch {
+      // Non-fatal — the tile stays hidden if the endpoint fails.
+    }
+  }, []);
+  useEffect(() => { loadDealOutcomes(); }, [loadDealOutcomes]);
+  useFocusEffect(useCallback(() => { loadDealOutcomes(); }, [loadDealOutcomes]));
+
   // Live-loaded advertising slots — replace the hardcoded 3 ads on the
   // "Advertising" tile with whatever the admin has configured via the
   // Admin Cockpit → Advertising module. If none are configured yet we
@@ -347,8 +372,97 @@ export default function HomeScreen() {
                   <Text style={styles.coversBannerValue} testID="covers-banner-value">
                     R{coversTotal30d.toLocaleString("en-US")}
                   </Text>
+                </View>              </View>
+            </View>
+          ) : null}
+
+          {/* -------- Deal Outcomes reporting tile --------
+              Shows PENDING / DEAL DONE / NO DEAL DONE counts for the
+              caller's dealership (admins see the global roll-up).
+              Renders as three coloured pills + a "sold" callout so the
+              dealer can spot pending outcomes at a glance. */}
+          {dealOutcomes && dealOutcomes.total > 0 ? (
+            <View style={styles.dealStatWrap} testID="deal-outcomes-tile">
+              <View style={styles.dealStatHead}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.dealStatEyebrow}>
+                    {isAdmin ? "ALL DEALERSHIPS" : "YOUR DEALERSHIP"}
+                  </Text>
+                  <Text style={styles.dealStatTitle}>Deal Outcomes</Text>
+                  <Text style={styles.dealStatSub}>
+                    Track which submissions still need an outcome recorded.
+                  </Text>
+                </View>
+                <View style={styles.dealStatTotalChip}>
+                  <Text style={styles.dealStatTotalNum}>{dealOutcomes.total}</Text>
+                  <Text style={styles.dealStatTotalLbl}>TOTAL</Text>
                 </View>
               </View>
+              <View style={styles.dealStatRow}>
+                <Pressable
+                  style={[styles.dealStatCard, styles.dealStatCardPending]}
+                  onPress={() => router.push("/(app)/history" as never)}
+                  testID="deal-outcome-pending"
+                >
+                  <Ionicons name="hourglass-outline" size={16} color="#B67900" />
+                  <Text style={[styles.dealStatValue, { color: "#B67900" }]}>
+                    {dealOutcomes.pending}
+                  </Text>
+                  <Text style={styles.dealStatLabel}>PENDING</Text>
+                  <Text style={styles.dealStatHint} numberOfLines={1}>
+                    Awaiting outcome
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.dealStatCard, styles.dealStatCardDone]}
+                  onPress={() => router.push("/(app)/history" as never)}
+                  testID="deal-outcome-done"
+                >
+                  <Ionicons name="checkmark-circle" size={16} color="#1F7A3A" />
+                  <Text style={[styles.dealStatValue, { color: "#1F7A3A" }]}>
+                    {dealOutcomes.deal_done}
+                  </Text>
+                  <Text style={styles.dealStatLabel}>DEAL DONE</Text>
+                  <Text style={styles.dealStatHint} numberOfLines={1}>
+                    {dealOutcomes.sold} sold
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.dealStatCard, styles.dealStatCardNo]}
+                  onPress={() => router.push("/(app)/history" as never)}
+                  testID="deal-outcome-no"
+                >
+                  <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
+                  <Text style={[styles.dealStatValue, { color: colors.textSecondary }]}>
+                    {dealOutcomes.no_deal}
+                  </Text>
+                  <Text style={styles.dealStatLabel}>NO DEAL</Text>
+                  <Text style={styles.dealStatHint} numberOfLines={1}>
+                    Not proceeded
+                  </Text>
+                </Pressable>
+              </View>
+              {dealOutcomes.sold > 0 ? (
+                <View style={styles.dealStatProfitStrip}>
+                  <Ionicons
+                    name={dealOutcomes.gross_profit_zar >= 0 ? "trending-up" : "trending-down"}
+                    size={14}
+                    color={dealOutcomes.gross_profit_zar >= 0 ? "#1F7A3A" : "#B3261E"}
+                  />
+                  <Text style={styles.dealStatProfitLbl}>
+                    {dealOutcomes.gross_profit_zar >= 0 ? "Gross profit on sold cars" : "Loss on sold cars"}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.dealStatProfitVal,
+                      { color: dealOutcomes.gross_profit_zar >= 0 ? "#1F7A3A" : "#B3261E" },
+                    ]}
+                    testID="deal-outcome-profit"
+                  >
+                    R{Math.abs(dealOutcomes.gross_profit_zar).toLocaleString("en-ZA")}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           ) : null}
 
@@ -799,6 +913,136 @@ const makeStyles = (colors: Palette, isWide: boolean) => {
       fontFamily: fonts.number,
       fontVariant: ["tabular-nums"],
       lineHeight: isWide ? 48 : 38,
+    },
+    // -------- Deal Outcomes reporting tile --------
+    dealStatWrap: {
+      marginTop: spacing.md,
+      padding: isWide ? spacing.lg : spacing.md,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+      gap: spacing.sm,
+    },
+    dealStatHead: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: spacing.md,
+    },
+    dealStatEyebrow: {
+      color: colors.textSecondary,
+      fontSize: 10,
+      fontWeight: "800",
+      letterSpacing: 1.2,
+      marginBottom: 2,
+    },
+    dealStatTitle: {
+      color: colors.text,
+      fontSize: isWide ? 20 : 17,
+      fontWeight: "800",
+      letterSpacing: -0.3,
+    },
+    dealStatSub: {
+      color: colors.textSecondary,
+      fontSize: 12,
+      marginTop: 2,
+      lineHeight: 16,
+    },
+    dealStatTotalChip: {
+      minWidth: 64,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.paper,
+      alignItems: "center",
+    },
+    dealStatTotalNum: {
+      color: colors.text,
+      fontSize: isWide ? 26 : 22,
+      fontWeight: "800",
+      fontFamily: fonts.number,
+      fontVariant: ["tabular-nums"],
+      letterSpacing: -0.5,
+    },
+    dealStatTotalLbl: {
+      color: colors.textSecondary,
+      fontSize: 9,
+      fontWeight: "800",
+      letterSpacing: 1,
+      marginTop: 1,
+    },
+    dealStatRow: {
+      flexDirection: "row",
+      gap: spacing.sm,
+      marginTop: spacing.xs,
+    },
+    dealStatCard: {
+      flex: 1,
+      minWidth: 90,
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.sm,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      alignItems: "flex-start",
+      gap: 4,
+    },
+    dealStatCardPending: {
+      borderColor: "#B67900" + "55",
+      backgroundColor: "#B67900" + "14",
+    },
+    dealStatCardDone: {
+      borderColor: "#1F7A3A" + "55",
+      backgroundColor: "#1F7A3A" + "14",
+    },
+    dealStatCardNo: {
+      borderColor: colors.border,
+      backgroundColor: colors.paper,
+    },
+    dealStatValue: {
+      fontSize: isWide ? 32 : 26,
+      fontWeight: "800",
+      fontFamily: fonts.number,
+      fontVariant: ["tabular-nums"],
+      letterSpacing: -0.6,
+      lineHeight: isWide ? 36 : 30,
+    },
+    dealStatLabel: {
+      color: colors.text,
+      fontSize: 11,
+      fontWeight: "800",
+      letterSpacing: 0.8,
+    },
+    dealStatHint: {
+      color: colors.textSecondary,
+      fontSize: 11,
+      marginTop: 1,
+    },
+    dealStatProfitStrip: {
+      marginTop: spacing.xs,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 10,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.paper,
+    },
+    dealStatProfitLbl: {
+      color: colors.textSecondary,
+      fontSize: 12,
+      fontWeight: "600",
+      flex: 1,
+    },
+    dealStatProfitVal: {
+      fontSize: 15,
+      fontWeight: "800",
+      fontFamily: fonts.number,
+      fontVariant: ["tabular-nums"],
+      letterSpacing: -0.3,
     },
     // Quick-nav tile grid (all viewports) --------------------------------
     quickGrid: {

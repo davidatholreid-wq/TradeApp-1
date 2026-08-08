@@ -548,6 +548,29 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
     if (view === "home") loadMtd();
   }, [view, loadMtd]);
 
+  // Deal-outcomes roll-up across ALL dealerships (backend gives admins
+  // the global totals). Loaded whenever the admin lands on Home.
+  type DealOutcomes = {
+    pending: number;
+    deal_done: number;
+    no_deal: number;
+    sold: number;
+    total: number;
+    gross_profit_zar: number;
+  };
+  const [dealOutcomes, setDealOutcomes] = useState<DealOutcomes | null>(null);
+  const loadDealOutcomes = useCallback(async () => {
+    try {
+      const r = await apiFetch("/api/stats/deal-outcomes");
+      if (r && typeof r === "object") setDealOutcomes(r as DealOutcomes);
+    } catch (e) {
+      console.log(e);
+    }
+  }, []);
+  useEffect(() => {
+    if (view === "home") loadDealOutcomes();
+  }, [view, loadDealOutcomes]);
+
   const monthLabel = useMemo(() => {
     if (!mtd?.period?.month) return "This month";
     try {
@@ -860,6 +883,81 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
               </View>
             </View>
           </View>
+
+          {/* -------- Deal Outcomes reporting (admin roll-up) --------
+              Same tri-state pill set the dealer sees on the mobile home,
+              but rolled up across every dealership so admins can spot
+              submissions that need chasing. */}
+          {dealOutcomes && dealOutcomes.total > 0 ? (
+            <View style={styles.mtdSection} testID="cockpit-deal-outcomes">
+              <View style={styles.mtdSectionHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.mtdSectionTitle}>Deal Outcomes</Text>
+                  <Text style={styles.mtdSectionSubtitle}>
+                    Across all dealerships · {dealOutcomes.total} priced submission
+                    {dealOutcomes.total === 1 ? "" : "s"}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={loadDealOutcomes}
+                  style={styles.mtdRefreshBtn}
+                  testID="cockpit-deal-outcomes-refresh"
+                  accessibilityLabel="Refresh deal outcomes"
+                >
+                  <Ionicons name="refresh" size={14} color={colors.text} />
+                  <Text style={styles.mtdRefreshText}>Refresh</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.mtdKpiRow}>
+                <View
+                  style={[styles.mtdKpiCard, { borderColor: "#B6790055" }]}
+                  testID="cockpit-deal-outcome-pending"
+                >
+                  <View style={styles.mtdKpiHeader}>
+                    <Ionicons name="hourglass-outline" size={16} color="#B67900" />
+                    <Text style={styles.mtdKpiLabel}>PENDING OUTCOME</Text>
+                  </View>
+                  <Text style={[styles.mtdKpiValue, { color: "#B67900" }]}>
+                    {dealOutcomes.pending}
+                  </Text>
+                  <Text style={styles.mtdKpiMeta}>Awaiting dealer confirmation</Text>
+                </View>
+                <View
+                  style={[styles.mtdKpiCard, { borderColor: "#1F7A3A55" }]}
+                  testID="cockpit-deal-outcome-done"
+                >
+                  <View style={styles.mtdKpiHeader}>
+                    <Ionicons name="checkmark-circle" size={16} color="#1F7A3A" />
+                    <Text style={styles.mtdKpiLabel}>DEAL DONE</Text>
+                  </View>
+                  <Text style={[styles.mtdKpiValue, { color: "#1F7A3A" }]}>
+                    {dealOutcomes.deal_done}
+                  </Text>
+                  <Text style={styles.mtdKpiMeta}>
+                    {dealOutcomes.sold} sold
+                    {dealOutcomes.sold > 0
+                      ? `  ·  ${fmtZAR(dealOutcomes.gross_profit_zar)} gross P&L`
+                      : ""}
+                  </Text>
+                </View>
+                <View
+                  style={[styles.mtdKpiCard, { borderColor: colors.border }]}
+                  testID="cockpit-deal-outcome-no"
+                >
+                  <View style={styles.mtdKpiHeader}>
+                    <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
+                    <Text style={styles.mtdKpiLabel}>NO DEAL DONE</Text>
+                  </View>
+                  <Text style={[styles.mtdKpiValue, { color: colors.textSecondary }]}>
+                    {dealOutcomes.no_deal}
+                  </Text>
+                  <Text style={styles.mtdKpiMeta}>Dealer walked away</Text>
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+
 
           <View style={styles.homeTilesRow}>
             {[
