@@ -4506,6 +4506,108 @@ async def update_submission_deal(
     return {"ok": True, "deal": deal, "profit": profit}
 
 
+class AttachLicenseDiskPayload(BaseModel):
+    """Payload for the non-billable `add license disk to existing sub` flow.
+
+    Dealer scans / uploads a licence disc for a submission that was
+    originally submitted with VIN=TBC. We extract VIN + engine number
+    from the raw PDF-417 blob, upload the raw blob and (optional)
+    physical photograph to Cloudinary, and stamp them on the sub —
+    no new invoice, no re-pricing, no touching the offer.
+    """
+    license_disk_data: str
+    license_disk_photo: Optional[str] = None
+
+
+@api_router.patch("/submissions/{sub_id}/license-disk")
+async def attach_license_disk(
+    sub_id: str,
+    payload: AttachLicenseDiskPayload,
+    current: dict = Depends(get_current_user),
+):
+    """Attach a licence-disc scan to an existing submission without
+    creating a new billable valuation.
+
+    Guardrails:
+      • dealer must be on the owning dealership (or the original
+        submitter). Admins can also patch for correction workflows.
+      • only proceeds if the existing submission has no VIN (or VIN=='TBC').
+        If a real VIN is already recorded we refuse — the dealer should
+        submit a fresh valuation for a different car.
+      • VIN and engine number are re-derived from the barcode payload
+        (never trusted from the client).
+    """
+    sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+
+    # Access: admin OR dealer on the owning dealership OR original submitter.
+    role = current.get("role")
+    if role != "admin":
+        owner_dship = sub.get("dealership_id")
+        my_dship = await _get_user_dealership_id(current)
+        if not (owner_dship and owner_dship == my_dship) and sub.get("dealer_id") != current.get("id"):
+            raise HTTPException(403, "Only the submitting dealership can attach a licence disc.")
+
+    existing_vin = (sub.get("vin") or "").strip().upper()
+    if existing_vin and existing_vin != "TBC":
+        raise HTTPException(400, "This submission already has a VIN captured; nothing to attach.")
+
+    # Extract VIN + engine number from the scanned barcode string.
+    parsed = _parse_license_disk_string(payload.license_disk_data or "")
+    new_vin = (parsed.get("vin") or "").strip().upper() or "TBC"
+    new_engine = (parsed.get("engine_number") or "").strip().upper() or (sub.get("engine_number") or "TBC")
+
+    if new_vin == "TBC":
+        raise HTTPException(
+            400,
+            "The scanned licence disc did not contain a VIN. Please retake the scan or upload a clearer photo.",
+        )
+
+    # Upload the raw disc payload + photo to Cloudinary (folder-scoped
+    # to the submission so admin can reconcile later).
+    disk_uploaded = upload_image_to_cloudinary(
+        payload.license_disk_data,
+        folder=f"fourbuy/submissions/{sub_id}",
+        public_id="license_disk",
+    )
+    disk_photo_uploaded = upload_image_to_cloudinary(
+        payload.license_disk_photo,
+        folder=f"fourbuy/submissions/{sub_id}",
+        public_id="license_disk_photo",
+    )
+
+    update = {
+        "vin": new_vin,
+        "engine_number": new_engine,
+        "license_disk_data": disk_uploaded or payload.license_disk_data,
+    }
+    if disk_photo_uploaded:
+        update["license_disk_photo"] = disk_photo_uploaded
+
+    # Audit trail — record who attached the disc + when. Non-billable.
+    now_iso = datetime.now(timezone.utc).isoformat()
+    info = current.get("dealer_info") or {}
+    who = (
+        f"{info.get('first_name','').strip()} {info.get('last_name','').strip()}".strip()
+        or current.get("email")
+        or "unknown"
+    )
+    disk_history = list(sub.get("license_disk_history") or [])
+    disk_history.append({
+        "attached_at": now_iso,
+        "attached_by_user_id": current.get("id"),
+        "attached_by_name": who,
+        "vin_before": existing_vin or None,
+        "vin_after": new_vin,
+    })
+    update["license_disk_history"] = disk_history
+
+    await db.submissions.update_one({"id": sub_id}, {"$set": update})
+    fresh = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
+    return {"ok": True, "submission": fresh, "vin": new_vin}
+
+
 async def _build_profit_pdf(sub: dict, deal: dict) -> bytes:
     """Render a 1-page A4 profit-analysis sheet for a completed deal.
 

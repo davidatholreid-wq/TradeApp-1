@@ -37,7 +37,7 @@ const MOUNT_SETTLE_MS = 900;
  */
 export default function ScanScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ returnPath?: string }>();
+  const params = useLocalSearchParams<{ returnPath?: string; submissionId?: string }>();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -66,6 +66,17 @@ export default function ScanScreen() {
   }, [permission, requestPermission]);
 
   const returnToCaller = () => {
+    // `attachDisk` — the caller opened the scanner from a vehicle detail
+    // to non-billably attach a licence disc to an existing sub. We route
+    // back with `?attach=1` so the vehicle screen knows to consume the
+    // stashed scan payload and PATCH /license-disk.
+    if (params?.returnPath === "attachDisk" && params?.submissionId) {
+      router.replace({
+        pathname: "/(app)/vehicle/[id]",
+        params: { id: String(params.submissionId), attach: "1" },
+      } as any);
+      return;
+    }
     const target = params?.returnPath === "submit" ? "/(app)/submit" : null;
     if (target) {
       router.replace(target as any);

@@ -74,6 +74,10 @@ import { TOKEN_KEY } from "@/src/api";
 import { useAuth } from "@/src/context/AuthContext";
 import { buildWhatsappUrl, buildDealerMessage } from "@/src/utils/whatsapp";
 import { decodeLicenseDisk } from "@/src/utils/licenseDisk";
+// Keep in sync with SCAN_* keys in /app/frontend/app/(app)/scan.tsx.
+const SCAN_BUFFER_KEY = "app.scan.buffer";
+const SCAN_PARSED_KEY = "app.scan.parsed";
+const SCAN_PHOTO_KEY = "app.scan.photo";
 import PhotoCarousel, { CarouselPhoto } from "@/src/components/PhotoCarousel";
 import ConditionRatingInfoModal from "@/src/components/ConditionRatingInfoModal";
 import BrandLogo from "@/src/components/BrandLogo";
@@ -324,7 +328,7 @@ function confirmAsync(title: string, message: string, confirmLabel = "Confirm"):
 export default function VehicleDetail() {
   const colors = useThemeColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const { id, cover } = useLocalSearchParams<{ id: string; cover?: string }>();
+  const { id, cover, attach } = useLocalSearchParams<{ id: string; cover?: string; attach?: string }>();
   const router = useRouter();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -1081,11 +1085,68 @@ export default function VehicleDetail() {
         } catch {
           /* silent — the initial load already surfaced errors */
         }
+
+        // "attach license disk" side-effect: the user just came back from
+        // /scan?returnPath=attachDisk. Consume the stashed scan payload,
+        // PATCH the sub non-billably, then refresh and show a toast.
+        if (attach === "1" && !cancelled) {
+          try {
+            const raw = await storage.getItem(SCAN_BUFFER_KEY);
+            const photo = await storage.getItem(SCAN_PHOTO_KEY);
+            // Wipe the storage IMMEDIATELY so a re-focus can't
+            // re-trigger the PATCH (route param can linger).
+            await storage.removeItem(SCAN_BUFFER_KEY);
+            await storage.removeItem(SCAN_PARSED_KEY);
+            await storage.removeItem(SCAN_PHOTO_KEY);
+            if (!raw || !raw.trim()) {
+              Alert.alert(
+                "No scan detected",
+                "The scanner didn't return any data. Please try scanning the licence disc again.",
+              );
+            } else {
+              try {
+                const patched = await apiFetch(
+                  `/api/submissions/${id}/license-disk`,
+                  {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      license_disk_data: raw,
+                      license_disk_photo: photo || undefined,
+                    }),
+                  },
+                );
+                if (!cancelled) {
+                  setSub(patched.submission);
+                  Alert.alert(
+                    "Licence disc attached",
+                    `VIN ${patched.vin} is now on this submission — VIN-linked reports are unlocked. Your invoice was not affected.`,
+                  );
+                }
+              } catch (patchErr: any) {
+                Alert.alert(
+                  "Could not attach licence disc",
+                  patchErr?.message ||
+                    "Something went wrong updating this submission. Please try again.",
+                );
+              }
+            }
+          } catch (e) {
+            console.log("attach license disk flow failed", e);
+          }
+          // Clear the `attach` param from the URL so refreshes don't
+          // re-trigger the flow.
+          try {
+            router.setParams({ attach: undefined } as any);
+          } catch (_e) {
+            /* setParams is optional-safe */
+          }
+        }
       })();
       return () => {
         cancelled = true;
       };
-    }, [id])
+    }, [id, attach])
   );
 
   const carouselPhotos: CarouselPhoto[] = useMemo(() => {
@@ -2862,13 +2923,17 @@ export default function VehicleDetail() {
                   <Text style={styles.vinRequiredHint}>
                     The VIN-Linked report requires you to capture the license
                     disk. Scan it to unlock Lightstone, Kredo accident history,
-                    CarTrust and factory-option reports.
+                    CarTrust and factory-option reports. Won&apos;t create a
+                    new billable valuation.
                   </Text>
                   {!isAdmin && !isCoverMode ? (
                     <TouchableOpacity
                       testID="scan-license-disk-cta"
                       style={styles.vinRequiredBtn}
-                      onPress={() => router.push(`/submit?edit=${sub.id}`)}
+                      onPress={() => router.push({
+                        pathname: "/(app)/scan",
+                        params: { returnPath: "attachDisk", submissionId: sub.id },
+                      } as any)}
                       accessibilityRole="button"
                     >
                       <Ionicons name="scan" size={14} color={colors.onPrimary} />
