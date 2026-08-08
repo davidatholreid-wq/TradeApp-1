@@ -1269,11 +1269,11 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                             </Text>
                           </View>
                         </View>
-                        <Text style={styles.rowTitle} numberOfLines={1}>
-                          {s.year} {s.make_name} {s.model_name}
+                        <Text style={styles.rowTitle} numberOfLines={2}>
+                          {s.year} {s.make_name} {s.derivative_name || s.model_name}
                         </Text>
                         <Text style={styles.rowSub} numberOfLines={1}>
-                          {s.derivative_name} · {s.mileage.toLocaleString()} km · {s.colour}
+                          {s.mileage.toLocaleString()} km · {s.colour}
                         </Text>
                         <Text style={styles.rowDealer} numberOfLines={1}>
                           {s.dealer_name} — {s.company_name}

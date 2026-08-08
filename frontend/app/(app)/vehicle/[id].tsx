@@ -3580,7 +3580,7 @@ export default function VehicleDetail() {
               </TouchableOpacity>
             </View>
             <Text style={styles.modalHint}>
-              {sub.year} {sub.make_name} {sub.model_name}
+              {sub.year} {sub.make_name} {sub.derivative_name || sub.model_name}
             </Text>
             {sub.status === "priced" && sub.price != null ? (
               <Text style={[styles.modalHint, { marginTop: 2 }]}>
@@ -3681,7 +3681,7 @@ export default function VehicleDetail() {
               <Text style={styles.reportModalTitle}>Cannot Offer</Text>
             </View>
             <Text style={styles.reportModalReport}>
-              {sub.year} {sub.make_name} {sub.model_name}
+              {sub.year} {sub.make_name} {sub.derivative_name || sub.model_name}
             </Text>
             <Text style={[styles.reportModalBody, { marginTop: spacing.sm }]}>
               This dealer will be notified:
