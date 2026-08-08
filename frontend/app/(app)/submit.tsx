@@ -639,10 +639,15 @@ export default function SubmitVehicle() {
           // fields. Backend relaxes validation and downstream renderers
           // stamp the valuation with the "Vehicle Unseen" banner.
           unseen,
-          mechanical_condition: unseen ? 5 : mechanicalRating,
-          cosmetic_condition: unseen ? 5 : cosmeticRating,
-          interior_condition: unseen ? 5 : interiorRating,
-          history_condition: unseen ? 5 : historyRating,
+          // Unseen submissions are priced *as if in perfect condition*
+          // (10/10 across all four pillars), since the dealer hasn't
+          // physically inspected the car and the valuation is on a
+          // desktop/subject-to-view basis. Physical inspection fields
+          // (service history, damage, recon) still get skipped below.
+          mechanical_condition: unseen ? 10 : mechanicalRating,
+          cosmetic_condition: unseen ? 10 : cosmeticRating,
+          interior_condition: unseen ? 10 : interiorRating,
+          history_condition: unseen ? 10 : historyRating,
           service_history: unseen ? null : serviceHistory,
           last_service_date: unseen ? null : (lastServiceDate || null),
           last_service_mileage: unseen ? null : (lastServiceMileage ? parseInt(lastServiceMileage.replace(/,/g, "")) : null),
@@ -881,7 +886,7 @@ export default function SubmitVehicle() {
           <View style={styles.unseenBox}>
             <View style={{ flex: 1, gap: 4 }}>
               <Text style={styles.unseenTitle}>
-                <Ionicons name="eye-off-outline" size={16} color={colors.text} /> Vehicle Unseen — Subject to View
+                <Ionicons name="eye-off-outline" size={13} color={colors.textSecondary} />  Vehicle Unseen — Subject to View
               </Text>
               <Text style={styles.unseenHint}>
                 Turn this on if you have NOT physically inspected the vehicle.
@@ -1337,30 +1342,33 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.md,
-    padding: spacing.md,
+    padding: spacing.sm + 2,
     marginTop: spacing.md,
     marginBottom: spacing.sm,
     backgroundColor: colors.paper,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderLight,
+    opacity: 0.92,
   },
   unseenTitle: {
-    ...fonts.smallStrong,
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "800",
+    ...fonts.small,
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 0.2,
   },
   unseenHint: {
     ...fonts.small,
     color: colors.textSecondary,
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: 11,
+    lineHeight: 15,
+    opacity: 0.85,
   },
   unseenSwitch: {
-    width: 46,
-    height: 28,
-    borderRadius: 14,
+    width: 42,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: colors.borderLight,
     justifyContent: "center",
     padding: 2,
@@ -1369,9 +1377,9 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     backgroundColor: colors.primary,
   },
   unseenKnob: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     backgroundColor: "#fff",
     alignSelf: "flex-start",
   },
