@@ -172,6 +172,27 @@ type SubmissionFull = Submission & {
     admin_name?: string | null;
     at?: string;
   }[];
+  // Dealer-private deal tracking. Admin sees this READ-ONLY. Pricing
+  // agents never see it (backend strips it upstream).
+  deal?: {
+    done?: boolean | null;
+    purchased_at?: string | null;
+    purchase_price_zar?: number | null;
+    sold?: boolean | null;
+    sold_at?: string | null;
+    recon_cost_zar?: number | null;
+    sale_price_zar?: number | null;
+    updated_at?: string | null;
+    updated_by_name?: string | null;
+  } | null;
+  deal_profit?: {
+    purchase_price_zar: number | null;
+    recon_cost_zar: number | null;
+    sale_price_zar: number | null;
+    cost_basis_zar: number | null;
+    profit_zar: number | null;
+    margin_pct: number | null;
+  } | null;
 };
 
 const PHOTO_ORDER: { key: string; fallback?: string; label: string }[] = [
@@ -1932,6 +1953,90 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 </View>
               ) : null}
 
+              {/* ============ DEAL TRACKING (admin read-only) ============ */}
+              {selected.deal && selected.deal.done !== null && selected.deal.done !== undefined ? (
+                <View style={styles.analysisBox} testID="admin-deal-tracking">
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                    <Ionicons name="briefcase-outline" size={14} color={colors.text} />
+                    <Text style={styles.boxTitle}>DEAL TRACKING</Text>
+                    <View style={{ flex: 1 }} />
+                    <View style={styles.dealReadPill}>
+                      <Ionicons name="lock-closed" size={10} color={colors.textSecondary} />
+                      <Text style={styles.dealReadPillText}>ADMIN VIEW</Text>
+                    </View>
+                  </View>
+                  <View style={styles.dealAdminRow}>
+                    <Text style={styles.dealAdminLbl}>Did they do the deal?</Text>
+                    <Text style={styles.dealAdminVal}>
+                      {selected.deal.done === true ? "Yes" : selected.deal.done === false ? "No" : "—"}
+                    </Text>
+                  </View>
+                  {selected.deal.done === true ? (
+                    <>
+                      <View style={styles.dealAdminRow}>
+                        <Text style={styles.dealAdminLbl}>Purchase price</Text>
+                        <Text style={styles.dealAdminVal}>{fmtZar(selected.deal.purchase_price_zar || 0)}</Text>
+                      </View>
+                      {selected.deal.purchased_at ? (
+                        <Text style={styles.dealAdminMeta}>
+                          Bought on {new Date(selected.deal.purchased_at).toLocaleDateString("en-ZA")}
+                        </Text>
+                      ) : null}
+                      <View style={styles.dealAdminRow}>
+                        <Text style={styles.dealAdminLbl}>Have they sold the car?</Text>
+                        <Text style={styles.dealAdminVal}>
+                          {selected.deal.sold === true ? "Yes" : selected.deal.sold === false ? "Not yet" : "—"}
+                        </Text>
+                      </View>
+                      {selected.deal.sold === true ? (
+                        <>
+                          <View style={styles.dealAdminRow}>
+                            <Text style={styles.dealAdminLbl}>Reconditioning</Text>
+                            <Text style={styles.dealAdminVal}>{fmtZar(selected.deal.recon_cost_zar || 0)}</Text>
+                          </View>
+                          <View style={styles.dealAdminRow}>
+                            <Text style={styles.dealAdminLbl}>Sale price</Text>
+                            <Text style={styles.dealAdminVal}>{fmtZar(selected.deal.sale_price_zar || 0)}</Text>
+                          </View>
+                          {selected.deal.sold_at ? (
+                            <Text style={styles.dealAdminMeta}>
+                              Sold on {new Date(selected.deal.sold_at).toLocaleDateString("en-ZA")}
+                            </Text>
+                          ) : null}
+                        </>
+                      ) : null}
+                    </>
+                  ) : null}
+                  {selected.deal_profit && selected.deal_profit.profit_zar != null ? (
+                    <View
+                      style={[
+                        styles.dealAdminPnl,
+                        selected.deal_profit.profit_zar >= 0
+                          ? { borderColor: "#1F7A3A66", backgroundColor: "#1F7A3A1A" }
+                          : { borderColor: "#B3261E66", backgroundColor: "#B3261E1A" },
+                      ]}
+                    >
+                      <Text style={styles.dealAdminPnlLbl}>
+                        {selected.deal_profit.profit_zar >= 0 ? "GROSS PROFIT" : "LOSS"}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.dealAdminPnlVal,
+                          { color: selected.deal_profit.profit_zar >= 0 ? "#1F7A3A" : "#B3261E" },
+                        ]}
+                      >
+                        {fmtZar(selected.deal_profit.profit_zar)}
+                        {selected.deal_profit.margin_pct != null ? (
+                          <Text style={styles.dealAdminPnlMargin}>
+                            {"  ·  "}{selected.deal_profit.margin_pct}% margin
+                          </Text>
+                        ) : null}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
+
               {/* ================= OFFER HISTORY ================= */}
               {selected.price_history && selected.price_history.length > 0 ? (
                 <View style={styles.analysisBox}>
@@ -3117,6 +3222,74 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   offerPrice: { color: colors.text, fontSize: 15, fontWeight: "800" },
   offerNote: { color: colors.textSecondary, fontSize: 12, marginTop: 2, lineHeight: 17 },
   offerMeta: { color: colors.textSecondary, fontSize: 11, textAlign: "right" },
+  // ---- Admin Deal Tracking (read-only) ----
+  dealReadPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  dealReadPillText: {
+    color: colors.textSecondary,
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+  },
+  dealAdminRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  dealAdminLbl: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  dealAdminVal: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
+  dealAdminMeta: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    marginTop: 2,
+    marginBottom: 4,
+    textAlign: "right",
+  },
+  dealAdminPnl: {
+    marginTop: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    alignItems: "center",
+  },
+  dealAdminPnlLbl: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  dealAdminPnlVal: {
+    fontSize: 26,
+    fontWeight: "800",
+    fontVariant: ["tabular-nums"],
+    letterSpacing: -0.4,
+  },
+  dealAdminPnlMargin: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
+  },
   tyreHeaderRow: {
     flexDirection: "row",
     alignItems: "center",

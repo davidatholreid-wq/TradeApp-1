@@ -154,6 +154,35 @@ type Submission = {
   tyre_estimate_at?: string | null;
   created_at: string;
   report_orders?: ReportOrder[];
+  // Dealer-only deal tracking (never visible to pricing agents — the
+  // backend strips these fields from the sanitised cover-mode payload).
+  deal?: DealInfo | null;
+  deal_profit?: DealProfit | null;
+};
+
+// Deal tracking — the dealer's private record of the outcome. Stage 1
+// (purchase) unlocks Stage 2 (sale). All fields remain editable per user
+// request. Timestamps are stamped by the backend the first time each
+// stage flips to `true`.
+type DealInfo = {
+  done?: boolean | null;
+  purchased_at?: string | null;
+  purchase_price_zar?: number | null;
+  sold?: boolean | null;
+  sold_at?: string | null;
+  recon_cost_zar?: number | null;
+  sale_price_zar?: number | null;
+  updated_at?: string | null;
+  updated_by_name?: string | null;
+};
+
+type DealProfit = {
+  purchase_price_zar: number | null;
+  recon_cost_zar: number | null;
+  sale_price_zar: number | null;
+  cost_basis_zar: number | null;
+  profit_zar: number | null;
+  margin_pct: number | null;
 };
 
 type PriceHistoryEntry = {
@@ -494,6 +523,132 @@ export default function VehicleDetail() {
   >(null);
   const [placingCover, setPlacingCover] = useState(false);
   const [coverPriceInput, setCoverPriceInput] = useState("");
+
+  // ---- Deal Tracking state ----------------------------------------------
+  // Local input state for the four editable numeric fields — kept as
+  // strings so the user can freely type (backend coerces on save). The
+  // canonical persisted deal lives inside `sub.deal`.
+  const [dealSaving, setDealSaving] = useState(false);
+  const [dealPurchaseInput, setDealPurchaseInput] = useState("");
+  const [dealReconInput, setDealReconInput] = useState("");
+  const [dealSaleInput, setDealSaleInput] = useState("");
+  const [dealPdfDownloading, setDealPdfDownloading] = useState(false);
+  // Whenever the server-side `sub.deal` changes, mirror the numeric
+  // fields into the local text inputs so the form matches persisted state.
+  useEffect(() => {
+    const d = (sub as any)?.deal as DealInfo | null | undefined;
+    setDealPurchaseInput(
+      d?.purchase_price_zar != null ? String(d.purchase_price_zar) : ""
+    );
+    setDealReconInput(
+      d?.recon_cost_zar != null ? String(d.recon_cost_zar) : ""
+    );
+    setDealSaleInput(
+      d?.sale_price_zar != null ? String(d.sale_price_zar) : ""
+    );
+  }, [
+    (sub as any)?.deal?.purchase_price_zar,
+    (sub as any)?.deal?.recon_cost_zar,
+    (sub as any)?.deal?.sale_price_zar,
+  ]);
+
+  const parseMoneyInput = (raw: string): number | null => {
+    // Accept "R 450 000", "450,000", "450000.50" — strips spaces, commas
+    // and any leading "R". Returns null when the field is empty.
+    const s = (raw || "").trim().replace(/[Rr]/g, "").replace(/[,\s]/g, "");
+    if (!s) return null;
+    const n = Number(s);
+    return isFinite(n) ? n : null;
+  };
+  const fmtZar = (v: number | null | undefined) => {
+    if (v == null || !isFinite(Number(v))) return "—";
+    return `R ${Math.round(Number(v)).toLocaleString("en-ZA")}`;
+  };
+
+  const patchDeal = useCallback(
+    async (
+      patch: Partial<{
+        done: boolean | null;
+        purchase_price_zar: number | null;
+        sold: boolean | null;
+        recon_cost_zar: number | null;
+        sale_price_zar: number | null;
+      }>,
+    ) => {
+      if (!sub) return;
+      setDealSaving(true);
+      try {
+        const data = await apiFetch(`/api/submissions/${sub.id}/deal`, {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+        });
+        setSub((prev) =>
+          prev ? { ...prev, deal: data.deal, deal_profit: data.profit } : prev,
+        );
+      } catch (e: any) {
+        if (Platform.OS === "web") {
+          (globalThis as any).alert?.(e?.message || "Failed to update deal.");
+        } else {
+          Alert.alert("Update failed", e?.message || "Please try again.");
+        }
+      } finally {
+        setDealSaving(false);
+      }
+    },
+    [sub],
+  );
+
+  const handleDownloadProfitPdf = useCallback(async () => {
+    if (!sub) return;
+    setDealPdfDownloading(true);
+    try {
+      const url = `/api/submissions/${sub.id}/profit-analysis.pdf`;
+      if (Platform.OS === "web") {
+        // Fetch as blob + trigger a download link so the browser respects
+        // our Content-Disposition filename instead of opening in-tab.
+        const token = await storage.getItem(TOKEN_KEY);
+        const base =
+          (process.env as any).EXPO_PUBLIC_BACKEND_URL ||
+          (globalThis as any).location?.origin ||
+          "";
+        const res = await fetch(`${base}${url}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!res.ok) throw new Error(`Download failed (${res.status})`);
+        const blob = await res.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const a = (globalThis as any).document?.createElement("a");
+        if (a) {
+          a.href = objectUrl;
+          a.download = `profit_analysis_${sub.reference || sub.id}.pdf`;
+          a.click();
+        }
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 500);
+      } else {
+        const token = await storage.getItem(TOKEN_KEY);
+        const base =
+          (process.env as any).EXPO_PUBLIC_BACKEND_URL || "";
+        const dest = `${FileSystem.cacheDirectory}profit_${sub.id}.pdf`;
+        const dl = await FileSystem.downloadAsync(`${base}${url}`, dest, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (dl.status >= 200 && dl.status < 300) {
+          await Sharing.shareAsync(dl.uri, { mimeType: "application/pdf" });
+        } else {
+          throw new Error(`Download failed (${dl.status})`);
+        }
+      }
+    } catch (e: any) {
+      if (Platform.OS === "web") {
+        (globalThis as any).alert?.(e?.message || "Failed to download PDF.");
+      } else {
+        Alert.alert("Download failed", e?.message || "Please try again.");
+      }
+    } finally {
+      setDealPdfDownloading(false);
+    }
+  }, [sub]);
+
 
   // Force the scroll view back to the top whenever we land on this
   // page in cover-mode (or when the submission id changes). Without
@@ -1509,6 +1664,265 @@ export default function VehicleDetail() {
             })}
           </View>
         ) : null}
+
+        {/* --------------- Deal Tracking (dealer + admin only) ---------------
+            Dealer records the outcome of the deal in two stages:
+              Stage 1 — Did they buy it? At what price?
+              Stage 2 — Did they sell it? Recon spend + sale price.
+            Backend enforces visibility (pricing agents never see this) and
+            editability (only the owning dealership can PATCH). Admin sees
+            a read-only version. Hidden in cover-mode and while the vehicle
+            is still pending (nothing to price against yet). */}
+        {!isCoverMode && sub.status !== "pending" ? (
+          (() => {
+            const deal = (sub as any).deal as DealInfo | null | undefined;
+            const profit = ((sub as any).deal_profit as DealProfit | null) || null;
+            const done = deal?.done === true;
+            const sold = deal?.sold === true;
+            const readOnly = isAdmin;
+            const canDownloadPdf = profit?.profit_zar != null;
+            return (
+              <View style={styles.dealBox} testID="deal-tracking">
+                <View style={styles.dealHeader}>
+                  <Ionicons name="briefcase-outline" size={18} color={colors.primary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.dealTitle}>Deal Tracking &amp; Profit Analysis</Text>
+                    <Text style={styles.dealSub}>
+                      Private to your dealership and Fourbuy admin. Pricing
+                      agents never see this.
+                    </Text>
+                  </View>
+                  {readOnly ? (
+                    <View style={styles.dealBadge}>
+                      <Ionicons name="lock-closed" size={11} color={colors.textSecondary} />
+                      <Text style={styles.dealBadgeText}>ADMIN VIEW</Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                {/* ------ Stage 1: Purchase ------ */}
+                <View style={styles.dealStage} testID="deal-stage-1">
+                  <View style={styles.dealStageHeader}>
+                    <View style={styles.dealStagePill}>
+                      <Text style={styles.dealStagePillText}>1</Text>
+                    </View>
+                    <Text style={styles.dealStageTitle}>Did you do the deal?</Text>
+                  </View>
+                  <View style={styles.dealChoiceRow}>
+                    <TouchableOpacity
+                      testID="deal-done-yes"
+                      disabled={readOnly || dealSaving}
+                      style={[styles.dealChoiceBtn, done && styles.dealChoiceBtnYes]}
+                      onPress={() => patchDeal({ done: true })}
+                    >
+                      <Ionicons name="checkmark-circle" size={16}
+                        color={done ? "#fff" : colors.textSecondary} />
+                      <Text style={[styles.dealChoiceBtnText, done && styles.dealChoiceBtnTextActive]}>Yes</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      testID="deal-done-no"
+                      disabled={readOnly || dealSaving}
+                      style={[styles.dealChoiceBtn, deal?.done === false && styles.dealChoiceBtnNo]}
+                      onPress={() => patchDeal({ done: false })}
+                    >
+                      <Ionicons name="close-circle" size={16}
+                        color={deal?.done === false ? "#fff" : colors.textSecondary} />
+                      <Text style={[styles.dealChoiceBtnText, deal?.done === false && styles.dealChoiceBtnTextActive]}>No</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {done ? (
+                    <View style={styles.dealField}>
+                      <Text style={styles.dealFieldLabel}>Purchase price</Text>
+                      <View style={styles.dealInputWrap}>
+                        <Text style={styles.dealInputPrefix}>R</Text>
+                        <TextInput
+                          testID="deal-purchase-input"
+                          style={styles.dealInput}
+                          value={dealPurchaseInput}
+                          onChangeText={setDealPurchaseInput}
+                          placeholder="0"
+                          placeholderTextColor={colors.textDisabled}
+                          keyboardType="numeric"
+                          editable={!readOnly && !dealSaving}
+                          onBlur={() => {
+                            if (readOnly) return;
+                            const parsed = parseMoneyInput(dealPurchaseInput);
+                            if (parsed !== deal?.purchase_price_zar) {
+                              patchDeal({ purchase_price_zar: parsed });
+                            }
+                          }}
+                        />
+                      </View>
+                      {deal?.purchased_at ? (
+                        <Text style={styles.dealMeta}>
+                          Recorded {new Date(deal.purchased_at).toLocaleDateString()}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ) : null}
+                </View>
+
+                {/* ------ Stage 2: Sale (unlocked after Stage 1 = Yes) ------ */}
+                {done ? (
+                  <View style={styles.dealStage} testID="deal-stage-2">
+                    <View style={styles.dealStageHeader}>
+                      <View style={styles.dealStagePill}>
+                        <Text style={styles.dealStagePillText}>2</Text>
+                      </View>
+                      <Text style={styles.dealStageTitle}>Have you sold the car?</Text>
+                    </View>
+                    <View style={styles.dealChoiceRow}>
+                      <TouchableOpacity
+                        testID="deal-sold-yes"
+                        disabled={readOnly || dealSaving}
+                        style={[styles.dealChoiceBtn, sold && styles.dealChoiceBtnYes]}
+                        onPress={() => patchDeal({ sold: true })}
+                      >
+                        <Ionicons name="checkmark-circle" size={16}
+                          color={sold ? "#fff" : colors.textSecondary} />
+                        <Text style={[styles.dealChoiceBtnText, sold && styles.dealChoiceBtnTextActive]}>Yes</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        testID="deal-sold-no"
+                        disabled={readOnly || dealSaving}
+                        style={[styles.dealChoiceBtn, deal?.sold === false && styles.dealChoiceBtnNo]}
+                        onPress={() => patchDeal({ sold: false })}
+                      >
+                        <Ionicons name="close-circle" size={16}
+                          color={deal?.sold === false ? "#fff" : colors.textSecondary} />
+                        <Text style={[styles.dealChoiceBtnText, deal?.sold === false && styles.dealChoiceBtnTextActive]}>Not yet</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {sold ? (
+                      <>
+                        <View style={styles.dealField}>
+                          <Text style={styles.dealFieldLabel}>Reconditioning costs</Text>
+                          <View style={styles.dealInputWrap}>
+                            <Text style={styles.dealInputPrefix}>R</Text>
+                            <TextInput
+                              testID="deal-recon-input"
+                              style={styles.dealInput}
+                              value={dealReconInput}
+                              onChangeText={setDealReconInput}
+                              placeholder="0"
+                              placeholderTextColor={colors.textDisabled}
+                              keyboardType="numeric"
+                              editable={!readOnly && !dealSaving}
+                              onBlur={() => {
+                                if (readOnly) return;
+                                const parsed = parseMoneyInput(dealReconInput);
+                                if (parsed !== deal?.recon_cost_zar) {
+                                  patchDeal({ recon_cost_zar: parsed });
+                                }
+                              }}
+                            />
+                          </View>
+                        </View>
+                        <View style={styles.dealField}>
+                          <Text style={styles.dealFieldLabel}>Sale price</Text>
+                          <View style={styles.dealInputWrap}>
+                            <Text style={styles.dealInputPrefix}>R</Text>
+                            <TextInput
+                              testID="deal-sale-input"
+                              style={styles.dealInput}
+                              value={dealSaleInput}
+                              onChangeText={setDealSaleInput}
+                              placeholder="0"
+                              placeholderTextColor={colors.textDisabled}
+                              keyboardType="numeric"
+                              editable={!readOnly && !dealSaving}
+                              onBlur={() => {
+                                if (readOnly) return;
+                                const parsed = parseMoneyInput(dealSaleInput);
+                                if (parsed !== deal?.sale_price_zar) {
+                                  patchDeal({ sale_price_zar: parsed });
+                                }
+                              }}
+                            />
+                          </View>
+                          {deal?.sold_at ? (
+                            <Text style={styles.dealMeta}>
+                              Sold on {new Date(deal.sold_at).toLocaleDateString()}
+                            </Text>
+                          ) : null}
+                        </View>
+                      </>
+                    ) : null}
+                  </View>
+                ) : null}
+
+                {/* ------ Live P&L callout + PDF ------ */}
+                {profit && profit.cost_basis_zar != null ? (
+                  <View
+                    style={[
+                      styles.dealPnl,
+                      profit.profit_zar != null && profit.profit_zar >= 0
+                        ? styles.dealPnlOk
+                        : profit.profit_zar != null
+                          ? styles.dealPnlLoss
+                          : styles.dealPnlNeutral,
+                    ]}
+                    testID="deal-pnl"
+                  >
+                    <View style={styles.dealPnlRow}>
+                      <Text style={styles.dealPnlLbl}>Purchase</Text>
+                      <Text style={styles.dealPnlVal}>{fmtZar(profit.purchase_price_zar)}</Text>
+                    </View>
+                    <View style={styles.dealPnlRow}>
+                      <Text style={styles.dealPnlLbl}>Recon</Text>
+                      <Text style={styles.dealPnlVal}>{fmtZar(profit.recon_cost_zar)}</Text>
+                    </View>
+                    <View style={[styles.dealPnlRow, styles.dealPnlDivider]}>
+                      <Text style={styles.dealPnlLbl}>Cost basis</Text>
+                      <Text style={styles.dealPnlVal}>{fmtZar(profit.cost_basis_zar)}</Text>
+                    </View>
+                    <View style={styles.dealPnlRow}>
+                      <Text style={styles.dealPnlLbl}>Sale</Text>
+                      <Text style={styles.dealPnlVal}>{fmtZar(profit.sale_price_zar)}</Text>
+                    </View>
+                    <View style={[styles.dealPnlRow, styles.dealPnlProfitRow]}>
+                      <Text style={styles.dealPnlProfitLbl}>
+                        {profit.profit_zar != null && profit.profit_zar < 0 ? "Loss" : "Gross profit"}
+                      </Text>
+                      <View style={{ alignItems: "flex-end" }}>
+                        <Text
+                          style={[
+                            styles.dealPnlProfitVal,
+                            profit.profit_zar != null && profit.profit_zar < 0 && styles.dealPnlProfitValLoss,
+                          ]}
+                        >
+                          {fmtZar(profit.profit_zar)}
+                        </Text>
+                        {profit.margin_pct != null ? (
+                          <Text style={styles.dealPnlMargin}>{profit.margin_pct}% margin</Text>
+                        ) : null}
+                      </View>
+                    </View>
+                    {canDownloadPdf ? (
+                      <TouchableOpacity
+                        testID="deal-download-pdf"
+                        disabled={dealPdfDownloading}
+                        style={styles.dealPdfBtn}
+                        onPress={handleDownloadProfitPdf}
+                      >
+                        {dealPdfDownloading ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <>
+                            <Ionicons name="download-outline" size={16} color="#fff" />
+                            <Text style={styles.dealPdfBtnText}>Download Profit Analysis PDF</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                ) : null}
+              </View>
+            );
+          })()
+        ) : null}
+
+
 
         {/* Price history log — every offer / update the admin has made, most
             recent first. Visible to both admins and the owning dealer for
@@ -3621,6 +4035,234 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     fontSize: 12,
     fontWeight: "800",
     letterSpacing: 0.3,
+  },
+  // -------- Deal Tracking & Profit Analysis (dealer + admin only) --------
+  dealBox: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    gap: spacing.sm,
+  },
+  dealHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  dealTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "800",
+    letterSpacing: -0.1,
+  },
+  dealSub: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    marginTop: 1,
+    lineHeight: 15,
+  },
+  dealBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  dealBadgeText: {
+    color: colors.textSecondary,
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+  },
+  dealStage: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.sm,
+    gap: 10,
+  },
+  dealStageHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  dealStagePill: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dealStagePillText: {
+    color: colors.onPrimary,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  dealStageTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "700",
+    letterSpacing: -0.1,
+  },
+  dealChoiceRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  dealChoiceBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  dealChoiceBtnYes: {
+    borderColor: "#1F7A3A",
+    backgroundColor: "#1F7A3A",
+  },
+  dealChoiceBtnNo: {
+    borderColor: "#6B7280",
+    backgroundColor: "#6B7280",
+  },
+  dealChoiceBtnText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+  },
+  dealChoiceBtnTextActive: {
+    color: "#fff",
+  },
+  dealField: {
+    gap: 4,
+  },
+  dealFieldLabel: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.6,
+  },
+  dealInputWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    backgroundColor: colors.paper,
+    paddingHorizontal: 10,
+  },
+  dealInputPrefix: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: "800",
+    marginRight: 6,
+  },
+  dealInput: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700",
+    paddingVertical: 10,
+    fontVariant: ["tabular-nums"],
+  },
+  dealMeta: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  dealPnl: {
+    marginTop: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    gap: 6,
+  },
+  dealPnlOk: {
+    borderColor: "#1F7A3A" + "66",
+    backgroundColor: "#1F7A3A" + "1A",
+  },
+  dealPnlLoss: {
+    borderColor: "#B3261E" + "66",
+    backgroundColor: "#B3261E" + "1A",
+  },
+  dealPnlNeutral: {
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  dealPnlRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  dealPnlDivider: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: 6,
+    marginTop: 2,
+  },
+  dealPnlLbl: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  dealPnlVal: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
+  dealPnlProfitRow: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: 8,
+    marginTop: 4,
+    alignItems: "flex-end",
+  },
+  dealPnlProfitLbl: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+  },
+  dealPnlProfitVal: {
+    color: "#1F7A3A",
+    fontSize: 22,
+    fontWeight: "800",
+    fontVariant: ["tabular-nums"],
+    letterSpacing: -0.4,
+  },
+  dealPnlProfitValLoss: {
+    color: "#B3261E",
+  },
+  dealPnlMargin: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
+    fontWeight: "600",
+  },
+  dealPdfBtn: {
+    marginTop: spacing.sm,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: radius.sm,
+    backgroundColor: colors.text,
+  },
+  dealPdfBtnText: {
+    color: colors.onPrimary,
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 0.4,
   },
   // Cover-placement bottom bar (pricing-agent mode)
   coverPlaceBar: {

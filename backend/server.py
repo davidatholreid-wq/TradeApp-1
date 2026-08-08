@@ -1885,6 +1885,12 @@ async def get_submission(sub_id: str, current: dict = Depends(get_current_user))
             r for r in (sub.get("report_orders") or [])
             if r.get("type") != "cover_offer" or r.get("ordered_by") == agent_id
         ]
+    else:
+        # Non-pricing-agent path (owner dealership member OR admin).
+        # Attach a derived profit block so the client can render the P&L
+        # without re-computing on every field change.
+        if isinstance(sub.get("deal"), dict):
+            sub["deal_profit"] = _compute_deal_profit(sub["deal"])
     return {"submission": sub}
 
 
@@ -4123,6 +4129,444 @@ async def _build_report_pdf(sub: dict, order: dict) -> bytes:
 
     doc.build(story)
     return buf.getvalue()
+
+
+# ============ Deal Tracking & Profit Analysis ============
+# The submitting dealer records the outcome of the deal on the vehicle in
+# TWO stages once they've received Fourbuy's Cover + any Pricing Agent
+# covers:
+#   Stage 1 (purchase)  — Did they do the deal? If yes, at what price?
+#   Stage 2 (sale)      — Have they sold the car? If yes, recon spend +
+#                          sale price. From these we compute a live P&L
+#                          which can be downloaded as a PDF.
+#
+# Visibility rules:
+#   • Dealer users in the SAME dealership as the submission can edit.
+#   • Admin can read (for internal reporting) but never edits.
+#   • Pricing agents in the Give Cover network MUST NEVER see any of
+#     this data — enforced in `_sanitise_sub_for_pricing_agent`.
+
+def _sanitise_deal_int(value, field: str) -> Optional[int]:
+    """Coerce a client-supplied price / cost input into a non-negative int
+    ZAR value. Accepts int, float or numeric strings; strips whitespace,
+    commas, spaces and a leading `R`. Returns None when the value is
+    None/empty. Raises HTTPException on invalid values so the client sees
+    a proper 400."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise HTTPException(400, f"{field} must be a number")
+    if isinstance(value, str):
+        s = value.strip().replace(",", "").replace(" ", "")
+        if s.upper().startswith("R"):
+            s = s[1:]
+        if s == "":
+            return None
+        try:
+            value = float(s)
+        except ValueError:
+            raise HTTPException(400, f"{field} must be a number")
+    if isinstance(value, (int, float)):
+        n = int(round(float(value)))
+        if n < 0:
+            raise HTTPException(400, f"{field} must be zero or greater")
+        return n
+    raise HTTPException(400, f"{field} must be a number")
+
+
+def _compute_deal_profit(deal: dict) -> dict:
+    """Given a `deal` doc, return the derived P&L block used by both the
+    API response and the PDF renderer. Values are None if we don't have
+    enough info yet to compute them."""
+    purchase = deal.get("purchase_price_zar")
+    recon = deal.get("recon_cost_zar")
+    sale = deal.get("sale_price_zar")
+    cost_basis = None
+    if isinstance(purchase, (int, float)):
+        cost_basis = int(purchase) + int(recon or 0)
+    profit = None
+    margin_pct = None
+    if cost_basis is not None and isinstance(sale, (int, float)):
+        profit = int(sale) - cost_basis
+        if int(sale) > 0:
+            margin_pct = round((profit / int(sale)) * 100, 1)
+    return {
+        "purchase_price_zar": purchase,
+        "recon_cost_zar": recon,
+        "sale_price_zar": sale,
+        "cost_basis_zar": cost_basis,
+        "profit_zar": profit,
+        "margin_pct": margin_pct,
+    }
+
+
+@api_router.patch("/submissions/{sub_id}/deal")
+async def update_submission_deal(
+    sub_id: str,
+    payload: dict,
+    current: dict = Depends(get_current_user),
+):
+    """Dealer-only endpoint to record the outcome of the deal.
+
+    Accepts (any subset of):
+      { "done": bool|null,           # Stage 1 answer
+        "purchase_price_zar": int,   # required when done=True
+        "sold": bool|null,           # Stage 2 answer
+        "recon_cost_zar": int,       # required when sold=True (can be 0)
+        "sale_price_zar": int }      # required when sold=True
+
+    Timestamps `purchased_at` / `sold_at` are stamped automatically the
+    first time each stage is flipped to True. Fields remain fully
+    editable (per user spec) so mistakes can be corrected.
+    """
+    if current.get("role") != "dealer":
+        raise HTTPException(403, "Only the submitting dealer can update deal tracking.")
+
+    sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+
+    owner_dship = sub.get("dealership_id")
+    my_dship = await _get_user_dealership_id(current)
+    if not (owner_dship and owner_dship == my_dship) and sub.get("dealer_id") != current.get("id"):
+        raise HTTPException(403, "Only dealers on the vehicle's dealership can update deal tracking.")
+
+    prev = sub.get("deal") or {}
+    now_iso = datetime.now(timezone.utc).isoformat()
+    deal = dict(prev)
+
+    if "done" in payload:
+        done_val = payload.get("done")
+        if done_val is not None and not isinstance(done_val, bool):
+            raise HTTPException(400, "done must be true, false or null")
+        deal["done"] = done_val
+        if done_val is True and not prev.get("purchased_at"):
+            deal["purchased_at"] = now_iso
+        if done_val is False:
+            deal["purchase_price_zar"] = None
+            deal["sold"] = None
+            deal["recon_cost_zar"] = None
+            deal["sale_price_zar"] = None
+
+    if "purchase_price_zar" in payload:
+        deal["purchase_price_zar"] = _sanitise_deal_int(
+            payload.get("purchase_price_zar"), "purchase_price_zar"
+        )
+
+    if "sold" in payload:
+        sold_val = payload.get("sold")
+        if sold_val is not None and not isinstance(sold_val, bool):
+            raise HTTPException(400, "sold must be true, false or null")
+        if sold_val is True and deal.get("done") is not True:
+            raise HTTPException(400, "Mark the purchase as done before recording a sale.")
+        deal["sold"] = sold_val
+        if sold_val is True and not prev.get("sold_at"):
+            deal["sold_at"] = now_iso
+        if sold_val is False:
+            deal["recon_cost_zar"] = None
+            deal["sale_price_zar"] = None
+
+    if "recon_cost_zar" in payload:
+        deal["recon_cost_zar"] = _sanitise_deal_int(
+            payload.get("recon_cost_zar"), "recon_cost_zar"
+        )
+    if "sale_price_zar" in payload:
+        deal["sale_price_zar"] = _sanitise_deal_int(
+            payload.get("sale_price_zar"), "sale_price_zar"
+        )
+
+    deal["updated_at"] = now_iso
+    deal["updated_by_user_id"] = current.get("id")
+    info = (current.get("dealer_info") or {})
+    deal["updated_by_name"] = (
+        f"{info.get('first_name','').strip()} {info.get('last_name','').strip()}".strip()
+        or current.get("email")
+    )
+
+    await db.submissions.update_one({"id": sub_id}, {"$set": {"deal": deal}})
+    profit = _compute_deal_profit(deal)
+    return {"ok": True, "deal": deal, "profit": profit}
+
+
+async def _build_profit_pdf(sub: dict, deal: dict) -> bytes:
+    """Render a 1-page A4 profit-analysis sheet for a completed deal.
+
+    Vehicle header (year / make / model / VIN / reference / dealership) +
+    a front-photo thumbnail (when available), the Fourbuy Cover offer,
+    the purchase price, recon cost, cost basis, sale price, and a bold
+    profit / loss callout with margin %.
+    """
+    from io import BytesIO
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors as rl_colors
+    from reportlab.lib.enums import TA_RIGHT
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+        Image as RLImage, KeepTogether,
+    )
+    import base64 as _b64
+    from PIL import Image as PILImage
+
+    async def _fetch_bytes(uri: Optional[str]) -> Optional[bytes]:
+        if not uri or not isinstance(uri, str):
+            return None
+        try:
+            if uri.startswith("data:"):
+                _, _, b64part = uri.partition(",")
+                return _b64.b64decode(b64part)
+            if uri.startswith("http://") or uri.startswith("https://"):
+                async with httpx.AsyncClient(timeout=15.0) as cli:
+                    r = await cli.get(uri)
+                    r.raise_for_status()
+                    return r.content
+        except Exception as e:
+            logger.warning("Profit PDF image fetch failed: %s", e)
+        return None
+
+    def _thumb(raw: bytes, max_w_mm: float, max_h_mm: float):
+        if not raw:
+            return None
+        try:
+            im = PILImage.open(BytesIO(raw))
+            if im.mode not in ("RGB", "L"):
+                im = im.convert("RGB")
+            im.thumbnail((900, 900), PILImage.LANCZOS)
+            b = BytesIO()
+            im.save(b, format="JPEG", quality=82, optimize=True)
+            b.seek(0)
+            iw, ih = im.size
+            max_w_pt = float(max_w_mm) * mm
+            max_h_pt = float(max_h_mm) * mm
+            ratio = min(max_w_pt / iw, max_h_pt / ih)
+            return RLImage(b, width=iw * ratio, height=ih * ratio)
+        except Exception as e:
+            logger.warning("Profit PDF thumb failed: %s", e)
+            return None
+
+    profit = _compute_deal_profit(deal)
+    ref = sub.get("reference") or (sub.get("id") or "")[:8]
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=14 * mm, rightMargin=14 * mm,
+        topMargin=16 * mm, bottomMargin=14 * mm,
+        title=f"Profit Analysis {ref}",
+        author="Fourbuy Car Buying Co.",
+    )
+    styles = getSampleStyleSheet()
+    BLACK = rl_colors.HexColor("#0A0A0A")
+    INK = rl_colors.HexColor("#111111")
+    MUTED = rl_colors.HexColor("#6B6B6B")
+    LINE = rl_colors.HexColor("#E5E5E5")
+    PAPER = rl_colors.HexColor("#F7F7F7")
+    OK = rl_colors.HexColor("#1F7A3A")
+    DANGER = rl_colors.HexColor("#B3261E")
+
+    h1 = ParagraphStyle("h1", parent=styles["Heading1"], fontSize=20, leading=24,
+                       textColor=BLACK, spaceAfter=2)
+    h2 = ParagraphStyle("h2", parent=styles["Heading2"], fontSize=12, leading=15,
+                       textColor=INK, spaceBefore=8, spaceAfter=4)
+    body = ParagraphStyle("body", parent=styles["BodyText"], fontSize=10, leading=14,
+                       textColor=INK)
+    muted = ParagraphStyle("muted", parent=body, textColor=MUTED, fontSize=9)
+    right = ParagraphStyle("right", parent=body, alignment=TA_RIGHT)
+
+    story = []
+    vehicle_title = " ".join([
+        str(sub.get("year") or ""),
+        str(sub.get("make_name") or ""),
+        str(sub.get("model_name") or ""),
+    ]).strip() or "Vehicle"
+    derivative = str(sub.get("derivative_name") or "").strip()
+    header_left = [
+        Paragraph("<b>PROFIT ANALYSIS</b>", muted),
+        Paragraph(vehicle_title, h1),
+    ]
+    if derivative:
+        header_left.append(Paragraph(derivative, muted))
+    header_left.append(Paragraph(
+        f"Ref <b>{ref}</b>  ·  VIN <b>{sub.get('vin') or '&mdash;'}</b>", muted,
+    ))
+    dship = (sub.get("company_name") or sub.get("dealer_name") or "").strip()
+    if dship:
+        header_left.append(Paragraph(f"Dealership: <b>{dship}</b>", muted))
+
+    front_uri = None
+    photos = sub.get("photos") or {}
+    if isinstance(photos, dict):
+        front_uri = photos.get("front") or photos.get("front_photo") or sub.get("front_photo")
+    front_bytes = await _fetch_bytes(front_uri) if front_uri else None
+    front_img = _thumb(front_bytes, 58, 40) if front_bytes else None
+
+    if front_img is not None:
+        hdr_tbl = Table(
+            [[header_left, front_img]],
+            colWidths=[110 * mm, 62 * mm],
+        )
+    else:
+        hdr_tbl = Table([[header_left, ""]], colWidths=[172 * mm, 0])
+    hdr_tbl.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(hdr_tbl)
+    story.append(Spacer(1, 8))
+
+    fourbuy_cover = sub.get("price")
+    if fourbuy_cover is None:
+        ap = sub.get("admin_pricing") or {}
+        fourbuy_cover = ap.get("offer_to_dealer_zar")
+    story.append(Paragraph("Fourbuy Cover", h2))
+    story.append(Table(
+        [[
+            Paragraph("Cover offered", body),
+            Paragraph(
+                f"<b>R {int(fourbuy_cover or 0):,}</b>".replace(",", " "), right,
+            ),
+        ]],
+        colWidths=[100 * mm, 72 * mm],
+        style=TableStyle([
+            ("BOX", (0, 0), (-1, -1), 0.5, LINE),
+            ("BACKGROUND", (0, 0), (-1, -1), PAPER),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ]),
+    ))
+
+    def _r(v):
+        if v is None:
+            return "—"
+        try:
+            return f"R {int(v):,}".replace(",", " ")
+        except Exception:
+            return "—"
+
+    def _dt(iso):
+        if not iso:
+            return "—"
+        try:
+            dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+            return dt.strftime("%d %b %Y")
+        except Exception:
+            return "—"
+
+    story.append(Paragraph("Deal Summary", h2))
+    tbl_rows = [
+        ["Purchase price", _r(deal.get("purchase_price_zar")), "Bought on", _dt(deal.get("purchased_at"))],
+        ["Reconditioning", _r(deal.get("recon_cost_zar")), "", ""],
+        ["Total cost basis", _r(profit.get("cost_basis_zar")), "", ""],
+        ["Sale price", _r(deal.get("sale_price_zar")), "Sold on", _dt(deal.get("sold_at"))],
+    ]
+    story.append(Table(
+        tbl_rows,
+        colWidths=[46 * mm, 42 * mm, 30 * mm, 54 * mm],
+        style=TableStyle([
+            ("BOX", (0, 0), (-1, -1), 0.5, LINE),
+            ("INNERGRID", (0, 0), (-1, -1), 0.4, LINE),
+            ("FONTSIZE", (0, 0), (-1, -1), 10),
+            ("TEXTCOLOR", (0, 0), (-1, -1), INK),
+            ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("BACKGROUND", (0, 2), (1, 2), PAPER),
+        ]),
+    ))
+    story.append(Spacer(1, 8))
+
+    p_val = profit.get("profit_zar")
+    p_color = OK if (p_val is not None and p_val >= 0) else DANGER
+    p_label = "Gross Profit" if (p_val is not None and p_val >= 0) else "Loss"
+    p_str = _r(p_val) if p_val is not None else "—"
+    m_str = f"{profit.get('margin_pct'):.1f}%" if profit.get("margin_pct") is not None else "—"
+    profit_tbl = Table(
+        [[
+            Paragraph(f"<b>{p_label.upper()}</b>", ParagraphStyle(
+                "pl", parent=body, textColor=rl_colors.white, fontSize=11,
+            )),
+            Paragraph(
+                f"<font size=22><b>{p_str}</b></font>",
+                ParagraphStyle("pv", parent=body, textColor=rl_colors.white,
+                              alignment=TA_RIGHT),
+            ),
+        ], [
+            Paragraph("Margin on sale price", ParagraphStyle(
+                "ml", parent=body, textColor=rl_colors.HexColor("#DDDDDD"), fontSize=9,
+            )),
+            Paragraph(f"<b>{m_str}</b>", ParagraphStyle(
+                "mv", parent=body, textColor=rl_colors.white, alignment=TA_RIGHT,
+                fontSize=12,
+            )),
+        ]],
+        colWidths=[86 * mm, 86 * mm],
+        style=TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), p_color),
+            ("BOX", (0, 0), (-1, -1), 0, p_color),
+            ("LEFTPADDING", (0, 0), (-1, -1), 14),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 14),
+            ("TOPPADDING", (0, 0), (-1, -1), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ]),
+    )
+    story.append(KeepTogether(profit_tbl))
+    story.append(Spacer(1, 10))
+
+    now_str = datetime.now(timezone.utc).strftime("%d %b %Y %H:%M UTC")
+    story.append(Paragraph(
+        f"Generated {now_str} · Fourbuy Car Buying Co. · Confidential — for the "
+        "submitting dealership and Fourbuy admin only.",
+        muted,
+    ))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+@api_router.get("/submissions/{sub_id}/profit-analysis.pdf")
+async def download_profit_analysis_pdf(
+    sub_id: str,
+    current: dict = Depends(get_user_flexible),
+):
+    """Downloadable profit-analysis PDF. Restricted to the owning
+    dealership (dealer or their teammates) and admin. Pricing agents are
+    blocked even if they have a query token that grants cover access."""
+    sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+    if current.get("role") != "admin":
+        my_dship = await _get_user_dealership_id(current)
+        same_dship = sub.get("dealership_id") and sub.get("dealership_id") == my_dship
+        legacy_owner = sub.get("dealer_id") == current.get("id")
+        if not (same_dship or legacy_owner):
+            raise HTTPException(403, "Not authorized")
+    deal = sub.get("deal") or {}
+    profit = _compute_deal_profit(deal)
+    if profit.get("profit_zar") is None:
+        raise HTTPException(400, "Enter the purchase, recon and sale figures first.")
+    try:
+        pdf_bytes = await _build_profit_pdf(sub, deal)
+    except Exception as e:
+        logger.exception("Profit PDF generation failed")
+        raise HTTPException(500, f"Failed to generate PDF: {e}")
+    filename = f"profit_analysis_{sub.get('reference') or sub_id}.pdf".replace(" ", "_")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
 
 
 @api_router.get("/submissions/{sub_id}/valuation.pdf")
@@ -7329,7 +7773,10 @@ def _sanitise_sub_for_pricing_agent(sub: dict) -> dict:
     AutoTrader deep link, service history etc.) stays visible.
     """
     hidden = {"admin_pricing", "offer_to_dealer_zar", "fourbuy_offer_zar",
-              "admin_notes", "admin_price_zar"}
+              "admin_notes", "admin_price_zar",
+              # Dealer's private deal-tracking info — cost, sale, profit —
+              # must never be visible to pricing agents.
+              "deal"}
     return {k: v for k, v in sub.items() if k not in hidden}
 
 
