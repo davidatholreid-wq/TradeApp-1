@@ -65,10 +65,17 @@ export default function AdminRewardsScreen() {
   const [redemptions, setRedemptions] = useState<Redemption[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"pending" | "fulfilled" | "rejected" | "all">("pending");
+  // Track pending count independently so we can badge the PENDING tab
+  // regardless of which filter the admin currently has selected.
+  const [pendingCount, setPendingCount] = useState<number>(0);
   const [actionModal, setActionModal] = useState<{ type: "fulfill" | "reject"; r: Redemption } | null>(null);
   const [voucherCode, setVoucherCode] = useState("");
   const [adminNote, setAdminNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Leaderboard collapsed by default so incoming redemption requests
+  // are always visible above the fold. Admins can expand it if they
+  // want to see who's earning points.
+  const [leaderOpen, setLeaderOpen] = useState(false);
 
   // Bonus-points grant state
   const [grantOpen, setGrantOpen] = useState(false);
@@ -104,6 +111,19 @@ export default function AdminRewardsScreen() {
       const path = filter === "all" ? "/api/admin/reward-redemptions" : `/api/admin/reward-redemptions?status=${filter}`;
       const res = await apiFetch(path);
       setRedemptions(res.redemptions || []);
+      // Backend returns pending_count scoped to the SAME query, so we
+      // only trust it when we're actually asking for pending. For any
+      // other filter, hit an extra lightweight count-only fetch.
+      if (filter === "pending") {
+        setPendingCount((res.redemptions || []).length);
+      } else {
+        try {
+          const p = await apiFetch("/api/admin/reward-redemptions?status=pending");
+          setPendingCount((p.redemptions || []).length);
+        } catch {
+          /* ignore — badge just won't show */
+        }
+      }
     } catch (e: any) {
       Alert.alert("Error", e?.message || "Could not load redemptions");
     } finally {
@@ -217,79 +237,28 @@ export default function AdminRewardsScreen() {
         {(["pending", "fulfilled", "rejected", "all"] as const).map((f) => (
           <TouchableOpacity key={f} onPress={() => setFilter(f)} style={[styles.tab, filter === f && styles.tabActive]}>
             <Text style={[styles.tabText, filter === f && styles.tabTextActive]}>{f.toUpperCase()}</Text>
+            {f === "pending" && pendingCount > 0 ? (
+              <View style={styles.tabBadge} testID="pending-count-badge">
+                <Text style={styles.tabBadgeText}>{pendingCount}</Text>
+              </View>
+            ) : null}
           </TouchableOpacity>
         ))}
       </View>
 
-      {/* Leaderboard */}
-      <View style={styles.leaderCard} testID="rewards-leaderboard">
-        <View style={styles.leaderHead}>
-          <Ionicons name="trophy" size={16} color={colors.text} />
-          <Text style={styles.leaderTitle}>Leaderboard</Text>
-          <View style={styles.leaderTabs}>
-            {(["current", "all_time"] as const).map((t) => (
-              <TouchableOpacity
-                key={t}
-                onPress={() => setLeaderTab(t)}
-                style={[styles.leaderTab, leaderTab === t && styles.leaderTabActive]}
-                testID={`leader-tab-${t}`}
-              >
-                <Text style={[styles.leaderTabText, leaderTab === t && styles.leaderTabTextActive]}>
-                  {t === "current" ? "CURRENT" : "ALL TIME"}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-        {leaderLoading ? (
-          <ActivityIndicator style={{ marginVertical: spacing.md }} color={colors.primary} />
-        ) : (() => {
-          const rows = (leaderboard?.[leaderTab] || []) as LeaderRow[];
-          if (rows.length === 0) {
-            return <Text style={styles.leaderEmpty}>No dealers have earned points yet.</Text>;
-          }
-          return (
-            <View>
-              {rows.map((r) => {
-                const value = leaderTab === "current" ? r.balance : r.lifetime_earned;
-                const medal =
-                  r.rank === 1 ? "🥇" : r.rank === 2 ? "🥈" : r.rank === 3 ? "🥉" : "";
-                return (
-                  <View key={r.id} style={styles.leaderRow} testID={`leader-row-${r.id}`}>
-                    <View style={styles.leaderRank}>
-                      {medal ? (
-                        <Text style={styles.leaderMedal}>{medal}</Text>
-                      ) : (
-                        <Text style={styles.leaderRankNum}>{r.rank}</Text>
-                      )}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.leaderName} numberOfLines={1}>
-                        {r.name}
-                        {r.job_title ? (
-                          <Text style={styles.leaderJob}> · {r.job_title}</Text>
-                        ) : null}
-                      </Text>
-                      <Text style={styles.leaderMeta} numberOfLines={1}>
-                        {r.dealership_name || r.email}
-                      </Text>
-                    </View>
-                    <Text style={styles.leaderValue}>
-                      {value}
-                      <Text style={styles.leaderValueUnit}> pts</Text>
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
-          );
-        })()}
-      </View>
-
+      {/* Redemption inbox — rendered BEFORE the leaderboard so any
+          incoming request is visible above the fold. */}
       {loading ? (
         <ActivityIndicator style={{ marginTop: spacing.xl }} color={colors.primary} />
       ) : redemptions.length === 0 ? (
-        <Text style={styles.empty}>No redemptions {filter !== "all" ? `with status "${filter}"` : ""}.</Text>
+        <View style={styles.emptyBox}>
+          <Ionicons name="checkmark-done-outline" size={24} color={colors.textSecondary} />
+          <Text style={styles.empty}>
+            {filter === "pending"
+              ? "No pending voucher requests. You're all caught up."
+              : `No redemptions with status "${filter}".`}
+          </Text>
+        </View>
       ) : (
         <ScrollView contentContainerStyle={styles.list}>
           {redemptions.map((r) => (
@@ -346,6 +315,93 @@ export default function AdminRewardsScreen() {
           ))}
         </ScrollView>
       )}
+
+      {/* Leaderboard — collapsed by default; expand to see the top
+          earners. Kept BELOW the request inbox so it never buries new
+          requests again. */}
+      <View style={styles.leaderCard} testID="rewards-leaderboard">
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => setLeaderOpen((v) => !v)}
+          style={styles.leaderHead}
+          testID="rewards-leaderboard-toggle"
+        >
+          <Ionicons name="trophy" size={16} color={colors.text} />
+          <Text style={styles.leaderTitle}>Leaderboard</Text>
+          {leaderOpen ? (
+            <View style={styles.leaderTabs}>
+              {(["current", "all_time"] as const).map((t) => (
+                <TouchableOpacity
+                  key={t}
+                  onPress={(e) => {
+                    // Prevent the outer toggle from collapsing when the
+                    // inner segmented control is tapped.
+                    e.stopPropagation();
+                    setLeaderTab(t);
+                  }}
+                  style={[styles.leaderTab, leaderTab === t && styles.leaderTabActive]}
+                  testID={`leader-tab-${t}`}
+                >
+                  <Text style={[styles.leaderTabText, leaderTab === t && styles.leaderTabTextActive]}>
+                    {t === "current" ? "CURRENT" : "ALL TIME"}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
+          <Ionicons
+            name={leaderOpen ? "chevron-up" : "chevron-down"}
+            size={16}
+            color={colors.textSecondary}
+            style={{ marginLeft: 6 }}
+          />
+        </TouchableOpacity>
+        {leaderOpen ? (
+          leaderLoading ? (
+            <ActivityIndicator style={{ marginVertical: spacing.md }} color={colors.primary} />
+          ) : (() => {
+            const rows = (leaderboard?.[leaderTab] || []) as LeaderRow[];
+            if (rows.length === 0) {
+              return <Text style={styles.leaderEmpty}>No dealers have earned points yet.</Text>;
+            }
+            return (
+              <View>
+                {rows.map((r) => {
+                  const value = leaderTab === "current" ? r.balance : r.lifetime_earned;
+                  const medal =
+                    r.rank === 1 ? "🥇" : r.rank === 2 ? "🥈" : r.rank === 3 ? "🥉" : "";
+                  return (
+                    <View key={r.id} style={styles.leaderRow} testID={`leader-row-${r.id}`}>
+                      <View style={styles.leaderRank}>
+                        {medal ? (
+                          <Text style={styles.leaderMedal}>{medal}</Text>
+                        ) : (
+                          <Text style={styles.leaderRankNum}>{r.rank}</Text>
+                        )}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.leaderName} numberOfLines={1}>
+                          {r.name}
+                          {r.job_title ? (
+                            <Text style={styles.leaderJob}> · {r.job_title}</Text>
+                          ) : null}
+                        </Text>
+                        <Text style={styles.leaderMeta} numberOfLines={1}>
+                          {r.dealership_name || r.email}
+                        </Text>
+                      </View>
+                      <Text style={styles.leaderValue}>
+                        {value}
+                        <Text style={styles.leaderValueUnit}> pts</Text>
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            );
+          })()
+        ) : null}
+      </View>
 
       {actionModal ? (
         <View style={styles.modalBackdrop}>
@@ -575,11 +631,37 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
   grantBtnText: { color: colors.onPrimary, fontWeight: "800", letterSpacing: 0.4, fontSize: 12 },
   tabs: { flexDirection: "row", gap: 4, marginBottom: spacing.md },
-  tab: { paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card },
+  tab: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card },
   tabActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  tabBadge: {
+    minWidth: 20,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+    backgroundColor: "#B67900",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tabBadgeText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "800",
+    fontVariant: ["tabular-nums"],
+  },
   tabText: { color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 1 },
   tabTextActive: { color: colors.onPrimary },
   empty: { color: colors.textSecondary, textAlign: "center", padding: spacing.xl },
+  emptyBox: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: spacing.xl,
+    gap: 8,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    marginBottom: spacing.md,
+  },
   list: { gap: 8 },
   card: { backgroundColor: colors.card, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md },
   cardTop: { flexDirection: "row", gap: spacing.md },
