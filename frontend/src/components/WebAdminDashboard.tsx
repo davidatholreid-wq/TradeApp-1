@@ -548,28 +548,42 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
     if (view === "home") loadMtd();
   }, [view, loadMtd]);
 
-  // Deal-outcomes roll-up across ALL dealerships (backend gives admins
-  // the global totals). Loaded whenever the admin lands on Home.
-  type DealOutcomes = {
+  // Deal-outcomes broken down per dealership (per user request: no
+  // global roll-up on the cockpit home; each dealership's stats sit in
+  // its own expandable row so admins can chase pending outcomes
+  // specifically). The tile is collapsed by default and only fetches
+  // when opened, so the extra query cost is opt-in.
+  type DealerOutcome = {
+    dealership_id: string;
+    name: string;
     pending: number;
     deal_done: number;
     no_deal: number;
     sold: number;
-    total: number;
     gross_profit_zar: number;
+    total: number;
   };
-  const [dealOutcomes, setDealOutcomes] = useState<DealOutcomes | null>(null);
-  const loadDealOutcomes = useCallback(async () => {
+  const [dealerOutcomes, setDealerOutcomes] = useState<DealerOutcome[] | null>(null);
+  const [dealerOutcomesOpen, setDealerOutcomesOpen] = useState(false);
+  const [dealerOutcomesLoading, setDealerOutcomesLoading] = useState(false);
+  const loadDealerOutcomes = useCallback(async () => {
+    setDealerOutcomesLoading(true);
     try {
-      const r = await apiFetch("/api/stats/deal-outcomes");
-      if (r && typeof r === "object") setDealOutcomes(r as DealOutcomes);
+      const r = await apiFetch("/api/admin/stats/deal-outcomes-by-dealer");
+      const list = (r as any)?.dealers;
+      if (Array.isArray(list)) setDealerOutcomes(list as DealerOutcome[]);
     } catch (e) {
       console.log(e);
+    } finally {
+      setDealerOutcomesLoading(false);
     }
   }, []);
+  // Auto-load the FIRST time the section is expanded, and every time
+  // the admin returns to the Home view AFTER a load (to keep counts
+  // fresh). Doesn't nag the endpoint when the section is closed.
   useEffect(() => {
-    if (view === "home") loadDealOutcomes();
-  }, [view, loadDealOutcomes]);
+    if (view === "home" && dealerOutcomesOpen) loadDealerOutcomes();
+  }, [view, dealerOutcomesOpen, loadDealerOutcomes]);
 
   const monthLabel = useMemo(() => {
     if (!mtd?.period?.month) return "This month";
@@ -884,22 +898,32 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
             </View>
           </View>
 
-          {/* -------- Deal Outcomes reporting (admin roll-up) --------
-              Same tri-state pill set the dealer sees on the mobile home,
-              but rolled up across every dealership so admins can spot
-              submissions that need chasing. */}
-          {dealOutcomes && dealOutcomes.total > 0 ? (
-            <View style={styles.mtdSection} testID="cockpit-deal-outcomes">
-              <View style={styles.mtdSectionHeader}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.mtdSectionTitle}>Deal Outcomes</Text>
-                  <Text style={styles.mtdSectionSubtitle}>
-                    Across all dealerships · {dealOutcomes.total} priced submission
-                    {dealOutcomes.total === 1 ? "" : "s"}
-                  </Text>
-                </View>
+          {/* -------- Deal Outcomes — collapsible per-dealer breakdown --------
+              No global roll-up per user request; the header row acts as
+              a dropdown that opens a list of dealerships, each showing
+              their own pending / done / no-deal counts + gross P&L. */}
+          <View style={styles.mtdSection} testID="cockpit-deal-outcomes">
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => setDealerOutcomesOpen((v) => !v)}
+              style={styles.mtdSectionHeader}
+              testID="cockpit-deal-outcomes-toggle"
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.mtdSectionTitle}>Deal Outcomes by Dealer</Text>
+                <Text style={styles.mtdSectionSubtitle}>
+                  {dealerOutcomes
+                    ? `${dealerOutcomes.length} dealership${dealerOutcomes.length === 1 ? "" : "s"} · pending outcomes shown first`
+                    : "Tap to load per-dealership breakdown"}
+                  {dealerOutcomesLoading ? "  ·  refreshing…" : ""}
+                </Text>
+              </View>
+              {dealerOutcomes && dealerOutcomesOpen ? (
                 <TouchableOpacity
-                  onPress={loadDealOutcomes}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    loadDealerOutcomes();
+                  }}
                   style={styles.mtdRefreshBtn}
                   testID="cockpit-deal-outcomes-refresh"
                   accessibilityLabel="Refresh deal outcomes"
@@ -907,55 +931,134 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                   <Ionicons name="refresh" size={14} color={colors.text} />
                   <Text style={styles.mtdRefreshText}>Refresh</Text>
                 </TouchableOpacity>
+              ) : null}
+              <View style={styles.dealerListChevron}>
+                <Ionicons
+                  name={dealerOutcomesOpen ? "chevron-up" : "chevron-down"}
+                  size={18}
+                  color={colors.text}
+                />
               </View>
-              <View style={styles.mtdKpiRow}>
-                <View
-                  style={[styles.mtdKpiCard, { borderColor: "#B6790055" }]}
-                  testID="cockpit-deal-outcome-pending"
-                >
-                  <View style={styles.mtdKpiHeader}>
-                    <Ionicons name="hourglass-outline" size={16} color="#B67900" />
-                    <Text style={styles.mtdKpiLabel}>PENDING OUTCOME</Text>
-                  </View>
-                  <Text style={[styles.mtdKpiValue, { color: "#B67900" }]}>
-                    {dealOutcomes.pending}
-                  </Text>
-                  <Text style={styles.mtdKpiMeta}>Awaiting dealer confirmation</Text>
+            </TouchableOpacity>
+
+            {dealerOutcomesOpen ? (
+              dealerOutcomesLoading && !dealerOutcomes ? (
+                <View style={styles.dealerListLoading}>
+                  <ActivityIndicator color={colors.text} />
                 </View>
-                <View
-                  style={[styles.mtdKpiCard, { borderColor: "#1F7A3A55" }]}
-                  testID="cockpit-deal-outcome-done"
-                >
-                  <View style={styles.mtdKpiHeader}>
-                    <Ionicons name="checkmark-circle" size={16} color="#1F7A3A" />
-                    <Text style={styles.mtdKpiLabel}>DEAL DONE</Text>
+              ) : dealerOutcomes && dealerOutcomes.length > 0 ? (
+                <View style={styles.dealerListWrap} testID="cockpit-deal-outcomes-list">
+                  {/* Table header */}
+                  <View style={styles.dealerListHeaderRow}>
+                    <Text style={[styles.dealerListHeaderCell, styles.dealerListCellName]}>
+                      DEALERSHIP
+                    </Text>
+                    <Text style={styles.dealerListHeaderCell}>PENDING</Text>
+                    <Text style={styles.dealerListHeaderCell}>DEAL DONE</Text>
+                    <Text style={styles.dealerListHeaderCell}>NO DEAL</Text>
+                    <Text style={styles.dealerListHeaderCell}>GROSS P&amp;L</Text>
+                    <Text style={[styles.dealerListHeaderCell, styles.dealerListCellTotal]}>
+                      TOTAL
+                    </Text>
                   </View>
-                  <Text style={[styles.mtdKpiValue, { color: "#1F7A3A" }]}>
-                    {dealOutcomes.deal_done}
-                  </Text>
-                  <Text style={styles.mtdKpiMeta}>
-                    {dealOutcomes.sold} sold
-                    {dealOutcomes.sold > 0
-                      ? `  ·  ${fmtZAR(dealOutcomes.gross_profit_zar)} gross P&L`
-                      : ""}
-                  </Text>
+                  {dealerOutcomes.map((d) => (
+                    <View
+                      key={d.dealership_id}
+                      style={styles.dealerListRow}
+                      testID={`cockpit-dealer-row-${d.dealership_id}`}
+                    >
+                      <View style={[styles.dealerListCell, styles.dealerListCellName]}>
+                        <Text style={styles.dealerListName} numberOfLines={1}>
+                          {d.name}
+                        </Text>
+                      </View>
+                      <View style={styles.dealerListCell}>
+                        <View
+                          style={[
+                            styles.dealerListPill,
+                            d.pending > 0
+                              ? { backgroundColor: "#B6790022", borderColor: "#B6790088" }
+                              : styles.dealerListPillMuted,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.dealerListPillText,
+                              d.pending > 0 ? { color: "#B67900" } : styles.dealerListPillTextMuted,
+                            ]}
+                          >
+                            {d.pending}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.dealerListCell}>
+                        <View
+                          style={[
+                            styles.dealerListPill,
+                            d.deal_done > 0
+                              ? { backgroundColor: "#1F7A3A22", borderColor: "#1F7A3A88" }
+                              : styles.dealerListPillMuted,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.dealerListPillText,
+                              d.deal_done > 0 ? { color: "#1F7A3A" } : styles.dealerListPillTextMuted,
+                            ]}
+                          >
+                            {d.deal_done}
+                          </Text>
+                        </View>
+                        {d.sold > 0 ? (
+                          <Text style={styles.dealerListSubMeta}>{d.sold} sold</Text>
+                        ) : null}
+                      </View>
+                      <View style={styles.dealerListCell}>
+                        <View
+                          style={[
+                            styles.dealerListPill,
+                            d.no_deal > 0
+                              ? { backgroundColor: colors.paper, borderColor: colors.border }
+                              : styles.dealerListPillMuted,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.dealerListPillText,
+                              { color: d.no_deal > 0 ? colors.text : colors.textDisabled },
+                            ]}
+                          >
+                            {d.no_deal}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.dealerListCell}>
+                        <Text
+                          style={[
+                            styles.dealerListPnl,
+                            d.gross_profit_zar > 0
+                              ? { color: "#1F7A3A" }
+                              : d.gross_profit_zar < 0
+                                ? { color: "#B3261E" }
+                                : { color: colors.textDisabled },
+                          ]}
+                        >
+                          {d.gross_profit_zar !== 0 ? fmtZAR(d.gross_profit_zar) : "—"}
+                        </Text>
+                      </View>
+                      <View style={[styles.dealerListCell, styles.dealerListCellTotal]}>
+                        <Text style={styles.dealerListTotalNum}>{d.total}</Text>
+                      </View>
+                    </View>
+                  ))}
                 </View>
-                <View
-                  style={[styles.mtdKpiCard, { borderColor: colors.border }]}
-                  testID="cockpit-deal-outcome-no"
-                >
-                  <View style={styles.mtdKpiHeader}>
-                    <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
-                    <Text style={styles.mtdKpiLabel}>NO DEAL DONE</Text>
-                  </View>
-                  <Text style={[styles.mtdKpiValue, { color: colors.textSecondary }]}>
-                    {dealOutcomes.no_deal}
-                  </Text>
-                  <Text style={styles.mtdKpiMeta}>Dealer walked away</Text>
+              ) : (
+                <View style={styles.dealerListLoading}>
+                  <Text style={styles.mtdSectionSubtitle}>No priced submissions yet.</Text>
                 </View>
-              </View>
-            </View>
-          ) : null}
+              )
+            ) : null}
+          </View>
 
 
 
@@ -2534,6 +2637,116 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     fontWeight: "800",
     letterSpacing: 0.4,
     textTransform: "uppercase",
+  },
+  // ---- Per-dealer deal outcomes list ----
+  dealerListChevron: {
+    marginLeft: 8,
+    width: 26,
+    height: 26,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  dealerListLoading: {
+    paddingVertical: spacing.lg,
+    alignItems: "center",
+  },
+  dealerListWrap: {
+    marginTop: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+    overflow: "hidden",
+  },
+  dealerListHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  dealerListHeaderCell: {
+    flex: 1,
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1,
+    textAlign: "center",
+  },
+  dealerListRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  dealerListCell: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dealerListCellName: {
+    flex: 2,
+    alignItems: "flex-start",
+    paddingRight: spacing.md,
+  },
+  dealerListCellTotal: {
+    flex: 0.7,
+  },
+  dealerListName: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  dealerListPill: {
+    minWidth: 44,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dealerListPillMuted: {
+    backgroundColor: "transparent",
+    borderColor: "transparent",
+  },
+  dealerListPillText: {
+    fontSize: 13,
+    fontWeight: "800",
+    fontFamily: fonts.number,
+    fontVariant: ["tabular-nums"],
+  },
+  dealerListPillTextMuted: {
+    color: colors.textDisabled,
+  },
+  dealerListSubMeta: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    marginTop: 2,
+    fontWeight: "600",
+  },
+  dealerListPnl: {
+    fontSize: 12,
+    fontWeight: "800",
+    fontFamily: fonts.number,
+    fontVariant: ["tabular-nums"],
+    letterSpacing: -0.2,
+  },
+  dealerListTotalNum: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "800",
+    fontFamily: fonts.number,
+    fontVariant: ["tabular-nums"],
+    letterSpacing: -0.3,
   },
   homeTilesRow: {
     flexDirection: "row",

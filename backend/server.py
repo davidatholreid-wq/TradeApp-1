@@ -988,6 +988,109 @@ async def deal_outcomes_stats(current: dict = Depends(get_current_user)):
     }
 
 
+@api_router.get("/admin/stats/deal-outcomes-by-dealer")
+async def deal_outcomes_by_dealer(current: dict = Depends(require_admin)):
+    """Per-dealership deal-outcomes roll-up for the Admin Cockpit home.
+
+    Returns a list of dealerships (sorted with the most pending outcomes
+    at the top so the admin can prioritise chasing them), each with
+    pending / deal_done / no_deal counts, how many of the "deal done"
+    submissions ultimately sold, and their combined gross-P&L. Legacy
+    submissions without a `dealership_id` are grouped under a synthetic
+    dealership derived from the `dealer_name` snapshot.
+    """
+    # Build a dealer_id -> dealership_id map so we can bucket legacy
+    # submissions (that only have `dealer_id` on them) into the right
+    # dealership. Dealers with `dealership_id` on the user record fall
+    # into their own dealership; the rest map to a "no dealership" catch
+    # all so nothing is lost from the report.
+    users_cursor = db.users.find(
+        {"role": "dealer"},
+        {"_id": 0, "id": 1, "dealership_id": 1, "dealer_info": 1, "email": 1},
+    )
+    dealer_to_dship: dict = {}
+    dealer_display: dict = {}
+    async for u in users_cursor:
+        dealer_to_dship[u.get("id")] = u.get("dealership_id")
+        info = u.get("dealer_info") or {}
+        dealer_display[u.get("id")] = (
+            f"{info.get('first_name','').strip()} {info.get('last_name','').strip()}".strip()
+            or u.get("email")
+            or "Unknown dealer"
+        )
+
+    dealerships_cursor = db.dealerships.find(
+        {}, {"_id": 0, "id": 1, "name": 1, "trading_name": 1}
+    )
+    dship_name: dict = {}
+    async for d in dealerships_cursor:
+        dship_name[d.get("id")] = (
+            d.get("trading_name") or d.get("name") or "Unnamed dealership"
+        )
+
+    # Aggregate submissions.
+    buckets: dict = {}  # key -> stats dict
+
+    def _b(key: str, name: str) -> dict:
+        if key not in buckets:
+            buckets[key] = {
+                "dealership_id": key,
+                "name": name,
+                "pending": 0,
+                "deal_done": 0,
+                "no_deal": 0,
+                "sold": 0,
+                "gross_profit_zar": 0,
+                "total": 0,
+            }
+        return buckets[key]
+
+    cursor = db.submissions.find(
+        {"status": {"$ne": "pending"}},
+        {"_id": 0, "deal": 1, "dealership_id": 1, "dealer_id": 1, "dealer_name": 1, "company_name": 1},
+    )
+    async for s in cursor:
+        dship_id = s.get("dealership_id") or dealer_to_dship.get(s.get("dealer_id"))
+        if dship_id:
+            key = f"dship:{dship_id}"
+            name = dship_name.get(dship_id) or s.get("company_name") or "Unnamed dealership"
+        else:
+            # Legacy submission with no dealership — group by the dealer
+            # user id so at least each seller shows up separately.
+            did = s.get("dealer_id") or "unknown"
+            key = f"user:{did}"
+            name = (
+                dealer_display.get(did)
+                or s.get("dealer_name")
+                or s.get("company_name")
+                or "Legacy / unassigned"
+            )
+        b = _b(key, name)
+        b["total"] += 1
+        deal = s.get("deal") or {}
+        done_val = deal.get("done")
+        if done_val is True:
+            b["deal_done"] += 1
+            if deal.get("sold") is True:
+                b["sold"] += 1
+                p = _compute_deal_profit(deal).get("profit_zar")
+                if isinstance(p, (int, float)):
+                    b["gross_profit_zar"] += int(p)
+        elif done_val is False:
+            b["no_deal"] += 1
+        else:
+            b["pending"] += 1
+
+    # Sort: most-pending first, then by total desc, then name.
+    dealers = sorted(
+        buckets.values(),
+        key=lambda x: (-x["pending"], -x["total"], x["name"].lower()),
+    )
+    return {"dealers": dealers, "dealership_count": len(dealers)}
+
+
+
+
 
 
 
