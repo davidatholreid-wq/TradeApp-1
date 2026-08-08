@@ -598,6 +598,47 @@ export default function VehicleDetail() {
     [sub],
   );
 
+  // ---- Explicit "Update Profit Analysis" save ----------------------------
+  // We used to save numeric fields on blur, but if the user tapped the
+  // back arrow before the field lost focus their last edit was silently
+  // dropped. Now we hold pending edits in state and commit them ALL
+  // together via a single PATCH when the user hits "Update Profit
+  // Analysis". `dealFinancialsDirty` compares the current inputs to the
+  // persisted values so we can enable/disable the button accordingly.
+  const dealFinancialsDirty = useMemo(() => {
+    const d = (sub as any)?.deal as DealInfo | null | undefined;
+    const cur = {
+      purchase_price_zar: parseMoneyInput(dealPurchaseInput),
+      recon_cost_zar: parseMoneyInput(dealReconInput),
+      sale_price_zar: parseMoneyInput(dealSaleInput),
+    };
+    return (
+      cur.purchase_price_zar !== (d?.purchase_price_zar ?? null) ||
+      cur.recon_cost_zar !== (d?.recon_cost_zar ?? null) ||
+      cur.sale_price_zar !== (d?.sale_price_zar ?? null)
+    );
+  }, [
+    sub,
+    dealPurchaseInput,
+    dealReconInput,
+    dealSaleInput,
+  ]);
+
+  const saveDealFinancials = useCallback(async () => {
+    if (!dealFinancialsDirty) return;
+    await patchDeal({
+      purchase_price_zar: parseMoneyInput(dealPurchaseInput),
+      recon_cost_zar: parseMoneyInput(dealReconInput),
+      sale_price_zar: parseMoneyInput(dealSaleInput),
+    });
+  }, [
+    dealFinancialsDirty,
+    patchDeal,
+    dealPurchaseInput,
+    dealReconInput,
+    dealSaleInput,
+  ]);
+
   const handleDownloadProfitPdf = useCallback(async () => {
     if (!sub) return;
     setDealPdfDownloading(true);
@@ -2878,13 +2919,6 @@ export default function VehicleDetail() {
                           placeholderTextColor={colors.textDisabled}
                           keyboardType="numeric"
                           editable={!readOnly && !dealSaving}
-                          onBlur={() => {
-                            if (readOnly) return;
-                            const parsed = parseMoneyInput(dealPurchaseInput);
-                            if (parsed !== deal?.purchase_price_zar) {
-                              patchDeal({ purchase_price_zar: parsed });
-                            }
-                          }}
                         />
                       </View>
                       {deal?.purchased_at ? (
@@ -2942,13 +2976,6 @@ export default function VehicleDetail() {
                               placeholderTextColor={colors.textDisabled}
                               keyboardType="numeric"
                               editable={!readOnly && !dealSaving}
-                              onBlur={() => {
-                                if (readOnly) return;
-                                const parsed = parseMoneyInput(dealReconInput);
-                                if (parsed !== deal?.recon_cost_zar) {
-                                  patchDeal({ recon_cost_zar: parsed });
-                                }
-                              }}
                             />
                           </View>
                         </View>
@@ -2965,13 +2992,6 @@ export default function VehicleDetail() {
                               placeholderTextColor={colors.textDisabled}
                               keyboardType="numeric"
                               editable={!readOnly && !dealSaving}
-                              onBlur={() => {
-                                if (readOnly) return;
-                                const parsed = parseMoneyInput(dealSaleInput);
-                                if (parsed !== deal?.sale_price_zar) {
-                                  patchDeal({ sale_price_zar: parsed });
-                                }
-                              }}
                             />
                           </View>
                           {deal?.sold_at ? (
@@ -2983,6 +3003,55 @@ export default function VehicleDetail() {
                       </>
                     ) : null}
                   </View>
+                ) : null}
+
+                {/* ------ Explicit Save button (dealer-editable path) ------
+                    Only rendered when the dealer has entered at least
+                    one Stage-1 answer AND is not the admin (admin view is
+                    read-only). Shows as "SAVED" when nothing has changed
+                    and as "Update Profit Analysis" (primary) when there
+                    are pending edits. Committing here also refreshes the
+                    Home-screen Deal Outcomes tile on next focus. */}
+                {!readOnly && (done || deal?.done === false) ? (
+                  <TouchableOpacity
+                    testID="deal-save-button"
+                    style={[
+                      styles.dealSaveBtn,
+                      dealFinancialsDirty
+                        ? styles.dealSaveBtnPrimary
+                        : styles.dealSaveBtnSaved,
+                    ]}
+                    disabled={!dealFinancialsDirty || dealSaving}
+                    onPress={saveDealFinancials}
+                    accessibilityLabel="Save profit analysis details"
+                  >
+                    {dealSaving ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : dealFinancialsDirty ? (
+                      <>
+                        <Ionicons name="save-outline" size={16} color="#fff" />
+                        <Text style={styles.dealSaveBtnText}>
+                          Update Profit Analysis
+                        </Text>
+                      </>
+                    ) : (
+                      <>
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={16}
+                          color={colors.textSecondary}
+                        />
+                        <Text
+                          style={[
+                            styles.dealSaveBtnText,
+                            { color: colors.textSecondary },
+                          ]}
+                        >
+                          Saved
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
                 ) : null}
 
                 {/* ------ Live P&L callout + PDF ------ */}
@@ -4325,6 +4394,32 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
   dealPdfBtnText: {
     color: colors.onPrimary,
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+  },
+  // "Update Profit Analysis" save button — replaces the on-blur autosave
+  // so the dealer explicitly commits their edits.
+  dealSaveBtn: {
+    marginTop: spacing.sm,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 13,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+  },
+  dealSaveBtnPrimary: {
+    backgroundColor: "#1F7A3A",
+    borderColor: "#1F7A3A",
+  },
+  dealSaveBtnSaved: {
+    backgroundColor: colors.paper,
+    borderColor: colors.border,
+  },
+  dealSaveBtnText: {
+    color: "#fff",
     fontSize: 13,
     fontWeight: "800",
     letterSpacing: 0.4,
