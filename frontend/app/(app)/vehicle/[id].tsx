@@ -1072,6 +1072,16 @@ export default function VehicleDetail() {
       Alert.alert("Invalid price", "Please enter a valid price");
       return;
     }
+    // Price UPDATES require a rationale comment (backend enforces this
+    // too, but stopping the request client-side gives a nicer error
+    // than a 400).
+    if (sub?.status === "priced" && changeCommentInput.trim().length < 3) {
+      Alert.alert(
+        "Reason required",
+        "Please tell the dealer why the offer has changed. This will be logged in the price history.",
+      );
+      return;
+    }
     // Two-step confirmation: the "Confirm Price" button in the modal is
     // the FIRST step; this final confirmation is the explicit second step
     // so admins can't accidentally submit a wrong number.
@@ -3352,7 +3362,14 @@ export default function VehicleDetail() {
               multiline
             />
             <Text style={styles.label}>
-              Change comment (optional — reason for {sub.status === "priced" ? "the update" : "this offer"})
+              {sub.status === "priced" ? (
+                <>
+                  Reason for the price change{" "}
+                  <Text style={{ color: "#B3261E", fontWeight: "800" }}>*</Text>
+                </>
+              ) : (
+                <>Change comment (optional — reason for this offer)</>
+              )}
             </Text>
             <TextInput
               testID="change-comment-input"
@@ -3367,11 +3384,25 @@ export default function VehicleDetail() {
               placeholderTextColor={colors.textDisabled}
               multiline
             />
+            {sub.status === "priced" ? (
+              <Text style={{ color: colors.textSecondary, fontSize: 11, marginTop: 4, fontStyle: "italic" }}>
+                A reason is required and will be logged in the price history.
+              </Text>
+            ) : null}
             <TouchableOpacity
               testID="confirm-price-button"
-              style={[styles.confirmBtn, submittingPrice && { opacity: 0.6 }]}
+              style={[
+                styles.confirmBtn,
+                (submittingPrice ||
+                  (sub.status === "priced" && changeCommentInput.trim().length < 3)) && {
+                  opacity: 0.5,
+                },
+              ]}
               onPress={handleOfferPrice}
-              disabled={submittingPrice}
+              disabled={
+                submittingPrice ||
+                (sub.status === "priced" && changeCommentInput.trim().length < 3)
+              }
             >
               {submittingPrice ? (
                 <ActivityIndicator color="#fff" />

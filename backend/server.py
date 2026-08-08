@@ -2280,6 +2280,24 @@ async def admin_price(sub_id: str, offer: PriceOffer, current: dict = Depends(re
     prev_notes = sub.get("price_notes")
     is_update = sub.get("status") == "priced" and prev_price is not None
 
+    # For price UPDATES the admin must explain WHY the offer moved so
+    # every price change is audit-logged with a rationale. Initial
+    # offers still allow an optional comment (defaults to "Initial
+    # offer" below).
+    if is_update:
+        change_comment = (offer.change_comment or "").strip()
+        if not change_comment:
+            raise HTTPException(
+                400,
+                "A comment is required when updating an existing price. "
+                "Tell the dealer why the offer has changed.",
+            )
+        if len(change_comment) < 3:
+            raise HTTPException(
+                400,
+                "Please add a more descriptive reason for the price change.",
+            )
+
     # Build the price-history entry so dealers + admins can see how / when /
     # by whom the offer evolved over time.
     admin_info = current.get("dealer_info") or {}

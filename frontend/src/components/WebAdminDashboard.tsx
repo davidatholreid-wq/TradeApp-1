@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { TouchableOpacity } from "@/src/components/HapticButtons";
-import { View, Text, StyleSheet, ActivityIndicator, ScrollView, Image, TextInput, useWindowDimensions } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, ScrollView, Image, TextInput, useWindowDimensions, Modal, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { spacing, radius, fonts, BRAND } from "@/src/theme";
 import { useThemeColors, useThemeMode, type Palette } from "@/src/theme/ThemeContext";
@@ -14,7 +14,7 @@ import AdminRewardsScreen from "@/src/components/AdminRewardsScreen";
 import AdminAdvertisingScreen from "@/src/components/AdminAdvertisingScreen";
 import PhotoCarousel, { CarouselPhoto } from "@/src/components/PhotoCarousel";
 import ConditionRatingInfoModal from "@/src/components/ConditionRatingInfoModal";
-import { computeServiceGap, formatMonthsAgo, formatKm } from "@/src/utils/format";
+import { computeServiceGap, formatMonthsAgo, formatKm, formatMoneyInput } from "@/src/utils/format";
 
 type ReconItem = {
   label: string;
@@ -245,6 +245,13 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
   const [priceInput, setPriceInput] = useState("");
   const [notesInput, setNotesInput] = useState("");
   const [priceSubmitting, setPriceSubmitting] = useState(false);
+  // Update-price modal state — kept separate from the initial-offer
+  // input so the two flows don't step on each other. The modal enforces
+  // a mandatory rationale comment which is logged into `price_history`.
+  const [priceUpdateOpen, setPriceUpdateOpen] = useState(false);
+  const [priceUpdateInput, setPriceUpdateInput] = useState("");
+  const [priceUpdateComment, setPriceUpdateComment] = useState("");
+  const [priceUpdateNotes, setPriceUpdateNotes] = useState("");
   const [analysing, setAnalysing] = useState(false);
   const [estimatingTyres, setEstimatingTyres] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -404,6 +411,54 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
       await loadSelected();
     } catch (e: any) {
       alert(e.message);
+    } finally {
+      setPriceSubmitting(false);
+    }
+  };
+
+  // Open the "Update Price" modal. Seeds it with the current price and
+  // notes so the admin only has to change what actually differs. The
+  // comment field starts empty and is mandatory — enforced both here
+  // and on the backend.
+  const openPriceUpdate = () => {
+    if (!selected) return;
+    setPriceUpdateInput(
+      selected.price != null
+        ? formatMoneyInput(String(selected.price))
+        : "",
+    );
+    setPriceUpdateNotes(selected.price_notes || "");
+    setPriceUpdateComment("");
+    setPriceUpdateOpen(true);
+  };
+
+  const handlePriceUpdate = async () => {
+    if (!selected) return;
+    const price = parseFloat(priceUpdateInput.replace(/[^0-9.]/g, ""));
+    if (isNaN(price) || price <= 0) {
+      alert("Enter a valid new price.");
+      return;
+    }
+    const comment = priceUpdateComment.trim();
+    if (comment.length < 3) {
+      alert("Please add a reason (at least 3 characters) for the price change.");
+      return;
+    }
+    setPriceSubmitting(true);
+    try {
+      await apiFetch(`/api/admin/submissions/${selected.id}/price`, {
+        method: "POST",
+        body: JSON.stringify({
+          price,
+          notes: priceUpdateNotes.trim() || null,
+          change_comment: comment,
+        }),
+      });
+      setPriceUpdateOpen(false);
+      await loadList();
+      await loadSelected();
+    } catch (e: any) {
+      alert(e.message || "Could not update price.");
     } finally {
       setPriceSubmitting(false);
     }
@@ -1710,7 +1765,10 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 </View>
               </View>
 
-              {/* Pricing */}
+              {/* Pricing — initial-offer input for un-priced submissions,
+                  OR a current-price readout + "Update Price" button once
+                  the vehicle has been priced. Update flow enforces a
+                  mandatory rationale comment (logged to price_history). */}
               <View style={styles.priceBox}>
                 <View style={styles.priceBoxHeader}>
                   <Text style={styles.boxTitle}>PRICE OFFER</Text>
@@ -1718,41 +1776,65 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                     <Text style={styles.priceBadge}>R {selected.price?.toLocaleString()}</Text>
                   ) : null}
                 </View>
-                <View style={styles.priceInputRow}>
-                  <View style={styles.priceInputWrap}>
-                    <Text style={styles.currencyLabel}>R</Text>
-                    <TextInput
-                      testID="admin-price-input"
-                      style={styles.priceInput}
-                      value={priceInput}
-                      onChangeText={setPriceInput}
-                      placeholder="Enter price"
-                      placeholderTextColor={colors.textDisabled}
-                      keyboardType="numeric"
-                    />
+                {selected.status === "priced" && selected.price !== null ? (
+                  <View>
+                    {selected.price_notes ? (
+                      <Text style={styles.priceNotesReadout} numberOfLines={4}>
+                        {selected.price_notes}
+                      </Text>
+                    ) : null}
+                    <TouchableOpacity
+                      testID="admin-open-price-update"
+                      style={styles.priceUpdateBtn}
+                      onPress={openPriceUpdate}
+                    >
+                      <Ionicons name="create-outline" size={16} color="#fff" />
+                      <Text style={styles.priceUpdateBtnText}>Update Price</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.priceUpdateHint}>
+                      A reason for the change is required and will be logged in
+                      the price history.
+                    </Text>
                   </View>
-                  <TouchableOpacity
-                    testID="admin-send-offer-button"
-                    style={[styles.sendBtn, priceSubmitting && { opacity: 0.6 }]}
-                    onPress={handlePrice}
-                    disabled={priceSubmitting}
-                  >
-                    {priceSubmitting ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <Text style={styles.sendBtnText}>SEND OFFER</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-                <TextInput
-                  testID="admin-notes-input"
-                  style={styles.notesInput}
-                  value={notesInput}
-                  onChangeText={setNotesInput}
-                  placeholder="Notes for dealer (optional)"
-                  placeholderTextColor={colors.textDisabled}
-                  multiline
-                />
+                ) : (
+                  <>
+                    <View style={styles.priceInputRow}>
+                      <View style={styles.priceInputWrap}>
+                        <Text style={styles.currencyLabel}>R</Text>
+                        <TextInput
+                          testID="admin-price-input"
+                          style={styles.priceInput}
+                          value={priceInput}
+                          onChangeText={(t) => setPriceInput(formatMoneyInput(t))}
+                          placeholder="Enter price"
+                          placeholderTextColor={colors.textDisabled}
+                          keyboardType="numeric"
+                        />
+                      </View>
+                      <TouchableOpacity
+                        testID="admin-send-offer-button"
+                        style={[styles.sendBtn, priceSubmitting && { opacity: 0.6 }]}
+                        onPress={handlePrice}
+                        disabled={priceSubmitting}
+                      >
+                        {priceSubmitting ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <Text style={styles.sendBtnText}>SEND OFFER</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                    <TextInput
+                      testID="admin-notes-input"
+                      style={styles.notesInput}
+                      value={notesInput}
+                      onChangeText={setNotesInput}
+                      placeholder="Notes for dealer (optional)"
+                      placeholderTextColor={colors.textDisabled}
+                      multiline
+                    />
+                  </>
+                )}
               </View>
 
               {/* Market analysis */}
@@ -2379,6 +2461,112 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
         visible={carouselIdx !== null}
         onClose={() => setCarouselIdx(null)}
       />
+
+      {/* Update-Price modal — REQUIRES a rationale comment so every
+          price change is properly audit-logged in price_history. */}
+      <Modal
+        visible={priceUpdateOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPriceUpdateOpen(false)}
+      >
+        <Pressable
+          style={styles.priceModalBackdrop}
+          onPress={() => setPriceUpdateOpen(false)}
+        >
+          <Pressable style={styles.priceModalCard} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.priceModalHead}>
+              <Ionicons name="create-outline" size={18} color={colors.text} />
+              <Text style={styles.priceModalTitle}>Update Price Offer</Text>
+              <TouchableOpacity
+                onPress={() => setPriceUpdateOpen(false)}
+                testID="price-update-close"
+                style={{ marginLeft: "auto", padding: 4 }}
+              >
+                <Ionicons name="close" size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {selected && selected.price != null ? (
+              <View style={styles.priceModalCurrent}>
+                <Text style={styles.priceModalCurrentLbl}>Current price</Text>
+                <Text style={styles.priceModalCurrentVal}>
+                  R {selected.price.toLocaleString("en-ZA")}
+                </Text>
+              </View>
+            ) : null}
+
+            <Text style={styles.priceModalLabel}>New price</Text>
+            <View style={styles.priceInputWrap}>
+              <Text style={styles.currencyLabel}>R</Text>
+              <TextInput
+                testID="price-update-new-price"
+                style={styles.priceInput}
+                value={priceUpdateInput}
+                onChangeText={(t) => setPriceUpdateInput(formatMoneyInput(t))}
+                placeholder="Enter new price"
+                placeholderTextColor={colors.textDisabled}
+                keyboardType="numeric"
+                autoFocus
+              />
+            </View>
+
+            <Text style={styles.priceModalLabel}>
+              Reason for change <Text style={styles.priceModalRequired}>*</Text>
+            </Text>
+            <TextInput
+              testID="price-update-comment"
+              style={styles.priceModalComment}
+              value={priceUpdateComment}
+              onChangeText={setPriceUpdateComment}
+              placeholder="e.g. Additional recon costs found on inspection; new market comps show softening; dealer negotiated up on their side, etc."
+              placeholderTextColor={colors.textDisabled}
+              multiline
+              numberOfLines={3}
+            />
+
+            <Text style={styles.priceModalLabel}>Dealer notes (optional)</Text>
+            <TextInput
+              testID="price-update-notes"
+              style={styles.priceModalNotes}
+              value={priceUpdateNotes}
+              onChangeText={setPriceUpdateNotes}
+              placeholder="Public notes shown to the dealer with the revised offer"
+              placeholderTextColor={colors.textDisabled}
+              multiline
+            />
+
+            <View style={styles.priceModalActions}>
+              <TouchableOpacity
+                onPress={() => setPriceUpdateOpen(false)}
+                style={styles.priceModalCancel}
+                testID="price-update-cancel"
+              >
+                <Text style={styles.priceModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handlePriceUpdate}
+                disabled={priceSubmitting || priceUpdateComment.trim().length < 3}
+                style={[
+                  styles.priceModalSave,
+                  (priceSubmitting || priceUpdateComment.trim().length < 3) && { opacity: 0.5 },
+                ]}
+                testID="price-update-save"
+              >
+                {priceSubmitting ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="save-outline" size={16} color="#fff" />
+                    <Text style={styles.priceModalSaveText}>SAVE UPDATE</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       <ConditionRatingInfoModal
         visible={conditionInfoOpen}
         onClose={() => setConditionInfoOpen(false)}
@@ -3418,6 +3606,164 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   priceBoxHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.sm },
   priceBadge: { color: colors.success, fontFamily: fonts.number, fontVariant: ["tabular-nums"], fontSize: 18, fontWeight: "800", letterSpacing: -0.2 },
   priceInputRow: { flexDirection: "row", gap: spacing.sm },
+  // -------- Update Price flow --------
+  priceNotesReadout: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: spacing.sm,
+    padding: 10,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  priceUpdateBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: radius.sm,
+    backgroundColor: BRAND.color,
+  },
+  priceUpdateBtnText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+  },
+  priceUpdateHint: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    marginTop: 6,
+    fontStyle: "italic",
+    textAlign: "center",
+  },
+  priceModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing.lg,
+  },
+  priceModalCard: {
+    width: "100%",
+    maxWidth: 520,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    padding: spacing.lg,
+    gap: spacing.sm,
+  },
+  priceModalHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: spacing.sm,
+  },
+  priceModalTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "800",
+    letterSpacing: -0.2,
+  },
+  priceModalCurrent: {
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.sm,
+  },
+  priceModalCurrentLbl: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1.2,
+  },
+  priceModalCurrentVal: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: "800",
+    fontFamily: fonts.number,
+    fontVariant: ["tabular-nums"],
+  },
+  priceModalLabel: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1,
+    marginTop: 4,
+  },
+  priceModalRequired: {
+    color: "#B3261E",
+    fontWeight: "800",
+  },
+  priceModalComment: {
+    color: colors.text,
+    fontSize: 14,
+    padding: 12,
+    minHeight: 80,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+    textAlignVertical: "top",
+  },
+  priceModalNotes: {
+    color: colors.text,
+    fontSize: 13,
+    padding: 12,
+    minHeight: 56,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+    textAlignVertical: "top",
+  },
+  priceModalActions: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  priceModalCancel: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  priceModalCancelText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+  },
+  priceModalSave: {
+    flex: 1.4,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: radius.sm,
+    backgroundColor: BRAND.color,
+  },
+  priceModalSaveText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 0.6,
+  },
   priceInputWrap: {
     flex: 1,
     flexDirection: "row",
