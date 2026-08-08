@@ -1954,87 +1954,116 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
               ) : null}
 
               {/* ============ DEAL TRACKING (admin read-only) ============ */}
-              {selected.deal && selected.deal.done !== null && selected.deal.done !== undefined ? (
-                <View style={styles.analysisBox} testID="admin-deal-tracking">
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                    <Ionicons name="briefcase-outline" size={14} color={colors.text} />
-                    <Text style={styles.boxTitle}>DEAL TRACKING</Text>
-                    <View style={{ flex: 1 }} />
-                    <View style={styles.dealReadPill}>
-                      <Ionicons name="lock-closed" size={10} color={colors.textSecondary} />
-                      <Text style={styles.dealReadPillText}>ADMIN VIEW</Text>
-                    </View>
-                  </View>
-                  <View style={styles.dealAdminRow}>
-                    <Text style={styles.dealAdminLbl}>Did they do the deal?</Text>
-                    <Text style={styles.dealAdminVal}>
-                      {selected.deal.done === true ? "Yes" : selected.deal.done === false ? "No" : "—"}
-                    </Text>
-                  </View>
-                  {selected.deal.done === true ? (
-                    <>
-                      <View style={styles.dealAdminRow}>
-                        <Text style={styles.dealAdminLbl}>Purchase price</Text>
-                        <Text style={styles.dealAdminVal}>{fmtZar(selected.deal.purchase_price_zar || 0)}</Text>
+              {selected.status !== "pending" ? (
+                (() => {
+                  const d = selected.deal || {};
+                  const doneVal = d.done;
+                  let outcome: "pending" | "deal_done" | "no_deal" = "pending";
+                  if (doneVal === true) outcome = "deal_done";
+                  else if (doneVal === false) outcome = "no_deal";
+                  const outcomeLabel =
+                    outcome === "deal_done"
+                      ? "DEAL DONE"
+                      : outcome === "no_deal"
+                        ? "NO DEAL DONE"
+                        : "PENDING OUTCOME";
+                  const outcomePillStyle =
+                    outcome === "deal_done"
+                      ? { backgroundColor: "#1F7A3A" }
+                      : outcome === "no_deal"
+                        ? { backgroundColor: "#5A5A5F" }
+                        : { backgroundColor: "#B67900" };
+                  const outcomeIcon: "checkmark-circle" | "close-circle" | "hourglass-outline" =
+                    outcome === "deal_done"
+                      ? "checkmark-circle"
+                      : outcome === "no_deal"
+                        ? "close-circle"
+                        : "hourglass-outline";
+                  return (
+                    <View style={styles.analysisBox} testID="admin-deal-tracking">
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                        <Ionicons name="briefcase-outline" size={14} color={colors.text} />
+                        <Text style={styles.boxTitle}>DEAL TRACKING</Text>
+                        <View style={{ flex: 1 }} />
+                        <View style={styles.dealReadPill}>
+                          <Ionicons name="lock-closed" size={10} color={colors.textSecondary} />
+                          <Text style={styles.dealReadPillText}>ADMIN VIEW</Text>
+                        </View>
                       </View>
-                      {selected.deal.purchased_at ? (
-                        <Text style={styles.dealAdminMeta}>
-                          Bought on {new Date(selected.deal.purchased_at).toLocaleDateString("en-ZA")}
-                        </Text>
-                      ) : null}
-                      <View style={styles.dealAdminRow}>
-                        <Text style={styles.dealAdminLbl}>Have they sold the car?</Text>
-                        <Text style={styles.dealAdminVal}>
-                          {selected.deal.sold === true ? "Yes" : selected.deal.sold === false ? "Not yet" : "—"}
-                        </Text>
+                      <View style={[styles.dealAdminOutcome, outcomePillStyle]}>
+                        <Ionicons name={outcomeIcon} size={13} color="#fff" />
+                        <Text style={styles.dealAdminOutcomeText}>{outcomeLabel}</Text>
                       </View>
-                      {selected.deal.sold === true ? (
+                      {doneVal === true ? (
                         <>
                           <View style={styles.dealAdminRow}>
-                            <Text style={styles.dealAdminLbl}>Reconditioning</Text>
-                            <Text style={styles.dealAdminVal}>{fmtZar(selected.deal.recon_cost_zar || 0)}</Text>
+                            <Text style={styles.dealAdminLbl}>Purchase price</Text>
+                            <Text style={styles.dealAdminVal}>{fmtZar(d.purchase_price_zar || 0)}</Text>
                           </View>
-                          <View style={styles.dealAdminRow}>
-                            <Text style={styles.dealAdminLbl}>Sale price</Text>
-                            <Text style={styles.dealAdminVal}>{fmtZar(selected.deal.sale_price_zar || 0)}</Text>
-                          </View>
-                          {selected.deal.sold_at ? (
+                          {d.purchased_at ? (
                             <Text style={styles.dealAdminMeta}>
-                              Sold on {new Date(selected.deal.sold_at).toLocaleDateString("en-ZA")}
+                              Bought on {new Date(d.purchased_at).toLocaleDateString("en-ZA")}
                             </Text>
                           ) : null}
+                          <View style={styles.dealAdminRow}>
+                            <Text style={styles.dealAdminLbl}>Have they sold the car?</Text>
+                            <Text style={styles.dealAdminVal}>
+                              {d.sold === true ? "Yes" : d.sold === false ? "Not yet" : "—"}
+                            </Text>
+                          </View>
+                          {d.sold === true ? (
+                            <>
+                              <View style={styles.dealAdminRow}>
+                                <Text style={styles.dealAdminLbl}>Reconditioning</Text>
+                                <Text style={styles.dealAdminVal}>{fmtZar(d.recon_cost_zar || 0)}</Text>
+                              </View>
+                              <View style={styles.dealAdminRow}>
+                                <Text style={styles.dealAdminLbl}>Sale price</Text>
+                                <Text style={styles.dealAdminVal}>{fmtZar(d.sale_price_zar || 0)}</Text>
+                              </View>
+                              {d.sold_at ? (
+                                <Text style={styles.dealAdminMeta}>
+                                  Sold on {new Date(d.sold_at).toLocaleDateString("en-ZA")}
+                                </Text>
+                              ) : null}
+                            </>
+                          ) : null}
                         </>
+                      ) : outcome === "pending" ? (
+                        <Text style={styles.dealAdminMeta}>
+                          Dealer hasn&apos;t confirmed whether the deal was done yet.
+                        </Text>
                       ) : null}
-                    </>
-                  ) : null}
-                  {selected.deal_profit && selected.deal_profit.profit_zar != null ? (
-                    <View
-                      style={[
-                        styles.dealAdminPnl,
-                        selected.deal_profit.profit_zar >= 0
-                          ? { borderColor: "#1F7A3A66", backgroundColor: "#1F7A3A1A" }
-                          : { borderColor: "#B3261E66", backgroundColor: "#B3261E1A" },
-                      ]}
-                    >
-                      <Text style={styles.dealAdminPnlLbl}>
-                        {selected.deal_profit.profit_zar >= 0 ? "GROSS PROFIT" : "LOSS"}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.dealAdminPnlVal,
-                          { color: selected.deal_profit.profit_zar >= 0 ? "#1F7A3A" : "#B3261E" },
-                        ]}
-                      >
-                        {fmtZar(selected.deal_profit.profit_zar)}
-                        {selected.deal_profit.margin_pct != null ? (
-                          <Text style={styles.dealAdminPnlMargin}>
-                            {"  ·  "}{selected.deal_profit.margin_pct}% margin
+                      {selected.deal_profit && selected.deal_profit.profit_zar != null ? (
+                        <View
+                          style={[
+                            styles.dealAdminPnl,
+                            selected.deal_profit.profit_zar >= 0
+                              ? { borderColor: "#1F7A3A66", backgroundColor: "#1F7A3A1A" }
+                              : { borderColor: "#B3261E66", backgroundColor: "#B3261E1A" },
+                          ]}
+                        >
+                          <Text style={styles.dealAdminPnlLbl}>
+                            {selected.deal_profit.profit_zar >= 0 ? "GROSS PROFIT" : "LOSS"}
                           </Text>
-                        ) : null}
-                      </Text>
+                          <Text
+                            style={[
+                              styles.dealAdminPnlVal,
+                              { color: selected.deal_profit.profit_zar >= 0 ? "#1F7A3A" : "#B3261E" },
+                            ]}
+                          >
+                            {fmtZar(selected.deal_profit.profit_zar)}
+                            {selected.deal_profit.margin_pct != null ? (
+                              <Text style={styles.dealAdminPnlMargin}>
+                                {"  ·  "}{selected.deal_profit.margin_pct}% margin
+                              </Text>
+                            ) : null}
+                          </Text>
+                        </View>
+                      ) : null}
                     </View>
-                  ) : null}
-                </View>
+                  );
+                })()
               ) : null}
 
               {/* ================= OFFER HISTORY ================= */}
@@ -3251,6 +3280,22 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   dealAdminLbl: {
     color: colors.textSecondary,
     fontSize: 12,
+  },
+  dealAdminOutcome: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+    marginBottom: spacing.sm,
+  },
+  dealAdminOutcomeText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1,
   },
   dealAdminVal: {
     color: colors.text,
