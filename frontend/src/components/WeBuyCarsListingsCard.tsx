@@ -12,11 +12,15 @@
 // cross-reference next to the AutoTrader deep-link.
 // -----------------------------------------------------------------------------
 import { useMemo } from "react";
-import { View, Text, StyleSheet, Linking, Platform } from "react-native";
+import { View, Text, StyleSheet, Linking, Platform, Image } from "react-native";
 import { TouchableOpacity } from "@/src/components/HapticButtons";
 import { Ionicons } from "@expo/vector-icons";
 import { spacing, radius, fonts } from "@/src/theme";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
+
+// Brand logo image bundled with the app. Kept in assets/images/logos
+// so it ships with the JS bundle (no network round-trip needed).
+const WEBUYCARS_LOGO = require("@/assets/images/logos/webuycars.png");
 
 type Props = {
   make?: string;
@@ -326,8 +330,8 @@ export default function WeBuyCarsListingsCard(props: Props) {
         accessibilityRole="link"
         accessibilityLabel="Open comparable listings on WeBuyCars.co.za"
       >
-        <View style={[styles.badge, { backgroundColor: "#0F3F71" }]}>
-          <Text style={styles.badgeText}>WBC</Text>
+        <View style={styles.logoBadge}>
+          <Image source={WEBUYCARS_LOGO} style={styles.logoImg} resizeMode="contain" />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.btnTitle}>WeBuyCars.co.za</Text>
@@ -345,9 +349,9 @@ export default function WeBuyCarsListingsCard(props: Props) {
       </TouchableOpacity>
 
       <Text style={styles.disclaimer}>
-        Tip: WeBuyCars retail stock is fully reconditioned and warrantied,
-        so listed prices sit above wholesale. Use it to gauge the ceiling,
-        not the floor.
+        Tip: WeBuyCars stock is NOT reconditioned — condition varies from
+        one listing to the next. Use it as a wholesale/trade reference,
+        and go through each listing carefully before drawing conclusions.
       </Text>
     </View>
   );
@@ -397,6 +401,15 @@ function makeStyles(colors: Palette) {
       alignItems: "center", justifyContent: "center",
     },
     badgeText: { color: "#fff", fontSize: 11, fontWeight: "800", letterSpacing: 1 },
+    logoBadge: {
+      width: 40, height: 40,
+      borderRadius: 8,
+      alignItems: "center", justifyContent: "center",
+      backgroundColor: "#fff",
+      padding: 4,
+      overflow: "hidden",
+    },
+    logoImg: { width: "100%", height: "100%" },
     btnTitle: { color: colors.text, fontSize: 14, fontWeight: "700" },
     btnSub: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
 

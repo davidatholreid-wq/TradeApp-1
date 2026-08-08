@@ -7,11 +7,15 @@
 // context during the valuation.
 // -----------------------------------------------------------------------------
 import { useMemo } from "react";
-import { View, Text, StyleSheet, Linking, Platform } from "react-native";
+import { View, Text, StyleSheet, Linking, Platform, Image } from "react-native";
 import { TouchableOpacity } from "@/src/components/HapticButtons";
 import { Ionicons } from "@expo/vector-icons";
 import { spacing, radius, fonts } from "@/src/theme";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
+
+// Brand logo image bundled with the app. Kept in assets/images/logos
+// so it ships with the JS bundle (no network round-trip needed).
+const AUTOTRADER_LOGO = require("@/assets/images/logos/autotrader.png");
 
 type Props = {
   make?: string;
@@ -272,8 +276,8 @@ export default function ComparableListingsCard(props: Props) {
         accessibilityRole="link"
         accessibilityLabel="Open comparable listings on AutoTrader.co.za"
       >
-        <View style={[styles.badge, { backgroundColor: "#E31C24" }]}>
-          <Text style={styles.badgeText}>AT</Text>
+        <View style={styles.logoBadge}>
+          <Image source={AUTOTRADER_LOGO} style={styles.logoImg} resizeMode="contain" />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.btnTitle}>AutoTrader.co.za</Text>
@@ -290,8 +294,10 @@ export default function ComparableListingsCard(props: Props) {
       </TouchableOpacity>
 
       <Text style={styles.disclaimer}>
-        Tip: on AutoTrader, filter by &ldquo;Franchise&rdquo; / &ldquo;Dealer&rdquo; and sort by price
-        (low → high) to find the cheapest comparable example.
+        Tip: AutoTrader listings on this deep link come from reputable
+        franchise and dealer partners rated 3★ or higher — vehicles are
+        typically reconditioned and warrantied. Cheapest example gives
+        you a solid retail benchmark.
       </Text>
     </View>
   );
@@ -341,6 +347,15 @@ function makeStyles(colors: Palette) {
       alignItems: "center", justifyContent: "center",
     },
     badgeText: { color: "#fff", fontSize: 13, fontWeight: "800", letterSpacing: 1 },
+    logoBadge: {
+      width: 40, height: 40,
+      borderRadius: 8,
+      alignItems: "center", justifyContent: "center",
+      backgroundColor: "#fff",
+      padding: 4,
+      overflow: "hidden",
+    },
+    logoImg: { width: "100%", height: "100%" },
     btnTitle: { color: colors.text, fontSize: 14, fontWeight: "700" },
     btnSub: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
 

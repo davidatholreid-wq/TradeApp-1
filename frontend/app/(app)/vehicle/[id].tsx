@@ -2555,6 +2555,21 @@ export default function VehicleDetail() {
             yearFrom={sub.variant_manufacture_range?.min ?? null}
             yearTo={sub.variant_manufacture_range?.max ?? null}
           />
+          {/* Combined advisory across both markets — explains how to
+              interpret the two data sources side-by-side. */}
+          <View style={styles.compareAdvisory} testID="compare-listings-advisory">
+            <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
+            <Text style={styles.compareAdvisoryText}>
+              <Text style={{ fontWeight: "700", color: colors.text }}>AutoTrader</Text> shows
+              listings from reputable dealers (3★+) — typically reconditioned and warrantied,
+              so treat them as the retail ceiling.{"  "}
+              <Text style={{ fontWeight: "700", color: colors.text }}>WeBuyCars</Text> shows
+              stock in mixed condition and NOT reconditioned — closer to trade / wholesale,
+              but condition varies listing-to-listing.{"  "}
+              It is advised that you go through the listings carefully before drawing a
+              conclusion.
+            </Text>
+          </View>
         </CollapsibleSection>
 
         {/* Tyre Replacement Estimate — admin-only */}
@@ -4245,6 +4260,27 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     letterSpacing: 0.3,
   },
   scroll: { padding: spacing.lg, paddingBottom: 120 },
+
+  // Combined advisory shown below the AutoTrader + WeBuyCars deep-link
+  // cards. Explains how the two markets differ so the dealer doesn't
+  // treat them as apples-to-apples.
+  compareAdvisory: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    marginTop: spacing.sm,
+    padding: spacing.sm + 2,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  compareAdvisoryText: {
+    flex: 1,
+    color: colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 16,
+  },
   // ----- "Subject to View" advisory banner (top of detail page) -----
   unseenBanner: {
     flexDirection: "row",
