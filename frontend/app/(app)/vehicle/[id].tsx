@@ -534,15 +534,27 @@ export default function VehicleDetail() {
   // strings so the user can freely type (backend coerces on save). The
   // canonical persisted deal lives inside `sub.deal`.
   const [dealSaving, setDealSaving] = useState(false);
+  // Tri-state outcome CHOICES held locally until the user hits Save.
+  // "pending" is the default; "yes"/"no" are set when the user taps a
+  // pill. Persisted state (`sub.deal.done`) only changes on save.
+  type OutcomeChoice = "pending" | "yes" | "no";
+  const [dealDoneChoice, setDealDoneChoice] = useState<OutcomeChoice>("pending");
+  const [dealSoldChoice, setDealSoldChoice] = useState<OutcomeChoice>("pending");
   const [dealPurchaseInput, setDealPurchaseInput] = useState("");
   const [dealReconInput, setDealReconInput] = useState("");
   const [dealSaleInput, setDealSaleInput] = useState("");
   const [dealPdfDownloading, setDealPdfDownloading] = useState(false);
-  // Whenever the server-side `sub.deal` changes, mirror the numeric
-  // fields into the local text inputs so the form matches persisted
-  // state. Format with comma-thousand separators for readability.
+  // Whenever the server-side `sub.deal` changes, mirror BOTH the tri-
+  // state choices and the numeric fields into the local form state so
+  // the UI reflects persisted values on load.
   useEffect(() => {
     const d = (sub as any)?.deal as DealInfo | null | undefined;
+    setDealDoneChoice(
+      d?.done === true ? "yes" : d?.done === false ? "no" : "pending",
+    );
+    setDealSoldChoice(
+      d?.sold === true ? "yes" : d?.sold === false ? "no" : "pending",
+    );
     setDealPurchaseInput(
       d?.purchase_price_zar != null
         ? formatMoneyString(String(d.purchase_price_zar))
@@ -559,6 +571,8 @@ export default function VehicleDetail() {
         : ""
     );
   }, [
+    (sub as any)?.deal?.done,
+    (sub as any)?.deal?.sold,
     (sub as any)?.deal?.purchase_price_zar,
     (sub as any)?.deal?.recon_cost_zar,
     (sub as any)?.deal?.sale_price_zar,
@@ -630,20 +644,32 @@ export default function VehicleDetail() {
   // together via a single PATCH when the user hits "Update Profit
   // Analysis". `dealFinancialsDirty` compares the current inputs to the
   // persisted values so we can enable/disable the button accordingly.
+  // Coerce a local tri-state choice into the API's boolean|null value.
+  const choiceToApi = (c: OutcomeChoice): boolean | null =>
+    c === "yes" ? true : c === "no" ? false : null;
+
   const dealFinancialsDirty = useMemo(() => {
     const d = (sub as any)?.deal as DealInfo | null | undefined;
+    const persistedDone = d?.done === true ? "yes" : d?.done === false ? "no" : "pending";
+    const persistedSold = d?.sold === true ? "yes" : d?.sold === false ? "no" : "pending";
     const cur = {
+      done: dealDoneChoice,
+      sold: dealSoldChoice,
       purchase_price_zar: parseMoneyInput(dealPurchaseInput),
       recon_cost_zar: parseMoneyInput(dealReconInput),
       sale_price_zar: parseMoneyInput(dealSaleInput),
     };
     return (
+      cur.done !== persistedDone ||
+      cur.sold !== persistedSold ||
       cur.purchase_price_zar !== (d?.purchase_price_zar ?? null) ||
       cur.recon_cost_zar !== (d?.recon_cost_zar ?? null) ||
       cur.sale_price_zar !== (d?.sale_price_zar ?? null)
     );
   }, [
     sub,
+    dealDoneChoice,
+    dealSoldChoice,
     dealPurchaseInput,
     dealReconInput,
     dealSaleInput,
@@ -651,14 +677,44 @@ export default function VehicleDetail() {
 
   const saveDealFinancials = useCallback(async () => {
     if (!dealFinancialsDirty) return;
+    // Client-side guard mirroring the backend: sold=yes needs
+    // done=yes first (recording a sale before a purchase makes no
+    // sense).
+    if (dealSoldChoice === "yes" && dealDoneChoice !== "yes") {
+      if (Platform.OS === "web") {
+        (globalThis as any).alert?.(
+          "Mark the purchase as done before recording a sale.",
+        );
+      } else {
+        Alert.alert(
+          "Purchase not confirmed",
+          "Mark the purchase as done before recording a sale.",
+        );
+      }
+      return;
+    }
+    // Build the patch. Only include the sale block when the purchase
+    // is confirmed — otherwise the backend cascades sold to null
+    // anyway.
     await patchDeal({
-      purchase_price_zar: parseMoneyInput(dealPurchaseInput),
-      recon_cost_zar: parseMoneyInput(dealReconInput),
-      sale_price_zar: parseMoneyInput(dealSaleInput),
+      done: choiceToApi(dealDoneChoice),
+      purchase_price_zar:
+        dealDoneChoice === "yes" ? parseMoneyInput(dealPurchaseInput) : null,
+      sold: dealDoneChoice === "yes" ? choiceToApi(dealSoldChoice) : null,
+      recon_cost_zar:
+        dealDoneChoice === "yes" && dealSoldChoice === "yes"
+          ? parseMoneyInput(dealReconInput)
+          : null,
+      sale_price_zar:
+        dealDoneChoice === "yes" && dealSoldChoice === "yes"
+          ? parseMoneyInput(dealSaleInput)
+          : null,
     });
   }, [
     dealFinancialsDirty,
     patchDeal,
+    dealDoneChoice,
+    dealSoldChoice,
     dealPurchaseInput,
     dealReconInput,
     dealSaleInput,
@@ -2921,18 +2977,19 @@ export default function VehicleDetail() {
           (() => {
             const deal = (sub as any).deal as DealInfo | null | undefined;
             const profit = ((sub as any).deal_profit as DealProfit | null) || null;
-            const done = deal?.done === true;
-            const sold = deal?.sold === true;
+            const done = dealDoneChoice === "yes";  // local live state
+            const sold = dealSoldChoice === "yes";
             const readOnly = isAdmin;
             const canDownloadPdf = profit?.profit_zar != null;
-            // Explicit tri-state outcome — used both for the pill here
-            // AND surfaced on the home-screen reporting later. If the
-            // dealer has never touched the deal, the outcome is
-            // PENDING (i.e. "outcome not recorded yet"). Once they tap
-            // Yes / No it becomes DEAL DONE / NO DEAL DONE.
-            let outcome: "pending" | "deal_done" | "no_deal" = "pending";
-            if (deal?.done === true) outcome = "deal_done";
-            else if (deal?.done === false) outcome = "no_deal";
+            // Outcome pill mirrors the LIVE choice so it updates
+            // instantly when the dealer taps a pill, before hitting
+            // save.
+            const outcome: "pending" | "deal_done" | "no_deal" =
+              dealDoneChoice === "yes"
+                ? "deal_done"
+                : dealDoneChoice === "no"
+                  ? "no_deal"
+                  : "pending";
             const outcomeLabel =
               outcome === "deal_done"
                 ? "DEAL DONE"
@@ -2989,10 +3046,33 @@ export default function VehicleDetail() {
                   </View>
                   <View style={styles.dealChoiceRow}>
                     <TouchableOpacity
+                      testID="deal-done-pending"
+                      disabled={readOnly || dealSaving}
+                      style={[
+                        styles.dealChoiceBtn,
+                        dealDoneChoice === "pending" && styles.dealChoiceBtnPending,
+                      ]}
+                      onPress={() => setDealDoneChoice("pending")}
+                    >
+                      <Ionicons
+                        name="hourglass-outline"
+                        size={16}
+                        color={dealDoneChoice === "pending" ? "#fff" : colors.textSecondary}
+                      />
+                      <Text
+                        style={[
+                          styles.dealChoiceBtnText,
+                          dealDoneChoice === "pending" && styles.dealChoiceBtnTextActive,
+                        ]}
+                      >
+                        Pending
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
                       testID="deal-done-yes"
                       disabled={readOnly || dealSaving}
                       style={[styles.dealChoiceBtn, done && styles.dealChoiceBtnYes]}
-                      onPress={() => patchDeal({ done: true })}
+                      onPress={() => setDealDoneChoice("yes")}
                     >
                       <Ionicons name="checkmark-circle" size={16}
                         color={done ? "#fff" : colors.textSecondary} />
@@ -3001,12 +3081,12 @@ export default function VehicleDetail() {
                     <TouchableOpacity
                       testID="deal-done-no"
                       disabled={readOnly || dealSaving}
-                      style={[styles.dealChoiceBtn, deal?.done === false && styles.dealChoiceBtnNo]}
-                      onPress={() => patchDeal({ done: false })}
+                      style={[styles.dealChoiceBtn, dealDoneChoice === "no" && styles.dealChoiceBtnNo]}
+                      onPress={() => setDealDoneChoice("no")}
                     >
                       <Ionicons name="close-circle" size={16}
-                        color={deal?.done === false ? "#fff" : colors.textSecondary} />
-                      <Text style={[styles.dealChoiceBtnText, deal?.done === false && styles.dealChoiceBtnTextActive]}>No</Text>
+                        color={dealDoneChoice === "no" ? "#fff" : colors.textSecondary} />
+                      <Text style={[styles.dealChoiceBtnText, dealDoneChoice === "no" && styles.dealChoiceBtnTextActive]}>No</Text>
                     </TouchableOpacity>
                   </View>
                   {done ? (
@@ -3045,10 +3125,33 @@ export default function VehicleDetail() {
                     </View>
                     <View style={styles.dealChoiceRow}>
                       <TouchableOpacity
+                        testID="deal-sold-pending"
+                        disabled={readOnly || dealSaving}
+                        style={[
+                          styles.dealChoiceBtn,
+                          dealSoldChoice === "pending" && styles.dealChoiceBtnPending,
+                        ]}
+                        onPress={() => setDealSoldChoice("pending")}
+                      >
+                        <Ionicons
+                          name="hourglass-outline"
+                          size={16}
+                          color={dealSoldChoice === "pending" ? "#fff" : colors.textSecondary}
+                        />
+                        <Text
+                          style={[
+                            styles.dealChoiceBtnText,
+                            dealSoldChoice === "pending" && styles.dealChoiceBtnTextActive,
+                          ]}
+                        >
+                          Pending
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
                         testID="deal-sold-yes"
                         disabled={readOnly || dealSaving}
                         style={[styles.dealChoiceBtn, sold && styles.dealChoiceBtnYes]}
-                        onPress={() => patchDeal({ sold: true })}
+                        onPress={() => setDealSoldChoice("yes")}
                       >
                         <Ionicons name="checkmark-circle" size={16}
                           color={sold ? "#fff" : colors.textSecondary} />
@@ -3057,12 +3160,12 @@ export default function VehicleDetail() {
                       <TouchableOpacity
                         testID="deal-sold-no"
                         disabled={readOnly || dealSaving}
-                        style={[styles.dealChoiceBtn, deal?.sold === false && styles.dealChoiceBtnNo]}
-                        onPress={() => patchDeal({ sold: false })}
+                        style={[styles.dealChoiceBtn, dealSoldChoice === "no" && styles.dealChoiceBtnNo]}
+                        onPress={() => setDealSoldChoice("no")}
                       >
                         <Ionicons name="close-circle" size={16}
-                          color={deal?.sold === false ? "#fff" : colors.textSecondary} />
-                        <Text style={[styles.dealChoiceBtnText, deal?.sold === false && styles.dealChoiceBtnTextActive]}>Not yet</Text>
+                          color={dealSoldChoice === "no" ? "#fff" : colors.textSecondary} />
+                        <Text style={[styles.dealChoiceBtnText, dealSoldChoice === "no" && styles.dealChoiceBtnTextActive]}>Not yet</Text>
                       </TouchableOpacity>
                     </View>
                     {sold ? (
@@ -3110,13 +3213,13 @@ export default function VehicleDetail() {
                 ) : null}
 
                 {/* ------ Explicit Save button (dealer-editable path) ------
-                    Only rendered when the dealer has entered at least
-                    one Stage-1 answer AND is not the admin (admin view is
-                    read-only). Shows as "SAVED" when nothing has changed
-                    and as "Update Profit Analysis" (primary) when there
-                    are pending edits. Committing here also refreshes the
-                    Home-screen Deal Outcomes tile on next focus. */}
-                {!readOnly && (done || deal?.done === false) ? (
+                    Always visible when the vehicle is priced and the
+                    viewer is the owning dealer (not admin). Enabled
+                    only when there are unsaved changes to any of the
+                    outcome pills OR numeric fields. Committing here
+                    also refreshes the Home-screen Deal Outcomes tile
+                    on next focus. */}
+                {!readOnly ? (
                   <TouchableOpacity
                     testID="deal-save-button"
                     style={[
@@ -4465,6 +4568,12 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   dealChoiceBtnNo: {
     borderColor: "#6B7280",
     backgroundColor: "#6B7280",
+  },
+  dealChoiceBtnPending: {
+    // Amber = "no decision yet" — matches the outcome pill at the top
+    // so the two visual signals stay in sync.
+    borderColor: "#B67900",
+    backgroundColor: "#B67900",
   },
   dealChoiceBtnText: {
     color: colors.text,
