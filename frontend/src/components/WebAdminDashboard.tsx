@@ -14,6 +14,8 @@ import AdminRewardsScreen from "@/src/components/AdminRewardsScreen";
 import AdminAdvertisingScreen from "@/src/components/AdminAdvertisingScreen";
 import PhotoCarousel, { CarouselPhoto } from "@/src/components/PhotoCarousel";
 import ConditionRatingInfoModal from "@/src/components/ConditionRatingInfoModal";
+import ComparableListingsCard from "@/src/components/ComparableListingsCard";
+import WeBuyCarsListingsCard from "@/src/components/WeBuyCarsListingsCard";
 import { computeServiceGap, formatMonthsAgo, formatKm, formatMoneyInput } from "@/src/utils/format";
 
 type ReconItem = {
@@ -2102,6 +2104,47 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 )}
               </View>
 
+              {/* ================= COMPARE LIVE LISTINGS ================= */}
+              {/* Deep-links into AutoTrader + WeBuyCars search results
+                  pre-filtered to comparable stock. Non-scraping — just
+                  hands off to the live sites. Same component the mobile
+                  vehicle detail uses, so behaviour stays in lock-step. */}
+              <View style={styles.analysisBox} testID="admin-compare-listings">
+                <Text style={styles.boxTitle}>COMPARE LIVE LISTINGS</Text>
+                <ComparableListingsCard
+                  make={selected.make_name}
+                  model={selected.model_name}
+                  derivative={selected.derivative_name}
+                  fuelType={selected.fuel_type}
+                  transmission={selected.transmission}
+                  year={selected.year_of_production ?? selected.year}
+                  yearFrom={selected.variant_manufacture_range?.min ?? null}
+                  yearTo={selected.variant_manufacture_range?.max ?? null}
+                />
+                <WeBuyCarsListingsCard
+                  make={selected.make_name}
+                  model={selected.model_name}
+                  derivative={selected.derivative_name}
+                  fuelType={selected.fuel_type}
+                  transmission={selected.transmission}
+                  year={selected.year_of_production ?? selected.year}
+                  yearFrom={selected.variant_manufacture_range?.min ?? null}
+                  yearTo={selected.variant_manufacture_range?.max ?? null}
+                />
+                <View style={styles.adminCompareAdvisory}>
+                  <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
+                  <Text style={styles.adminCompareAdvisoryText}>
+                    <Text style={{ fontWeight: "700", color: colors.text }}>AutoTrader</Text> shows
+                    listings from reputable dealers (3★+) — typically reconditioned and warrantied,
+                    so treat them as the retail ceiling.{"  "}
+                    <Text style={{ fontWeight: "700", color: colors.text }}>WeBuyCars</Text> shows
+                    stock in mixed condition and NOT reconditioned — closer to trade / wholesale,
+                    but condition varies listing-to-listing. Go through the listings carefully
+                    before drawing a conclusion.
+                  </Text>
+                </View>
+              </View>
+
               {/* ================= FACTORY FITTED VEHICLE OPTIONS (Bimmervin) ================= */}
               {/* Read-only mirror of the mobile "Factory Fitted Vehicle
                   Options" card. Fetching stays on mobile — the web
@@ -3815,6 +3858,26 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radius.md,
     backgroundColor: colors.card,
+  },
+  // Combined advisory shown below the AT + WBC deep-link cards in the
+  // admin cockpit — subtle paper-toned strip so it doesn't compete
+  // with the primary market-values panel above it.
+  adminCompareAdvisory: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    marginTop: spacing.sm,
+    padding: spacing.sm + 2,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  adminCompareAdvisoryText: {
+    flex: 1,
+    color: colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 16,
   },
   analyseBtn: {
     flexDirection: "row",
