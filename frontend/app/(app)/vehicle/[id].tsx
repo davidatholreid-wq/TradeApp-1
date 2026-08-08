@@ -1455,11 +1455,10 @@ export default function VehicleDetail() {
       >
         {/* Dealer branding banner — WhatsApp Business-style header with
             cover photo + circular profile pic + submitter name + the
-            dealership they belong to. Only rendered outside cover mode
-            (pricing agents never see who submitted). Hidden entirely
-            when we have neither a cover nor a profile pic so we don't
-            show an empty ghost banner. */}
-        {!isCoverMode && (sub.submitter_cover_photo || sub.submitter_profile_pic || sub.submitted_by_name) ? (
+            dealership they belong to. Shown in EVERY viewer mode
+            (owner, admin AND pricing agent) so the network can see who
+            they're pricing the vehicle for. */}
+        {sub.submitter_cover_photo || sub.submitter_profile_pic || sub.submitted_by_name ? (
           <View style={styles.dealerBanner} testID="dealer-banner">
             <View style={styles.dealerBannerCoverClip}>
               {sub.submitter_cover_photo ? (
@@ -1583,13 +1582,29 @@ export default function VehicleDetail() {
           </>
         ) : null}
 
-        {/* Title — MAKE + DERIVATIVE only. The derivative already
-            embeds the model name (e.g. "DUSTER 1.5 dCI TECHROAD EDC")
-            so the model line would be redundant. Cleaner banner for the
-            valuation. */}
-        <View style={styles.titleBox}>
-          <Text style={styles.brand}>{sub.make_name}</Text>
-          <Text style={styles.derivative}>{sub.derivative_name}</Text>
+        {/* Hero title — MAKE + DERIVATIVE. The derivative already
+            embeds the model name so the model line would be redundant.
+            Rendered as a bold hero block with a coloured left accent so
+            it stands out as THE identity of the submission. */}
+        <View style={styles.titleBox} testID="vehicle-hero-title">
+          <View style={styles.titleAccent} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.brand}>{sub.make_name}</Text>
+            <Text style={styles.derivative} numberOfLines={2}>
+              {sub.derivative_name}
+            </Text>
+            {sub.year ? (
+              <Text style={styles.titleYear}>
+                {sub.year}
+                {typeof sub.mileage === "number" ? (
+                  <Text style={styles.titleYearSep}>  ·  </Text>
+                ) : null}
+                {typeof sub.mileage === "number"
+                  ? `${sub.mileage.toLocaleString("en-ZA")} km`
+                  : ""}
+              </Text>
+            ) : null}
+          </View>
         </View>
 
         {/* Vehicle Details — vertical spec list, easy to scan top-to-bottom */}
@@ -4945,17 +4960,61 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
   reportModalConfirmText: { color: colors.onPrimary, fontWeight: "800", letterSpacing: 1, textTransform: "uppercase" },
 
-  titleBox: { marginBottom: spacing.md },
-  brand: { color: colors.textSecondary, fontSize: 13, fontWeight: "600", letterSpacing: 0.5 },
+  titleBox: {
+    marginBottom: spacing.md,
+    marginHorizontal: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    flexDirection: "row",
+    alignItems: "stretch",
+    gap: spacing.md,
+    ...(Platform.OS === "web"
+      ? ({ boxShadow: "0 2px 8px rgba(0,0,0,0.08)" } as any)
+      : { elevation: 1 }),
+  },
+  titleAccent: {
+    width: 5,
+    borderRadius: 3,
+    backgroundColor: colors.primary,
+  },
+  brand: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 2,
+    textTransform: "uppercase",
+    marginBottom: 2,
+  },
   model: {
     color: colors.text,
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: "800",
-    fontFamily: fonts.heading,
-    letterSpacing: 0.3,
+    letterSpacing: -0.4,
+    lineHeight: 26,
     marginTop: 2,
   },
-  derivative: { color: colors.textSecondary, fontSize: 15, marginTop: 4, letterSpacing: 0.1 },
+  derivative: {
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: "800",
+    letterSpacing: -0.5,
+    lineHeight: 26,
+  },
+  titleYear: {
+    marginTop: 8,
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+    fontVariant: ["tabular-nums"],
+  },
+  titleYearSep: {
+    color: colors.textDisabled,
+    fontWeight: "500",
+  },
 
   // Vertical detail list — used for Vehicle Details, Condition, etc.
   detailsList: {

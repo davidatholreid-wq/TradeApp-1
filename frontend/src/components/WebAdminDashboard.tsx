@@ -54,6 +54,8 @@ type Submission = {
 };
 
 type SubmissionFull = Submission & {
+  submitter_profile_pic?: string | null;
+  submitter_cover_photo?: string | null;
   photos?: Record<string, string>;
   dealer_email?: string;
   dealer_phone?: string;
@@ -1248,6 +1250,58 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
             </View>
           ) : (
             <ScrollView contentContainerStyle={styles.detailScroll}>
+              {/* Dealer branding banner — cover photo + circular
+                  profile pic + submitter name + dealership. Rendered
+                  above the unseen banner so it's the first thing the
+                  admin sees when pricing a vehicle. */}
+              {selected.submitter_cover_photo || selected.submitter_profile_pic || selected.submitted_by_name ? (
+                <View style={styles.adminDealerBanner} testID="admin-dealer-banner">
+                  <View style={styles.adminDealerBannerCover}>
+                    {selected.submitter_cover_photo ? (
+                      <Image
+                        source={{ uri: selected.submitter_cover_photo }}
+                        style={{ width: "100%", height: "100%" }}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={styles.adminDealerBannerCoverEmpty}>
+                        <Ionicons name="business-outline" size={22} color={colors.textDisabled} />
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.adminDealerAvatarWrap}>
+                    {selected.submitter_profile_pic ? (
+                      <Image
+                        source={{ uri: selected.submitter_profile_pic }}
+                        style={styles.adminDealerAvatar}
+                      />
+                    ) : (
+                      <View style={styles.adminDealerAvatarFallback}>
+                        <Ionicons name="person" size={20} color={colors.primary} />
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.adminDealerBody}>
+                    {selected.submitted_by_name ? (
+                      <Text style={styles.adminDealerName} numberOfLines={1}>
+                        {selected.submitted_by_name}
+                        {selected.submitted_by_job_title ? (
+                          <Text style={styles.adminDealerJob}> · {selected.submitted_by_job_title}</Text>
+                        ) : null}
+                      </Text>
+                    ) : null}
+                    {selected.company_name ? (
+                      <View style={styles.adminDealerCompanyRow}>
+                        <Ionicons name="briefcase-outline" size={11} color={colors.textSecondary} />
+                        <Text style={styles.adminDealerCompany} numberOfLines={1}>
+                          {selected.company_name}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+              ) : null}
+
               {selected.unseen ? (
                 <View style={styles.detailUnseenBanner} testID="admin-unseen-banner">
                   <Ionicons name="eye-off" size={20} color="#B3261E" />
@@ -1262,22 +1316,35 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 </View>
               ) : null}
               <View style={styles.detailHeader}>
-                <View>
-                  <Text style={styles.detailRef}>{selected.reference ?? "—"}</Text>
-                  <Text style={styles.detailTitle}>
-                    {selected.year} {selected.make_name} {selected.model_name}
-                  </Text>
-                  <Text style={styles.detailSub}>{selected.derivative_name}</Text>
-                  {selected.submitted_by_name ? (
-                    <View style={styles.adminSubmittedBy}>
-                      <Ionicons name="person-circle-outline" size={14} color={colors.textSecondary} />
-                      <Text style={styles.adminSubmittedByText}>
-                        Submitted by <Text style={styles.adminSubmittedByBold}>{selected.submitted_by_name}</Text>
-                        {selected.submitted_by_job_title ? ` · ${selected.submitted_by_job_title}` : ""}
-                        {selected.submitted_at ? ` · ${(selected.submitted_at || "").slice(0, 10)}` : ""}
-                      </Text>
-                    </View>
-                  ) : null}
+                <View style={styles.adminHeroTitle}>
+                  <View style={styles.adminHeroAccent} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.detailRef}>{selected.reference ?? "—"}</Text>
+                    {/* Hero title — MAKE + DERIVATIVE (model line dropped
+                        because the derivative already embeds the model). */}
+                    <Text style={styles.adminHeroBrand} numberOfLines={1}>
+                      {selected.make_name}
+                    </Text>
+                    <Text style={styles.adminHeroDerivative} numberOfLines={2}>
+                      {selected.derivative_name}
+                    </Text>
+                    <Text style={styles.adminHeroMeta}>
+                      {selected.year}
+                      {typeof selected.mileage === "number"
+                        ? `  ·  ${selected.mileage.toLocaleString("en-ZA")} km`
+                        : ""}
+                    </Text>
+                    {selected.submitted_by_name ? (
+                      <View style={styles.adminSubmittedBy}>
+                        <Ionicons name="person-circle-outline" size={14} color={colors.textSecondary} />
+                        <Text style={styles.adminSubmittedByText}>
+                          Submitted by <Text style={styles.adminSubmittedByBold}>{selected.submitted_by_name}</Text>
+                          {selected.submitted_by_job_title ? ` · ${selected.submitted_by_job_title}` : ""}
+                          {selected.submitted_at ? ` · ${(selected.submitted_at || "").slice(0, 10)}` : ""}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
                 </View>
                 <TouchableOpacity
                   testID="admin-delete-button"
@@ -2958,6 +3025,119 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   detailEmpty: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.sm },
   detailEmptyText: { color: colors.textSecondary, fontSize: 15 },
   detailScroll: { padding: spacing.xl, maxWidth: 900, gap: spacing.md, alignSelf: "center", width: "100%" },
+  // -------- Admin dealer banner + hero title --------
+  adminDealerBanner: {
+    marginBottom: spacing.md,
+    position: "relative",
+  },
+  adminDealerBannerCover: {
+    height: 140,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    overflow: "hidden",
+  },
+  adminDealerBannerCoverEmpty: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.paper,
+  },
+  adminDealerAvatarWrap: {
+    position: "absolute",
+    left: spacing.md,
+    bottom: -22,
+    padding: 3,
+    backgroundColor: colors.bg,
+    borderRadius: 40,
+    zIndex: 2,
+    boxShadow: "0 2px 6px rgba(0,0,0,0.15)" as any,
+  },
+  adminDealerAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+  },
+  adminDealerAvatarFallback: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.paper,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  adminDealerBody: {
+    paddingLeft: 88,
+    paddingTop: 8,
+    paddingBottom: 4,
+    minHeight: 44,
+    gap: 3,
+  },
+  adminDealerName: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "800",
+    letterSpacing: -0.2,
+  },
+  adminDealerJob: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  adminDealerCompanyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  adminDealerCompany: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  adminHeroTitle: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "stretch",
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    boxShadow: "0 2px 8px rgba(0,0,0,0.08)" as any,
+    marginRight: spacing.md,
+  },
+  adminHeroAccent: {
+    width: 6,
+    borderRadius: 3,
+    backgroundColor: colors.primary,
+  },
+  adminHeroBrand: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 2.5,
+    textTransform: "uppercase",
+    marginTop: 6,
+    marginBottom: 2,
+  },
+  adminHeroDerivative: {
+    color: colors.text,
+    fontSize: 30,
+    fontWeight: "800",
+    letterSpacing: -0.8,
+    lineHeight: 34,
+    fontFamily: fonts.heading,
+  },
+  adminHeroMeta: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+    marginTop: 6,
+    fontVariant: ["tabular-nums"],
+  },
   detailHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
