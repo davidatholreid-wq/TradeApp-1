@@ -372,7 +372,8 @@ export default function HomeScreen() {
                   <Text style={styles.coversBannerValue} testID="covers-banner-value">
                     R{coversTotal30d.toLocaleString("en-US")}
                   </Text>
-                </View>              </View>
+                </View>
+              </View>
             </View>
           ) : null}
 
