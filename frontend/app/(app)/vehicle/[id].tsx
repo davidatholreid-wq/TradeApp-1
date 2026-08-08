@@ -552,8 +552,17 @@ export default function VehicleDetail() {
     setDealDoneChoice(
       d?.done === true ? "yes" : d?.done === false ? "no" : "pending",
     );
+    // Stage 2 default when the deal is done but no sale answer yet is
+    // "no" (Not yet) — no "pending" option per user spec. When the
+    // deal isn't done, Stage 2 is hidden anyway so the value is moot.
     setDealSoldChoice(
-      d?.sold === true ? "yes" : d?.sold === false ? "no" : "pending",
+      d?.sold === true
+        ? "yes"
+        : d?.sold === false
+          ? "no"
+          : d?.done === true
+            ? "no"
+            : "pending",
     );
     setDealPurchaseInput(
       d?.purchase_price_zar != null
@@ -644,7 +653,16 @@ export default function VehicleDetail() {
   // together via a single PATCH when the user hits "Update Profit
   // Analysis". `dealFinancialsDirty` compares the current inputs to the
   // persisted values so we can enable/disable the button accordingly.
-  // Coerce a local tri-state choice into the API's boolean|null value.
+  // When the dealer flips Stage 1 to Yes, Stage 2 must have a definite
+  // answer — either "yes" (sold) or "no" (not yet). If it's still on
+  // the initial "pending" default from before Stage 1 was answered,
+  // drop it to "no" so the buttons visibly reflect the correct state.
+  useEffect(() => {
+    if (dealDoneChoice === "yes" && dealSoldChoice === "pending") {
+      setDealSoldChoice("no");
+    }
+  }, [dealDoneChoice, dealSoldChoice]);
+
   const choiceToApi = (c: OutcomeChoice): boolean | null =>
     c === "yes" ? true : c === "no" ? false : null;
 
@@ -3124,29 +3142,6 @@ export default function VehicleDetail() {
                       <Text style={styles.dealStageTitle}>Have you sold the car?</Text>
                     </View>
                     <View style={styles.dealChoiceRow}>
-                      <TouchableOpacity
-                        testID="deal-sold-pending"
-                        disabled={readOnly || dealSaving}
-                        style={[
-                          styles.dealChoiceBtn,
-                          dealSoldChoice === "pending" && styles.dealChoiceBtnPending,
-                        ]}
-                        onPress={() => setDealSoldChoice("pending")}
-                      >
-                        <Ionicons
-                          name="hourglass-outline"
-                          size={16}
-                          color={dealSoldChoice === "pending" ? "#fff" : colors.textSecondary}
-                        />
-                        <Text
-                          style={[
-                            styles.dealChoiceBtnText,
-                            dealSoldChoice === "pending" && styles.dealChoiceBtnTextActive,
-                          ]}
-                        >
-                          Pending
-                        </Text>
-                      </TouchableOpacity>
                       <TouchableOpacity
                         testID="deal-sold-yes"
                         disabled={readOnly || dealSaving}
