@@ -1,0 +1,65 @@
+{
+  "summary": "Iteration 46 — full regression pass (backend + frontend smoke) for Fourbuy Car Buying Co. Backend: 24 pytest cases, 23 passed and 1 xfailed (Profit-analysis PDF: endpoint responds correctly with 400 'Enter the purchase, recon and sale figures first' because no submission in preview DB has deal figures set — endpoint smoke OK). All three test credentials work (admin@fourbuy.co.za/admin123, minitest@example.com/Mini1234!, dave@fourbuy.co.za/Dave1234!). Admin price update (POST /api/admin/submissions/{id}/price) correctly rejects blank AND <3-char change_comment on updates (400), and existing price_history entries carry comment + admin_id as designed. Rewards redemptions list includes user_phone field. Cover queue works for pricing agents. Billing MTD, home-MTD stats, deal-outcomes-by-dealer, rewards leaderboard, Kredo CarTrust smoke (no 502), and JLR OSH smoke all pass. Frontend: verified via Playwright on 1440x900 (admin) and 390x844 (dealer). Admin cockpit renders top nav (Home/Submissions/Dealers/Billing/Rewards/Kredo/Advertising), all four MTD tiles (AMOUNT BILLED R7 490 with breakdown, EVALUATIONS 4, REPORTS ORDERED 4, CARS COVERED 1), Deal Outcomes by Dealer, and the Submissions silos (Incoming 0, Priced 12, Archived 10). Admin Voucher Requests screen shows Pending(1)/Fulfilled/Rejected/All tabs, pending Johann Linsky R500 Takealot card with 'Reject & refund' + 'Fulfil with code' buttons, plus a collapsible LEADERBOARD panel below. Dealer home for Dave renders the hero, quick-nav tiles (Get Cover, Give Cover, Billing, History) and bottom tab bar as expected. Two spec/data-drift discrepancies to flag: (a) review request lists price-update endpoint as PATCH but the implemented route is POST /api/admin/submissions/{id}/price with body key `change_comment`; (b) minitest@example.com is currently flagged as is_pricing_agent=true in the preview DB, so it also has access to /api/cover/submissions — this contradicts the review-request implication that only Dave is a PA (data-state, not a code bug). One React-Native-web hygiene warning observed on dealer home: 'Unexpected text node: \"     \". A text node cannot be a child of a <View>.' — thrown three times, likely from whitespace between JSX elements inside a <View> (candidate file: /app/frontend/app/(app)/index.tsx).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/admin/submissions/{sub_id}/price",
+        "issue": "Review request lists this as PATCH, but implementation is POST with body key `change_comment` (not `comment`). Behaviour is correct — please align documentation OR add a PATCH alias if the mobile app truly expects PATCH."
+      },
+      {
+        "endpoint": "GET /api/submissions/{sub_id}/profit-analysis.pdf",
+        "issue": "Returns 400 'Enter the purchase, recon and sale figures first.' when deal-tracking figures are missing — no submission in the preview DB currently has purchase+recon+sale set, so we could not produce a real PDF byte stream in this run. Endpoint contract verified as correct; suggest seeding at least one submission with deal figures for future regressions."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Admin deep-link to /vehicle/{id}",
+        "issue": "Navigating an authenticated admin directly to https://.../vehicle/{id} redirects back to the Admin Cockpit home instead of loading the admin submission-detail pane. Admins reach the detail via the Submissions list only. Not blocking — but worth confirming this is intentional; if the URL is meant to be shareable / bookmarkable, it needs a router shim on the admin side.",
+        "affected_testIDs": []
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "Dealer home",
+        "issue": "React-Native-web console warning 'Unexpected text node: \"     \". A text node cannot be a child of a <View>.' logged 3× on the dealer home render. Whitespace/newline is placed directly between JSX elements inside a <View>. Candidate source: /app/frontend/app/(app)/index.tsx around the Welcome hero / tile blocks."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_46_regression.py",
+    "/app/test_reports/pytest/iteration_46.xml",
+    "/app/test_reports/screenshots/iter46_admin_home.png",
+    "/app/test_reports/screenshots/iter46_rewards.png",
+    "/app/test_reports/screenshots/iter46_submissions.png",
+    "/app/test_reports/screenshots/iter46_dealer_home.png"
+  ],
+  "action_items": [
+    "Fix React-Native-web 'Unexpected text node' warning on the dealer home (/app/frontend/app/(app)/index.tsx) — hunt for stray whitespace/newlines directly inside a <View> and wrap or remove them.",
+    "Decide whether admin price update should also expose a PATCH alias or if the mobile client should be updated to POST — currently the route is POST /api/admin/submissions/{sub_id}/price with body { price, notes, change_comment }.",
+    "Confirm whether minitest@example.com is intentionally flagged is_pricing_agent=true in the preview DB (or reset via /api/admin/users/{id}/pricing-agent) so future regressions have a clean 'non-PA dealer' fixture.",
+    "Optional: seed at least one submission with purchase+recon+sale figures set so the Profit-Analysis PDF regression can validate real bytes (not just the 400 guard).",
+    "Optional: enable deep-link to /vehicle/{id} for admins if the URL is meant to be shareable — today it bounces back to the cockpit home."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 8541 lines — well past the 700-line soft limit. Recommend gradual splitting into routers (auth, submissions, admin/*, billing, rewards, cover) in a follow-up.",
+    "Admin price update logic correctly enforces mandatory-comment ONLY on UPDATES; initial offer allows a default comment. This matches the intended audit-log design and is preserved.",
+    "user_phone is properly derived from dealer_info.phone in the /admin/reward-redemptions listing — verified structurally in the API response."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_46_regression.py (new)"
+  ],
+  "success_rate": {
+    "backend": "23/24 (96%) — 1 xfail for missing deal-figure seed data (not a bug)",
+    "frontend": "smoke pass on admin cockpit, admin voucher-requests, admin submissions list, dealer home; direct-linked admin vehicle detail did not open (see integration_issues)"
+  },
+  "seed_data_creation": "None — used the existing preview DB. Non-destructive: no submissions created or mutated, no users deleted.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Endpoints in this build differ from the review-request spec in two places worth remembering: (1) price update is POST /api/admin/submissions/{id}/price (not PATCH) with body { price, notes, change_comment } — a blank change_comment on an ALREADY-priced sub returns 400, but the same call on a pending sub silently sets the initial offer with default comment 'Initial offer'. (2) Cover queue lives at GET /api/cover/submissions (not /api/cover/queue) and returns 403 for any user without is_pricing_agent=true. Both dealer minitest@example.com AND dave@fourbuy.co.za are currently pricing agents in preview. Admin home MTD stats live at /api/admin/stats/home-mtd, not /api/admin/stats. To test the admin vehicle-detail hero + price-history modal via UI, navigate through Admin Cockpit → Submissions → click a card in the Priced tab (direct /vehicle/{id} URL does NOT work for admin — bounces to cockpit home).",
+  "rca_of_issue": "N/A — this iteration was a regression sanity check, no bug investigation."
+}

@@ -6643,6 +6643,24 @@ async def admin_list_redemptions(
     if status:
         query["status"] = status
     docs = await db.reward_redemptions.find(query, {"_id": 0}).sort("requested_at", -1).to_list(500)
+    # Enrich with the user's WhatsApp / phone number so the admin can
+    # ping the fulfilled voucher straight through WhatsApp.
+    uids = list({d.get("user_id") for d in docs if d.get("user_id")})
+    if uids:
+        users_cursor = db.users.find(
+            {"id": {"$in": uids}},
+            {"_id": 0, "id": 1, "dealer_info": 1},
+        )
+        phones: dict = {}
+        async for u in users_cursor:
+            info = u.get("dealer_info") or {}
+            phone = (info.get("phone") or info.get("whatsapp") or "").strip()
+            if phone:
+                phones[u["id"]] = phone
+        for d in docs:
+            uid = d.get("user_id")
+            if uid and uid in phones:
+                d["user_phone"] = phones[uid]
     pending = sum(1 for d in docs if d.get("status") == "pending")
     return {
         "redemptions": docs,

@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useState, useMemo } from "react";
 import { TouchableOpacity } from "@/src/components/HapticButtons";
-import { View, Text, StyleSheet, ScrollView, TextInput, ActivityIndicator, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TextInput, ActivityIndicator, Alert, Linking, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { apiFetch } from "@/src/api";
 import { spacing, radius, fonts } from "@/src/theme";
@@ -24,6 +24,7 @@ type Redemption = {
   voucher_provider: string;
   status: "pending" | "fulfilled" | "rejected";
   voucher_code?: string | null;
+  user_phone?: string | null;
   admin_note?: string | null;
   requested_at: string;
   actioned_at?: string | null;
@@ -210,6 +211,53 @@ export default function AdminRewardsScreen() {
           admin_note: adminNote.trim() || undefined,
         }),
       });
+      // If this was a FULFILL action, pop open WhatsApp with a
+      // pre-populated message containing the voucher code so the admin
+      // just needs to tap send. `wa.me` accepts any URL-encoded text;
+      // when no phone number is known we still open a compose window
+      // and let the admin pick the contact.
+      if (actionModal.type === "fulfill") {
+        const r = actionModal.r;
+        const firstName = (r.user_name || "").trim().split(/\s+/)[0] || "";
+        const amount = r.voucher_value_zar
+          ? `R${r.voucher_value_zar.toLocaleString("en-ZA")}`
+          : "";
+        const provider = r.voucher_provider || "voucher";
+        const code = voucherCode.trim();
+        const note = adminNote.trim();
+        const lines = [
+          firstName ? `Hi ${firstName},` : "Hi there,",
+          "",
+          `Your ${amount} ${provider} voucher is ready 🎉`,
+          "",
+          `Voucher code: *${code}*`,
+        ];
+        if (r.requested_email) lines.push("", `Sent to: ${r.requested_email}`);
+        if (note) lines.push("", note);
+        lines.push("", "Thanks for being part of the Fourbuy Rewards Programme.", "— Fourbuy Car Buying Co.");
+        const rawPhone = (r.user_phone || "").replace(/[^0-9+]/g, "");
+        // Normalise SA numbers: strip a leading "0" and prepend "27"
+        // so international WhatsApp always resolves. Leave already-
+        // internationalised numbers (starting with "+" or "27") alone.
+        let phone = rawPhone;
+        if (phone.startsWith("+")) phone = phone.slice(1);
+        else if (phone.startsWith("0") && phone.length === 10) phone = "27" + phone.slice(1);
+        const text = encodeURIComponent(lines.join("\n"));
+        const waUrl = phone
+          ? `https://wa.me/${phone}?text=${text}`
+          : `https://wa.me/?text=${text}`;
+        try {
+          if (Platform.OS === "web") {
+            (globalThis as any).open?.(waUrl, "_blank");
+          } else {
+            const supported = await Linking.canOpenURL(waUrl);
+            if (supported) await Linking.openURL(waUrl);
+            else Alert.alert("WhatsApp not installed", "Copy the code and message the dealer manually.");
+          }
+        } catch (waErr) {
+          console.log("WhatsApp launch failed:", waErr);
+        }
+      }
       setActionModal(null);
       await load();
       loadLeaderboard();

@@ -595,3 +595,42 @@ metadata_pre_v17:
   created_by: "main_agent"
   version: "1.6"
 
+
+
+##====================================================================================================
+## Iteration 2026-08-08 — WhatsApp voucher fulfillment + Regression Pass
+##====================================================================================================
+
+frontend:
+  - task: "WhatsApp pre-populated deep link on voucher fulfilment"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/AdminRewardsScreen.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "main"
+          comment: |
+            Verified via screenshot + window.open interception.
+            Fixed missing imports (Linking, Platform) at the top of
+            AdminRewardsScreen.tsx.
+            Flow: Login as admin@fourbuy.co.za → Rewards → Fulfil with code →
+            enter voucher → Send. window.open intercepted URL:
+            https://wa.me/27832723343?text=Hi%20Johann%2C%0A%0AYour%20R500%20Takealot%20voucher%20is%20ready...
+            SA phone number `0832723343` correctly normalised to `27832723343`.
+            Sample message pre-filled with greeting, amount, provider,
+            voucher code, sign-off. Reverted the test fulfilment back to
+            pending in Mongo so the real Johann Linsky request is untouched.
+
+agent_communication:
+  - agent: "main"
+    message: |
+      Completed WhatsApp voucher fulfilment flow. Kicking off full
+      testing_agent regression across submissions, billing, PDFs,
+      Give Cover pricing, Deal Tracking, and Admin cockpit.
+
+metadata:
+  created_by: "main_agent"
+  version: "1.7"
