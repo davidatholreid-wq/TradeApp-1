@@ -26,6 +26,9 @@ type Props = {
    *  "Electric"). Applied as a WeBuyCars `FuelType=["…"]` filter when
    *  present so the listing wall only shows matching fuel families. */
   fuelType?: string | null;
+  /** Transmission from the submission (e.g. "Automatic", "Manual").
+   *  Applied as a WeBuyCars `Transmission=["…"]` filter. */
+  transmission?: string | null;
   /** Fallback single year (year of production) used when no full range
    *  is available. Ignored if `yearFrom` / `yearTo` are set. */
   year?: number | null;
@@ -98,11 +101,24 @@ function resolveYearRange(p: Props): { from: number; to: number } | null {
   return null;
 }
 
-// Cap the number of years we send to WeBuyCars — the array format is
-// `Year=[2018,2019,2020,...]` so an unbounded range would inflate the
-// URL. In practice most model runs are <8 years so this ceiling never
-// kicks in for real derivatives.
-const MAX_YEARS_IN_QUERY = 12;
+// Cap the number of years we send to WeBuyCars — we now send a min/max
+// tuple (Year=[min, max]) so this only ever guards against pathological
+// Kredo ranges. Anything wider than this gets clipped down to keep the
+// search focused on the derivative's actual production window.
+const MAX_YEAR_SPAN = 15;
+
+// Normalise transmission to WeBuyCars' canonical vocabulary. Their
+// filter pill labels use Title Case: "Automatic", "Manual". Kredo
+// returns any auto-family box (DCT / DSG / CVT / AMT / PDK / Tiptronic
+// etc.) as "Automatic" so most inputs pass through untouched — we
+// still defensively bucket the common synonyms.
+function normaliseTransmission(raw?: string | null): string | null {
+  if (!raw) return null;
+  const s = String(raw).trim().toLowerCase();
+  if (!s) return null;
+  if (s === "manual" || s === "m/t" || s === "mt") return "Manual";
+  return "Automatic";
+}
 
 // Normalise fuel type to WeBuyCars' canonical vocabulary. Their filter
 // pill labels use Title Case: "Petrol", "Diesel", "Hybrid", "Electric".
@@ -144,18 +160,20 @@ function jsonArrayParam(values: (string | number)[]): string {
 }
 
 // Build the WeBuyCars.co.za deep link. Filters applied when available:
-//   Make     — JSON-array with the Title-Cased brand name
-//   Model    — JSON-array with the Title-Cased model
-//   Year     — JSON-array covering every year in the derivative's
-//              manufacture range (capped at MAX_YEARS_IN_QUERY)
-//   FuelType — JSON-array with the canonical fuel family (Petrol,
-//              Diesel, Hybrid, Electric, LPG, Hydrogen)
-//   Order    — Price_Amount ASC so the cheapest listing is on top by
-//              default (dealer wants to eyeball the market floor).
+//   Make         — JSON-array with the Title-Cased brand name
+//   Model        — JSON-array with the Title-Cased model
+//   Year         — JSON 2-tuple [min, max] covering the derivative's
+//                  manufacture range. WeBuyCars renders this as a
+//                  Min/Max range on their year slider — sending an
+//                  N-element array causes them to keep only the first
+//                  two values (min/max), so we're explicit.
+//   FuelType     — JSON-array with the canonical fuel family
+//   Transmission — JSON-array with "Automatic" or "Manual"
+//   SortBy/Order — Price_Amount ASC (cheapest first)
 //
-// Example (Toyota Corolla Cross 2022–2026 Hybrid):
+// Example (Toyota Corolla Cross 2022–2026 Hybrid Automatic):
 //   /buy-a-car?Make=["Toyota"]&Model=["Corolla Cross"]
-//     &Year=[2022,2023,2024,2025,2026]&FuelType=["Hybrid"]
+//     &Year=[2022,2026]&FuelType=["Hybrid"]&Transmission=["Automatic"]
 //     &SortBy=Price_Amount&SortOrder=ASC
 function buildWeBuyCarsUrl(p: Props): string | null {
   const make = normaliseMake(p.make);
@@ -163,6 +181,7 @@ function buildWeBuyCarsUrl(p: Props): string | null {
   const model = normaliseModel(p.model);
   const range = resolveYearRange(p);
   const fuel = normaliseFuel(p.fuelType);
+  const trans = normaliseTransmission(p.transmission);
 
   const parts: string[] = [];
   parts.push(`Make=${encodeURIComponent(jsonArrayParam([make]))}`);
@@ -170,16 +189,19 @@ function buildWeBuyCarsUrl(p: Props): string | null {
     parts.push(`Model=${encodeURIComponent(jsonArrayParam([model]))}`);
   }
   if (range) {
-    const years: number[] = [];
-    for (let y = range.from; y <= range.to && years.length < MAX_YEARS_IN_QUERY; y++) {
-      years.push(y);
-    }
-    if (years.length > 0) {
-      parts.push(`Year=${encodeURIComponent(jsonArrayParam(years))}`);
-    }
+    // Clip pathological ranges to a sane span so the URL never asks
+    // WeBuyCars for e.g. 1980-2030. `MAX_YEAR_SPAN` keeps things tight.
+    let { from, to } = range;
+    if (to - from > MAX_YEAR_SPAN) from = to - MAX_YEAR_SPAN;
+    // Always send [min, max] — WeBuyCars parses the first two entries
+    // as the slider bounds and ignores the rest.
+    parts.push(`Year=${encodeURIComponent(jsonArrayParam([from, to]))}`);
   }
   if (fuel) {
     parts.push(`FuelType=${encodeURIComponent(jsonArrayParam([fuel]))}`);
+  }
+  if (trans) {
+    parts.push(`Transmission=${encodeURIComponent(jsonArrayParam([trans]))}`);
   }
   // Sort by price ascending — cheapest first, matching what the dealer
   // wants to spot when comparing against a cover offer.
@@ -220,12 +242,14 @@ export default function WeBuyCarsListingsCard(props: Props) {
       : `${range.from} – ${range.to}`
     : null;
   const fuel = normaliseFuel(props.fuelType);
+  const trans = normaliseTransmission(props.transmission);
 
   const chips: string[] = [];
   if (make) chips.push(make);
   if (model) chips.push(model);
   if (yearStr) chips.push(yearStr);
   if (fuel) chips.push(fuel);
+  if (trans) chips.push(trans);
   chips.push("Cheapest first");
 
   return (
@@ -250,6 +274,11 @@ export default function WeBuyCarsListingsCard(props: Props) {
         {fuel ? (
           <>
             {" "}running on <Text style={{ fontWeight: "700", color: colors.text }}>{fuel}</Text>
+          </>
+        ) : null}
+        {trans ? (
+          <>
+            {" "}with <Text style={{ fontWeight: "700", color: colors.text }}>{trans}</Text> transmission
           </>
         ) : null}
         , sorted cheapest first so you can benchmark the retail floor.
@@ -282,6 +311,7 @@ export default function WeBuyCarsListingsCard(props: Props) {
               [make, model].filter(Boolean).join(" ") || null,
               yearStr,
               fuel,
+              trans,
               "Sorted cheapest first",
             ].filter(Boolean).join(" · ")}
           </Text>
