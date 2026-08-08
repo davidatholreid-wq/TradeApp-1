@@ -133,11 +133,8 @@ export default function DashboardScreen() {
           {item.reference ? (
             <Text style={styles.cardRef}>{item.reference}</Text>
           ) : null}
-          <Text style={styles.cardTitle} numberOfLines={1}>
-            {item.year} {item.make_name} {item.model_name}
-          </Text>
-          <Text style={styles.cardSubtitle} numberOfLines={1}>
-            {item.derivative_name}
+          <Text style={styles.cardTitle} numberOfLines={2}>
+            {item.year} {item.make_name} {item.derivative_name || item.model_name}
           </Text>
           {item.unseen ? (
             <View style={styles.unseenPill} testID="unseen-pill">
