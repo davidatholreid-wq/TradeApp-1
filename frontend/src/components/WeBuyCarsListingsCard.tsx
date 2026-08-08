@@ -1,0 +1,308 @@
+// -----------------------------------------------------------------------------
+// WeBuyCarsListingsCard — deep-links dealers/admins into webuycars.co.za
+// search results pre-filtered to comparable stock (same make + model,
+// optional derivative keyword and year range).
+//
+// WeBuyCars uses a JSON-array style query param format:
+//   /buy-a-car?Make=["Toyota"]&Model=["Corolla"]&Year=[2020]
+//
+// We don't scrape or store anything — we simply hand off to the live
+// site so users can eyeball how many equivalent cars WeBuyCars is
+// currently listing for retail, and at what price. Useful as a
+// cross-reference next to the AutoTrader deep-link.
+// -----------------------------------------------------------------------------
+import { useMemo } from "react";
+import { View, Text, StyleSheet, Linking, Platform } from "react-native";
+import { TouchableOpacity } from "@/src/components/HapticButtons";
+import { Ionicons } from "@expo/vector-icons";
+import { spacing, radius, fonts } from "@/src/theme";
+import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
+
+type Props = {
+  make?: string;
+  model?: string;
+  derivative?: string;
+  /** Fallback single year (year of production) used when no full range
+   *  is available. Ignored if `yearFrom` / `yearTo` are set. */
+  year?: number | null;
+  /** Optional manufacture-year range for the selected derivative — from
+   *  the Kredo `variant_manufacture_range`. When present, we search
+   *  the full run of the model instead of a single production year. */
+  yearFrom?: number | null;
+  yearTo?: number | null;
+};
+
+// Kredo model / derivative names carry chassis suffixes like "5 SERIES
+// (F10)" that don't match WeBuyCars' catalogue. Strip anything in
+// parentheses and any trailing punctuation.
+function cleanText(s?: string): string {
+  return (s || "").replace(/\([^)]*\)/g, "").replace(/\s{2,}/g, " ").trim();
+}
+
+// WeBuyCars canonicalises makes in Title Case (Toyota, Volkswagen,
+// Mercedes-Benz, Land Rover). Kredo often returns them ALL-CAPS. We
+// Title-Case the make so the URL filter resolves to the correct brand
+// in their catalogue.
+function toTitleCase(s: string): string {
+  return s
+    .split(/(\s|-)/)
+    .map((part) =>
+      part.length > 1
+        ? part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+        : part
+    )
+    .join("");
+}
+
+// WeBuyCars-specific make normalisation. A few brands are stored with
+// non-obvious canonical names on their site (BMW / VW / MINI stay
+// uppercase; Land Rover / Mercedes-Benz keep the hyphen; etc.).
+function normaliseMake(raw?: string): string | null {
+  if (!raw) return null;
+  const cleaned = cleanText(raw);
+  if (!cleaned) return null;
+  const upper = cleaned.toUpperCase();
+  // Preserve initialisms that WeBuyCars keeps uppercase.
+  const upperSet = new Set([
+    "BMW", "VW", "MINI", "GWM", "SEAT", "MG", "JMC", "FAW",
+    "DFSK", "GAC", "BAIC", "JAC", "TATA", "UD", "MAN",
+  ]);
+  if (upperSet.has(upper)) return upper;
+  // "VOLKSWAGEN" → "Volkswagen"; "MERCEDES-BENZ" → "Mercedes-Benz".
+  return toTitleCase(cleaned);
+}
+
+// Model / derivative Title Case. WeBuyCars models are Title-Cased in
+// their nav ("Corolla Cross", "Ranger", "3 Series") so match that.
+function normaliseModel(raw?: string): string | null {
+  if (!raw) return null;
+  const cleaned = cleanText(raw);
+  if (!cleaned) return null;
+  return toTitleCase(cleaned);
+}
+
+// Resolve the year range to feed into WeBuyCars' Year=[a,b,c] filter.
+// Uses the Kredo variant manufacture range when available; otherwise
+// falls back to the single production year.
+function resolveYearRange(p: Props): { from: number; to: number } | null {
+  const from = p.yearFrom != null ? Number(p.yearFrom) : null;
+  const to = p.yearTo != null ? Number(p.yearTo) : null;
+  if (from && to && from <= to) return { from, to };
+  if (from) return { from, to: from };
+  if (to) return { from: to, to };
+  if (p.year) return { from: Number(p.year), to: Number(p.year) };
+  return null;
+}
+
+// Cap the number of years we send to WeBuyCars — the array format is
+// `Year=[2018,2019,2020,...]` so an unbounded range would inflate the
+// URL. In practice most model runs are <8 years so this ceiling never
+// kicks in for real derivatives.
+const MAX_YEARS_IN_QUERY = 12;
+
+// WeBuyCars encodes list-value query params as a bracketed JSON-style
+// array (e.g. `Make=["Toyota"]`). We build that string manually since
+// URLSearchParams would percent-encode the outer brackets.
+function jsonArrayParam(values: (string | number)[]): string {
+  const items = values.map((v) =>
+    typeof v === "number" ? String(v) : `"${String(v).replace(/"/g, '\\"')}"`
+  );
+  return `[${items.join(",")}]`;
+}
+
+// Build the WeBuyCars.co.za deep link. Filters applied when available:
+//   Make    — JSON-array with the Title-Cased brand name
+//   Model   — JSON-array with the Title-Cased model
+//   Year    — JSON-array covering every year in the derivative's
+//             manufacture range (capped at MAX_YEARS_IN_QUERY)
+//   Order   — Price_Amount ASC so the cheapest listing is on top by
+//             default (dealer wants to eyeball the market floor).
+//
+// Example (Toyota Corolla Cross 2022–2026):
+//   /buy-a-car?Make=["Toyota"]&Model=["Corolla Cross"]
+//     &Year=[2022,2023,2024,2025,2026]
+//     &SortBy=Price_Amount&SortOrder=ASC
+function buildWeBuyCarsUrl(p: Props): string | null {
+  const make = normaliseMake(p.make);
+  if (!make) return null;
+  const model = normaliseModel(p.model);
+  const range = resolveYearRange(p);
+
+  const parts: string[] = [];
+  parts.push(`Make=${encodeURIComponent(jsonArrayParam([make]))}`);
+  if (model) {
+    parts.push(`Model=${encodeURIComponent(jsonArrayParam([model]))}`);
+  }
+  if (range) {
+    const years: number[] = [];
+    for (let y = range.from; y <= range.to && years.length < MAX_YEARS_IN_QUERY; y++) {
+      years.push(y);
+    }
+    if (years.length > 0) {
+      parts.push(`Year=${encodeURIComponent(jsonArrayParam(years))}`);
+    }
+  }
+  // Sort by price ascending — cheapest first, matching what the dealer
+  // wants to spot when comparing against a cover offer.
+  parts.push("SortBy=Price_Amount");
+  parts.push("SortOrder=ASC");
+
+  return `https://www.webuycars.co.za/buy-a-car?${parts.join("&")}`;
+}
+
+async function open(url: string) {
+  try {
+    if (Platform.OS === "web") {
+      const w = (globalThis as unknown as { window?: Window }).window;
+      if (w && typeof w.open === "function") {
+        w.open(url, "_blank", "noopener,noreferrer");
+        return;
+      }
+    }
+    await Linking.openURL(url);
+  } catch {
+    /* no-op */
+  }
+}
+
+export default function WeBuyCarsListingsCard(props: Props) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
+  const url = useMemo(() => buildWeBuyCarsUrl(props), [props]);
+  if (!url) return null;
+
+  const make = normaliseMake(props.make) || "";
+  const model = normaliseModel(props.model) || "";
+  const range = resolveYearRange(props);
+  const yearStr = range
+    ? range.from === range.to
+      ? String(range.from)
+      : `${range.from} – ${range.to}`
+    : null;
+
+  const chips: string[] = [];
+  if (make) chips.push(make);
+  if (model) chips.push(model);
+  if (yearStr) chips.push(yearStr);
+  chips.push("Cheapest first");
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.headerRow}>
+        <Ionicons name="storefront" size={16} color={colors.primary} />
+        <Text style={styles.title}>Compare on WeBuyCars</Text>
+      </View>
+      <Text style={styles.help}>
+        Opens the live listing wall on{" "}
+        <Text style={{ fontWeight: "700", color: colors.text }}>WeBuyCars.co.za</Text>
+        {" "}for{" "}
+        <Text style={{ fontWeight: "700", color: colors.text }}>
+          {[make, model].filter(Boolean).join(" ") || "matching stock"}
+        </Text>
+        {yearStr ? (
+          <>
+            {" "}across the model run{" "}
+            <Text style={{ fontWeight: "700", color: colors.text }}>({yearStr})</Text>
+          </>
+        ) : null}
+        , sorted cheapest first so you can benchmark the retail floor.
+      </Text>
+
+      {chips.length ? (
+        <View style={styles.chipRow}>
+          {chips.map((c) => (
+            <View key={c} style={styles.chip}>
+              <Text style={styles.chipTxt}>{c}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      <TouchableOpacity
+        testID="open-webuycars"
+        style={styles.actionBtn}
+        onPress={() => open(url)}
+        accessibilityRole="link"
+        accessibilityLabel="Open comparable listings on WeBuyCars.co.za"
+      >
+        <View style={[styles.badge, { backgroundColor: "#0F3F71" }]}>
+          <Text style={styles.badgeText}>WBC</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.btnTitle}>WeBuyCars.co.za</Text>
+          <Text style={styles.btnSub} numberOfLines={2}>
+            {[
+              [make, model].filter(Boolean).join(" ") || null,
+              yearStr,
+              "Sorted cheapest first",
+            ].filter(Boolean).join(" · ")}
+          </Text>
+        </View>
+        <Ionicons name="open-outline" size={18} color={colors.text} />
+      </TouchableOpacity>
+
+      <Text style={styles.disclaimer}>
+        Tip: WeBuyCars retail stock is fully reconditioned and warrantied,
+        so listed prices sit above wholesale. Use it to gauge the ceiling,
+        not the floor.
+      </Text>
+    </View>
+  );
+}
+
+function makeStyles(colors: Palette) {
+  return StyleSheet.create({
+    card: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.lg,
+      backgroundColor: colors.paper,
+      padding: spacing.md,
+      gap: 8,
+      marginTop: spacing.sm,
+    },
+    headerRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+    title: { ...fonts.h1, color: colors.text, fontSize: 16 },
+    help: { color: colors.textSecondary, fontSize: 12, lineHeight: 17 },
+
+    chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 },
+    chip: {
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+    },
+    chipTxt: { color: colors.text, fontSize: 11, fontWeight: "700", letterSpacing: 0.4 },
+
+    actionBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 12,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+      marginTop: 4,
+    },
+    badge: {
+      width: 32, height: 32,
+      borderRadius: 6,
+      alignItems: "center", justifyContent: "center",
+    },
+    badgeText: { color: "#fff", fontSize: 11, fontWeight: "800", letterSpacing: 1 },
+    btnTitle: { color: colors.text, fontSize: 14, fontWeight: "700" },
+    btnSub: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
+
+    disclaimer: {
+      color: colors.textSecondary,
+      fontSize: 11,
+      fontStyle: "italic",
+      marginTop: 4,
+    },
+  });
+}

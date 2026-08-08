@@ -82,6 +82,7 @@ import PhotoCarousel, { CarouselPhoto } from "@/src/components/PhotoCarousel";
 import ConditionRatingInfoModal from "@/src/components/ConditionRatingInfoModal";
 import BrandLogo from "@/src/components/BrandLogo";
 import ComparableListingsCard from "@/src/components/ComparableListingsCard";
+import WeBuyCarsListingsCard from "@/src/components/WeBuyCarsListingsCard";
 import { formatZAR, computeServiceGap, formatMonthsAgo, formatKm } from "@/src/utils/format";
 
 type ReconItem = {
@@ -2519,14 +2520,17 @@ export default function VehicleDetail() {
         )}
         </CollapsibleSection>
 
-        {/* Compare Live Listings — deep-links into AutoTrader search
-            results pre-filtered to comparable stock. Collapsible so it
-            doesn't stretch the valuation page. */}
+        {/* Compare Live Listings — deep-links into AutoTrader AND
+            WeBuyCars search results pre-filtered to comparable stock.
+            Collapsible so it doesn't stretch the valuation page. Two
+            reference markets are surfaced side-by-side: AutoTrader
+            (broad dealer + private listing pool) and WeBuyCars
+            (reconditioned retail stock, useful as an upper bound). */}
         <CollapsibleSection
           title="Compare Live Listings"
           open={isOpen("live-listings")}
           onToggle={() => toggleSection("live-listings")}
-          summary="Open the same-derivative results on AutoTrader"
+          summary="Same-derivative results on AutoTrader + WeBuyCars"
           colors={colors}
           styles={styles}
           testID="compare-listings"
@@ -2537,6 +2541,14 @@ export default function VehicleDetail() {
             derivative={sub.derivative_name}
             fuelType={sub.fuel_type}
             transmission={sub.transmission}
+            year={sub.year_of_production ?? sub.year}
+            yearFrom={sub.variant_manufacture_range?.min ?? null}
+            yearTo={sub.variant_manufacture_range?.max ?? null}
+          />
+          <WeBuyCarsListingsCard
+            make={sub.make_name}
+            model={sub.model_name}
+            derivative={sub.derivative_name}
             year={sub.year_of_production ?? sub.year}
             yearFrom={sub.variant_manufacture_range?.min ?? null}
             yearTo={sub.variant_manufacture_range?.max ?? null}
