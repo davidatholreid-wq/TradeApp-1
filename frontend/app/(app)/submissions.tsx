@@ -141,8 +141,8 @@ export default function DashboardScreen() {
           </Text>
           {item.unseen ? (
             <View style={styles.unseenPill} testID="unseen-pill">
-              <Ionicons name="eye-off" size={10} color="#B3261E" />
-              <Text style={styles.unseenPillText}>UNSEEN · SUBJECT TO VIEW</Text>
+              <Ionicons name="eye-off-outline" size={10} color={colors.textSecondary} />
+              <Text style={styles.unseenPillText}>SUBJECT TO VIEW</Text>
             </View>
           ) : null}
         </View>
@@ -495,14 +495,14 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 3,
     borderRadius: radius.pill,
-    backgroundColor: "#FDECEA",
+    backgroundColor: colors.paper,
     borderWidth: 1,
-    borderColor: "#B3261E",
+    borderColor: colors.border,
   },
   unseenPillText: {
-    color: "#B3261E",
+    color: colors.textSecondary,
     fontSize: 9,
-    fontWeight: "800",
+    fontWeight: "700",
     letterSpacing: 0.4,
   },
   badge: {

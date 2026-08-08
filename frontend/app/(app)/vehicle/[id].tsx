@@ -1593,9 +1593,9 @@ export default function VehicleDetail() {
             below is never mistaken for an inspection-backed number. */}
         {sub.unseen ? (
           <View style={styles.unseenBanner} testID="unseen-banner">
-            <Ionicons name="eye-off" size={18} color="#B3261E" />
+            <Ionicons name="eye-off-outline" size={16} color={colors.textSecondary} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.unseenBannerTitle}>Vehicle Unseen — Subject to View & Less to Spend</Text>
+              <Text style={styles.unseenBannerTitle}>Subject to View — Less to Spend</Text>
               <Text style={styles.unseenBannerHint}>
                 Desktop valuation. Fourbuy has NOT physically inspected the vehicle. Final cover will adjust at inspection.
               </Text>
@@ -2041,8 +2041,9 @@ export default function VehicleDetail() {
         {/* Condition breakdown — 4 pillars for new submissions, legacy 3 fallback.
             HIDDEN entirely when the submission is flagged as "unseen"
             (dealer requested a desktop valuation without physical
-            inspection). The red "Vehicle Unseen" banner at the top of
-            the page communicates that no ratings exist. */}
+            inspection). We still render a special 10/10 "Subject to
+            View — Less to Spend" hero below so the valuation makes
+            clear it is priced as-if-perfect. */}
         {!sub.unseen ? (
         <>
         <Text style={styles.sectionTitle}>Condition</Text>
@@ -2130,6 +2131,33 @@ export default function VehicleDetail() {
         </>
         ) : null}
         {/* --- end !sub.unseen : Condition section --- */}
+
+        {/* Subject-to-View condition hero — replaces the normal Condition
+            widget when the vehicle was submitted unseen. Displays a
+            constant 10.0 / 10 to communicate "priced as-if-perfect
+            condition" (dealer hasn't inspected the car), with a soft
+            "Subject to View — Less to Spend" caption. */}
+        {sub.unseen ? (
+          <View style={styles.heroBox} testID="unseen-condition-hero">
+            <View style={styles.heroTopRow}>
+              <Text style={styles.heroLabel}>OVERALL CONDITION</Text>
+              <View style={styles.heroInfoBtn}>
+                <Ionicons name="eye-off-outline" size={13} color={colors.textSecondary} />
+                <Text style={styles.heroInfoText}>Subject to View</Text>
+              </View>
+            </View>
+            <View style={styles.heroRow}>
+              <Text style={styles.heroValue}>10.0</Text>
+              <Text style={styles.heroOutOf}>/ 10</Text>
+            </View>
+            <View style={styles.heroBar}>
+              <View style={[styles.heroBarFill, { width: "100%" }]} />
+            </View>
+            <Text style={styles.unseenHeroCaption}>
+              Subject to View — Less to Spend · Priced as-if-perfect condition. Adjusts on physical inspection.
+            </Text>
+          </View>
+        ) : null}
 
         {/* Reconditioning */}
         {!sub.unseen && sub.reconditioning_items && sub.reconditioning_items.length > 0 ? (
@@ -4111,26 +4139,26 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     letterSpacing: 0.3,
   },
   scroll: { padding: spacing.lg, paddingBottom: 120 },
-  // ----- "Vehicle Unseen" warning banner (top of detail page) -----
+  // ----- "Subject to View" advisory banner (top of detail page) -----
   unseenBanner: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    padding: spacing.md,
+    padding: spacing.sm + 2,
     marginBottom: spacing.md,
     borderRadius: radius.md,
-    borderWidth: 1.2,
-    borderColor: "#B3261E",
-    backgroundColor: "#FDECEA",
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
   },
   unseenBannerTitle: {
-    color: "#B3261E",
-    fontSize: 13,
-    fontWeight: "800",
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "700",
     letterSpacing: 0.3,
   },
   unseenBannerHint: {
-    color: "#6B2018",
+    color: colors.textSecondary,
     fontSize: 11,
     marginTop: 2,
     lineHeight: 15,
@@ -4313,6 +4341,14 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     overflow: "hidden",
   },
   heroBarFill: { height: "100%", backgroundColor: "#fff" },
+  unseenHeroCaption: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    marginTop: spacing.md,
+    textAlign: "center",
+    lineHeight: 16,
+    letterSpacing: 0.2,
+  },
   heroBreakdown: {
     flexDirection: "row",
     gap: spacing.sm,
