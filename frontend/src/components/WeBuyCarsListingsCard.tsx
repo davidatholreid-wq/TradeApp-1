@@ -101,6 +101,21 @@ function resolveYearRange(p: Props): { from: number; to: number } | null {
   return null;
 }
 
+// Same as resolveYearRange but with WeBuyCars' clamps applied — the
+// max-span guard AND the "no future years" cap. Used for both the URL
+// build and the on-screen chips/help copy so what the dealer sees on
+// the card matches what the WBC UI ends up showing.
+function resolveEffectiveRange(p: Props): { from: number; to: number } | null {
+  const range = resolveYearRange(p);
+  if (!range) return null;
+  let { from, to } = range;
+  if (to - from > MAX_YEAR_SPAN) from = to - MAX_YEAR_SPAN;
+  const thisYear = new Date().getFullYear();
+  if (to > thisYear) to = thisYear;
+  if (from > to) from = to;
+  return { from, to };
+}
+
 // Cap the number of years we send to WeBuyCars — we now send a min/max
 // tuple (Year=[min, max]) so this only ever guards against pathological
 // Kredo ranges. Anything wider than this gets clipped down to keep the
@@ -162,11 +177,15 @@ function jsonArrayParam(values: (string | number)[]): string {
 // Build the WeBuyCars.co.za deep link. Filters applied when available:
 //   Make         — JSON-array with the Title-Cased brand name
 //   Model        — JSON-array with the Title-Cased model
-//   Year         — JSON 2-tuple [min, max] covering the derivative's
-//                  manufacture range. WeBuyCars renders this as a
-//                  Min/Max range on their year slider — sending an
-//                  N-element array causes them to keep only the first
-//                  two values (min/max), so we're explicit.
+//   Year         — Emitted twice for maximum compatibility:
+//                    Year=[min,max]          — populates the chip bar
+//                    Year_Gte=X & Year_Lte=Y — populates the sidebar
+//                                              min/max slider state
+//                  Also clamps the max to the current calendar year
+//                  because WeBuyCars only stocks in-market cars, so
+//                  asking for e.g. 2025 while it's still 2024 leaves
+//                  the sidebar badge showing "null - 2024" and the
+//                  dealer wondering what happened.
 //   FuelType     — JSON-array with the canonical fuel family
 //   Gearbox      — JSON-array with "Automatic" or "Manual"
 //                  (WeBuyCars labels their transmission filter panel
@@ -174,15 +193,16 @@ function jsonArrayParam(values: (string | number)[]): string {
 //                  silent no-op).
 //   SortBy/Order — Price_Amount ASC (cheapest first)
 //
-// Example (Toyota Corolla Cross 2022–2026 Hybrid Automatic):
+// Example (Toyota Corolla Cross 2022–2026 Hybrid Automatic, today=2024):
 //   /buy-a-car?Make=["Toyota"]&Model=["Corolla Cross"]
-//     &Year=[2022,2026]&FuelType=["Hybrid"]&Gearbox=["Automatic"]
+//     &Year=[2022,2024]&Year_Gte=2022&Year_Lte=2024
+//     &FuelType=["Hybrid"]&Gearbox=["Automatic"]
 //     &SortBy=Price_Amount&SortOrder=ASC
 function buildWeBuyCarsUrl(p: Props): string | null {
   const make = normaliseMake(p.make);
   if (!make) return null;
   const model = normaliseModel(p.model);
-  const range = resolveYearRange(p);
+  const range = resolveEffectiveRange(p);
   const fuel = normaliseFuel(p.fuelType);
   const trans = normaliseTransmission(p.transmission);
 
@@ -192,13 +212,12 @@ function buildWeBuyCarsUrl(p: Props): string | null {
     parts.push(`Model=${encodeURIComponent(jsonArrayParam([model]))}`);
   }
   if (range) {
-    // Clip pathological ranges to a sane span so the URL never asks
-    // WeBuyCars for e.g. 1980-2030. `MAX_YEAR_SPAN` keeps things tight.
-    let { from, to } = range;
-    if (to - from > MAX_YEAR_SPAN) from = to - MAX_YEAR_SPAN;
-    // Always send [min, max] — WeBuyCars parses the first two entries
-    // as the slider bounds and ignores the rest.
+    const { from, to } = range;
+    // Emit BOTH the array (drives the chip bar) AND the Gte/Lte pair
+    // (drives the sidebar slider state) so both UIs agree.
     parts.push(`Year=${encodeURIComponent(jsonArrayParam([from, to]))}`);
+    parts.push(`Year_Gte=${from}`);
+    parts.push(`Year_Lte=${to}`);
   }
   if (fuel) {
     parts.push(`FuelType=${encodeURIComponent(jsonArrayParam([fuel]))}`);
@@ -241,7 +260,7 @@ export default function WeBuyCarsListingsCard(props: Props) {
 
   const make = normaliseMake(props.make) || "";
   const model = normaliseModel(props.model) || "";
-  const range = resolveYearRange(props);
+  const range = resolveEffectiveRange(props);
   const yearStr = range
     ? range.from === range.to
       ? String(range.from)
