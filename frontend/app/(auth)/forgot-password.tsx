@@ -220,7 +220,10 @@ const styles = StyleSheet.create({
     backgroundColor: darkPalette.primary,
     borderRadius: radius.md,
     paddingVertical: 14,
+    paddingHorizontal: 24,
     alignItems: "center",
+    alignSelf: "stretch",
+    minWidth: 180,
   },
   primaryBtnText: {
     color: darkPalette.onPrimary,
@@ -229,7 +232,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     textTransform: "uppercase",
   },
-  successBlock: { gap: 6, alignItems: "flex-start" },
+  successBlock: { gap: 6, alignItems: "stretch" },
   successIcon: {
     width: 52,
     height: 52,
