@@ -1927,12 +1927,7 @@ export default function VehicleDetail() {
           <View style={styles.titleAccent} />
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.brand} testID="vehicle-hero-make">{sub.make_name}</Text>
-            {sub.model_name ? (
-              <Text style={styles.model} numberOfLines={2} testID="vehicle-hero-model">
-                {sub.model_name}
-              </Text>
-            ) : null}
-            {sub.derivative_name && sub.derivative_name !== sub.model_name ? (
+            {sub.derivative_name ? (
               <Text style={styles.derivative} numberOfLines={2} testID="vehicle-hero-derivative">
                 {sub.derivative_name}
               </Text>
@@ -6059,12 +6054,12 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
   derivative: {
     color: colors.text,
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "700",
     letterSpacing: -0.3,
-    lineHeight: 22,
-    marginTop: 2,
-    opacity: 0.9,
+    lineHeight: 24,
+    marginTop: 4,
+    opacity: 0.92,
   },
   titleYear: {
     marginTop: 8,
