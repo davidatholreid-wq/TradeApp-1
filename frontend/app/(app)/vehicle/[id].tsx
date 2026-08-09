@@ -579,6 +579,10 @@ export default function VehicleDetail() {
   // hidden. Only pricing agents ("managerial access") on the owning
   // dealership can set it.
   const [dealOfferInput, setDealOfferInput] = useState("");
+  // Whether the collapsible past-offer history under the Dealer Offer
+  // card is expanded. Closed by default — the current amount is what
+  // matters day-to-day; history is a "look under the hood" gesture.
+  const [dealerOfferHistoryOpen, setDealerOfferHistoryOpen] = useState(false);
   const [dealPdfDownloading, setDealPdfDownloading] = useState(false);
   // Whenever the server-side `sub.deal` changes, mirror BOTH the tri-
   // state choices and the numeric fields into the local form state so
@@ -3449,6 +3453,11 @@ export default function VehicleDetail() {
             const canEditOffer = !isAdmin && isOwningDealer && !!((user as any)?.is_pricing_agent);
             const parsed = parseMoneyInput(dealOfferInput);
             const isDirty = parsed !== savedOffer && parsed != null;
+            const offerHistory = ((deal?.dealer_offer_history || []) as {
+              price_zar: number;
+              at: string;
+              by_name?: string;
+            }[]).slice().reverse(); // newest first
             return (
               <View style={styles.dealerOfferCard} testID="dealer-offer-card">
                 <View style={styles.dealerOfferHeader}>
@@ -3511,6 +3520,56 @@ export default function VehicleDetail() {
                         </Text>
                       )}
                     </TouchableOpacity>
+                  </View>
+                ) : null}
+
+                {/* Collapsible offer history — only shown when there
+                    are at least 2 recorded amounts (i.e. the offer has
+                    changed at least once). Ordered newest-first with
+                    the current amount highlighted. */}
+                {offerHistory.length >= 2 ? (
+                  <TouchableOpacity
+                    testID="dealer-offer-history-toggle"
+                    onPress={() => setDealerOfferHistoryOpen((v) => !v)}
+                    style={styles.dealerOfferHistoryToggle}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={dealerOfferHistoryOpen ? "chevron-up" : "chevron-down"}
+                      size={13}
+                      color={colors.textSecondary}
+                    />
+                    <Text style={styles.dealerOfferHistoryToggleText}>
+                      {dealerOfferHistoryOpen ? "Hide" : "Show"} offer history · {offerHistory.length} update{offerHistory.length === 1 ? "" : "s"}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+                {offerHistory.length >= 2 && dealerOfferHistoryOpen ? (
+                  <View style={styles.dealerOfferHistoryList} testID="dealer-offer-history-list">
+                    {offerHistory.map((h, idx) => {
+                      const isCurrent = idx === 0;
+                      return (
+                        <View
+                          key={`${h.at}-${idx}`}
+                          style={[
+                            styles.dealerOfferHistoryRow,
+                            isCurrent && { borderColor: colors.primary + "88" },
+                          ]}
+                        >
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            <Text style={styles.dealerOfferHistoryAmount}>
+                              {fmtZar(h.price_zar)}
+                              {isCurrent ? (
+                                <Text style={{ color: colors.primary, fontWeight: "800" }}>  · Current</Text>
+                              ) : null}
+                            </Text>
+                            <Text style={styles.dealerOfferHistoryMeta}>
+                              {new Date(h.at).toLocaleString()} · {h.by_name || "—"}
+                            </Text>
+                          </View>
+                        </View>
+                      );
+                    })}
                   </View>
                 ) : null}
               </View>
@@ -5527,6 +5586,42 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     fontSize: 12,
     letterSpacing: 0.8,
     textTransform: "uppercase",
+  },
+  dealerOfferHistoryToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 10,
+    paddingVertical: 4,
+    alignSelf: "flex-start",
+  },
+  dealerOfferHistoryToggleText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: colors.textSecondary,
+    letterSpacing: 0.3,
+  },
+  dealerOfferHistoryList: {
+    marginTop: 6,
+    gap: 6,
+  },
+  dealerOfferHistoryRow: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    padding: 10,
+    backgroundColor: colors.bg,
+  },
+  dealerOfferHistoryAmount: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  dealerOfferHistoryMeta: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "600",
+    marginTop: 2,
   },
   dealSaveBtnPrimary: {
     backgroundColor: "#1F7A3A",

@@ -5170,10 +5170,35 @@ async def update_submission_deal(
     # the P&L show three anchors: what we offered, what we actually
     # paid, and what we sold it for. Also unlocks the rest of the
     # deal-tracking flow (Stage 1/2) on the UI.
+    #
+    # We ALSO keep a running audit history in `deal.dealer_offer_history`
+    # — one entry per genuine change — so the dealership can look back
+    # at how the offer moved during negotiation. Each history row
+    # captures the amount, the timestamp, and the user who saved it.
     if "dealer_offer_zar" in payload:
         val = _sanitise_deal_int(payload.get("dealer_offer_zar"), "dealer_offer_zar")
+        old_val = prev.get("dealer_offer_zar")
         deal["dealer_offer_zar"] = val
         if val is not None and not prev.get("dealer_offer_at"):
+            deal["dealer_offer_at"] = now_iso
+        # Only append to history when the amount ACTUALLY changed —
+        # a redundant save with the same value shouldn't spam the log.
+        if val is not None and val != old_val:
+            history = list(prev.get("dealer_offer_history") or [])
+            actor_info = current.get("dealer_info") or {}
+            actor_name = (
+                (actor_info.get("first_name") or "") + " " + (actor_info.get("last_name") or "")
+            ).strip() or current.get("email") or "—"
+            history.append({
+                "price_zar": val,
+                "at": now_iso,
+                "by_user_id": current.get("id"),
+                "by_name": actor_name,
+            })
+            deal["dealer_offer_history"] = history
+            # Always keep the top-level `dealer_offer_at` in sync with
+            # the LAST update — dealers should see the most recent
+            # change date on the summary line.
             deal["dealer_offer_at"] = now_iso
 
     if "done" in payload:
