@@ -15,7 +15,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
-  Image, RefreshControl, Platform,
+  Image, RefreshControl, Platform, useWindowDimensions,
 } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
@@ -58,6 +58,15 @@ export default function GiveCoverScreen() {
   const { user } = useAuth();
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+
+  // Web-only responsive grid layout for the cover list — mirrors the
+  // WeBuyCars catalogue card grid (image-forward, 3 cards per row on
+  // desktop, 2 on tablet, 1 on narrow web). On native we always fall
+  // back to the vertical list because the swipe interaction is much
+  // nicer as a single-column stack.
+  const isWebGrid = Platform.OS === "web" && width >= 700;
+  const gridColumns = width >= 1200 ? 3 : width >= 900 ? 3 : width >= 700 ? 2 : 1;
   const [subs, setSubs] = useState<CoverSub[]>([]);
   const [declinedSubs, setDeclinedSubs] = useState<CoverSub[]>([]);
   const [loading, setLoading] = useState(true);
@@ -385,7 +394,8 @@ export default function GiveCoverScreen() {
           </Text>
         </View>
       ) : (
-        shown.map((s) => {
+        <View style={isWebGrid ? styles.gridContainer : undefined}>
+          {shown.map((s) => {
           const thumb = s.thumbnail;
           const year = s.year_of_production ?? s.year_registered;
           const meta = [
@@ -412,6 +422,176 @@ export default function GiveCoverScreen() {
             const days = Math.round(hrs / 24);
             return `${days} day${days === 1 ? "" : "s"} ago`;
           })();
+
+          // ---------- WeBuyCars-style grid card (web only) ----------
+          // Front photo on top, title + meta below, dedicated Offer /
+          // Decline buttons at the bottom. Never uses a swipe gesture
+          // — web has no reliable swipe UX. Cover-given cards show a
+          // single "Update cover" CTA; Declined cards show a single
+          // "Restore" CTA.
+          if (isWebGrid) {
+            const openVehicle = () =>
+              router.push({
+                pathname: "/vehicle/[id]",
+                params: { id: s.id, cover: "1" },
+              });
+            const titleLine = [year, s.make_name, s.model_name].filter(Boolean).join(" ");
+            const gridColWidth = `${(100 / gridColumns).toFixed(4)}%` as any;
+            return (
+              <View
+                key={s.id}
+                style={[styles.gridCol, { width: gridColWidth }]}
+              >
+                <View
+                  testID={`cover-card-${s.id}`}
+                  style={[
+                    styles.gridCard,
+                    { backgroundColor: colors.card, borderColor: colors.border },
+                    covered && { borderColor: colors.success + "aa" },
+                    isDeclinedTab && { opacity: 0.85 },
+                  ]}
+                >
+                  {/* Front image — full-bleed at the top with WeBuyCars-
+                      like 4:3 aspect ratio. Tapping the image jumps
+                      straight into the vehicle detail (same as tapping
+                      the row on mobile). */}
+                  <TouchableOpacity
+                    onPress={openVehicle}
+                    activeOpacity={0.9}
+                    style={styles.gridImgWrap}
+                  >
+                    {thumb ? (
+                      <Image source={{ uri: thumb }} style={styles.gridImg} resizeMode="cover" />
+                    ) : (
+                      <View style={[styles.gridImg, styles.gridImgEmpty, { backgroundColor: colors.paper }]}>
+                        <Ionicons name="car-outline" size={48} color={colors.textDisabled} />
+                      </View>
+                    )}
+                    {/* Ref number badge sits on top of the image so the
+                        primary reading area below stays clean. */}
+                    <View style={styles.gridRefBadge}>
+                      <Text style={styles.gridRefBadgeText}>{s.reference || s.id.slice(0, 8)}</Text>
+                    </View>
+                    {covered ? (
+                      <View style={[styles.gridStatusBadge, { backgroundColor: colors.success }]}>
+                        <Ionicons name="shield-checkmark" size={11} color="#fff" />
+                        <Text style={styles.gridStatusBadgeText}>
+                          Cover · R{s.my_cover!.price_zar.toLocaleString()}
+                        </Text>
+                      </View>
+                    ) : isDeclinedTab ? (
+                      <View style={[styles.gridStatusBadge, { backgroundColor: colors.danger }]}>
+                        <Ionicons name="archive" size={11} color="#fff" />
+                        <Text style={styles.gridStatusBadgeText}>Declined</Text>
+                      </View>
+                    ) : null}
+                  </TouchableOpacity>
+
+                  {/* Text stack */}
+                  <View style={styles.gridBody}>
+                    <Text style={[styles.gridTitle, { color: colors.text }]} numberOfLines={2}>
+                      {titleLine || "Vehicle"}
+                    </Text>
+                    {s.derivative_name ? (
+                      <Text style={[styles.gridDeriv, { color: colors.textSecondary }]} numberOfLines={1}>
+                        {s.derivative_name}
+                      </Text>
+                    ) : null}
+                    <View style={styles.gridMetaRow}>
+                      {s.mileage ? (
+                        <View style={styles.gridMetaChip}>
+                          <Ionicons name="speedometer-outline" size={11} color={colors.textSecondary} />
+                          <Text style={[styles.gridMetaChipText, { color: colors.textSecondary }]}>
+                            {s.mileage.toLocaleString()} km
+                          </Text>
+                        </View>
+                      ) : null}
+                      {s.transmission ? (
+                        <View style={styles.gridMetaChip}>
+                          <Ionicons name="cog-outline" size={11} color={colors.textSecondary} />
+                          <Text style={[styles.gridMetaChipText, { color: colors.textSecondary }]}>
+                            {s.transmission}
+                          </Text>
+                        </View>
+                      ) : null}
+                      {s.fuel_type ? (
+                        <View style={styles.gridMetaChip}>
+                          <Ionicons name="flame-outline" size={11} color={colors.textSecondary} />
+                          <Text style={[styles.gridMetaChipText, { color: colors.textSecondary }]}>
+                            {s.fuel_type}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    {isDeclinedTab && declinedAgo ? (
+                      <Text style={[styles.gridFootnote, { color: colors.textDisabled }]}>
+                        Declined {declinedAgo}
+                      </Text>
+                    ) : covered ? (
+                      <Text style={[styles.gridFootnote, { color: colors.textDisabled }]}>
+                        {historyCount > 0
+                          ? `Updated ${new Date(s.my_cover!.updated_at || s.my_cover!.created_at).toLocaleDateString()} · ${historyCount + 1} versions`
+                          : `Placed ${new Date(s.my_cover!.created_at).toLocaleDateString()}`}
+                      </Text>
+                    ) : null}
+                  </View>
+
+                  {/* Action bar — Offer / Decline for available cards,
+                      Update Cover for given, Restore for declined. */}
+                  <View style={styles.gridActionRow}>
+                    {isDeclinedTab ? (
+                      <TouchableOpacity
+                        testID={`cover-grid-restore-${s.id}`}
+                        onPress={() => handleRestore(s)}
+                        style={[styles.gridBtn, styles.gridBtnFull, { backgroundColor: colors.success }]}
+                        activeOpacity={0.85}
+                      >
+                        <Ionicons name="arrow-undo" size={14} color="#fff" />
+                        <Text style={styles.gridBtnText}>Restore</Text>
+                      </TouchableOpacity>
+                    ) : covered ? (
+                      <TouchableOpacity
+                        testID={`cover-grid-update-${s.id}`}
+                        onPress={openVehicle}
+                        style={[styles.gridBtn, styles.gridBtnFull, { backgroundColor: colors.primary }]}
+                        activeOpacity={0.85}
+                      >
+                        <Ionicons name="pencil" size={14} color={colors.onPrimary} />
+                        <Text style={[styles.gridBtnText, { color: colors.onPrimary }]}>
+                          Update cover
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <>
+                        <TouchableOpacity
+                          testID={`cover-grid-decline-${s.id}`}
+                          onPress={() => handleDecline(s)}
+                          style={[styles.gridBtn, styles.gridBtnGhost, { borderColor: colors.danger }]}
+                          activeOpacity={0.85}
+                        >
+                          <Ionicons name="close" size={14} color={colors.danger} />
+                          <Text style={[styles.gridBtnText, { color: colors.danger }]}>
+                            Decline
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          testID={`cover-grid-offer-${s.id}`}
+                          onPress={openVehicle}
+                          style={[styles.gridBtn, styles.gridBtnPrimary, { backgroundColor: colors.primary }]}
+                          activeOpacity={0.85}
+                        >
+                          <Ionicons name="flash" size={14} color={colors.onPrimary} />
+                          <Text style={[styles.gridBtnText, { color: colors.onPrimary }]}>
+                            Offer
+                          </Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+                  </View>
+                </View>
+              </View>
+            );
+          }
 
           // iOS-style swipe-to-reveal-decline action rendered on the
           // RIGHT (finger swipes leftwards to reveal). Only offered on
@@ -596,7 +776,8 @@ export default function GiveCoverScreen() {
               {cardInner}
             </Swipeable>
           );
-        })
+          })}
+        </View>
       )}
     </ScrollView>
   );
@@ -784,6 +965,149 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginRight: 4,
     ...(Platform.OS === "web" ? ({ cursor: "pointer" as any } as any) : {}),
+  },
+
+  // ---------- WeBuyCars-style grid (web only) ----------
+  gridContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap" as const,
+    marginHorizontal: -8, // negative margin cancels the per-col padding
+  },
+  gridCol: {
+    paddingHorizontal: 8,
+    paddingBottom: 16,
+  },
+  gridCard: {
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    overflow: "hidden",
+    // Full-height so cards in the same row line up regardless of
+    // per-card content length (derivative, footnote, etc.).
+    height: "100%",
+    display: "flex" as any,
+    flexDirection: "column",
+    ...(Platform.OS === "web" ? ({
+      transitionProperty: "transform, box-shadow, border-color" as any,
+      transitionDuration: "180ms" as any,
+    } as any) : {}),
+  },
+  gridImgWrap: {
+    width: "100%",
+    aspectRatio: 4 / 3,
+    position: "relative" as any,
+    ...(Platform.OS === "web" ? ({ cursor: "pointer" as any } as any) : {}),
+  },
+  gridImg: {
+    width: "100%",
+    height: "100%",
+  },
+  gridImgEmpty: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  gridRefBadge: {
+    position: "absolute" as any,
+    top: 10,
+    left: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  gridRefBadgeText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  gridStatusBadge: {
+    position: "absolute" as any,
+    top: 10,
+    right: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  gridStatusBadgeText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  gridBody: {
+    padding: 12,
+    gap: 4,
+    flex: 1,
+  },
+  gridTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    letterSpacing: -0.2,
+  },
+  gridDeriv: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  gridMetaRow: {
+    flexDirection: "row",
+    flexWrap: "wrap" as const,
+    gap: 6,
+    marginTop: 6,
+  },
+  gridMetaChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.10)",
+  },
+  gridMetaChipText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  gridFootnote: {
+    fontSize: 11,
+    fontStyle: "italic",
+    marginTop: 6,
+  },
+  gridActionRow: {
+    flexDirection: "row",
+    gap: 8,
+    padding: 12,
+    paddingTop: 0,
+  },
+  gridBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: radius.sm,
+    ...(Platform.OS === "web" ? ({ cursor: "pointer" as any } as any) : {}),
+  },
+  gridBtnFull: {
+    flex: 1,
+  },
+  gridBtnPrimary: {
+    flex: 1,
+  },
+  gridBtnGhost: {
+    flex: 1,
+    borderWidth: 1.5,
+    backgroundColor: "transparent",
+  },
+  gridBtnText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 0.2,
   },
   declineAction: {
     width: 100,
