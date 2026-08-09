@@ -2167,7 +2167,7 @@ export default function VehicleDetail() {
             {coverOffersOpen ? (
               <>
                 <Text style={styles.coverOffersSub}>
-                  Binding cover from Fourbuy Pricing Agents · subject to physical inspection.
+                  Binding Cover from Registered Dealer · subject to physical inspection.
                 </Text>
                 {coverOffers.map((c, idx) => {
                   const phoneDigits = (c.agent_phone || "").replace(/[^0-9]/g, "");
@@ -2243,6 +2243,21 @@ export default function VehicleDetail() {
                     </View>
                   );
                 })}
+                {/* Legal / trust disclaimer — reinforces to the dealer
+                    that the cover is subject to a physical inspection
+                    and that they should confirm directly with the
+                    registered dealer before finalising the deal. */}
+                <View style={styles.coverOffersDisclaimer} testID="cover-offers-disclaimer">
+                  <Ionicons
+                    name="information-circle"
+                    size={14}
+                    color={colors.textSecondary}
+                    style={{ marginTop: 1 }}
+                  />
+                  <Text style={styles.coverOffersDisclaimerText}>
+                    All Cover Prices are subject to a physical inspection of the vehicle to ensure the vehicle is as per the valuation — please always confirm the cover with the dealer prior to going ahead with the deal.
+                  </Text>
+                </View>
               </>
             ) : null}
           </View>
@@ -4911,6 +4926,30 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
     marginBottom: spacing.sm,
+  },
+  // Bottom-of-list legal disclaimer for cover offers — reminds the
+  // dealer that a cover is contingent on a physical inspection and
+  // that they should confirm with the covering dealer before
+  // proceeding. Rendered as an icon-led paragraph inside a tinted
+  // rounded box so it reads as a formal notice rather than just
+  // small print.
+  coverOffersDisclaimer: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    marginTop: spacing.sm,
+    padding: spacing.sm + 2,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  coverOffersDisclaimerText: {
+    flex: 1,
+    color: colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 16,
+    fontStyle: "italic",
   },
   coverOfferRow: {
     flexDirection: "row",

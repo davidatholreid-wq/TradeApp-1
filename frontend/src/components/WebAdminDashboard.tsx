@@ -2304,7 +2304,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 <View style={styles.analysisBox}>
                   <Text style={styles.boxTitle}>COVER OFFERS RECEIVED · {coverOffers.length}</Text>
                   <Text style={[styles.offerNote, { marginBottom: spacing.sm }]}>
-                    Binding cover from Fourbuy Pricing Agents · subject to physical inspection.
+                    Binding Cover from Registered Dealer · subject to physical inspection.
                   </Text>
                   {coverOffers.map((c) => {
                     const phoneDigits = (c.agent_phone || "").replace(/[^0-9]/g, "");
@@ -2359,6 +2359,41 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                       </View>
                     );
                   })}
+                  {/* Legal / trust disclaimer — same wording as the
+                      dealer-facing card in vehicle/[id].tsx so admins
+                      see the exact same message that dealers see. */}
+                  <View
+                    testID="admin-cover-offers-disclaimer"
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "flex-start",
+                      gap: 8,
+                      marginTop: spacing.sm,
+                      padding: spacing.sm + 2,
+                      borderRadius: radius.md,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      backgroundColor: colors.paper,
+                    }}
+                  >
+                    <Ionicons
+                      name="information-circle"
+                      size={14}
+                      color={colors.textSecondary}
+                      style={{ marginTop: 1 }}
+                    />
+                    <Text
+                      style={{
+                        flex: 1,
+                        color: colors.textSecondary,
+                        fontSize: 11,
+                        lineHeight: 16,
+                        fontStyle: "italic",
+                      }}
+                    >
+                      All Cover Prices are subject to a physical inspection of the vehicle to ensure the vehicle is as per the valuation — please always confirm the cover with the dealer prior to going ahead with the deal.
+                    </Text>
+                  </View>
                 </View>
               ) : null}
 
