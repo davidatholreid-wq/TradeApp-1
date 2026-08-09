@@ -3735,6 +3735,119 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
         story.append(Spacer(1, 4))
         story.append(two_col)
 
+    # ============ REQUESTED BY ============
+    # Full contact block for the dealer user who submitted the
+    # valuation + the dealership they belong to. Rendered as two side-
+    # by-side info cards under the vehicle details so the PDF is a
+    # complete, self-contained audit record — the reader knows exactly
+    # who they need to phone / email / invoice.
+    #
+    # Historical fields on the submission (`submitted_by_name`,
+    # `submitted_by_job_title`) are used as a fallback so old
+    # submissions still render nicely; live user record wins when
+    # available.
+    submitter_id = sub.get("submitted_by_user_id") or sub.get("dealer_id")
+    submitter_user: dict = {}
+    submitter_dinfo: dict = {}
+    if submitter_id:
+        try:
+            u = await db.users.find_one(
+                {"id": submitter_id},
+                {"_id": 0, "email": 1, "dealer_info": 1, "profile_pic": 1, "role": 1},
+            )
+            if u:
+                submitter_user = u
+                submitter_dinfo = u.get("dealer_info") or {}
+        except Exception:
+            pass
+    submitter_first = submitter_dinfo.get("first_name") or ""
+    submitter_last = submitter_dinfo.get("last_name") or ""
+    submitter_full_name = (
+        (f"{submitter_first} {submitter_last}").strip()
+        or sub.get("submitted_by_name")
+        or "—"
+    )
+    submitter_title = (
+        submitter_dinfo.get("job_title")
+        or sub.get("submitted_by_job_title")
+        or ""
+    )
+    submitter_email = submitter_user.get("email") or ""
+    submitter_phone = submitter_dinfo.get("phone") or ""
+
+    dship: dict = {}
+    if sub.get("dealership_id"):
+        try:
+            dship = await db.dealerships.find_one(
+                {"id": sub["dealership_id"]},
+                {"_id": 0, "name": 1, "address": 1, "vat_no": 1, "company_reg_no": 1, "phone": 1, "email": 1},
+            ) or {}
+        except Exception:
+            dship = {}
+    dship_name = dship.get("name") or sub.get("company_name") or ""
+    dship_addr = dship.get("address") or ""
+    dship_vat = dship.get("vat_no") or ""
+    dship_reg = dship.get("company_reg_no") or ""
+    dship_phone = dship.get("phone") or ""
+    dship_email = dship.get("email") or ""
+
+    def _kv(label: str, value: str):
+        if not value:
+            return None
+        return [
+            Paragraph(
+                f'<font name="Helvetica" size="8" color="#6B6B6B">{label.upper()}</font>',
+                small,
+            ),
+            _P(value),
+        ]
+
+    dealer_rows = [row for row in [
+        _kv("Requested by", submitter_full_name),
+        _kv("Position", submitter_title),
+        _kv("Email", submitter_email),
+        _kv("Phone", submitter_phone),
+        _kv("Requested on", (sub.get("created_at") or sub.get("submitted_at") or "")[:10]),
+    ] if row]
+
+    dship_rows = [row for row in [
+        _kv("Dealership", dship_name),
+        _kv("Address", dship_addr),
+        _kv("Phone", dship_phone),
+        _kv("Email", dship_email),
+        _kv("VAT No.", dship_vat),
+        _kv("Reg. No.", dship_reg),
+    ] if row]
+
+    if dealer_rows or dship_rows:
+        story.append(Spacer(1, 6))
+        hdr_left_req = Paragraph("REQUESTED BY", section_title)
+        hdr_right_req = Paragraph("DEALERSHIP", section_title)
+
+        # Left / right sub-tables. If one side is empty we still lay it
+        # out as two columns for visual balance — the empty side just
+        # doesn't have rows.
+        left_body = Table(dealer_rows, colWidths=[26 * mm, 60 * mm]) if dealer_rows else Spacer(1, 0)
+        right_body = Table(dship_rows, colWidths=[26 * mm, 60 * mm]) if dship_rows else Spacer(1, 0)
+        if isinstance(left_body, Table):
+            left_body.setStyle(_row_style())
+        if isinstance(right_body, Table):
+            right_body.setStyle(_row_style())
+
+        req_wrap = Table(
+            [[hdr_left_req, hdr_right_req], [left_body, right_body]],
+            colWidths=[92 * mm, 92 * mm],
+        )
+        req_wrap.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (0, -1), 4),
+            ("LEFTPADDING", (1, 0), (1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        story.append(req_wrap)
+
     # ============ SERVICE + RECONDITIONING (side-by-side) ============
     # When flagged as "unseen", skip this entire block — there was no
     # physical inspection and any service/recon content is either
