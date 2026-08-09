@@ -46,9 +46,11 @@ type CoverSub = {
     updated_at?: string;
     history?: { price_zar: number; at: string }[];
   } | null;
+  // Only present on rows returned from the declined-silo endpoint.
+  declined_at?: string;
 };
 
-type Tab = "available" | "given";
+type Tab = "available" | "given" | "declined";
 
 export default function GiveCoverScreen() {
   const router = useRouter();
@@ -57,16 +59,27 @@ export default function GiveCoverScreen() {
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
   const [subs, setSubs] = useState<CoverSub[]>([]);
+  const [declinedSubs, setDeclinedSubs] = useState<CoverSub[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [tab, setTab] = useState<Tab>(params?.tab === "given" ? "given" : "available");
+  const [tab, setTab] = useState<Tab>(
+    params?.tab === "given"
+      ? "given"
+      : params?.tab === "declined"
+        ? "declined"
+        : "available"
+  );
 
   // Sync tab whenever the incoming ?tab= param changes — e.g. the
   // back-arrow on a covered vehicle detail returns via
   // /cover?tab=given so the pricing agent lands back on the same
   // list they came from.
   useEffect(() => {
-    if (params?.tab === "given" || params?.tab === "available") {
+    if (
+      params?.tab === "given" ||
+      params?.tab === "available" ||
+      params?.tab === "declined"
+    ) {
       setTab(params.tab as Tab);
     }
   }, [params?.tab]);
@@ -77,8 +90,15 @@ export default function GiveCoverScreen() {
     // flash when new data arrives.
     if (!opts?.silent) setLoading(true);
     try {
-      const r = await apiFetch("/api/cover/submissions");
-      setSubs((r as any).submissions || []);
+      // Load the primary list AND the declined silo in parallel. Both
+      // are cheap indexed queries and this keeps the tab counters
+      // accurate no matter which tab the agent is currently on.
+      const [primary, declined] = await Promise.all([
+        apiFetch("/api/cover/submissions"),
+        apiFetch("/api/cover/declined-submissions"),
+      ]);
+      setSubs((primary as any).submissions || []);
+      setDeclinedSubs((declined as any).submissions || []);
     } catch (e) {
       console.warn("cover load failed", e);
     } finally {
@@ -117,7 +137,12 @@ export default function GiveCoverScreen() {
       )),
     [subs],
   );
-  const shown = tab === "available" ? available : given;
+  const shown =
+    tab === "available"
+      ? available
+      : tab === "given"
+        ? given
+        : declinedSubs;
 
   // Swipe-to-decline (iOS style) — the agent swipes a row on the
   // "Available" tab to permanently hide it from THEIR view. The
@@ -136,8 +161,13 @@ export default function GiveCoverScreen() {
   };
 
   const handleDecline = useCallback(async (sub: CoverSub) => {
-    // Optimistic remove from list.
+    // Optimistic remove from primary list AND add to declined silo so
+    // both tab counters update immediately.
     setSubs((prev) => prev.filter((s) => s.id !== sub.id));
+    const decliedRow: CoverSub = { ...sub, declined_at: new Date().toISOString() };
+    setDeclinedSubs((prev) =>
+      prev.some((s) => s.id === sub.id) ? prev : [decliedRow, ...prev]
+    );
     const label = [sub.reference, sub.make_name, sub.model_name].filter(Boolean).join(" · ");
     setUndoState({ subId: sub.id, label });
     clearUndoTimer();
@@ -146,8 +176,8 @@ export default function GiveCoverScreen() {
       await apiFetch(`/api/cover/submissions/${sub.id}/decline`, { method: "POST" });
     } catch (e) {
       console.warn("decline failed — rolling back", e);
-      // Roll back so the row reappears if the API call failed.
       setSubs((prev) => (prev.some((p) => p.id === sub.id) ? prev : [sub, ...prev]));
+      setDeclinedSubs((prev) => prev.filter((s) => s.id !== sub.id));
       setUndoState(null);
     }
   }, []);
@@ -157,14 +187,37 @@ export default function GiveCoverScreen() {
     if (!target) return;
     clearUndoTimer();
     setUndoState(null);
+    // Optimistically remove from silo — the sub will re-appear in the
+    // primary list via the reload.
+    setDeclinedSubs((prev) => prev.filter((s) => s.id !== target.subId));
     try {
       await apiFetch(`/api/cover/submissions/${target.subId}/decline`, { method: "DELETE" });
-      // Silently reload so the row comes back with fresh data.
       load({ silent: true });
     } catch (e) {
       console.warn("undo decline failed", e);
+      // On failure, re-hydrate everything so the UI is truthful.
+      load({ silent: true });
     }
   }, [undoState, load]);
+
+  /**
+   * Restore a previously-declined submission back into the available
+   * queue. Used by the "Restore" action on the Declined silo (both the
+   * button and the right-swipe gesture). Optimistic: the row is
+   * removed from the silo immediately, and we let the next load()
+   * refresh the primary list so the sub reappears there.
+   */
+  const handleRestore = useCallback(async (sub: CoverSub) => {
+    setDeclinedSubs((prev) => prev.filter((s) => s.id !== sub.id));
+    try {
+      await apiFetch(`/api/cover/submissions/${sub.id}/decline`, { method: "DELETE" });
+      load({ silent: true });
+    } catch (e) {
+      console.warn("restore failed — rolling back", e);
+      // Roll back — put the row back in the silo.
+      setDeclinedSubs((prev) => (prev.some((p) => p.id === sub.id) ? prev : [sub, ...prev]));
+    }
+  }, [load]);
 
   if (!user?.is_pricing_agent) {
     return (
@@ -198,8 +251,14 @@ export default function GiveCoverScreen() {
           bar so it never gets clipped on device. */}
       <Text style={[styles.heading, { color: colors.text }]}>Give Cover</Text>
 
-      {/* Tab switch — Available to Cover / Cover given */}
-      <View style={styles.tabRow}>
+      {/* Tab switch — Available / Cover given / Declined. Horizontally
+          scrollable on narrow screens so all three pills fit even on
+          smaller phones. */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.tabRow}
+      >
         <TouchableOpacity
           testID="cover-tab-available"
           style={[
@@ -218,7 +277,7 @@ export default function GiveCoverScreen() {
             styles.tabBtnText,
             { color: tab === "available" ? colors.text : colors.textSecondary },
           ]}>
-            Available to Cover · {available.length}
+            Available · {available.length}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -242,7 +301,28 @@ export default function GiveCoverScreen() {
             Cover given · {given.length}
           </Text>
         </TouchableOpacity>
-      </View>
+        <TouchableOpacity
+          testID="cover-tab-declined"
+          style={[
+            styles.tabBtn,
+            { borderColor: colors.border, backgroundColor: colors.card },
+            tab === "declined" && { borderColor: colors.danger, borderWidth: 2 },
+          ]}
+          onPress={() => setTab("declined")}
+        >
+          <Ionicons
+            name="archive-outline"
+            size={15}
+            color={tab === "declined" ? colors.text : colors.textSecondary}
+          />
+          <Text style={[
+            styles.tabBtnText,
+            { color: tab === "declined" ? colors.text : colors.textSecondary },
+          ]}>
+            Declined · {declinedSubs.length}
+          </Text>
+        </TouchableOpacity>
+      </ScrollView>
 
       {/* How Give Cover works — friendlier callout block with icon + bullets.
           Sits below the tabs so the primary action (switching tabs) is
@@ -279,17 +359,29 @@ export default function GiveCoverScreen() {
       ) : shown.length === 0 ? (
         <View style={[styles.emptyBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Ionicons
-            name={tab === "available" ? "search-outline" : "receipt-outline"}
+            name={
+              tab === "available"
+                ? "search-outline"
+                : tab === "given"
+                  ? "receipt-outline"
+                  : "archive-outline"
+            }
             size={30}
             color={colors.textDisabled}
           />
           <Text style={[styles.emptyTitle, { color: colors.text }]}>
-            {tab === "available" ? "No submissions to cover" : "No covers placed yet"}
+            {tab === "available"
+              ? "No submissions to cover"
+              : tab === "given"
+                ? "No covers placed yet"
+                : "No declined submissions"}
           </Text>
           <Text style={{ color: colors.textSecondary, textAlign: "center", fontSize: 12 }}>
             {tab === "available"
               ? "Pull to refresh — new submissions land here as dealers submit them."
-              : "Head to Cars available to place your first binding cover."}
+              : tab === "given"
+                ? "Head to Available to place your first binding cover."
+                : "Anything you swipe away from Available lands here. Swipe right on a card to restore it."}
           </Text>
         </View>
       ) : (
@@ -304,6 +396,22 @@ export default function GiveCoverScreen() {
           ].filter(Boolean).join(" · ");
           const covered = !!s.my_cover;
           const historyCount = (s.my_cover?.history || []).length;
+          const isDeclinedTab = tab === "declined";
+
+          // Human-friendly "declined X ago" for the silo row footer.
+          const declinedAgo = (() => {
+            if (!s.declined_at) return null;
+            const t = new Date(s.declined_at).getTime();
+            if (isNaN(t)) return null;
+            const diff = Date.now() - t;
+            const mins = Math.round(diff / 60000);
+            if (mins < 1) return "just now";
+            if (mins < 60) return `${mins} min ago`;
+            const hrs = Math.round(mins / 60);
+            if (hrs < 24) return `${hrs} hr${hrs === 1 ? "" : "s"} ago`;
+            const days = Math.round(hrs / 24);
+            return `${days} day${days === 1 ? "" : "s"} ago`;
+          })();
 
           // iOS-style swipe-to-decline action rendered on the RIGHT
           // (finger swipes leftwards to reveal). Only offered on the
@@ -333,6 +441,33 @@ export default function GiveCoverScreen() {
             );
           };
 
+          // Mirror swipe action for the Declined tab — swipe RIGHT to
+          // restore the submission back into Available. Same visual
+          // treatment but green + "Restore" copy.
+          const renderLeftActions = (
+            _progress: RNAnimated.AnimatedInterpolation<number>,
+            dragX: RNAnimated.AnimatedInterpolation<number>,
+          ) => {
+            const trans = dragX.interpolate({
+              inputRange: [0, 120],
+              outputRange: [-60, 0],
+              extrapolate: "clamp",
+            });
+            return (
+              <View style={styles.restoreActionWrap}>
+                <RNAnimated.View
+                  style={[
+                    styles.declineAction,
+                    { backgroundColor: colors.success, transform: [{ translateX: trans }] },
+                  ]}
+                >
+                  <Ionicons name="arrow-undo" size={20} color="#fff" />
+                  <Text style={styles.declineActionText}>Restore</Text>
+                </RNAnimated.View>
+              </View>
+            );
+          };
+
           const cardInner = (
             <TouchableOpacity
               key={s.id}
@@ -341,6 +476,7 @@ export default function GiveCoverScreen() {
                 styles.card,
                 { backgroundColor: colors.card, borderColor: colors.border },
                 covered && { borderColor: colors.success + "88" },
+                isDeclinedTab && { opacity: 0.85 },
               ]}
               onPress={() =>
                 router.push({
@@ -362,7 +498,20 @@ export default function GiveCoverScreen() {
                   <Text style={[styles.ref, { color: colors.textSecondary }]}>
                     {s.reference || s.id.slice(0, 8)}
                   </Text>
-                  {covered ? (
+                  {isDeclinedTab ? (
+                    <TouchableOpacity
+                      testID={`cover-row-restore-${s.id}`}
+                      onPress={(e) => {
+                        e.stopPropagation?.();
+                        handleRestore(s);
+                      }}
+                      style={[styles.pill, { backgroundColor: colors.success + "22" }]}
+                      hitSlop={6}
+                    >
+                      <Ionicons name="arrow-undo" size={11} color={colors.success} />
+                      <Text style={[styles.pillText, { color: colors.success }]}>Restore</Text>
+                    </TouchableOpacity>
+                  ) : covered ? (
                     <View style={[styles.pill, { backgroundColor: colors.success + "22" }]}>
                       <Ionicons name="shield-checkmark" size={11} color={colors.success} />
                       <Text style={[styles.pillText, { color: colors.success }]}>
@@ -386,7 +535,11 @@ export default function GiveCoverScreen() {
                 {meta ? (
                   <Text style={[styles.meta, { color: colors.textDisabled }]}>{meta}</Text>
                 ) : null}
-                {covered ? (
+                {isDeclinedTab && declinedAgo ? (
+                  <Text style={[styles.updatedAt, { color: colors.textDisabled }]}>
+                    Declined {declinedAgo}
+                  </Text>
+                ) : covered ? (
                   <Text style={[styles.updatedAt, { color: colors.textDisabled }]}>
                     {historyCount > 0
                       ? `Updated ${new Date(s.my_cover!.updated_at || s.my_cover!.created_at).toLocaleDateString()} · ${historyCount + 1} version${historyCount ? "s" : ""}`
@@ -398,11 +551,29 @@ export default function GiveCoverScreen() {
             </TouchableOpacity>
           );
 
-          // Only offer swipe on the "Available" tab. On web the
-          // Swipeable component still works with mouse drag, so we
-          // enable it everywhere — mobile web users get the same
-          // decline gesture. Cover-given rows never wrap.
+          // Cover-given rows are static (no swipe — the agent's already
+          // committed to a cover). Available rows swipe LEFT to decline.
+          // Declined rows swipe RIGHT to restore.
           if (covered) return cardInner;
+          if (isDeclinedTab) {
+            return (
+              <Swipeable
+                key={s.id}
+                friction={2}
+                leftThreshold={80}
+                overshootLeft={false}
+                renderLeftActions={renderLeftActions}
+                onSwipeableOpen={(direction, ref) => {
+                  if (direction === "left") {
+                    try { ref?.close(); } catch {}
+                    handleRestore(s);
+                  }
+                }}
+              >
+                {cardInner}
+              </Swipeable>
+            );
+          }
           return (
             <Swipeable
               key={s.id}
@@ -595,6 +766,11 @@ const styles = StyleSheet.create({
   declineActionWrap: {
     justifyContent: "center",
     alignItems: "flex-end",
+    marginBottom: spacing.sm,
+  },
+  restoreActionWrap: {
+    justifyContent: "center",
+    alignItems: "flex-start",
     marginBottom: spacing.sm,
   },
   declineAction: {

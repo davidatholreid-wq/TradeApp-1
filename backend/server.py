@@ -8404,6 +8404,83 @@ async def require_pricing_agent(current: dict = Depends(get_current_user)) -> di
     return current
 
 
+@api_router.get("/cover/declined-submissions")
+async def list_declined_cover_submissions(
+    current: dict = Depends(require_pricing_agent),
+):
+    """Pricing-agent-only. Returns the full vehicle payload for every
+    submission this agent has previously swiped-to-decline. Used to
+    power the "Declined" silo on the Give Cover screen so an agent can
+    retrieve a declined lead later and place a cover on it after all.
+
+    Rows are:
+      - Sorted newest-declined first
+      - Filtered to only include submissions that are still live
+        (status in {pending, priced}) — a decline on an archived sub is
+        auto-hidden here because it can never be actioned again
+      - Excluded when the agent has since covered them (shouldn't happen
+        because the list endpoint auto-clears the decline, but we belt-
+        and-braces filter here too)
+    """
+    my_dealership = current.get("dealership_id")
+    declines = await db.cover_declines.find(
+        {"agent_user_id": current["id"]},
+        {"_id": 0, "submission_id": 1, "declined_at": 1},
+    ).sort("declined_at", -1).to_list(2000)
+    if not declines:
+        return {"submissions": []}
+
+    sub_ids = [d["submission_id"] for d in declines if d.get("submission_id")]
+    declined_at_by_id = {d["submission_id"]: d.get("declined_at") for d in declines}
+
+    subs = await db.submissions.find(
+        {
+            "id": {"$in": sub_ids},
+            "status": {"$in": ["pending", "priced"]},
+            "dealership_id": {"$ne": my_dealership},
+        },
+        {
+            "_id": 0, "id": 1, "reference": 1, "make_name": 1, "model_name": 1,
+            "derivative_name": 1, "year_of_production": 1, "year_registered": 1,
+            "mileage": 1, "status": 1, "photos": 1, "vin": 1, "colour": 1,
+            "fuel_type": 1, "transmission": 1, "created_at": 1,
+        },
+    ).to_list(2000)
+
+    # Exclude subs the agent has now covered (edge case — the auto-clear
+    # in list_cover_submissions would normally have already removed the
+    # decline record).
+    my_covers = await db.cover_offers.find(
+        {"agent_user_id": current["id"], "submission_id": {"$in": [s["id"] for s in subs]}},
+        {"_id": 0, "submission_id": 1},
+    ).to_list(2000)
+    covered_ids = {c["submission_id"] for c in my_covers}
+
+    # Attach thumbnails + decline timestamps, and preserve the
+    # newest-declined-first ordering.
+    ordered: dict[str, dict] = {}
+    for s in subs:
+        if s["id"] in covered_ids:
+            continue
+        photos = s.get("photos")
+        thumb = None
+        if isinstance(photos, dict):
+            for k in ("front", "driver_side", "passenger_side", "rear", "interior"):
+                if photos.get(k):
+                    thumb = photos[k]
+                    break
+            if not thumb:
+                thumb = next((v for v in photos.values() if v), None)
+        elif isinstance(photos, list):
+            thumb = photos[0] if photos else None
+        s["thumbnail"] = thumb
+        s["declined_at"] = declined_at_by_id.get(s["id"])
+        ordered[s["id"]] = s
+
+    out = [ordered[sid] for sid in sub_ids if sid in ordered]
+    return {"submissions": out}
+
+
 @api_router.get("/cover/submissions")
 async def list_cover_submissions(current: dict = Depends(require_pricing_agent)):
     """List submissions available for a pricing agent to price.
