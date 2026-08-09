@@ -15,7 +15,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
-  Image, RefreshControl, Animated as RNAnimated, Platform,
+  Image, RefreshControl, Platform,
 } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
@@ -413,60 +413,42 @@ export default function GiveCoverScreen() {
             return `${days} day${days === 1 ? "" : "s"} ago`;
           })();
 
-          // iOS-style swipe-to-decline action rendered on the RIGHT
-          // (finger swipes leftwards to reveal). Only offered on the
-          // "Available" tab — we don't let the agent decline a cover
-          // they've already placed.
-          const renderRightActions = (
-            _progress: RNAnimated.AnimatedInterpolation<number>,
-            dragX: RNAnimated.AnimatedInterpolation<number>,
-          ) => {
-            const trans = dragX.interpolate({
-              inputRange: [-120, 0],
-              outputRange: [0, 60],
-              extrapolate: "clamp",
-            });
-            return (
-              <View style={styles.declineActionWrap}>
-                <RNAnimated.View
-                  style={[
-                    styles.declineAction,
-                    { backgroundColor: colors.danger, transform: [{ translateX: trans }] },
-                  ]}
-                >
-                  <Ionicons name="close-circle" size={20} color="#fff" />
-                  <Text style={styles.declineActionText}>Decline</Text>
-                </RNAnimated.View>
-              </View>
-            );
-          };
+          // iOS-style swipe-to-reveal-decline action rendered on the
+          // RIGHT (finger swipes leftwards to reveal). Only offered on
+          // the "Available" tab — we don't let the agent decline a
+          // cover they've already placed. Unlike iOS Mail's "full
+          // swipe auto-triggers" pattern, the user MUST tap the
+          // revealed button to actually decline — swipe alone is
+          // never destructive.
+          const renderRightActions = () => (
+            <View style={styles.declineActionWrap}>
+              <TouchableOpacity
+                testID={`cover-row-decline-action-${s.id}`}
+                onPress={() => handleDecline(s)}
+                style={[styles.declineAction, { backgroundColor: colors.danger }]}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="close-circle" size={20} color="#fff" />
+                <Text style={styles.declineActionText}>Decline</Text>
+              </TouchableOpacity>
+            </View>
+          );
 
           // Mirror swipe action for the Declined tab — swipe RIGHT to
-          // restore the submission back into Available. Same visual
-          // treatment but green + "Restore" copy.
-          const renderLeftActions = (
-            _progress: RNAnimated.AnimatedInterpolation<number>,
-            dragX: RNAnimated.AnimatedInterpolation<number>,
-          ) => {
-            const trans = dragX.interpolate({
-              inputRange: [0, 120],
-              outputRange: [-60, 0],
-              extrapolate: "clamp",
-            });
-            return (
-              <View style={styles.restoreActionWrap}>
-                <RNAnimated.View
-                  style={[
-                    styles.declineAction,
-                    { backgroundColor: colors.success, transform: [{ translateX: trans }] },
-                  ]}
-                >
-                  <Ionicons name="arrow-undo" size={20} color="#fff" />
-                  <Text style={styles.declineActionText}>Restore</Text>
-                </RNAnimated.View>
-              </View>
-            );
-          };
+          // reveal a "Restore" button that the user then taps.
+          const renderLeftActions = () => (
+            <View style={styles.restoreActionWrap}>
+              <TouchableOpacity
+                testID={`cover-row-restore-action-${s.id}`}
+                onPress={() => handleRestore(s)}
+                style={[styles.declineAction, { backgroundColor: colors.success }]}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="arrow-undo" size={20} color="#fff" />
+                <Text style={styles.declineActionText}>Restore</Text>
+              </TouchableOpacity>
+            </View>
+          );
 
           const cardInner = (
             <TouchableOpacity
@@ -547,28 +529,50 @@ export default function GiveCoverScreen() {
                   </Text>
                 ) : null}
               </View>
+              {/* On WEB only: dedicated small "×" button on the Available
+                  tab so the agent can decline without any gesture.
+                  Native intentionally hides this — the swipe gesture
+                  is the accepted UX there. */}
+              {Platform.OS === "web" && tab === "available" ? (
+                <TouchableOpacity
+                  testID={`cover-row-decline-btn-${s.id}`}
+                  onPress={(e) => {
+                    e.stopPropagation?.();
+                    handleDecline(s);
+                  }}
+                  style={[styles.webDeclineBtn, { borderColor: colors.danger + "55" }]}
+                  hitSlop={6}
+                  accessibilityLabel="Decline this cover opportunity"
+                >
+                  <Ionicons name="close" size={16} color={colors.danger} />
+                </TouchableOpacity>
+              ) : null}
               <Ionicons name="chevron-forward" size={20} color={colors.textDisabled} />
             </TouchableOpacity>
           );
 
-          // Cover-given rows are static (no swipe — the agent's already
-          // committed to a cover). Available rows swipe LEFT to decline.
-          // Declined rows swipe RIGHT to restore.
+          // Rendering rules per platform + tab:
+          //   • Web              → NEVER wrap in Swipeable (uses the ×
+          //                        button); Cover-given rows are static
+          //                        as before.
+          //   • Native Available → Wrap in Swipeable; swipe reveals the
+          //                        red "Decline" button which the user
+          //                        must TAP. Full swipe does NOT auto-
+          //                        trigger.
+          //   • Native Declined  → Wrap in Swipeable; swipe reveals the
+          //                        green "Restore" button which the user
+          //                        must TAP.
+          //   • Native Given     → Not wrapped (no action available).
+          if (Platform.OS === "web") return cardInner;
           if (covered) return cardInner;
           if (isDeclinedTab) {
             return (
               <Swipeable
                 key={s.id}
                 friction={2}
-                leftThreshold={80}
+                leftThreshold={40}
                 overshootLeft={false}
                 renderLeftActions={renderLeftActions}
-                onSwipeableOpen={(direction, ref) => {
-                  if (direction === "left") {
-                    try { ref?.close(); } catch {}
-                    handleRestore(s);
-                  }
-                }}
               >
                 {cardInner}
               </Swipeable>
@@ -578,22 +582,14 @@ export default function GiveCoverScreen() {
             <Swipeable
               key={s.id}
               friction={2}
-              rightThreshold={80}
+              rightThreshold={40}
               overshootRight={false}
               renderRightActions={renderRightActions}
-              onSwipeableWillOpen={(direction) => {
-                // Close any other open swipe row so only one shows
-                // its action at a time (matches iOS Mail UX).
+              onSwipeableWillOpen={() => {
+                // Close any other open swipe row so only one shows its
+                // action at a time (matches iOS Mail UX).
                 if (openSwipeRef.current && (openSwipeRef.current as any)._id !== s.id) {
                   try { openSwipeRef.current.close(); } catch {}
-                }
-              }}
-              onSwipeableOpen={(direction, ref) => {
-                if (direction === "right") {
-                  // Fully-opened swipe → treat as a decline. Close
-                  // immediately so the row animates out cleanly.
-                  try { ref?.close(); } catch {}
-                  handleDecline(s);
                 }
               }}
             >
@@ -772,6 +768,22 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "flex-start",
     marginBottom: spacing.sm,
+  },
+
+  // Small "×" icon button rendered on the RIGHT of each Available card
+  // on WEB only (native uses the swipe gesture instead). Sits inside
+  // the row's flexbox, right of the body text and just before the
+  // chevron. Tap → decline. Border is a light danger tint so it looks
+  // secondary next to the primary "Cover this" pill.
+  webDeclineBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 4,
+    ...(Platform.OS === "web" ? ({ cursor: "pointer" as any } as any) : {}),
   },
   declineAction: {
     width: 100,
