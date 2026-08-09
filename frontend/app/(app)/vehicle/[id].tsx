@@ -4307,13 +4307,22 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
 
   // -------- Dealer banner (submitter profile + cover + dealership) --------
+  // On desktop the containing column can be extremely wide, which used
+  // to stretch the cover banner into a shallow ~11:1 strip. We now
+  // constrain the banner to a phone-friendly max width and use a
+  // proper aspect ratio so the cover photo keeps its natural shape on
+  // every viewport (mobile, tablet, desktop).
   dealerBanner: {
     marginBottom: spacing.md,
     marginHorizontal: spacing.md,
     position: "relative",
+    width: "100%",
+    maxWidth: 520,
+    alignSelf: "center",
   },
   dealerBannerCoverClip: {
-    height: 120,
+    width: "100%",
+    aspectRatio: 3,
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
