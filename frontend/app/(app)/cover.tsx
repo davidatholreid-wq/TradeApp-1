@@ -282,10 +282,13 @@ export default function GiveCoverScreen() {
             size={15}
             color={tab === "available" ? colors.text : colors.textSecondary}
           />
-          <Text style={[
-            styles.tabBtnText,
-            { color: tab === "available" ? colors.text : colors.textSecondary },
-          ]}>
+          <Text
+            numberOfLines={1}
+            style={[
+              styles.tabBtnText,
+              { color: tab === "available" ? colors.text : colors.textSecondary },
+            ]}
+          >
             Available · {available.length}
           </Text>
         </TouchableOpacity>
@@ -303,10 +306,13 @@ export default function GiveCoverScreen() {
             size={15}
             color={tab === "given" ? colors.text : colors.textSecondary}
           />
-          <Text style={[
-            styles.tabBtnText,
-            { color: tab === "given" ? colors.text : colors.textSecondary },
-          ]}>
+          <Text
+            numberOfLines={1}
+            style={[
+              styles.tabBtnText,
+              { color: tab === "given" ? colors.text : colors.textSecondary },
+            ]}
+          >
             Cover given · {given.length}
           </Text>
         </TouchableOpacity>
@@ -324,10 +330,13 @@ export default function GiveCoverScreen() {
             size={15}
             color={tab === "declined" ? colors.text : colors.textSecondary}
           />
-          <Text style={[
-            styles.tabBtnText,
-            { color: tab === "declined" ? colors.text : colors.textSecondary },
-          ]}>
+          <Text
+            numberOfLines={1}
+            style={[
+              styles.tabBtnText,
+              { color: tab === "declined" ? colors.text : colors.textSecondary },
+            ]}
+          >
             Declined · {declinedSubs.length}
           </Text>
         </TouchableOpacity>
@@ -866,22 +875,30 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.sm,
     marginBottom: spacing.md,
+    alignItems: "center",
+    // ScrollView's inner content sizes to its children — with no
+    // flex:1 on the buttons each pill widens to fit its text on a
+    // single line ("Cover given · 12" no longer wraps).
   },
   tabBtn: {
-    flex: 1,
+    flexShrink: 0,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
     borderWidth: 1,
     borderRadius: 999,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 10,
   },
   tabBtnText: {
     fontSize: 12,
     fontWeight: "800",
     letterSpacing: 0.2,
+    // Explicit single line so long counts ("Cover given · 27") never
+    // wrap onto two lines even in narrow containers.
+    flexShrink: 0,
+    whiteSpace: "nowrap" as any,
   },
   card: {
     flexDirection: "row",
