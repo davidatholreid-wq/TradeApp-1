@@ -5089,6 +5089,7 @@ def _compute_deal_profit(deal: dict) -> dict:
     """Given a `deal` doc, return the derived P&L block used by both the
     API response and the PDF renderer. Values are None if we don't have
     enough info yet to compute them."""
+    dealer_offer = deal.get("dealer_offer_zar")
     purchase = deal.get("purchase_price_zar")
     recon = deal.get("recon_cost_zar")
     sale = deal.get("sale_price_zar")
@@ -5102,6 +5103,11 @@ def _compute_deal_profit(deal: dict) -> dict:
         if int(sale) > 0:
             margin_pct = round((profit / int(sale)) * 100, 1)
     return {
+        # Dealer's OWN pre-purchase offer to the seller. Distinct from
+        # `purchase_price_zar` which is what they eventually paid — the
+        # two often differ because of negotiation, discovered issues at
+        # inspection, etc.
+        "dealer_offer_zar": dealer_offer,
         "purchase_price_zar": purchase,
         "recon_cost_zar": recon,
         "sale_price_zar": sale,
@@ -5117,21 +5123,34 @@ async def update_submission_deal(
     payload: dict,
     current: dict = Depends(get_current_user),
 ):
-    """Dealer-only endpoint to record the outcome of the deal.
+    """Deal-tracking updates. Accepts (any subset of):
+      { "dealer_offer_zar": int,       # dealer's own pre-purchase offer
+        "done": bool|null,             # Stage 1 answer
+        "purchase_price_zar": int,     # required when done=True
+        "sold": bool|null,             # Stage 2 answer
+        "recon_cost_zar": int,         # required when sold=True (can be 0)
+        "sale_price_zar": int }        # required when sold=True
 
-    Accepts (any subset of):
-      { "done": bool|null,           # Stage 1 answer
-        "purchase_price_zar": int,   # required when done=True
-        "sold": bool|null,           # Stage 2 answer
-        "recon_cost_zar": int,       # required when sold=True (can be 0)
-        "sale_price_zar": int }      # required when sold=True
+    Access rules:
+      • Caller must be a `dealer` on the submission's dealership.
+      • Caller must additionally have `is_pricing_agent = true` — this
+        toggle is the managerial-access marker set by admins. Only
+        those users can commit dealer offers and complete the deal
+        tracking (buyer's-book style) for their dealership. Other
+        dealers on the same dealership can still SEE the fields via
+        the submission read endpoints.
 
-    Timestamps `purchased_at` / `sold_at` are stamped automatically the
-    first time each stage is flipped to True. Fields remain fully
-    editable (per user spec) so mistakes can be corrected.
+    Timestamps `purchased_at` / `sold_at` / `dealer_offer_at` are
+    stamped automatically the first time each stage is set. Fields
+    remain fully editable so mistakes can be corrected.
     """
     if current.get("role") != "dealer":
-        raise HTTPException(403, "Only the submitting dealer can update deal tracking.")
+        raise HTTPException(403, "Only the submitting dealership can update deal tracking.")
+    if not current.get("is_pricing_agent"):
+        raise HTTPException(
+            403,
+            "Only pricing agents (managerial access) on this dealership can update the deal tracking. Please ask your admin to enable your pricing access.",
+        )
 
     sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
     if not sub:
@@ -5145,6 +5164,17 @@ async def update_submission_deal(
     prev = sub.get("deal") or {}
     now_iso = datetime.now(timezone.utc).isoformat()
     deal = dict(prev)
+
+    # ------- Dealer's own offer (new Stage 0) -------
+    # Dealers set this BEFORE the seller has accepted. Storing it lets
+    # the P&L show three anchors: what we offered, what we actually
+    # paid, and what we sold it for. Also unlocks the rest of the
+    # deal-tracking flow (Stage 1/2) on the UI.
+    if "dealer_offer_zar" in payload:
+        val = _sanitise_deal_int(payload.get("dealer_offer_zar"), "dealer_offer_zar")
+        deal["dealer_offer_zar"] = val
+        if val is not None and not prev.get("dealer_offer_at"):
+            deal["dealer_offer_at"] = now_iso
 
     if "done" in payload:
         done_val = payload.get("done")
@@ -5474,6 +5504,7 @@ async def _build_profit_pdf(sub: dict, deal: dict) -> bytes:
 
     story.append(Paragraph("Deal Summary", h2))
     tbl_rows = [
+        ["Dealer offer", _r(deal.get("dealer_offer_zar")), "Offered on", _dt(deal.get("dealer_offer_at"))],
         ["Purchase price", _r(deal.get("purchase_price_zar")), "Bought on", _dt(deal.get("purchased_at"))],
         ["Reconditioning", _r(deal.get("recon_cost_zar")), "", ""],
         ["Total cost basis", _r(profit.get("cost_basis_zar")), "", ""],

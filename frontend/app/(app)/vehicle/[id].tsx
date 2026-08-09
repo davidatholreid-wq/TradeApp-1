@@ -182,11 +182,16 @@ type DealInfo = {
   sold_at?: string | null;
   recon_cost_zar?: number | null;
   sale_price_zar?: number | null;
+  // Dealer's own pre-purchase offer to the seller. Gates the rest of
+  // the Deal Tracking flow — until set, Stage 1 / Stage 2 are hidden.
+  dealer_offer_zar?: number | null;
+  dealer_offer_at?: string | null;
   updated_at?: string | null;
   updated_by_name?: string | null;
 };
 
 type DealProfit = {
+  dealer_offer_zar?: number | null;
   purchase_price_zar: number | null;
   recon_cost_zar: number | null;
   sale_price_zar: number | null;
@@ -554,6 +559,11 @@ export default function VehicleDetail() {
   const [dealPurchaseInput, setDealPurchaseInput] = useState("");
   const [dealReconInput, setDealReconInput] = useState("");
   const [dealSaleInput, setDealSaleInput] = useState("");
+  // Dealer's OWN pre-purchase offer to the seller. Gates the rest of
+  // the Deal Tracking flow — until this is set, Stage 1 / Stage 2 are
+  // hidden. Only pricing agents ("managerial access") on the owning
+  // dealership can set it.
+  const [dealOfferInput, setDealOfferInput] = useState("");
   const [dealPdfDownloading, setDealPdfDownloading] = useState(false);
   // Whenever the server-side `sub.deal` changes, mirror BOTH the tri-
   // state choices and the numeric fields into the local form state so
@@ -590,12 +600,18 @@ export default function VehicleDetail() {
         ? formatMoneyString(String(d.sale_price_zar))
         : ""
     );
+    setDealOfferInput(
+      d?.dealer_offer_zar != null
+        ? formatMoneyString(String(d.dealer_offer_zar))
+        : ""
+    );
   }, [
     (sub as any)?.deal?.done,
     (sub as any)?.deal?.sold,
     (sub as any)?.deal?.purchase_price_zar,
     (sub as any)?.deal?.recon_cost_zar,
     (sub as any)?.deal?.sale_price_zar,
+    (sub as any)?.deal?.dealer_offer_zar,
   ]);
 
   const parseMoneyInput = (raw: string): number | null => {
@@ -632,6 +648,7 @@ export default function VehicleDetail() {
         sold: boolean | null;
         recon_cost_zar: number | null;
         sale_price_zar: number | null;
+        dealer_offer_zar: number | null;
       }>,
     ) => {
       if (!sub) return;
@@ -3401,19 +3418,42 @@ export default function VehicleDetail() {
         {/* ==================== DEAL TRACKING ====================
             Positioned at the very bottom of the vehicle scroll — the
             LAST section, below Market Values, per user request. Dealer
-            records the outcome in two stages. Backend enforces both
-            visibility (pricing agents never see this) and editability
-            (only the owning dealership can PATCH). Admin sees a
-            read-only version. Hidden in cover-mode and while the vehicle
-            is still pending. */}
-        {!isCoverMode && sub.status !== "pending" ? (
+            records the outcome in three stages:
+              Stage 0: Dealer's own OFFER to the seller (new — gates
+                       the rest of the flow)
+              Stage 1: Did they do the deal? At what final price?
+              Stage 2: Have they sold it? Recon + sale.
+
+            Access rules:
+              • Only visible to users on the OWNING dealership OR an
+                admin (admins get a read-only view for oversight).
+              • Only `is_pricing_agent` users on that dealership can
+                EDIT — this toggle is the managerial-access marker.
+                Regular dealers on the same dealership see the section
+                in read-only mode.
+              • The section renders as soon as the dealership can
+                see it, but the Stage 1 / Stage 2 blocks only reveal
+                once the Dealer Offer is captured — this stops empty
+                "Did you buy it?" prompts appearing before the dealer
+                has even quoted.
+            Hidden in cover-mode and while the vehicle is still pending.
+        */}
+        {!isCoverMode && sub.status !== "pending" && (isAdmin || (user as any)?.is_pricing_agent) ? (
           (() => {
             const deal = (sub as any).deal as DealInfo | null | undefined;
             const profit = ((sub as any).deal_profit as DealProfit | null) || null;
             const done = dealDoneChoice === "yes";  // local live state
             const sold = dealSoldChoice === "yes";
-            const readOnly = isAdmin;
+            // Admin AND non-pricing-agent dealers see a read-only view.
+            // Only a `is_pricing_agent` dealer on the owning dealership
+            // can edit. `isAdmin` continues to read-only for oversight.
+            const canEdit = !isAdmin && !!((user as any)?.is_pricing_agent);
+            const readOnly = !canEdit;
             const canDownloadPdf = profit?.profit_zar != null;
+            // Gate the rest of the tracking flow on the dealer offer.
+            const hasDealerOffer =
+              (deal?.dealer_offer_zar != null) ||
+              parseMoneyInput(dealOfferInput) != null;
             // Outcome pill mirrors the LIVE choice so it updates
             // instantly when the dealer taps a pill, before hitting
             // save.
@@ -3469,6 +3509,83 @@ export default function VehicleDetail() {
                   <Text style={styles.dealOutcomePillText}>{outcomeLabel}</Text>
                 </View>
 
+                {/* ------ Stage 0: Dealer Offer ------
+                    Always visible when Deal Tracking is visible. Once
+                    set, it unlocks Stage 1 (Did you do the deal?). We
+                    keep a Save button next to the input so the value
+                    is committed independently of the full "Update
+                    Profit Analysis" save at the bottom of the card. */}
+                <View style={styles.dealStage} testID="deal-stage-0">
+                  <View style={styles.dealStageHeader}>
+                    <View style={styles.dealStagePill}>
+                      <Ionicons name="cash-outline" size={12} color={colors.text} />
+                    </View>
+                    <Text style={styles.dealStageTitle}>Your offer to the seller</Text>
+                  </View>
+                  <Text style={[styles.dealFieldHint, { marginTop: 2, marginBottom: 6 }]}>
+                    The price you quoted the seller. This unlocks the
+                    rest of the deal tracking flow below.
+                  </Text>
+                  <View style={styles.dealFieldRow}>
+                    <TextInput
+                      testID="deal-input-dealer-offer"
+                      value={dealOfferInput}
+                      onChangeText={(v) => setDealOfferInput(formatMoneyString(v))}
+                      placeholder="e.g. 380,000"
+                      placeholderTextColor={colors.textDisabled}
+                      keyboardType="numeric"
+                      editable={!readOnly && !dealSaving}
+                      style={[styles.dealInput, { flex: 1 }]}
+                    />
+                    <TouchableOpacity
+                      testID="deal-save-dealer-offer"
+                      disabled={
+                        readOnly ||
+                        dealSaving ||
+                        parseMoneyInput(dealOfferInput) == null ||
+                        parseMoneyInput(dealOfferInput) === (deal?.dealer_offer_zar ?? null)
+                      }
+                      style={[
+                        styles.dealSaveBtn,
+                        {
+                          opacity:
+                            readOnly ||
+                            dealSaving ||
+                            parseMoneyInput(dealOfferInput) == null ||
+                            parseMoneyInput(dealOfferInput) === (deal?.dealer_offer_zar ?? null)
+                              ? 0.5
+                              : 1,
+                        },
+                      ]}
+                      onPress={() =>
+                        patchDeal({ dealer_offer_zar: parseMoneyInput(dealOfferInput) })
+                      }
+                    >
+                      <Text style={styles.dealSaveBtnText}>
+                        {deal?.dealer_offer_zar != null ? "Update" : "Save"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  {deal?.dealer_offer_zar != null && deal?.dealer_offer_at ? (
+                    <Text style={[styles.dealFieldHint, { marginTop: 4 }]}>
+                      Offered {fmtZar(deal.dealer_offer_zar)} on{" "}
+                      {new Date(deal.dealer_offer_at).toLocaleDateString()}
+                    </Text>
+                  ) : null}
+                  {!canEdit ? (
+                    <Text style={[styles.dealFieldHint, { marginTop: 4, fontStyle: "italic" }]}>
+                      Only pricing agents on this dealership can enter the offer.
+                    </Text>
+                  ) : null}
+                </View>
+
+                {/* ------ Stage 1 / Stage 2 gated on dealer offer ------
+                    Everything below is hidden until the dealer has
+                    captured their initial offer. This matches the
+                    UX spec — no "Did you buy it?" prompts until the
+                    offer is on the record. */}
+                {hasDealerOffer ? (
+                <>
                 {/* ------ Stage 1: Purchase ------ */}
                 <View style={styles.dealStage} testID="deal-stage-1">
                   <View style={styles.dealStageHeader}>
@@ -3736,6 +3853,8 @@ export default function VehicleDetail() {
                       </TouchableOpacity>
                     ) : null}
                   </View>
+                ) : null}
+                </>
                 ) : null}
               </View>
             );
