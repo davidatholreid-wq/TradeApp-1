@@ -12,6 +12,7 @@ import DealersScreen from "@/app/(app)/dealers";
 import KredoTestScreen from "@/app/(app)/kredo-test";
 import AdminRewardsScreen from "@/src/components/AdminRewardsScreen";
 import AdminAdvertisingScreen from "@/src/components/AdminAdvertisingScreen";
+import AdminCatalogueScreen from "@/src/components/AdminCatalogueScreen";
 import PhotoCarousel, { CarouselPhoto } from "@/src/components/PhotoCarousel";
 import ConditionRatingInfoModal from "@/src/components/ConditionRatingInfoModal";
 import ComparableListingsCard from "@/src/components/ComparableListingsCard";
@@ -229,7 +230,7 @@ function formatReportName(type: string): string {
 }
 
 type Bucket = "incoming" | "priced" | "archived";
-type CockpitView = "home" | "submissions" | "dealers" | "billing" | "rewards" | "kredo" | "ads";
+type CockpitView = "home" | "submissions" | "dealers" | "billing" | "rewards" | "kredo" | "ads" | "catalogue";
 
 export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }) {
   const colors = useThemeColors();
@@ -749,6 +750,16 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 Advertising
               </Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              testID="cockpit-view-catalogue"
+              style={[styles.viewBtn, view === "catalogue" && styles.viewBtnActive]}
+              onPress={() => setView("catalogue")}
+            >
+              <Ionicons name="car-sport" size={14} color={view === "catalogue" ? colors.onPrimary : colors.text} />
+              <Text style={[styles.viewBtnText, view === "catalogue" && styles.viewBtnTextActive]}>
+                Catalogue
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
         <View style={styles.topbarRight}>
@@ -1129,6 +1140,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
               { key: "rewards", label: "Rewards", hint: "Points, referrals & vouchers", icon: "gift" as const, tint: "#F97316" },
               { key: "kredo", label: "Kredo", hint: "VIN reports & CarTrust tools", icon: "pricetag" as const, tint: "#F43F5E" },
               { key: "ads", label: "Advertising", hint: "Manage home-page ad tiles", icon: "megaphone" as const, tint: "#A78BFA" },
+              { key: "catalogue", label: "Make Catalogue", hint: "Choose which makes & models dealers can pick", icon: "car-sport" as const, tint: "#0EA5E9" },
             ].map((t) => (
               <TouchableOpacity
                 key={t.key}
@@ -1165,6 +1177,10 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
       ) : view === "ads" ? (
         <View style={{ flex: 1 }}>
           <AdminAdvertisingScreen />
+        </View>
+      ) : view === "catalogue" ? (
+        <View style={{ flex: 1 }}>
+          <AdminCatalogueScreen />
         </View>
       ) : (
       <View style={styles.body}>

@@ -462,6 +462,26 @@ async def get_user_flexible(
     raise HTTPException(401, "Missing authentication")
 
 
+async def get_optional_user(
+    authorization: Optional[str] = Header(None),
+) -> Optional[dict]:
+    """Best-effort auth. Returns the user if a valid Bearer token is
+    present, otherwise returns None WITHOUT raising. Used by public-ish
+    GET endpoints (e.g. `/vehicles/options`) that want to serve
+    unauthenticated callers with the default rules but apply role-based
+    tweaks when the caller happens to be logged in.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization.split(" ", 1)[1]
+    try:
+        return await _resolve_user_from_token(token)
+    except HTTPException:
+        return None
+    except Exception:
+        return None
+
+
 async def require_admin(current: dict = Depends(get_current_user)) -> dict:
     if current.get("role") != "admin":
         raise HTTPException(403, "Admin access required")
@@ -1276,6 +1296,7 @@ async def vehicle_options(
     transmission: Optional[str] = None,
     model: Optional[str] = None,
     derivative: Optional[str] = None,
+    current: Optional[dict] = Depends(get_optional_user),
 ):
     """Progressive filter over the seeded Disk Drive-shaped vehicle spec DB.
 
@@ -1287,6 +1308,11 @@ async def vehicle_options(
     `derivative` is an optional post-selection filter used by the client to
     look up the full manufacture-year range of a single variant so we can
     warn when the registration year falls outside it.
+
+    Admin-visibility filter: dealers (and unauthenticated callers) never
+    see makes or models that the admin has disabled in the Make
+    Catalogue. Admins bypass the filter so they can still see the full
+    flatfile for review purposes.
     """
     query: dict = {}
     if make:
@@ -1304,6 +1330,25 @@ async def vehicle_options(
 
     rows = await db.vehicle_specs.find(query, {"_id": 0}).to_list(50000)
 
+    # Apply the admin curation for non-admin callers.
+    is_admin = bool(current and current.get("role") == "admin")
+    if not is_admin:
+        settings = await _load_catalogue_settings()
+        disabled_makes = set(settings.get("disabled_makes") or [])
+        disabled_models = {
+            k: set(v or []) for k, v in (settings.get("disabled_models") or {}).items()
+        }
+        if disabled_makes or disabled_models:
+            def _keep(row: dict) -> bool:
+                mk = row.get("make")
+                md = row.get("model")
+                if mk in disabled_makes:
+                    return False
+                if mk and md and md in disabled_models.get(mk, set()):
+                    return False
+                return True
+            rows = [r for r in rows if _keep(r)]
+
     def distinct_sorted(key: str, numeric: bool = False):
         vals = sorted({r[key] for r in rows if r.get(key) is not None}, reverse=numeric)
         return list(vals)
@@ -1316,6 +1361,178 @@ async def vehicle_options(
         "models": distinct_sorted("model"),
         "derivatives": distinct_sorted("derivative"),
         "count": len(rows),
+    }
+
+
+# ============ Admin: Make/Model catalogue curation ============
+# `catalogue_settings` holds a single doc with the sets of makes and
+# models the admin has hidden from the dealer submit dropdown. We store
+# the DISABLED sets (not the enabled ones) so the default state — an
+# empty document — means "everything is visible", which matches the
+# behaviour that shipped before this feature.
+CATALOGUE_SETTINGS_ID = "singleton"
+
+
+async def _load_catalogue_settings() -> dict:
+    doc = await db.catalogue_settings.find_one(
+        {"_id": CATALOGUE_SETTINGS_ID}, {"_id": 0}
+    )
+    if not doc:
+        return {"disabled_makes": [], "disabled_models": {}}
+    return {
+        "disabled_makes": list(doc.get("disabled_makes") or []),
+        # `disabled_models` is stored as {make: [model, model, ...]}. We
+        # rebuild empty containers defensively so callers can always
+        # `.get(make, [])` without KeyErrors.
+        "disabled_models": {
+            str(k): list(v or []) for k, v in (doc.get("disabled_models") or {}).items()
+        },
+    }
+
+
+async def _is_make_visible_to_dealer(make: str) -> bool:
+    """Fast helper for dealer-facing filters. Returns True unless the
+    make is in the disabled set."""
+    if not make:
+        return True
+    settings = await _load_catalogue_settings()
+    return make not in set(settings.get("disabled_makes") or [])
+
+
+@api_router.get("/admin/makes-catalogue")
+async def admin_get_makes_catalogue(current: dict = Depends(get_current_user)):
+    """Admin-only. Returns every make + model in the seeded vehicle_specs
+    collection along with an `enabled` flag and per-item live-submission
+    counts (so the admin can see the impact of hiding a brand). The
+    payload is designed to power the "Make Catalogue" screen in
+    WebAdminDashboard."""
+    if current.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+
+    # 1) Pull every distinct make/model pair from the flatfile-seeded
+    # vehicle_specs collection. `distinct` on a compound is not ideal
+    # in Motor, so we do an aggregation.
+    pipe = [
+        {"$group": {"_id": {"make": "$make", "model": "$model"}}},
+        {"$sort": {"_id.make": 1, "_id.model": 1}},
+    ]
+    pairs = await db.vehicle_specs.aggregate(pipe).to_list(50000)
+
+    make_to_models: dict[str, list[str]] = {}
+    for row in pairs:
+        _id = row.get("_id") or {}
+        mk = _id.get("make")
+        md = _id.get("model")
+        if not mk:
+            continue
+        make_to_models.setdefault(mk, [])
+        if md and md not in make_to_models[mk]:
+            make_to_models[mk].append(md)
+
+    # 2) Live submission counts (grouped by make → model). Useful UX
+    # signal: "hiding this make will remove 34 submissions from dealer
+    # dropdowns, though existing ones still open fine". We just count
+    # non-draft submissions.
+    sub_pipe = [
+        {"$match": {"status": {"$ne": "draft"}}},
+        {"$group": {"_id": {"make": "$make", "model": "$model"}, "n": {"$sum": 1}}},
+    ]
+    sub_counts = await db.submissions.aggregate(sub_pipe).to_list(50000)
+    make_counts: dict[str, int] = {}
+    model_counts: dict[tuple, int] = {}
+    for row in sub_counts:
+        _id = row.get("_id") or {}
+        mk = _id.get("make")
+        md = _id.get("model")
+        n = int(row.get("n") or 0)
+        if not mk:
+            continue
+        make_counts[mk] = make_counts.get(mk, 0) + n
+        if md:
+            model_counts[(mk, md)] = model_counts.get((mk, md), 0) + n
+
+    # 3) Merge with current enabled/disabled state.
+    settings = await _load_catalogue_settings()
+    disabled_makes = set(settings.get("disabled_makes") or [])
+    disabled_models = {
+        k: set(v or []) for k, v in (settings.get("disabled_models") or {}).items()
+    }
+
+    makes_out = []
+    for mk in sorted(make_to_models.keys(), key=lambda s: s.lower()):
+        models = make_to_models[mk]
+        makes_out.append({
+            "name": mk,
+            "enabled": mk not in disabled_makes,
+            "submission_count": make_counts.get(mk, 0),
+            "model_count": len(models),
+            "models": [
+                {
+                    "name": md,
+                    "enabled": md not in disabled_models.get(mk, set()),
+                    "submission_count": model_counts.get((mk, md), 0),
+                }
+                for md in sorted(models, key=lambda s: s.lower())
+            ],
+        })
+
+    return {
+        "makes": makes_out,
+        "total_makes": len(makes_out),
+        "enabled_makes": sum(1 for m in makes_out if m["enabled"]),
+    }
+
+
+class MakesCataloguePatch(BaseModel):
+    # Full replace semantics — the client sends the complete current
+    # disabled sets. This makes multi-toggle UX trivial and avoids
+    # accidental drift from partial updates.
+    disabled_makes: list[str] = []
+    disabled_models: dict[str, list[str]] = {}
+
+
+@api_router.patch("/admin/makes-catalogue")
+async def admin_patch_makes_catalogue(
+    payload: MakesCataloguePatch, current: dict = Depends(get_current_user)
+):
+    """Admin-only. Replaces the disabled makes / models sets."""
+    if current.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+
+    # Sanitise: drop empties, dedupe, and drop entries for makes that
+    # aren't in the flatfile any more (so a Kredo refresh doesn't leave
+    # ghost rules around).
+    known_makes = await db.vehicle_specs.distinct("make")
+    known_makes_set = {m for m in known_makes if m}
+
+    disabled_makes = sorted({m.strip() for m in (payload.disabled_makes or []) if m and m.strip() in known_makes_set})
+
+    disabled_models_clean: dict[str, list[str]] = {}
+    for mk, mds in (payload.disabled_models or {}).items():
+        mk_clean = (mk or "").strip()
+        if not mk_clean or mk_clean not in known_makes_set:
+            continue
+        # Only keep model names that still exist for that make.
+        known_models = await db.vehicle_specs.distinct("model", {"make": mk_clean})
+        known_models_set = {m for m in known_models if m}
+        cleaned = sorted({m.strip() for m in (mds or []) if m and m.strip() in known_models_set})
+        if cleaned:
+            disabled_models_clean[mk_clean] = cleaned
+
+    await db.catalogue_settings.update_one(
+        {"_id": CATALOGUE_SETTINGS_ID},
+        {"$set": {
+            "disabled_makes": disabled_makes,
+            "disabled_models": disabled_models_clean,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_by": current.get("id"),
+        }},
+        upsert=True,
+    )
+    return {
+        "status": "ok",
+        "disabled_makes": disabled_makes,
+        "disabled_models": disabled_models_clean,
     }
 
 
