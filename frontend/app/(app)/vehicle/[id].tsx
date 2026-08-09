@@ -5223,7 +5223,11 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
   // -------- Deal Tracking & Profit Analysis (dealer + admin only) --------
   dealBox: {
-    marginHorizontal: spacing.lg,
+    // Match the width of the sibling Dealer Offer card above — the
+    // parent scroll's padding already provides horizontal insets, so
+    // no extra `marginHorizontal` is needed here. `marginTop` gives
+    // clear vertical separation from the Dealer Offer card.
+    marginTop: spacing.md,
     marginBottom: spacing.md,
     padding: spacing.md,
     borderRadius: radius.md,
