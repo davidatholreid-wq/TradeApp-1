@@ -8750,7 +8750,19 @@ async def list_covers_for_submission(sub_id: str, current: dict = Depends(get_cu
     if agent_ids:
         async for u in db.users.find(
             {"id": {"$in": agent_ids}},
-            {"_id": 0, "id": 1, "dealer_info": 1, "dealership_id": 1},
+            {
+                "_id": 0,
+                "id": 1,
+                "dealer_info": 1,
+                "dealership_id": 1,
+                # `profile_pic` lives at the top-level of the user
+                # document (Cloudinary URL, populated via the profile
+                # editor). Older code looked for `dealer_info.
+                # profile_photo` which was never populated — that's why
+                # cover rows rendered the fallback initial disc even
+                # when the agent had uploaded a proper avatar.
+                "profile_pic": 1,
+            },
         ):
             info = u.get("dealer_info") or {}
             agents[u["id"]] = {
@@ -8761,8 +8773,10 @@ async def list_covers_for_submission(sub_id: str, current: dict = Depends(get_cu
                 "dealership_id": u.get("dealership_id"),
                 # Round profile pic rendered next to the agent's name in
                 # the covers row so the receiving dealer instantly
-                # recognises who placed the bind.
-                "profile_pic": info.get("profile_photo") or None,
+                # recognises who placed the bind. Fall back to the
+                # legacy `dealer_info.profile_photo` key just in case
+                # older records still use it.
+                "profile_pic": u.get("profile_pic") or info.get("profile_photo") or None,
             }
     # Attach dealership names in one batch.
     dship_ids = list({a["dealership_id"] for a in agents.values() if a.get("dealership_id")})
