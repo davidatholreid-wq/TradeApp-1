@@ -2757,7 +2757,7 @@ def _compute_service_gap(sub: dict) -> dict:
     return out
 
 
-async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
+async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) -> bytes:
     """Render the valuation as an app-like monochrome A4 PDF using reportlab.
 
     Photo layout mirrors the mobile valuation screen: black header band with
@@ -2910,7 +2910,46 @@ async def _build_valuation_pdf(sub: dict, reports: list) -> bytes:
     ]))
     story.append(hdr)
 
-    # ============ VEHICLE TITLE ============
+    # ============ EXPIRED SNAPSHOT BANNER ============
+    # When the caller requests a PDF for a submission that has moved to
+    # the archived bucket, prepend a bold red banner making clear this
+    # is a snapshot of historical data — the sub is no longer live.
+    if expired:
+        archived_iso = sub.get("archived_at") or sub.get("priced_at") or sub.get("submitted_at") or ""
+        try:
+            archived_display = (
+                datetime.fromisoformat(str(archived_iso).replace("Z", "+00:00"))
+                .strftime("%d %b %Y")
+            ) if archived_iso else ""
+        except Exception:
+            archived_display = str(archived_iso or "")
+        expired_tbl = Table(
+            [[
+                Paragraph(
+                    "<b>SUBMISSION EXPIRED</b> — Snapshot of the record as it was at archival"
+                    + (f" ({archived_display})" if archived_display else "")
+                    + ". The live valuation is no longer accessible; re-submit the vehicle for a fresh offer.",
+                    ParagraphStyle(
+                        "ExpiredBanner",
+                        fontName="Helvetica-Bold",
+                        fontSize=9,
+                        leading=11,
+                        textColor=rl_colors.white,
+                    ),
+                )
+            ]],
+            colWidths=[CONTENT_W_MM * mm],
+        )
+        expired_tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor("#B3261E")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ]))
+        story.append(Spacer(1, 4))
+        story.append(expired_tbl)
+        story.append(Spacer(1, 4))
     year = sub.get("year_registered") or sub.get("year") or sub.get("year_of_production") or ""
     title_line = " ".join(str(x) for x in [year, sub.get("make_name"), sub.get("model_name")] if x)
     # Split the subtitle across two lines so a long derivative doesn't fight
@@ -4901,12 +4940,19 @@ async def download_valuation_pdf(sub_id: str, current: dict = Depends(get_user_f
     if sub.get("status") != "priced":
         raise HTTPException(400, "Valuation PDF is available only after an offer has been received")
 
+    # If the submission has moved to the "archived" bucket, we STILL let
+    # the owner download a snapshot PDF (they can't access the live
+    # detail screen anymore, but the PDF is a permanent historical
+    # record). The renderer stamps a red "SUBMISSION EXPIRED" banner
+    # on page 1 so the dealer knows they're looking at a snapshot.
+    expired = compute_bucket(sub) == "archived"
+
     reports = await db.report_orders.find(
         {"submission_id": sub_id}, {"_id": 0}
     ).sort("ordered_at", 1).to_list(50)
 
     try:
-        pdf_bytes = await _build_valuation_pdf(sub, reports)
+        pdf_bytes = await _build_valuation_pdf(sub, reports, expired=expired)
     except Exception as e:
         logger.exception("PDF generation failed")
         raise HTTPException(500, f"Failed to generate PDF: {e}")

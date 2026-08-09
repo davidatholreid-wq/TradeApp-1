@@ -1581,7 +1581,73 @@ export default function VehicleDetail() {
               has elapsed or it was archived by an admin. To view an
               updated valuation, please re-submit the vehicle.
             </Text>
-            <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm }}>
+            <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm, flexWrap: "wrap", justifyContent: "center" }}>
+              <TouchableOpacity
+                testID="expired-download-pdf"
+                onPress={async () => {
+                  // Download the last-known-good snapshot. The backend
+                  // stamps a red "SUBMISSION EXPIRED" banner on page 1
+                  // so the dealer never mistakes this for a live doc.
+                  try {
+                    // IMPORTANT: use TOKEN_KEY (== "app.auth.token"), NOT
+                    // the literal "token" — the auth key was previously
+                    // wrong here which caused every archived-PDF fetch
+                    // to hit the backend without an Authorization header
+                    // and receive a 401.
+                    const token = await storage.getItem(TOKEN_KEY);
+                    const base = process.env.EXPO_PUBLIC_BACKEND_URL || "";
+                    const fetchUrl = `${base}/api/submissions/${id}/valuation.pdf`;
+                    const res = await fetch(fetchUrl, {
+                      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+                    });
+                    if (!res.ok) throw new Error(`Server returned ${res.status}`);
+                    const blob = await res.blob();
+                    if (Platform.OS === "web") {
+                      const dl = URL.createObjectURL(blob);
+                      const a = (globalThis as any).document?.createElement?.("a");
+                      if (a) {
+                        a.href = dl;
+                        a.download = `valuation_${id}_expired.pdf`;
+                        a.click();
+                        setTimeout(() => URL.revokeObjectURL(dl), 60_000);
+                      }
+                    } else {
+                      // Native: write the blob to the cache dir as a
+                      // real .pdf and hand it to the OS viewer / share
+                      // sheet. We can't rely on `Linking.openURL` for
+                      // the raw API URL because it wouldn't carry the
+                      // Authorization header.
+                      const b64: string = await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+                        reader.onerror = () => reject(reader.error);
+                        reader.readAsDataURL(blob);
+                      });
+                      const path = `${FileSystem.cacheDirectory}valuation_${id}_expired.pdf`;
+                      await FileSystem.writeAsStringAsync(path, b64, { encoding: FileSystem.EncodingType.Base64 });
+                      await WebBrowser.openBrowserAsync(path);
+                    }
+                  } catch (err: any) {
+                    Alert.alert("Could not download PDF", err?.message || "Please try again shortly.");
+                  }
+                }}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                  paddingHorizontal: 18,
+                  paddingVertical: 10,
+                  borderRadius: radius.sm,
+                  borderWidth: 1,
+                  borderColor: "#E31C24",
+                }}
+                accessibilityRole="button"
+              >
+                <View style={{ backgroundColor: "#E31C24", paddingHorizontal: 6, paddingVertical: 3, borderRadius: 4 }}>
+                  <Text style={{ color: "#fff", fontSize: 10, fontWeight: "800", letterSpacing: 1 }}>PDF</Text>
+                </View>
+                <Text style={{ color: "#E31C24", fontWeight: "800" }}>Download snapshot</Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => router.push("/(app)/submit" as any)}
                 style={{ paddingHorizontal: 18, paddingVertical: 10, borderRadius: radius.sm, backgroundColor: colors.primary }}
