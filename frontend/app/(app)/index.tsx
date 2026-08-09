@@ -336,6 +336,7 @@ export default function HomeScreen() {
                   <TakealotRewardsTile
                     onNavigate={() => router.push(qa.to as never)}
                     styles={styles}
+                    colors={colors}
                   />
                 ) : (
                   <NavFlipTile
@@ -515,20 +516,20 @@ export default function HomeScreen() {
 // so the bottom tab bar can stay lean.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// TakealotRewardsTile — dedicated co-branded tile for the Rewards module.
-//
-// Same size/position as the other NavFlipTiles in the quickActions grid so
-// the layout doesn't reflow, but styled with Takealot's signature blue
-// backdrop and the takealot.com wordmark so dealers instantly recognise
-// where their vouchers can be spent. Preserves the flip-on-tap navigation
-// gesture used by NavFlipTile for a consistent feel across the grid.
+// TakealotRewardsTile — co-branded Rewards tile matching the app's dark
+// theme. Fourbuy Rewards is the hero; the Takealot lockup sits as a
+// small "powered by" badge at the bottom. Uses the actual takealot.png
+// asset (which is a blue-backed logo block) as a compact chip so the
+// partner brand still reads clearly without dominating the tile.
 // ---------------------------------------------------------------------------
 function TakealotRewardsTile({
   onNavigate,
   styles,
+  colors,
 }: {
   onNavigate: () => void;
   styles: ReturnType<typeof makeStyles>;
+  colors: Palette;
 }) {
   const rot = useSharedValue(0);
   const scale = useSharedValue(1);
@@ -552,10 +553,10 @@ function TakealotRewardsTile({
     );
   }, [rot, scale, onNavigate]);
 
-  // Takealot brand blue lifted directly from the assets/brands/takealot.png
-  // background — kept on-file so we don't drift from the partner's colour
-  // system if the PNG is ever refreshed.
-  const takealotBlue = "#0F73B8";
+  // Warm gold accent for the REWARDS eyebrow — subtle enough to match
+  // the theme but distinct from the blue/green/violet tints used by
+  // sibling tiles. Reads as premium without shouting.
+  const rewardsAccent = "#F59E0B";
 
   return (
     <Pressable
@@ -569,43 +570,57 @@ function TakealotRewardsTile({
         style={[
           styles.quickCard,
           styles.takealotCard,
-          { backgroundColor: takealotBlue, borderColor: takealotBlue },
+          { borderColor: rewardsAccent + "44" },
           faceStyle,
         ]}
       >
-        {/* Subtle radial highlight so the tile has depth even though it's
-            a flat brand-blue block. Top-left to bottom-right for a soft
-            gloss effect. */}
+        {/* Warm gradient wash keyed off the gold accent — matches how
+            the other NavFlipTiles use their tint colour but tuned way
+            softer so this tile still reads as neutral / theme-native. */}
         <LinearGradient
-          colors={["#ffffff22", "#ffffff08", "transparent"]}
+          colors={[rewardsAccent + "22", rewardsAccent + "0A", "transparent"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
           pointerEvents="none"
         />
-        {/* Small eyebrow badge — mirrors the "LIVE" / eyebrow styling
-            used elsewhere on the home page so this tile feels native. */}
-        <View style={styles.takealotEyebrowWrap}>
-          <Ionicons name="gift" size={12} color="#ffffffcc" />
-          <Text style={styles.takealotEyebrow}>REWARDS</Text>
+
+        {/* Eyebrow row — "REWARDS" pill with a gift icon in the gold
+            accent so the label reads clearly on the dark surface. */}
+        <View
+          style={[
+            styles.takealotEyebrowWrap,
+            { backgroundColor: rewardsAccent + "22", borderColor: rewardsAccent + "66" },
+          ]}
+        >
+          <Ionicons name="gift" size={11} color={rewardsAccent} />
+          <Text style={[styles.takealotEyebrow, { color: rewardsAccent }]}>REWARDS</Text>
         </View>
 
-        {/* Wordmark — we intentionally use a text lockup rather than a
-            second copy of the PNG so we control the type scale + colour
-            contrast against the blue backdrop. The `.com` badge lives
-            beside it just like the official mark. */}
-        <View style={styles.takealotWordmarkRow}>
-          <Text style={styles.takealotWord}>takealot</Text>
-          <View style={styles.takealotComPill}>
-            <Text style={styles.takealotComText}>com</Text>
-          </View>
-        </View>
+        {/* Hero title — the primary product name */}
+        <Text style={[styles.takealotTitle, { color: colors.text }]}>Fourbuy Rewards</Text>
+        <Text style={[styles.takealotSubtitle, { color: colors.textSecondary }]}>
+          Earn points on every deal
+        </Text>
 
-        {/* Primary label + subtitle: makes the co-brand relationship
-            explicit — "Fourbuy Rewards" is the product, "Powered by
-            takealot.com" is the fulfilment partner. */}
-        <Text style={styles.takealotTitle}>Fourbuy Rewards</Text>
-        <Text style={styles.takealotSubtitle}>Powered by takealot.com</Text>
+        {/* Thin divider so the "powered by" lockup feels like a
+            secondary attribution, not a competing brand. */}
+        <View style={[styles.takealotDivider, { backgroundColor: colors.border }]} />
+
+        {/* Powered by — small caps eyebrow + the actual Takealot logo
+            asset as a tight, rounded chip. Using the PNG (not a text
+            lockup) so the partner mark is unmistakably real. */}
+        <View style={styles.takealotPoweredRow}>
+          <Text style={[styles.takealotPoweredBy, { color: colors.textDisabled }]}>
+            POWERED BY
+          </Text>
+          <Image
+            source={require("@/assets/brands/takealot.png")}
+            style={styles.takealotLogoImg}
+            resizeMode="contain"
+            accessibilityLabel="takealot.com"
+          />
+        </View>
       </Animated.View>
     </Pressable>
   );
@@ -1210,82 +1225,75 @@ const makeStyles = (colors: Palette, isWide: boolean) => {
     },
 
     // ---- Takealot co-branded rewards tile ----
-    // Same minHeight/padding footprint as quickCard so it slots into the
-    // grid perfectly, but with a solid brand-blue backdrop and a bespoke
-    // vertical layout: eyebrow → wordmark → title → subtitle.
+    // Grey/theme-matched surface — uses the same `paper` background as
+    // sibling NavFlipTiles so the tile feels native. A warm gold eyebrow
+    // pill + a divider + a "Powered by [takealot logo]" footer give
+    // Fourbuy Rewards the hero role without shouting the partner brand.
     takealotCard: {
+      backgroundColor: colors.paper,
       alignItems: "center",
-      justifyContent: "center",
+      justifyContent: "space-between",
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.md,
       gap: 6,
-      shadowColor: "#0F73B8",
-      shadowOpacity: Platform.OS === "web" ? 0.12 : 0.25,
-      shadowRadius: 10,
-      shadowOffset: { width: 0, height: 4 },
     },
     takealotEyebrowWrap: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 4,
-      backgroundColor: "#ffffff22",
+      gap: 5,
       paddingHorizontal: 8,
       paddingVertical: 3,
       borderRadius: 999,
+      borderWidth: 1,
       marginBottom: 2,
     },
     takealotEyebrow: {
-      color: "#ffffffcc",
       fontSize: 10,
       fontWeight: "900",
       letterSpacing: 1.2,
     },
-    takealotWordmarkRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 4,
-    },
-    takealotWord: {
-      color: "#fff",
-      // Bold rounded feel to approximate the takealot.com wordmark.
-      // Explicit `fontWeight: "900"` looks right on both iOS system font
-      // and the web fallback stack.
-      fontSize: isWide ? 30 : 26,
-      fontWeight: "900",
-      letterSpacing: -1,
-      // Slight italic tightening reads more like the real wordmark.
-      // Keep the built-in system font — good enough without shipping
-      // an extra font file just for a tile.
-    },
-    takealotComPill: {
-      backgroundColor: "#fff",
-      borderRadius: 999,
-      paddingHorizontal: 6,
-      paddingVertical: 2,
-      minWidth: 26,
-      alignItems: "center",
-      justifyContent: "center",
-      marginTop: 4,
-    },
-    takealotComText: {
-      color: "#0F73B8",
-      fontSize: 10,
-      fontWeight: "900",
-      letterSpacing: 0.3,
-    },
     takealotTitle: {
-      color: "#fff",
-      fontSize: isWide ? 15 : 14,
-      fontWeight: "800",
-      marginTop: 6,
+      fontSize: isWide ? 18 : 17,
+      fontWeight: "900",
       textAlign: "center",
+      letterSpacing: -0.3,
+      marginTop: 2,
     },
     takealotSubtitle: {
-      color: "#ffffffcc",
       fontSize: 11,
       fontWeight: "600",
       textAlign: "center",
-      letterSpacing: 0.2,
+      letterSpacing: 0.1,
+    },
+    // Thin divider bar between the hero title and the "powered by"
+    // attribution. Uses the surrounding theme border colour so it
+    // reads as a subtle horizontal rule.
+    takealotDivider: {
+      width: "60%",
+      height: 1,
+      marginVertical: 8,
+      opacity: 0.6,
+    },
+    takealotPoweredRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      marginTop: 2,
+    },
+    takealotPoweredBy: {
+      fontSize: 9,
+      fontWeight: "800",
+      letterSpacing: 1.4,
+    },
+    // The takealot.png asset is a full square blue block with the
+    // wordmark centered. Rendered at 40×40 as a rounded chip so the
+    // "takealot.com" mark is legible without the tile drifting from
+    // the app's grey theme.
+    takealotLogoImg: {
+      width: 40,
+      height: 40,
+      borderRadius: 6,
+      overflow: "hidden",
     },
     // Legacy CTA styles (kept for backwards-compat in case a caller uses
     // them elsewhere — unused by NavFlipTile now).
