@@ -523,6 +523,11 @@ export default function VehicleDetail() {
     binding_caveat?: string | null;
   };
   const [coverOffers, setCoverOffers] = useState<CoverOffer[]>([]);
+  // Both the Cover Offers Received panel and the Fourbuy Offer History
+  // are collapsed by default so the top of the page stays tight — the
+  // dealer opens them on demand.
+  const [coverOffersOpen, setCoverOffersOpen] = useState(false);
+  const [priceHistoryOpen, setPriceHistoryOpen] = useState(false);
 
   // Cover-mode meta: the pricing agent's own placed cover (if any) and
   // the R10 cost we bill per cover placement. Only populated when
@@ -1838,7 +1843,7 @@ export default function VehicleDetail() {
         {isCoverMode ? null : sub.status === "priced" ? (
           <View style={styles.priceBanner} testID="price-banner">
             <View>
-              <Text style={styles.priceLabel}>OFFER RECEIVED</Text>
+              <Text style={styles.priceLabel}>FOURBUY OFFER</Text>
               <Text style={styles.priceValue}>{formatZAR(sub.price)}</Text>
               {sub.price_notes ? <Text style={styles.priceNotes}>{sub.price_notes}</Text> : null}
             </View>
@@ -1873,76 +1878,116 @@ export default function VehicleDetail() {
             (the backend simply returns [] to everyone else). Each row
             shows the agent's name, dealership, cover price, and a
             WhatsApp CTA that opens a chat pre-filled with the vehicle
-            reference. Sorted by price desc by the backend. */}
+            reference. Sorted by price desc by the backend.
+
+            The panel is collapsible so it doesn't hog the top of the
+            page — closed by default. When closed, we still show a peek
+            of the HIGHEST cover so the dealer knows the top of the
+            market at a glance without opening the panel. */}
         {coverOffers.length > 0 && !isCoverMode ? (
           <View style={styles.coverOffersBox} testID="cover-offers-received">
-            <View style={styles.coverOffersHeader}>
+            <TouchableOpacity
+              testID="cover-offers-toggle"
+              style={styles.coverOffersHeader}
+              onPress={() => setCoverOffersOpen((v) => !v)}
+              accessibilityRole="button"
+              accessibilityLabel={
+                coverOffersOpen ? "Collapse cover offers" : "Expand cover offers"
+              }
+            >
               <Ionicons name="shield-checkmark" size={18} color={colors.primary} />
-              <Text style={styles.coverOffersTitle}>
-                Cover Offers Received ({coverOffers.length})
-              </Text>
-            </View>
-            <Text style={styles.coverOffersSub}>
-              Binding cover from Fourbuy Pricing Agents · subject to physical inspection.
-            </Text>
-            {coverOffers.map((c, idx) => {
-              const phoneDigits = (c.agent_phone || "").replace(/[^0-9]/g, "");
-              // South-African local numbers → E.164 for wa.me (drop leading 0, add 27).
-              const waNumber =
-                phoneDigits.startsWith("27")
-                  ? phoneDigits
-                  : phoneDigits.startsWith("0")
-                    ? "27" + phoneDigits.slice(1)
-                    : phoneDigits;
-              const waMessage = encodeURIComponent(
-                `Hi ${c.agent_name || "there"}, this is regarding your cover of R${c.price_zar.toLocaleString()} on ${sub.reference || "our vehicle"} (${[sub.make_name, sub.model_name].filter(Boolean).join(" ")}).`
-              );
-              const waUrl = waNumber ? `https://wa.me/${waNumber}?text=${waMessage}` : null;
-              return (
-                <View
-                  key={c.id}
-                  style={[
-                    styles.coverOfferRow,
-                    idx === coverOffers.length - 1 && { borderBottomWidth: 0 },
-                  ]}
-                  testID={`cover-offer-${c.id}`}
-                >
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={styles.coverOfferPrice}>
-                      R{c.price_zar.toLocaleString()}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.coverOffersTitle}>
+                  Cover Offers Received ({coverOffers.length})
+                </Text>
+                {!coverOffersOpen && coverOffers[0] ? (
+                  // Backend already sorts DESC by price so `[0]` is
+                  // the highest. Render it as a compact single-line
+                  // "peek" — dealer opens the panel for the full list.
+                  <Text style={styles.coverOffersPeek} numberOfLines={1}>
+                    Top: <Text style={{ color: colors.text, fontWeight: "800" }}>
+                      R{coverOffers[0].price_zar.toLocaleString()}
                     </Text>
-                    <Text style={styles.coverOfferAgent} numberOfLines={1}>
-                      {c.agent_name || "Pricing agent"}
-                      {c.agent_dealership_name ? ` · ${c.agent_dealership_name}` : ""}
-                    </Text>
-                    <Text style={styles.coverOfferDate}>
-                      {new Date(c.created_at).toLocaleString()}
-                    </Text>
-                    {c.note ? (
-                      <Text style={styles.coverOfferNote}>{c.note}</Text>
-                    ) : null}
-                  </View>
-                  {waUrl ? (
-                    <TouchableOpacity
-                      testID={`cover-offer-whatsapp-${c.id}`}
-                      style={styles.whatsappBtn}
-                      onPress={() => {
-                        if (Platform.OS === "web") {
-                          (globalThis as any).window?.open?.(waUrl, "_blank");
-                        } else {
-                          Linking.openURL(waUrl).catch(() => {});
-                        }
-                      }}
+                    {coverOffers[0].agent_name
+                      ? ` · ${coverOffers[0].agent_name}`
+                      : ""}
+                    {coverOffers[0].agent_dealership_name
+                      ? ` · ${coverOffers[0].agent_dealership_name}`
+                      : ""}
+                  </Text>
+                ) : null}
+              </View>
+              <Ionicons
+                name={coverOffersOpen ? "chevron-up" : "chevron-down"}
+                size={18}
+                color={colors.textSecondary}
+              />
+            </TouchableOpacity>
+            {coverOffersOpen ? (
+              <>
+                <Text style={styles.coverOffersSub}>
+                  Binding cover from Fourbuy Pricing Agents · subject to physical inspection.
+                </Text>
+                {coverOffers.map((c, idx) => {
+                  const phoneDigits = (c.agent_phone || "").replace(/[^0-9]/g, "");
+                  // South-African local numbers → E.164 for wa.me (drop leading 0, add 27).
+                  const waNumber =
+                    phoneDigits.startsWith("27")
+                      ? phoneDigits
+                      : phoneDigits.startsWith("0")
+                        ? "27" + phoneDigits.slice(1)
+                        : phoneDigits;
+                  const waMessage = encodeURIComponent(
+                    `Hi ${c.agent_name || "there"}, this is regarding your cover of R${c.price_zar.toLocaleString()} on ${sub.reference || "our vehicle"} (${[sub.make_name, sub.model_name].filter(Boolean).join(" ")}).`
+                  );
+                  const waUrl = waNumber ? `https://wa.me/${waNumber}?text=${waMessage}` : null;
+                  return (
+                    <View
+                      key={c.id}
+                      style={[
+                        styles.coverOfferRow,
+                        idx === coverOffers.length - 1 && { borderBottomWidth: 0 },
+                      ]}
+                      testID={`cover-offer-${c.id}`}
                     >
-                      <Ionicons name="logo-whatsapp" size={18} color="#fff" />
-                      <Text style={styles.whatsappBtnText}>WhatsApp</Text>
-                    </TouchableOpacity>
-                  ) : c.agent_phone ? (
-                    <Text style={styles.coverOfferPhone}>{c.agent_phone}</Text>
-                  ) : null}
-                </View>
-              );
-            })}
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={styles.coverOfferPrice}>
+                          R{c.price_zar.toLocaleString()}
+                        </Text>
+                        <Text style={styles.coverOfferAgent} numberOfLines={1}>
+                          {c.agent_name || "Pricing agent"}
+                          {c.agent_dealership_name ? ` · ${c.agent_dealership_name}` : ""}
+                        </Text>
+                        <Text style={styles.coverOfferDate}>
+                          {new Date(c.created_at).toLocaleString()}
+                        </Text>
+                        {c.note ? (
+                          <Text style={styles.coverOfferNote}>{c.note}</Text>
+                        ) : null}
+                      </View>
+                      {waUrl ? (
+                        <TouchableOpacity
+                          testID={`cover-offer-whatsapp-${c.id}`}
+                          style={styles.whatsappBtn}
+                          onPress={() => {
+                            if (Platform.OS === "web") {
+                              (globalThis as any).window?.open?.(waUrl, "_blank");
+                            } else {
+                              Linking.openURL(waUrl).catch(() => {});
+                            }
+                          }}
+                        >
+                          <Ionicons name="logo-whatsapp" size={18} color="#fff" />
+                          <Text style={styles.whatsappBtnText}>WhatsApp</Text>
+                        </TouchableOpacity>
+                      ) : c.agent_phone ? (
+                        <Text style={styles.coverOfferPhone}>{c.agent_phone}</Text>
+                      ) : null}
+                    </View>
+                  );
+                })}
+              </>
+            ) : null}
           </View>
         ) : null}
 
@@ -1951,13 +1996,33 @@ export default function VehicleDetail() {
 
 
 
-        {/* Price history log — every offer / update the admin has made, most
-            recent first. Visible to both admins and the owning dealer for
-            full transparency. Hidden entirely when there's no history yet. */}
+        {/* Fourbuy Offer History log — every offer / update the admin has
+            made, most recent first. Visible to both admins and the
+            owning dealer for full transparency. Collapsible; closed by
+            default so it doesn't push the vehicle details way down. */}
         {sub.price_history && sub.price_history.length > 0 && !isCoverMode ? (
           <View style={styles.priceHistoryBox} testID="price-history">
-            <Text style={styles.sectionTitle}>Offer History</Text>
-            {sub.price_history
+            <TouchableOpacity
+              testID="price-history-toggle"
+              style={styles.priceHistoryToggle}
+              onPress={() => setPriceHistoryOpen((v) => !v)}
+              accessibilityRole="button"
+              accessibilityLabel={
+                priceHistoryOpen ? "Collapse offer history" : "Expand offer history"
+              }
+            >
+              <Text style={styles.sectionTitle}>
+                Fourbuy Offer History ({sub.price_history.length})
+              </Text>
+              <Ionicons
+                name={priceHistoryOpen ? "chevron-up" : "chevron-down"}
+                size={18}
+                color={colors.textSecondary}
+              />
+            </TouchableOpacity>
+            {priceHistoryOpen ? (
+              <>
+                {sub.price_history
               .slice()
               .sort((a, b) => (a.at < b.at ? 1 : -1))
               .map((h, idx) => (
@@ -2012,6 +2077,8 @@ export default function VehicleDetail() {
                   </View>
                 </View>
               ))}
+              </>
+            ) : null}
           </View>
         ) : null}
 
@@ -2026,9 +2093,11 @@ export default function VehicleDetail() {
               disabled={downloadingPdf}
             >
               <View style={styles.docBtnLeft}>
-                <Ionicons name="document-text-outline" size={22} color={colors.text} />
+                <View style={styles.pdfBadge}>
+                  <Text style={styles.pdfBadgeText}>PDF</Text>
+                </View>
                 <View style={{ marginLeft: spacing.sm, flex: 1 }}>
-                  <Text style={styles.docBtnTitle}>Open Valuation PDF</Text>
+                  <Text style={styles.docBtnTitle}>Download Valuation PDF</Text>
                   <Text style={styles.docBtnSubtitle}>
                     Includes offer, condition, tyre estimate & any purchased reports
                   </Text>
@@ -2037,7 +2106,7 @@ export default function VehicleDetail() {
               {downloadingPdf ? (
                 <ActivityIndicator color={colors.text} />
               ) : (
-                <Ionicons name="open-outline" size={20} color={colors.text} />
+                <Ionicons name="download-outline" size={22} color="#E31C24" />
               )}
             </TouchableOpacity>
           </View>
@@ -4269,6 +4338,39 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     width: "100%",
     maxWidth: 820,
     alignSelf: "center",
+  },
+
+  // Red PDF badge — used on the "Download Valuation PDF" button to make
+  // the download action obviously document-based (per user request).
+  pdfBadge: {
+    backgroundColor: "#E31C24",
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 4,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pdfBadgeText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1,
+  },
+
+  // Collapsible toggle row on the Fourbuy Offer History card.
+  priceHistoryToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingBottom: 4,
+  },
+
+  // Small "peek" caption under the Cover Offers Received header when
+  // the panel is collapsed — shows the highest cover as a preview.
+  coverOffersPeek: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
   },
 
   // Combined advisory shown below the AutoTrader + WeBuyCars deep-link
