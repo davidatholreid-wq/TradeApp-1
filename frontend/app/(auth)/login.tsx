@@ -171,6 +171,18 @@ export default function Login() {
           </View>
         ) : null}
 
+        {/* Forgot password — small right-aligned link so it doesn't
+            compete with the primary Sign In CTA. Deep-links into the
+            ForgotPassword screen which handles the reset email flow. */}
+        <TouchableOpacity
+          testID="login-forgot-password-link"
+          onPress={() => router.push("/(auth)/forgot-password")}
+          style={styles.forgotWrap}
+          accessibilityRole="link"
+        >
+          <Text style={styles.forgotText}>Forgot password?</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity
           testID="login-submit-button"
           style={[styles.primaryBtn, loading && styles.disabledBtn]}
@@ -416,6 +428,20 @@ const makeStyles = (colors: Palette, layout: "desktop" | "tablet" | "phone") => 
       paddingVertical: 10,
     },
     errorText: { color: colors.danger, fontSize: 13, flex: 1 },
+    // "Forgot password?" mini-link, positioned above the primary CTA
+    // and right-aligned so it doesn't compete visually.
+    forgotWrap: {
+      alignSelf: "flex-end",
+      marginTop: 2,
+      paddingVertical: 4,
+      paddingHorizontal: 2,
+    },
+    forgotText: {
+      color: colors.textSecondary,
+      fontSize: 12,
+      fontWeight: "700",
+      textDecorationLine: "underline",
+    },
     primaryBtn: {
       backgroundColor: colors.primary,
       borderRadius: radius.md,
