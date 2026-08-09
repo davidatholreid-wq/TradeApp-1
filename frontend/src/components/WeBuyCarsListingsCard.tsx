@@ -393,9 +393,17 @@ export default function WeBuyCarsListingsCard(props: Props) {
 
   return (
     <View style={styles.card}>
+      {/* Same header treatment as the AutoTrader card — logo chip on the
+          left, brand-specific title + hostname subtitle so the two
+          comparison sections feel like matching destinations. */}
       <View style={styles.headerRow}>
-        <Ionicons name="storefront" size={16} color={colors.primary} />
-        <Text style={styles.title}>Compare on WeBuyCars</Text>
+        <View style={styles.headerLogoBadge}>
+          <Image source={WEBUYCARS_LOGO} style={styles.headerLogoImg} resizeMode="contain" />
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={styles.title}>Compare on WeBuyCars</Text>
+          <Text style={styles.subtitle}>webuycars.co.za · wholesale / trade reference</Text>
+        </View>
       </View>
       <Text style={styles.help}>
         Opens the live listing wall on{" "}
@@ -532,11 +540,8 @@ export default function WeBuyCarsListingsCard(props: Props) {
         accessibilityRole="link"
         accessibilityLabel="Open comparable listings on WeBuyCars.co.za"
       >
-        <View style={styles.logoBadge}>
-          <Image source={WEBUYCARS_LOGO} style={styles.logoImg} resizeMode="contain" />
-        </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.btnTitle}>WeBuyCars.co.za</Text>
+          <Text style={styles.btnTitle}>Open WeBuyCars.co.za</Text>
           <Text style={styles.btnSub} numberOfLines={2}>
             {[
               [effectiveMake, effectiveModel].filter(Boolean).join(" ") || null,
@@ -547,7 +552,7 @@ export default function WeBuyCarsListingsCard(props: Props) {
             ].filter(Boolean).join(" · ")}
           </Text>
         </View>
-        <Ionicons name="open-outline" size={18} color={colors.text} />
+        <Ionicons name="open-outline" size={18} color={colors.primary} />
       </TouchableOpacity>
 
       <Text style={styles.disclaimer}>
@@ -569,9 +574,38 @@ function makeStyles(colors: Palette) {
       padding: spacing.md,
       gap: 8,
       marginTop: spacing.sm,
+      // Full-height so a sibling card in a 2-column row lines up
+      // exactly regardless of internal content length. `minWidth`
+      // triggers flex-wrap → stacking on phones.
+      flex: 1,
+      minWidth: 300,
     },
-    headerRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-    title: { ...fonts.h1, color: colors.text, fontSize: 16 },
+    headerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      marginBottom: 2,
+    },
+    // Match the AutoTrader card exactly so the two headers read as
+    // equal sibling destinations.
+    headerLogoBadge: {
+      width: 40,
+      height: 40,
+      borderRadius: 8,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "#fff",
+      padding: 4,
+      overflow: "hidden",
+    },
+    headerLogoImg: { width: "100%", height: "100%" },
+    title: { ...fonts.h1, color: colors.text, fontSize: 15, fontWeight: "800" as any },
+    subtitle: {
+      color: colors.textSecondary,
+      fontSize: 11,
+      fontWeight: "600",
+      marginTop: 1,
+    },
     help: { color: colors.textSecondary, fontSize: 12, lineHeight: 17 },
 
     chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 },

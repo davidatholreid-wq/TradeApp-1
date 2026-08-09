@@ -2780,26 +2780,32 @@ export default function VehicleDetail() {
           styles={styles}
           testID="compare-listings"
         >
-          <ComparableListingsCard
-            make={sub.make_name}
-            model={sub.model_name}
-            derivative={sub.derivative_name}
-            fuelType={sub.fuel_type}
-            transmission={sub.transmission}
-            year={sub.year_of_production ?? sub.year}
-            yearFrom={sub.variant_manufacture_range?.min ?? null}
-            yearTo={sub.variant_manufacture_range?.max ?? null}
-          />
-          <WeBuyCarsListingsCard
-            make={sub.make_name}
-            model={sub.model_name}
-            derivative={sub.derivative_name}
-            fuelType={sub.fuel_type}
-            transmission={sub.transmission}
-            year={sub.year_of_production ?? sub.year}
-            yearFrom={sub.variant_manufacture_range?.min ?? null}
-            yearTo={sub.variant_manufacture_range?.max ?? null}
-          />
+          {/* Responsive 2-column layout — the AutoTrader and WeBuyCars
+              cards read as siblings of equal weight. On phones they
+              stack vertically as before. On web / tablet each takes
+              50% of the available width. */}
+          <View style={styles.compareCardsRow}>
+            <ComparableListingsCard
+              make={sub.make_name}
+              model={sub.model_name}
+              derivative={sub.derivative_name}
+              fuelType={sub.fuel_type}
+              transmission={sub.transmission}
+              year={sub.year_of_production ?? sub.year}
+              yearFrom={sub.variant_manufacture_range?.min ?? null}
+              yearTo={sub.variant_manufacture_range?.max ?? null}
+            />
+            <WeBuyCarsListingsCard
+              make={sub.make_name}
+              model={sub.model_name}
+              derivative={sub.derivative_name}
+              fuelType={sub.fuel_type}
+              transmission={sub.transmission}
+              year={sub.year_of_production ?? sub.year}
+              yearFrom={sub.variant_manufacture_range?.min ?? null}
+              yearTo={sub.variant_manufacture_range?.max ?? null}
+            />
+          </View>
           {/* Combined advisory across both markets — explains how to
               interpret the two data sources side-by-side. */}
           <View style={styles.compareAdvisory} testID="compare-listings-advisory">
@@ -4593,6 +4599,17 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.paper,
+  },
+  // Container for the AutoTrader + WeBuyCars comparison cards. Uses
+  // flex-wrap so on narrow viewports (< ~640px total row width) the
+  // second card wraps under the first — matching the historical
+  // mobile-stacked layout. On wider screens both cards share the row
+  // 50/50 thanks to their own `flex: 1` inside.
+  compareCardsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    alignItems: "stretch",
   },
   compareAdvisoryText: {
     flex: 1,

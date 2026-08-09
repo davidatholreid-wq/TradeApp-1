@@ -233,9 +233,18 @@ export default function ComparableListingsCard(props: Props) {
 
   return (
     <View style={styles.card}>
+      {/* Header now leads with the actual AutoTrader logo (chipped in a
+          white rounded badge for contrast on the dark card) and the
+          brand-specific title so the two comparison cards read as
+          equal, brand-native destinations. */}
       <View style={styles.headerRow}>
-        <Ionicons name="pricetags" size={16} color={colors.primary} />
-        <Text style={styles.title}>Compare Live Listings</Text>
+        <View style={styles.headerLogoBadge}>
+          <Image source={AUTOTRADER_LOGO} style={styles.headerLogoImg} resizeMode="contain" />
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={styles.title}>Compare on AutoTrader</Text>
+          <Text style={styles.subtitle}>autotrader.co.za · reputable 3★+ dealers</Text>
+        </View>
       </View>
       <Text style={styles.help}>
         Opens live listings for{" "}
@@ -276,11 +285,8 @@ export default function ComparableListingsCard(props: Props) {
         accessibilityRole="link"
         accessibilityLabel="Open comparable listings on AutoTrader.co.za"
       >
-        <View style={styles.logoBadge}>
-          <Image source={AUTOTRADER_LOGO} style={styles.logoImg} resizeMode="contain" />
-        </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.btnTitle}>AutoTrader.co.za</Text>
+          <Text style={styles.btnTitle}>Open AutoTrader.co.za</Text>
           <Text style={styles.btnSub} numberOfLines={2}>
             {[
               kwTokens.length ? kwTokens.join(" · ") : null,
@@ -290,7 +296,7 @@ export default function ComparableListingsCard(props: Props) {
             ].filter(Boolean).join(" · ") || "Model listing"}
           </Text>
         </View>
-        <Ionicons name="open-outline" size={18} color={colors.text} />
+        <Ionicons name="open-outline" size={18} color={colors.primary} />
       </TouchableOpacity>
 
       <Text style={styles.disclaimer}>
@@ -313,9 +319,40 @@ function makeStyles(colors: Palette) {
       padding: spacing.md,
       gap: 8,
       marginTop: spacing.sm,
+      // Full-height so a sibling card in a 2-column row lines up
+      // exactly regardless of internal content length. `minWidth`
+      // large enough that on phones the wrapper's flexWrap kicks in
+      // and the two cards stack vertically instead of squeezing.
+      flex: 1,
+      minWidth: 300,
     },
-    headerRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-    title: { ...fonts.h1, color: colors.text, fontSize: 16 },
+    headerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      marginBottom: 2,
+    },
+    // White rounded badge that frames the AutoTrader logo so the mark
+    // reads at any surface colour. Same pattern used on the sibling
+    // WeBuyCars card so both cards feel visually equal.
+    headerLogoBadge: {
+      width: 40,
+      height: 40,
+      borderRadius: 8,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "#fff",
+      padding: 4,
+      overflow: "hidden",
+    },
+    headerLogoImg: { width: "100%", height: "100%" },
+    title: { ...fonts.h1, color: colors.text, fontSize: 15, fontWeight: "800" as any },
+    subtitle: {
+      color: colors.textSecondary,
+      fontSize: 11,
+      fontWeight: "600",
+      marginTop: 1,
+    },
     help: { color: colors.textSecondary, fontSize: 12, lineHeight: 17 },
 
     chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 },
