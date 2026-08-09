@@ -11,12 +11,18 @@
 // currently listing for retail, and at what price. Useful as a
 // cross-reference next to the AutoTrader deep-link.
 // -----------------------------------------------------------------------------
-import { useMemo } from "react";
-import { View, Text, StyleSheet, Linking, Platform, Image } from "react-native";
+import { useMemo, useState, useEffect } from "react";
+import { View, Text, StyleSheet, Linking, Platform, Image, TextInput, ScrollView } from "react-native";
 import { TouchableOpacity } from "@/src/components/HapticButtons";
 import { Ionicons } from "@expo/vector-icons";
 import { spacing, radius, fonts } from "@/src/theme";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
+import {
+  WEBUYCARS_MAKES,
+  WEBUYCARS_CATALOGUE,
+  resolveWbcMake,
+  guessWbcModel,
+} from "@/src/data/webuycarsCatalogue";
 
 // Brand logo image bundled with the app. Kept in assets/images/logos
 // so it ships with the JS bundle (no network round-trip needed).
@@ -250,10 +256,16 @@ function jsonArrayParam(values: (string | number)[]): string {
 //     &Year=[2022,2024]&Year_Gte=2022&Year_Lte=2024
 //     &FuelType=["Hybrid"]&Gearbox=["Automatic"]
 //     &SortBy=Price_Amount&SortOrder=ASC
-function buildWeBuyCarsUrl(p: Props): string | null {
-  const make = normaliseMake(p.make);
+function buildWeBuyCarsUrl(
+  p: Props,
+  overrides?: { make?: string | null; model?: string | null },
+): string | null {
+  const make = overrides?.make || normaliseMake(p.make);
   if (!make) return null;
-  const model = deriveModelKeyword(p.model, p.derivative);
+  const model =
+    overrides?.model !== undefined
+      ? overrides.model
+      : deriveModelKeyword(p.model, p.derivative);
   const range = resolveEffectiveRange(p);
   const fuel = normaliseFuel(p.fuelType);
   const trans = normaliseTransmission(p.transmission);
@@ -307,11 +319,61 @@ export default function WeBuyCarsListingsCard(props: Props) {
   const colors = useThemeColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  const url = useMemo(() => buildWeBuyCarsUrl(props), [props]);
+  // Auto-derive the initial WBC make/model from Kredo data, then let
+  // the dealer pin the model via a dropdown. WBC's catalogue naming
+  // often differs from Kredo (e.g. Kredo `DEFENDER / PUMA 90` vs
+  // WBC `Defender 90`), and the dropdown ensures we send the exact
+  // string WBC expects. If the make isn't in our curated list we
+  // silently fall back to the auto-derived keyword (no dropdown).
+  const wbcMakeResolved = useMemo(
+    () => resolveWbcMake(props.make),
+    [props.make],
+  );
+  const catalogueModels = useMemo(
+    () => (wbcMakeResolved ? WEBUYCARS_CATALOGUE[wbcMakeResolved] : null),
+    [wbcMakeResolved],
+  );
+  const initialGuess = useMemo(() => {
+    if (!wbcMakeResolved) return "";
+    const kw = deriveModelKeyword(props.model, props.derivative);
+    return guessWbcModel(wbcMakeResolved, kw) ?? "";
+  }, [wbcMakeResolved, props.model, props.derivative]);
+
+  // Selected WBC model (either the auto-guess or a dealer pick).
+  const [selectedModel, setSelectedModel] = useState<string>(initialGuess);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  // Refresh the selection if the underlying vehicle changes (e.g. the
+  // parent screen navigates between subs without unmounting this card).
+  useEffect(() => {
+    setSelectedModel(initialGuess);
+    setSearch("");
+  }, [initialGuess]);
+
+  const filteredModels = useMemo(() => {
+    if (!catalogueModels) return [];
+    if (!search.trim()) return catalogueModels;
+    const q = search.trim().toLowerCase();
+    return catalogueModels.filter((m) => m.toLowerCase().includes(q));
+  }, [catalogueModels, search]);
+
+  const effectiveMake =
+    wbcMakeResolved || normaliseMake(props.make) || "";
+  const effectiveModel = wbcMakeResolved
+    ? selectedModel
+    : deriveModelKeyword(props.model, props.derivative) || "";
+
+  const url = useMemo(
+    () =>
+      buildWeBuyCarsUrl(props, {
+        make: effectiveMake,
+        model: effectiveModel || null,
+      }),
+    [props, effectiveMake, effectiveModel],
+  );
   if (!url) return null;
 
-  const make = normaliseMake(props.make) || "";
-  const model = deriveModelKeyword(props.model, props.derivative) || "";
   const range = resolveEffectiveRange(props);
   const yearStr = range
     ? range.from === range.to
@@ -322,8 +384,8 @@ export default function WeBuyCarsListingsCard(props: Props) {
   const trans = normaliseTransmission(props.transmission);
 
   const chips: string[] = [];
-  if (make) chips.push(make);
-  if (model) chips.push(model);
+  if (effectiveMake) chips.push(effectiveMake);
+  if (effectiveModel) chips.push(effectiveModel);
   if (yearStr) chips.push(yearStr);
   if (fuel) chips.push(fuel);
   if (trans) chips.push(trans);
@@ -340,7 +402,7 @@ export default function WeBuyCarsListingsCard(props: Props) {
         <Text style={{ fontWeight: "700", color: colors.text }}>WeBuyCars.co.za</Text>
         {" "}for{" "}
         <Text style={{ fontWeight: "700", color: colors.text }}>
-          {[make, model].filter(Boolean).join(" ") || "matching stock"}
+          {[effectiveMake, effectiveModel].filter(Boolean).join(" ") || "matching stock"}
         </Text>
         {yearStr ? (
           <>
@@ -360,6 +422,98 @@ export default function WeBuyCarsListingsCard(props: Props) {
         ) : null}
         , sorted cheapest first so you can benchmark the retail floor.
       </Text>
+
+      {/* WBC-catalogue model picker — visible only when the make is in
+          our curated top-30 SA brand list. Otherwise we fall back
+          silently to the auto-derived keyword (kept invisible to
+          avoid clutter). */}
+      {catalogueModels ? (
+        <View style={styles.pickerBlock}>
+          <View style={styles.pickerHeader}>
+            <Text style={styles.pickerLabel}>WBC Model</Text>
+            <Text style={styles.pickerHint}>
+              {WEBUYCARS_MAKES.includes(effectiveMake) ? effectiveMake : "—"}
+            </Text>
+          </View>
+          <TouchableOpacity
+            testID="wbc-model-picker"
+            style={styles.pickerButton}
+            onPress={() => setPickerOpen((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel="Change WeBuyCars model"
+          >
+            <Text style={styles.pickerButtonText} numberOfLines={1}>
+              {selectedModel || "Pick a model…"}
+            </Text>
+            <Ionicons
+              name={pickerOpen ? "chevron-up" : "chevron-down"}
+              size={16}
+              color={colors.textSecondary}
+            />
+          </TouchableOpacity>
+          {pickerOpen ? (
+            <View style={styles.pickerDropdown}>
+              <View style={styles.pickerSearchRow}>
+                <Ionicons name="search" size={14} color={colors.textSecondary} />
+                <TextInput
+                  testID="wbc-model-search"
+                  style={styles.pickerSearchInput}
+                  value={search}
+                  onChangeText={setSearch}
+                  placeholder={`Search ${catalogueModels.length} ${effectiveMake} models…`}
+                  placeholderTextColor={colors.textDisabled}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                />
+                {search ? (
+                  <TouchableOpacity onPress={() => setSearch("")} accessibilityRole="button">
+                    <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+              <ScrollView
+                style={styles.pickerList}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+              >
+                {filteredModels.length === 0 ? (
+                  <Text style={styles.pickerEmpty}>
+                    No matches. Try a broader keyword or clear the search.
+                  </Text>
+                ) : (
+                  filteredModels.map((m) => {
+                    const isActive = m === selectedModel;
+                    return (
+                      <TouchableOpacity
+                        key={m}
+                        style={[styles.pickerRow, isActive && styles.pickerRowActive]}
+                        onPress={() => {
+                          setSelectedModel(m);
+                          setPickerOpen(false);
+                          setSearch("");
+                        }}
+                        accessibilityRole="button"
+                      >
+                        <Text
+                          style={[
+                            styles.pickerRowText,
+                            isActive && styles.pickerRowTextActive,
+                          ]}
+                        >
+                          {m}
+                        </Text>
+                        {isActive ? (
+                          <Ionicons name="checkmark" size={16} color={colors.primary} />
+                        ) : null}
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+              </ScrollView>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
 
       {chips.length ? (
         <View style={styles.chipRow}>
@@ -385,7 +539,7 @@ export default function WeBuyCarsListingsCard(props: Props) {
           <Text style={styles.btnTitle}>WeBuyCars.co.za</Text>
           <Text style={styles.btnSub} numberOfLines={2}>
             {[
-              [make, model].filter(Boolean).join(" ") || null,
+              [effectiveMake, effectiveModel].filter(Boolean).join(" ") || null,
               yearStr,
               fuel,
               trans,
@@ -428,6 +582,70 @@ function makeStyles(colors: Palette) {
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.card,
+    },
+
+    // WBC model picker (dropdown + search).
+    pickerBlock: {
+      marginTop: 4,
+      gap: 6,
+    },
+    pickerHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+    pickerLabel: { color: colors.textSecondary, fontSize: 11, letterSpacing: 0.4, fontWeight: "700" },
+    pickerHint: { color: colors.textSecondary, fontSize: 11, fontStyle: "italic" },
+    pickerButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+    },
+    pickerButtonText: { color: colors.text, fontSize: 13, fontWeight: "600", flex: 1, marginRight: 8 },
+    pickerDropdown: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.card,
+      overflow: "hidden",
+    },
+    pickerSearchRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    pickerSearchInput: {
+      flex: 1,
+      color: colors.text,
+      fontSize: 12,
+      paddingVertical: 2,
+      outlineStyle: "none" as any,
+    },
+    pickerList: { maxHeight: 220 },
+    pickerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    pickerRowActive: { backgroundColor: colors.primary + "18" },
+    pickerRowText: { color: colors.text, fontSize: 12 },
+    pickerRowTextActive: { color: colors.primary, fontWeight: "700" },
+    pickerEmpty: {
+      color: colors.textSecondary,
+      fontSize: 11,
+      textAlign: "center",
+      paddingVertical: 12,
+      fontStyle: "italic",
     },
     chipTxt: { color: colors.text, fontSize: 11, fontWeight: "700", letterSpacing: 0.4 },
 
