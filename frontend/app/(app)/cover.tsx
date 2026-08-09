@@ -12,12 +12,12 @@
  * detail loads inline (no double-hop through /cover/[id] which was
  * causing a flash-of-white on some devices).
  */
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
   Image, RefreshControl,
 } from "react-native";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/src/context/AuthContext";
@@ -70,7 +70,11 @@ export default function GiveCoverScreen() {
     }
   }, [params?.tab]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    // `silent` — used by the on-focus refresh and interval polling. We
+    // don't flip the loading spinner in those cases so the UI doesn't
+    // flash when new data arrives.
+    if (!opts?.silent) setLoading(true);
     try {
       const r = await apiFetch("/api/cover/submissions");
       setSubs((r as any).submissions || []);
@@ -81,7 +85,27 @@ export default function GiveCoverScreen() {
       setRefreshing(false);
     }
   }, []);
-  useEffect(() => { load(); }, [load]);
+
+  // Auto-refresh whenever the tab regains focus (e.g. after the
+  // pricing agent places a cover on a vehicle detail and taps back).
+  // Also polls silently every 30 s while the tab is focused so the
+  // "Incoming" list picks up brand-new submissions without the
+  // dealer having to pull-to-refresh or reload the browser.
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      load({ silent: true });
+      pollRef.current = setInterval(() => {
+        load({ silent: true });
+      }, 30_000);
+      return () => {
+        if (pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+      };
+    }, [load])
+  );
 
   const available = useMemo(() => subs.filter((s) => !s.my_cover), [subs]);
   const given = useMemo(

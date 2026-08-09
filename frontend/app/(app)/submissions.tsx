@@ -1,4 +1,4 @@
-import { useCallback, useState, useMemo } from "react";
+import { useCallback, useState, useMemo, useRef } from "react";
 import { TouchableOpacity } from "@/src/components/HapticButtons";
 import { View, Text, StyleSheet, FlatList, RefreshControl, ActivityIndicator, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -58,7 +58,8 @@ export default function DashboardScreen() {
   const [draftsExpanded, setDraftsExpanded] = useState(false);
   const isAdmin = user?.role === "admin";
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     try {
       const path = isAdmin ? "/api/admin/submissions" : "/api/submissions/my";
       const data = await apiFetch(path);
@@ -94,9 +95,22 @@ export default function DashboardScreen() {
     }
   }, [isAdmin]);
 
+  // Silent poll while the list is focused so status/price changes made
+  // by admins (or by the pricing agent placing a cover) surface without
+  // the dealer having to pull-to-refresh or reload the browser.
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useFocusEffect(
     useCallback(() => {
-      load();
+      load({ silent: true });
+      pollRef.current = setInterval(() => {
+        load({ silent: true });
+      }, 30_000);
+      return () => {
+        if (pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+      };
     }, [load])
   );
 
