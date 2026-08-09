@@ -913,23 +913,52 @@ export default function VehicleDetail() {
   };
 
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [expired, setExpired] = useState(false);
   const loadSub = useCallback(async () => {
     setLoadError(null);
+    setExpired(false);
     try {
       const data = await apiFetch(`/api/submissions/${id}`);
       setSub(data.submission);
     } catch (e: any) {
-      // Don't kick the user away on a transient failure — leaving the
-      // user stranded on the home page was very disorienting. Instead
-      // show an inline error card with a Retry button so they can
-      // recover without losing navigation context.
-      setLoadError(e?.message || "Could not load this vehicle.");
+      // 404 = the submission has been purged (retention window elapsed
+      // or an admin deleted it). Treat this as a soft "expired" state:
+      // clear the stale sub so we can't accidentally show data from a
+      // previously-viewed vehicle, mark the flag so the UI can render
+      // the "file expired" notice + Alert popup.
+      const msg: string = (e?.message || "").toLowerCase();
+      const is404 =
+        msg.includes("not found") ||
+        msg.includes("404") ||
+        msg.includes("submission not found");
+      if (is404) {
+        setSub(null);
+        setExpired(true);
+        Alert.alert(
+          "Submission expired",
+          "This submission is no longer available — its retention window has elapsed or it was archived. Please re-submit the vehicle to generate a fresh valuation.",
+          [{ text: "OK" }],
+        );
+      } else {
+        setLoadError(e?.message || "Could not load this vehicle.");
+      }
     } finally {
       setLoading(false);
     }
   }, [id]);
   useEffect(() => {
     if (!id) return;
+    // Reset all sub-scoped state when the route id changes so the
+    // previously-viewed vehicle can never bleed into the current
+    // render (this used to briefly show FB-000140 when the user
+    // navigated to an expired FB-000105, until the fetch completed
+    // and the 404 was swallowed).
+    setSub(null);
+    setCoverOffers([]);
+    setCoverOffersOpen(false);
+    setPriceHistoryOpen(false);
+    setLoadError(null);
+    setExpired(false);
     setLoading(true);
     loadSub();
   }, [id, loadSub]);
@@ -1089,8 +1118,18 @@ export default function VehicleDetail() {
         try {
           const data = await apiFetch(`/api/submissions/${id}`);
           if (!cancelled) setSub(data.submission);
-        } catch {
-          /* silent — the initial load already surfaced errors */
+        } catch (e: any) {
+          // If the sub was purged while the user had this screen open
+          // (rare, but possible during a focus-refresh), surface the
+          // same "expired" branch as the initial load handler.
+          const msg: string = (e?.message || "").toLowerCase();
+          if (msg.includes("not found") || msg.includes("404")) {
+            if (!cancelled) {
+              setSub(null);
+              setExpired(true);
+            }
+          }
+          /* other errors are ignored — initial load already surfaced them */
         }
 
         // "attach license disk" side-effect: the user just came back from
@@ -1518,6 +1557,50 @@ export default function VehicleDetail() {
   };
 
   if (loading || !sub) {
+    // "Expired" branch — sub was fetched and came back 404 (retention
+    // window elapsed / archived). Show a friendly notice instead of
+    // silently redirecting or leaving the previously-viewed vehicle
+    // stuck on screen.
+    if (expired) {
+      return (
+        <SafeAreaView style={styles.safe} edges={["top"]}>
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+              <Ionicons name="chevron-back" size={24} color={colors.text} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle} numberOfLines={1}>Submission expired</Text>
+            <BrandLogo size="xs" linkToHome />
+          </View>
+          <View style={[styles.center, { padding: spacing.lg, gap: spacing.md }]} testID="submission-expired-state">
+            <Ionicons name="time-outline" size={44} color={colors.textDisabled} />
+            <Text style={{ color: colors.text, fontSize: 18, fontWeight: "800", textAlign: "center" }}>
+              This submission has expired
+            </Text>
+            <Text style={{ color: colors.textSecondary, fontSize: 13, textAlign: "center", lineHeight: 19, maxWidth: 420 }}>
+              The record is no longer available — its retention window
+              has elapsed or it was archived by an admin. To view an
+              updated valuation, please re-submit the vehicle.
+            </Text>
+            <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm }}>
+              <TouchableOpacity
+                onPress={() => router.push("/(app)/submit" as any)}
+                style={{ paddingHorizontal: 18, paddingVertical: 10, borderRadius: radius.sm, backgroundColor: colors.primary }}
+                accessibilityRole="button"
+              >
+                <Text style={{ color: colors.onPrimary, fontWeight: "800" }}>Re-submit vehicle</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => router.back()}
+                style={{ paddingHorizontal: 18, paddingVertical: 10, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border }}
+                accessibilityRole="button"
+              >
+                <Text style={{ color: colors.text, fontWeight: "700" }}>Go back</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </SafeAreaView>
+      );
+    }
     // Loading state OR "no submission yet" — split into a proper error
     // card when the initial load failed so the user gets a clear
     // "something went wrong" affordance with Retry + Back buttons
