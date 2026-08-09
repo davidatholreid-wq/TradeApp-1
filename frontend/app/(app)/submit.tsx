@@ -487,9 +487,35 @@ export default function SubmitVehicle() {
     if (b64) setPhotos((p) => ({ ...p, [key]: b64 }));
   };
 
-  /** Prompts the user to Take/Choose a photo and returns a data-URL or null. */
-  const promptPickImage = (): Promise<string | null> =>
-    new Promise((resolve) => {
+  /** Prompts the user to Take/Choose a photo and returns a data-URL or null.
+   *
+   * Platform behaviour:
+   *   • Native (iOS/Android): shows an action sheet with "Take Photo" /
+   *     "Choose from Library" / "Cancel". Requests the appropriate
+   *     permission before launching each source.
+   *   • Web: skips the action sheet entirely (Alert.alert can only show
+   *     an OK button in the browser) and opens the OS file picker
+   *     directly via `launchImageLibraryAsync`. On mobile browsers this
+   *     picker also offers "Take Photo" via the underlying <input
+   *     type=file capture=environment> element, so no functionality is
+   *     lost.
+   */
+  const promptPickImage = (): Promise<string | null> => {
+    if (Platform.OS === "web") {
+      // Direct-to-library on web — no permission gate needed, the
+      // browser handles it.
+      return (async () => {
+        const res = await ImagePicker.launchImageLibraryAsync({
+          base64: true,
+          quality: 0.5,
+          allowsEditing: false, // web crop UI is jank; skip it
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        });
+        if (res.canceled || !res.assets?.[0]?.base64) return null;
+        return `data:image/jpeg;base64,${res.assets[0].base64}`;
+      })();
+    }
+    return new Promise((resolve) => {
       const done = (uri: string | null) => resolve(uri);
       Alert.alert(
         "Add photo",
@@ -542,6 +568,7 @@ export default function SubmitVehicle() {
         { cancelable: true, onDismiss: () => done(null) },
       );
     });
+  };
 
   const addReconItem = () =>
     setReconItems((r) => [...r, { category: null, amount: "", photos: [] }]);
