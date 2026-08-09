@@ -8356,6 +8356,10 @@ async def list_covers_for_submission(sub_id: str, current: dict = Depends(get_cu
                 ).strip() or "Pricing agent",
                 "phone": info.get("phone") or "",
                 "dealership_id": u.get("dealership_id"),
+                # Round profile pic rendered next to the agent's name in
+                # the covers row so the receiving dealer instantly
+                # recognises who placed the bind.
+                "profile_pic": info.get("profile_photo") or None,
             }
     # Attach dealership names in one batch.
     dship_ids = list({a["dealership_id"] for a in agents.values() if a.get("dealership_id")})
@@ -8370,6 +8374,7 @@ async def list_covers_for_submission(sub_id: str, current: dict = Depends(get_cu
         c["agent_name"] = a.get("name")
         c["agent_phone"] = a.get("phone")
         c["agent_dealership_name"] = dship_map.get(a.get("dealership_id") or "")
+        c["agent_profile_pic"] = a.get("profile_pic")
     return {"covers": covers}
 
 

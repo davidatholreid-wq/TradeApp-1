@@ -520,6 +520,7 @@ export default function VehicleDetail() {
     agent_name?: string | null;
     agent_phone?: string | null;
     agent_dealership_name?: string | null;
+    agent_profile_pic?: string | null;
     binding_caveat?: string | null;
   };
   const [coverOffers, setCoverOffers] = useState<CoverOffer[]>([]);
@@ -2041,6 +2042,22 @@ export default function VehicleDetail() {
                       ]}
                       testID={`cover-offer-${c.id}`}
                     >
+                      {/* Round profile photo (or fallback initial disc) so
+                          the dealer instantly recognises the pricing
+                          agent placing the cover. */}
+                      {c.agent_profile_pic ? (
+                        <Image
+                          source={{ uri: c.agent_profile_pic }}
+                          style={styles.coverOfferAvatar}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={styles.coverOfferAvatarFallback}>
+                          <Text style={styles.coverOfferAvatarInitial}>
+                            {(c.agent_name || "?").trim().charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+                      )}
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={styles.coverOfferPrice}>
                           R{c.price_zar.toLocaleString()}
@@ -4736,6 +4753,30 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+  },
+  // Round profile photo shown at the head of each cover row.
+  coverOfferAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  coverOfferAvatarFallback: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.primary + "22",
+    borderWidth: 1,
+    borderColor: colors.primary + "55",
+  },
+  coverOfferAvatarInitial: {
+    color: colors.primary,
+    fontSize: 15,
+    fontWeight: "800",
   },
   coverOfferPrice: {
     color: colors.text,
