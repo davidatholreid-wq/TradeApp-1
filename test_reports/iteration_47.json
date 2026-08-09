@@ -1,0 +1,54 @@
+{
+  "summary": "Iteration 47 — PRIMARY: Give Cover live count is fully working end-to-end for dealer Dave (dave@fourbuy.co.za). On mobile 390x844 the 'Give Cover' NavFlipTile renders a blue tinted pill badge with '1' in the top-right corner AND the dynamic hint reads exactly '1 car waiting · R10 each'. Backend confirmed: GET /api/cover/submissions returns 6 rows; exactly 1 has my_cover=null (matches badge). Admin (admin@fourbuy.co.za) does NOT see the Give Cover tile on the wide (1440) home — verified via DOM scan (Give Cover text: false). Web 3-column WeBuyCars-style grid on /cover at 1440px viewport is verified: 5 'Cover given' cards laid out at left positions 16/491/965 (row 1) then 16/491 (row 2), each card ~459×504px. Declined tab exists. On the Available tab, a red 'Decline' button + red 'Offer' button render below the card (web button flow, no gesture-handler). TakeAlot Rewards tile renders with grey/gold styling: gold REWARDS pill + gift icon + 'Fourbuy Rewards' + divider + 'POWERED BY' + takealot logo chip. Backend regression: 7 passed, 3 skipped in test_iteration_47_give_cover.py (skips = admin catalogue makes endpoint path not discoverable via probing, Dave's /api/submissions listing returned 0 rows so Deal-Tracking PATCH and Valuation-PDF byte smoke could not be reached from Dave's account — these routes were already verified in iterations 40-46). Forgot-password endpoint returns 200 for known + unknown email (correct — does not leak account existence). Reset-password with an invalid token returns 400. No new bugs. Data-drift note carried from iter46: /api/auth/me returns {\"user\": {...}} (not a flat user object).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/submissions (as dealer 'Dave')",
+        "issue": "Returns 0 rows for Dave even though he has 6 submissions surfaced via /api/cover/submissions. This is likely by design (his 'own' submissions vs cover-queue rows), but it blocked probing of Deal Tracking PATCH /api/submissions/{id}/deal and the Valuation PDF byte-stream from Dave's account in this run. Suggest seeding at least one Dave-owned submission (or exposing /api/submissions?mine=1) so future regressions can hit those flows without an admin bounce."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "Global (Expo web)",
+        "issue": "Console emits several deprecation warnings on home render: 'shadow* style props are deprecated. Use boxShadow', 'textShadow* style props are deprecated. Use textShadow', 'Image: style.resizeMode is deprecated. Please use props.resizeMode', 'props.pointerEvents is deprecated. Use style.pointerEvents'. Non-blocking but should be cleaned up (candidates: /app/frontend/app/(app)/index.tsx styles heroWrap/coversBannerWrap/frontTitleOnImage — shadow* and textShadow*; TilePage front image — Image resizeMode style; multiple LinearGradient wrappers using pointerEvents prop instead of style.pointerEvents)."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_47_give_cover.py",
+    "/app/test_reports/pytest/iteration_47.xml",
+    "/app/test_reports/screenshots/iter47_home_dave.png",
+    "/app/test_reports/screenshots/iter47_cover_page.png",
+    "/app/test_reports/screenshots/iter47_cover_wide.png",
+    "/app/test_reports/screenshots/iter47_cover_given_wide.png",
+    "/app/test_reports/screenshots/iter47_admin_home_wide.png"
+  ],
+  "action_items": [
+    "Optional: fix Expo/RN-web deprecation warnings (boxShadow, textShadow, Image resizeMode, style.pointerEvents) — impacts DX not users.",
+    "Optional: seed at least one Dave-owned submission so /api/submissions returns >0 and the Deal Tracking PATCH + Valuation PDF byte smoke tests can complete without an admin bounce.",
+    "Optional: PATCH-alias for POST /api/admin/submissions/{id}/price if the mobile client is expected to PATCH (carried over from iter46)."
+  ],
+  "critical_code_review_comments": [
+    "Give Cover badge logic in /app/frontend/app/(app)/index.tsx is guarded by isPricingAgent — correct. Loader is memoised on user.is_pricing_agent + refreshed on focus so leaving/returning updates the count without a manual refresh. Filter arr.filter(s => !s.my_cover).length exactly matches the backend's my_cover=null semantics.",
+    "quickCardBadge z-order relies on being a sibling AFTER quickIconChip inside the animated View — since the tile has overflow:hidden the badge stays inside the rounded corners. Visually reads as a proper 'unread' pill (screenshot iter47_home_dave.png).",
+    "server.py still 8500+ lines (soft-limit warning carried from prior iterations)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_47_give_cover.py (new)"
+  ],
+  "success_rate": {
+    "backend": "7/10 pass, 3 skipped (Dave-owned submissions absent + admin catalogue makes endpoint path not discoverable via HTTP probing — no failures)",
+    "frontend": "Primary + secondary flows verified on mobile 390x844 and wide 1440x900"
+  },
+  "seed_data_creation": "None — used existing preview DB. Non-destructive.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Give Cover badge uses tile.badge (rendered by NavFlipTile in /app/frontend/app/(app)/index.tsx). The badge is a pill positioned absolute top:8 right:8 with backgroundColor=tint (#5B8DEF for Give Cover) and white 12px bold text. Backend endpoint is GET /api/cover/submissions and returns {\"submissions\": [...]}; frontend counts arr.filter(s => !s.my_cover).length. Admin gets 403 from this endpoint (confirmed). Dave currently has: 6 total cover-queue rows, 1 available (Toyota Hilux FB-000002), 5 already covered, 0 declined. TakeAlot Rewards tile is a separate component (TakealotRewardsTile) not a NavFlipTile — it appears as the 4th quick action for dealers. Auth/me returns {\"user\": {...}} — unwrap before reading is_pricing_agent.",
+  "rca_of_issue": "N/A — regression pass, no bug investigation."
+}

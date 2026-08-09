@@ -188,6 +188,35 @@ export default function HomeScreen() {
   useEffect(() => { loadDealOutcomes(); }, [loadDealOutcomes]);
   useFocusEffect(useCallback(() => { loadDealOutcomes(); }, [loadDealOutcomes]));
 
+  // How many submissions are currently AVAILABLE for the caller to
+  // cover — powers the badge on the "Give Cover" home tile so pricing
+  // agents can see at a glance how much fresh work is waiting. Only
+  // fetched when the caller is toggled as a pricing agent, and
+  // refreshes on every focus so leaving-and-returning to home updates
+  // the count without a manual pull-to-refresh.
+  const [coversAvailable, setCoversAvailable] = useState<number | null>(null);
+  const loadCoversAvailable = useCallback(async () => {
+    if (!user?.is_pricing_agent) {
+      setCoversAvailable(null);
+      return;
+    }
+    try {
+      const r = await apiFetch("/api/cover/submissions");
+      const arr = (r as any)?.submissions;
+      if (Array.isArray(arr)) {
+        // "Available" == subs the agent has NOT covered yet. Cover-
+        // given rows come back in the same payload but with a truthy
+        // `my_cover` field.
+        const n = arr.filter((s: any) => !s.my_cover).length;
+        setCoversAvailable(n);
+      }
+    } catch {
+      // Non-fatal — the tile just shows the base hint if the fetch fails.
+    }
+  }, [user?.is_pricing_agent]);
+  useEffect(() => { loadCoversAvailable(); }, [loadCoversAvailable]);
+  useFocusEffect(useCallback(() => { loadCoversAvailable(); }, [loadCoversAvailable]));
+
   // Live-loaded advertising slots — replace the hardcoded 3 ads on the
   // "Advertising" tile with whatever the admin has configured via the
   // Admin Cockpit → Advertising module. If none are configured yet we
@@ -237,6 +266,10 @@ export default function HomeScreen() {
     icon: keyof typeof Ionicons.glyphMap;
     to: string;
     tint: string;
+    // Optional short label (usually a count) that renders as a small
+    // pill in the top-right corner of the tile. Used by "Give Cover"
+    // to surface the live number of submissions still needing a cover.
+    badge?: string;
   };
   const isAdmin = user?.role === "admin";
   const isPricingAgent = !!user?.is_pricing_agent;
@@ -255,7 +288,27 @@ export default function HomeScreen() {
         // so it visibly reads as the primary CTA on the home page.
         { key: "get-cover", label: "Get Cover", hint: "Submit a vehicle · confirmed cover in 90 s", icon: "flash" as const, to: "/(app)/submit", tint: colors.primary },
         ...(isPricingAgent
-          ? [{ key: "cover", label: "Give Cover", hint: "Price blind submissions · R10 each", icon: "shield-checkmark" as const, to: "/(app)/cover", tint: "#5B8DEF" }]
+          ? [{
+              key: "cover",
+              label: "Give Cover",
+              // Dynamic hint that surfaces the current queue depth
+              // right in the tile — dealers who leave and come back
+              // instantly see whether new work has landed. Falls back
+              // to the base copy on the first render before the fetch
+              // resolves or if the network call fails.
+              hint: coversAvailable != null && coversAvailable > 0
+                ? `${coversAvailable} car${coversAvailable === 1 ? "" : "s"} waiting · R10 each`
+                : coversAvailable === 0
+                  ? "No new submissions waiting"
+                  : "Price blind submissions · R10 each",
+              icon: "shield-checkmark" as const,
+              to: "/(app)/cover",
+              tint: "#5B8DEF",
+              // `badge` renders as a small primary-tinted pill in the
+              // top-right corner of the tile. Only shown when there's
+              // actually something to cover.
+              badge: coversAvailable && coversAvailable > 0 ? String(coversAvailable) : undefined,
+            }]
           : []),
         { key: "billing", label: "Billing", hint: "Invoices & report charges", icon: "cash" as const, to: "/(app)/billing", tint: "#22C55E" },
         { key: "history", label: "History", hint: "Priced & archived vehicles", icon: "time" as const, to: "/(app)/history", tint: "#A78BFA" },
@@ -344,6 +397,7 @@ export default function HomeScreen() {
                     hint={qa.hint}
                     icon={qa.icon}
                     tint={qa.tint}
+                    badge={qa.badge}
                     onNavigate={() => router.push(qa.to as never)}
                     styles={styles}
                     colors={colors}
@@ -628,12 +682,13 @@ function TakealotRewardsTile({
 
 
 function NavFlipTile({
-  label, hint, icon, tint, onNavigate, styles, colors,
+  label, hint, icon, tint, badge, onNavigate, styles, colors,
 }: {
   label: string;
   hint: string;
   icon: keyof typeof Ionicons.glyphMap;
   tint: string;
+  badge?: string;
   onNavigate: () => void;
   styles: ReturnType<typeof makeStyles>;
   colors: Palette;
@@ -693,6 +748,24 @@ function NavFlipTile({
         </View>
         <Text style={[styles.quickCardLabel, { color: colors.text }]}>{label}</Text>
         <Text style={styles.quickCardHint} numberOfLines={2}>{hint}</Text>
+        {/* Live count pill — rendered ABSOLUTELY in the tile's top-right
+            corner. Only shown when the caller provided a `badge` string
+            (currently used by the "Give Cover" tile to surface how many
+            submissions are still waiting for a cover). */}
+        {badge ? (
+          <View
+            style={[
+              styles.quickCardBadge,
+              { backgroundColor: tint, borderColor: tint },
+            ]}
+            pointerEvents="none"
+            accessibilityLabel={`${badge} waiting`}
+          >
+            <Text style={styles.quickCardBadgeTxt} numberOfLines={1}>
+              {badge}
+            </Text>
+          </View>
+        ) : null}
       </Animated.View>
     </Pressable>
   );
@@ -1222,6 +1295,35 @@ const makeStyles = (colors: Palette, isWide: boolean) => {
       lineHeight: 16,
       textAlign: "center",
       paddingHorizontal: 4,
+    },
+    // Small live-count pill anchored to the top-right corner of a
+    // NavFlipTile. Uses the tile's tint as background so it inherits
+    // each tile's brand colour without needing per-tile overrides.
+    quickCardBadge: {
+      position: "absolute",
+      top: 8,
+      right: 8,
+      minWidth: 22,
+      height: 22,
+      paddingHorizontal: 7,
+      borderRadius: 11,
+      borderWidth: 1.5,
+      borderColor: "transparent",
+      alignItems: "center",
+      justifyContent: "center",
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.18,
+      shadowRadius: 3,
+      elevation: 2,
+    },
+    quickCardBadgeTxt: {
+      color: "#FFFFFF",
+      fontSize: 12,
+      fontWeight: "800",
+      letterSpacing: 0.2,
+      lineHeight: 14,
+      includeFontPadding: false,
     },
 
     // ---- Takealot co-branded rewards tile ----

@@ -634,3 +634,125 @@ agent_communication:
 metadata:
   created_by: "main_agent"
   version: "1.7"
+
+##====================================================================================================
+## Iteration 2026-08-09 — Give Cover live count tile + regression pass
+##====================================================================================================
+
+frontend:
+  - task: "Give Cover tile — live count badge + dynamic hint"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/(app)/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Added coversAvailable state + loadCoversAvailable() (uses GET
+            /api/cover/submissions and filters out subs where my_cover is
+            truthy). Refreshed via useEffect + useFocusEffect so the count
+            updates when returning to Home. Extended QuickAction type with
+            optional `badge`. NavFlipTile now accepts + renders a small
+            tinted pill in the top-right corner. Dynamic hint text shows
+            "N cars waiting · R10 each" / "No new submissions waiting" /
+            base "Price blind submissions · R10 each" fallback.
+            
+            Only shown for pricing agents (user.is_pricing_agent === true).
+            Test via dave@fourbuy.co.za (Dave1234!). Admins do not see the
+            Give Cover tile.
+
+  - task: "Regression — Cover swipe-to-decline + declined silo (2026-08-08)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/(app)/cover.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+
+  - task: "Regression — Admin Make Catalogue filter"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/components/AdminCatalogueScreen.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+
+  - task: "Regression — Forgot / Reset password magic-link flow"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/(auth)/forgot-password.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+
+  - task: "Regression — Deal Tracking dealer-offer-gated with offer history"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/(app)/vehicle/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+
+  - task: "Regression — Valuation PDF (requester + dealership blocks, no duplicate BMW options)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+
+  - task: "Regression — TakeAlot rewards tile + Web 3-column cover grid"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/(app)/index.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+
+backend:
+  - task: "GET /api/cover/submissions returns my_cover per submission (unchanged)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Verified /api/auth/login and endpoint contract; frontend consumes {submissions:[{...,my_cover}]}."
+
+test_plan:
+  current_focus:
+    - "Give Cover tile — live count badge + dynamic hint"
+    - "Regression — Cover swipe-to-decline + declined silo (2026-08-08)"
+    - "Regression — Admin Make Catalogue filter"
+    - "Regression — Forgot / Reset password magic-link flow"
+    - "Regression — Deal Tracking dealer-offer-gated with offer history"
+    - "Regression — Valuation PDF (requester + dealership blocks, no duplicate BMW options)"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      Completed the "Give Cover" live count tile — NavFlipTile now shows a
+      tinted pill badge + dynamic hint driven by GET /api/cover/submissions.
+      Requesting a full regression run across last session's shipped work:
+      swipe-to-decline covers + declined silo, admin Make Catalogue toggles,
+      forgot/reset password magic-link flow (Emergent Resend), deal
+      tracking dealer-offer-gated flow with offer history, Valuation PDF
+      REQUESTED BY/DEALERSHIP blocks + de-duped BMW options page, TakeAlot
+      rewards tile, Web 3-column cover grid.
+
+      Credentials (see /app/memory/test_credentials.md):
+        - Admin:  admin@fourbuy.co.za / admin123
+        - Dealer (pricing agent): dave@fourbuy.co.za / Dave1234!
+
+metadata:
+  created_by: "main_agent"
+  version: "1.8"
