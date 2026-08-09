@@ -1841,13 +1841,104 @@ export default function VehicleDetail() {
         {/* Status banner — hidden in cover-mode so pricing agents aren't
             anchored by any Fourbuy offer/price state. */}
         {isCoverMode ? null : sub.status === "priced" ? (
-          <View style={styles.priceBanner} testID="price-banner">
-            <View>
-              <Text style={styles.priceLabel}>FOURBUY OFFER</Text>
-              <Text style={styles.priceValue}>{formatZAR(sub.price)}</Text>
-              {sub.price_notes ? <Text style={styles.priceNotes}>{sub.price_notes}</Text> : null}
+          <View style={styles.fourbuyOfferCard} testID="fourbuy-offer-card">
+            <View style={styles.priceBanner} testID="price-banner">
+              <View>
+                <Text style={styles.priceLabel}>FOURBUY OFFER</Text>
+                <Text style={styles.priceValue}>{formatZAR(sub.price)}</Text>
+                {sub.price_notes ? <Text style={styles.priceNotes}>{sub.price_notes}</Text> : null}
+              </View>
+              <Ionicons name="checkmark-circle" size={40} color={colors.text} />
             </View>
-            <Ionicons name="checkmark-circle" size={40} color={colors.text} />
+
+            {/* Nested Fourbuy Offer History — sits inside the same card
+                as the FOURBUY OFFER banner so the audit trail is
+                visually tied to the current offer. Collapsible, closed
+                by default. */}
+            {sub.price_history && sub.price_history.length > 0 ? (
+              <View style={styles.nestedHistory} testID="price-history">
+                <TouchableOpacity
+                  testID="price-history-toggle"
+                  style={styles.nestedHistoryToggle}
+                  onPress={() => setPriceHistoryOpen((v) => !v)}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    priceHistoryOpen ? "Collapse offer history" : "Expand offer history"
+                  }
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
+                    <Text style={styles.nestedHistoryTitle}>
+                      Fourbuy Offer History ({sub.price_history.length})
+                    </Text>
+                  </View>
+                  <Ionicons
+                    name={priceHistoryOpen ? "chevron-up" : "chevron-down"}
+                    size={16}
+                    color={colors.textSecondary}
+                  />
+                </TouchableOpacity>
+                {priceHistoryOpen ? (
+                  <View style={styles.nestedHistoryBody}>
+                    {sub.price_history
+                      .slice()
+                      .sort((a, b) => (a.at < b.at ? 1 : -1))
+                      .map((h, idx) => (
+                        <View
+                          key={h.id}
+                          style={[
+                            styles.priceHistoryRow,
+                            idx === sub.price_history!.length - 1 && { borderBottomWidth: 0 },
+                          ]}
+                        >
+                          <View style={styles.priceHistoryDot} />
+                          <View style={{ flex: 1 }}>
+                            <View style={styles.priceHistoryHeader}>
+                              <Text style={styles.priceHistoryAction}>
+                                {h.action === "update" ? "PRICE UPDATED" : "INITIAL OFFER"}
+                              </Text>
+                              <Text style={styles.priceHistoryDate}>
+                                {new Date(h.at).toLocaleString()}
+                              </Text>
+                            </View>
+                            <View style={styles.priceHistoryPriceRow}>
+                              {h.previous_price != null ? (
+                                <>
+                                  <Text style={styles.priceHistoryOld}>
+                                    {formatZAR(h.previous_price)}
+                                  </Text>
+                                  <Ionicons name="arrow-forward" size={14} color={colors.textSecondary} />
+                                </>
+                              ) : null}
+                              <Text style={styles.priceHistoryNew}>{formatZAR(h.new_price)}</Text>
+                              {h.previous_price != null ? (
+                                <Text
+                                  style={[
+                                    styles.priceHistoryDelta,
+                                    {
+                                      color:
+                                        h.new_price > (h.previous_price || 0)
+                                          ? colors.success
+                                          : h.new_price < (h.previous_price || 0)
+                                          ? colors.danger
+                                          : colors.textSecondary,
+                                    },
+                                  ]}
+                                >
+                                  {h.new_price > (h.previous_price || 0) ? "+" : ""}
+                                  {formatZAR(h.new_price - (h.previous_price || 0))}
+                                </Text>
+                              ) : null}
+                            </View>
+                            <Text style={styles.priceHistoryComment}>{h.comment}</Text>
+                            <Text style={styles.priceHistoryAdmin}>by {h.admin_name}</Text>
+                          </View>
+                        </View>
+                      ))}
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
           </View>
         ) : sub.status === "declined" ? (
           <View style={styles.declinedBanner} testID="declined-banner">
@@ -1996,91 +2087,10 @@ export default function VehicleDetail() {
 
 
 
-        {/* Fourbuy Offer History log — every offer / update the admin has
-            made, most recent first. Visible to both admins and the
-            owning dealer for full transparency. Collapsible; closed by
-            default so it doesn't push the vehicle details way down. */}
-        {sub.price_history && sub.price_history.length > 0 && !isCoverMode ? (
-          <View style={styles.priceHistoryBox} testID="price-history">
-            <TouchableOpacity
-              testID="price-history-toggle"
-              style={styles.priceHistoryToggle}
-              onPress={() => setPriceHistoryOpen((v) => !v)}
-              accessibilityRole="button"
-              accessibilityLabel={
-                priceHistoryOpen ? "Collapse offer history" : "Expand offer history"
-              }
-            >
-              <Text style={styles.sectionTitle}>
-                Fourbuy Offer History ({sub.price_history.length})
-              </Text>
-              <Ionicons
-                name={priceHistoryOpen ? "chevron-up" : "chevron-down"}
-                size={18}
-                color={colors.textSecondary}
-              />
-            </TouchableOpacity>
-            {priceHistoryOpen ? (
-              <>
-                {sub.price_history
-              .slice()
-              .sort((a, b) => (a.at < b.at ? 1 : -1))
-              .map((h, idx) => (
-                <View
-                  key={h.id}
-                  style={[
-                    styles.priceHistoryRow,
-                    idx === sub.price_history!.length - 1 && { borderBottomWidth: 0 },
-                  ]}
-                >
-                  <View style={styles.priceHistoryDot} />
-                  <View style={{ flex: 1 }}>
-                    <View style={styles.priceHistoryHeader}>
-                      <Text style={styles.priceHistoryAction}>
-                        {h.action === "update" ? "PRICE UPDATED" : "INITIAL OFFER"}
-                      </Text>
-                      <Text style={styles.priceHistoryDate}>
-                        {new Date(h.at).toLocaleString()}
-                      </Text>
-                    </View>
-                    <View style={styles.priceHistoryPriceRow}>
-                      {h.previous_price != null ? (
-                        <>
-                          <Text style={styles.priceHistoryOld}>
-                            {formatZAR(h.previous_price)}
-                          </Text>
-                          <Ionicons name="arrow-forward" size={14} color={colors.textSecondary} />
-                        </>
-                      ) : null}
-                      <Text style={styles.priceHistoryNew}>{formatZAR(h.new_price)}</Text>
-                      {h.previous_price != null ? (
-                        <Text
-                          style={[
-                            styles.priceHistoryDelta,
-                            {
-                              color:
-                                h.new_price > (h.previous_price || 0)
-                                  ? colors.success
-                                  : h.new_price < (h.previous_price || 0)
-                                  ? colors.danger
-                                  : colors.textSecondary,
-                            },
-                          ]}
-                        >
-                          {h.new_price > (h.previous_price || 0) ? "+" : ""}
-                          {formatZAR(h.new_price - (h.previous_price || 0))}
-                        </Text>
-                      ) : null}
-                    </View>
-                    <Text style={styles.priceHistoryComment}>{h.comment}</Text>
-                    <Text style={styles.priceHistoryAdmin}>by {h.admin_name}</Text>
-                  </View>
-                </View>
-              ))}
-              </>
-            ) : null}
-          </View>
-        ) : null}
+        {/* Fourbuy Offer History is now nested INSIDE the Fourbuy Offer
+            card above — see `fourbuyOfferCard`. This standalone slot
+            is intentionally left blank so the layout below stays
+            unchanged. */}
 
         {/* Open Valuation PDF — always available once an offer has been received.
             Hidden in cover mode because the PDF exposes the Fourbuy admin offer. */}
@@ -4355,6 +4365,37 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     fontSize: 11,
     fontWeight: "800",
     letterSpacing: 1,
+  },
+
+  // Wrapper card that ties the Fourbuy Offer banner together with the
+  // nested Fourbuy Offer History collapsible below it. Keeps them
+  // visually linked as a single "offer" unit.
+  fourbuyOfferCard: {
+    marginBottom: spacing.md,
+    borderRadius: radius.lg,
+    overflow: "hidden",
+  },
+  nestedHistory: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  nestedHistoryToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+  },
+  nestedHistoryTitle: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+  },
+  nestedHistoryBody: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
   },
 
   // Collapsible toggle row on the Fourbuy Offer History card.
