@@ -1087,6 +1087,7 @@ async def forgot_password(payload: ForgotPasswordRequest, request: Request):
         # /app/frontend/app/(auth)/reset-password.tsx (the auth group
         # is a routing convenience, the URL doesn't include it).
         reset_link = f"{base}/reset-password?token={token}"
+        logger.info("reset_link built: %s", reset_link)
 
         # Best-effort personalisation.
         info = user.get("dealer_info") or {}
