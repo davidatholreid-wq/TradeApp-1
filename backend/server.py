@@ -3941,30 +3941,70 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
     bs = sub.get("bimmer_spec") or {}
     if isinstance(bs, dict) and bs.get("status") == "ok":
         story.append(Paragraph("FACTORY FITTED VEHICLE OPTIONS", section_title))
+        # Caption row — VIN reminder + a compact SA / E / HO count
+        # summary so the dealer can gauge the scope at a glance without
+        # counting rows.
+        opt_counts = bs.get("option_counts") or {}
+        sa_n = int(opt_counts.get("sa") or 0)
+        e_n = int(opt_counts.get("e") or 0)
+        ho_n = int(opt_counts.get("ho") or 0)
+        described_n = int(opt_counts.get("described") or 0)
+        total_n = sa_n + e_n + ho_n
+        cap_bits = [f"VIN {bs.get('vin') or '—'}"]
+        if total_n:
+            cap_bits.append(f"{total_n} options")
+        if sa_n:
+            cap_bits.append(f"{sa_n} SA")
+        if e_n:
+            cap_bits.append(f"{e_n} E")
+        if ho_n:
+            cap_bits.append(f"{ho_n} HO")
+        if described_n and total_n:
+            cap_bits.append(f"{described_n}/{total_n} named")
         story.append(Paragraph(
-            f'<font name="Helvetica" size="8" color="#6B6B6B">'
-            f'Against supplied VIN {bs.get("vin") or "—"}'
-            f'</font>',
+            f'<font name="Helvetica" size="8" color="#6B6B6B">' +
+            " · ".join(cap_bits) +
+            "</font>",
             small,
         ))
         opts = bs.get("options") or []
         if opts:
+            # Nicer typography and colour-blocked "Kind" column so SA /
+            # E / HO groups read like proper section chips. Also uses
+            # slightly larger row padding for a calmer, less cramped
+            # feel on print.
             opt_rows: list[list[Any]] = [["Kind", "Code", "Description"]]
             order = {"SA": 0, "E": 1, "HO": 2}
-            for o in sorted(opts, key=lambda x: (order.get(x.get("kind"), 9), x.get("code") or "")):
+            sorted_opts = sorted(
+                opts,
+                key=lambda x: (order.get(x.get("kind"), 9), x.get("code") or ""),
+            )
+            for o in sorted_opts:
                 kind = o.get("kind") or ""
                 code = o.get("code") or ""
                 desc = o.get("description") or "—"
                 opt_rows.append([
-                    kind,
-                    Paragraph(f'<font name="Courier-Bold" size="8">{code}</font>',
-                              ParagraphStyle("opt_code", parent=small, leading=10)),
+                    Paragraph(
+                        f'<font name="Helvetica-Bold" size="8">{kind}</font>',
+                        ParagraphStyle("opt_kind", parent=small, leading=10, alignment=1),
+                    ),
+                    Paragraph(
+                        f'<font name="Courier-Bold" size="8">{code}</font>',
+                        ParagraphStyle("opt_code", parent=small, leading=10),
+                    ),
                     _P(desc),
                 ])
-            t_opts = Table(opt_rows, colWidths=[16 * mm, 22 * mm, 148 * mm], repeatRows=1)
+            t_opts = Table(opt_rows, colWidths=[14 * mm, 22 * mm, 150 * mm], repeatRows=1)
             ts_opts = _row_style()
             ts_opts.add("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 8)
             ts_opts.add("BACKGROUND", (0, 0), (-1, 0), PAPER)
+            # Colour the Kind column a subtle tint so SA/E/HO groups are
+            # visually separable without adding row-band shading which
+            # can print poorly.
+            ts_opts.add("BACKGROUND", (0, 1), (0, -1), rl_colors.HexColor("#F7F7F5"))
+            ts_opts.add("ALIGN", (0, 0), (0, -1), "CENTER")
+            ts_opts.add("TOPPADDING", (0, 1), (-1, -1), 3)
+            ts_opts.add("BOTTOMPADDING", (0, 1), (-1, -1), 3)
             t_opts.setStyle(ts_opts)
             story.append(t_opts)
         else:
@@ -4132,6 +4172,18 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
         for r in reports:
             data = r.get("result_data")
             if not data or (r.get("status") or "").lower() != "delivered":
+                continue
+            # Skip the `bmw_options` report body — its content is
+            # already fully rendered above in "FACTORY FITTED VEHICLE
+            # OPTIONS" (sourced from the submission's cached
+            # `bimmer_spec`, which is the same payload). Rendering it a
+            # second time added a blank page with just a header (there
+            # was no branch for `bmw_options` in the per-report body
+            # switch below), which read as a duplicated / half-broken
+            # section. The report is still listed in the "ORDERED VIN
+            # REPORTS" summary table above so the dealer can see it was
+            # delivered — we just don't re-print the same 52 rows.
+            if r.get("type") == "bmw_options":
                 continue
             story.append(PageBreak())
             story.append(Paragraph(
