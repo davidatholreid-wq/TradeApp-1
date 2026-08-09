@@ -1926,10 +1926,17 @@ export default function VehicleDetail() {
         <View style={styles.titleBox} testID="vehicle-hero-title">
           <View style={styles.titleAccent} />
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.brand}>{sub.make_name}</Text>
-            <Text style={styles.derivative} numberOfLines={2}>
-              {sub.derivative_name}
-            </Text>
+            <Text style={styles.brand} testID="vehicle-hero-make">{sub.make_name}</Text>
+            {sub.model_name ? (
+              <Text style={styles.model} numberOfLines={2} testID="vehicle-hero-model">
+                {sub.model_name}
+              </Text>
+            ) : null}
+            {sub.derivative_name && sub.derivative_name !== sub.model_name ? (
+              <Text style={styles.derivative} numberOfLines={2} testID="vehicle-hero-derivative">
+                {sub.derivative_name}
+              </Text>
+            ) : null}
             {sub.year ? (
               <Text style={styles.titleYear}>
                 {sub.year}
@@ -6029,13 +6036,18 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     borderRadius: 3,
     backgroundColor: colors.primary,
   },
+  // Make (BMW / Audi / Toyota) is the primary identity of the
+  // submission — displayed as a bold, hero-scale heading at the top
+  // of the vehicle detail page so dealers can identify the vehicle at
+  // a glance. Reads as the visual anchor of the title stack.
   brand: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 2,
+    color: colors.text,
+    fontSize: 28,
+    fontWeight: "900",
+    letterSpacing: 0.5,
     textTransform: "uppercase",
     marginBottom: 2,
+    lineHeight: 32,
   },
   model: {
     color: colors.text,
@@ -6047,10 +6059,12 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
   derivative: {
     color: colors.text,
-    fontSize: 22,
-    fontWeight: "800",
-    letterSpacing: -0.5,
-    lineHeight: 26,
+    fontSize: 18,
+    fontWeight: "700",
+    letterSpacing: -0.3,
+    lineHeight: 22,
+    marginTop: 2,
+    opacity: 0.9,
   },
   titleYear: {
     marginTop: 8,
