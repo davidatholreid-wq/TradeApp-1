@@ -15,8 +15,9 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
-  Image, RefreshControl,
+  Image, RefreshControl, Animated as RNAnimated, Platform,
 } from "react-native";
+import { Swipeable } from "react-native-gesture-handler";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -118,6 +119,53 @@ export default function GiveCoverScreen() {
   );
   const shown = tab === "available" ? available : given;
 
+  // Swipe-to-decline (iOS style) — the agent swipes a row on the
+  // "Available" tab to permanently hide it from THEIR view. The
+  // submission stays available to every other pricing agent. We show
+  // an in-app Undo snackbar for a few seconds so an accidental swipe
+  // is instantly recoverable.
+  const [undoState, setUndoState] = useState<{ subId: string; label: string } | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openSwipeRef = useRef<Swipeable | null>(null);
+
+  const clearUndoTimer = () => {
+    if (undoTimer.current) {
+      clearTimeout(undoTimer.current);
+      undoTimer.current = null;
+    }
+  };
+
+  const handleDecline = useCallback(async (sub: CoverSub) => {
+    // Optimistic remove from list.
+    setSubs((prev) => prev.filter((s) => s.id !== sub.id));
+    const label = [sub.reference, sub.make_name, sub.model_name].filter(Boolean).join(" · ");
+    setUndoState({ subId: sub.id, label });
+    clearUndoTimer();
+    undoTimer.current = setTimeout(() => setUndoState(null), 5000);
+    try {
+      await apiFetch(`/api/cover/submissions/${sub.id}/decline`, { method: "POST" });
+    } catch (e) {
+      console.warn("decline failed — rolling back", e);
+      // Roll back so the row reappears if the API call failed.
+      setSubs((prev) => (prev.some((p) => p.id === sub.id) ? prev : [sub, ...prev]));
+      setUndoState(null);
+    }
+  }, []);
+
+  const handleUndoDecline = useCallback(async () => {
+    const target = undoState;
+    if (!target) return;
+    clearUndoTimer();
+    setUndoState(null);
+    try {
+      await apiFetch(`/api/cover/submissions/${target.subId}/decline`, { method: "DELETE" });
+      // Silently reload so the row comes back with fresh data.
+      load({ silent: true });
+    } catch (e) {
+      console.warn("undo decline failed", e);
+    }
+  }, [undoState, load]);
+
   if (!user?.is_pricing_agent) {
     return (
       <View style={[styles.blockedWrap, { backgroundColor: colors.bg }]}>
@@ -130,7 +178,7 @@ export default function GiveCoverScreen() {
     );
   }
 
-  return (
+  const scrollContent = (
     <ScrollView
       style={{ backgroundColor: colors.bg }}
       contentContainerStyle={{
@@ -256,7 +304,36 @@ export default function GiveCoverScreen() {
           ].filter(Boolean).join(" · ");
           const covered = !!s.my_cover;
           const historyCount = (s.my_cover?.history || []).length;
-          return (
+
+          // iOS-style swipe-to-decline action rendered on the RIGHT
+          // (finger swipes leftwards to reveal). Only offered on the
+          // "Available" tab — we don't let the agent decline a cover
+          // they've already placed.
+          const renderRightActions = (
+            _progress: RNAnimated.AnimatedInterpolation<number>,
+            dragX: RNAnimated.AnimatedInterpolation<number>,
+          ) => {
+            const trans = dragX.interpolate({
+              inputRange: [-120, 0],
+              outputRange: [0, 60],
+              extrapolate: "clamp",
+            });
+            return (
+              <View style={styles.declineActionWrap}>
+                <RNAnimated.View
+                  style={[
+                    styles.declineAction,
+                    { backgroundColor: colors.danger, transform: [{ translateX: trans }] },
+                  ]}
+                >
+                  <Ionicons name="close-circle" size={20} color="#fff" />
+                  <Text style={styles.declineActionText}>Decline</Text>
+                </RNAnimated.View>
+              </View>
+            );
+          };
+
+          const cardInner = (
             <TouchableOpacity
               key={s.id}
               testID={`cover-row-${s.id}`}
@@ -320,9 +397,76 @@ export default function GiveCoverScreen() {
               <Ionicons name="chevron-forward" size={20} color={colors.textDisabled} />
             </TouchableOpacity>
           );
+
+          // Only offer swipe on the "Available" tab. On web the
+          // Swipeable component still works with mouse drag, so we
+          // enable it everywhere — mobile web users get the same
+          // decline gesture. Cover-given rows never wrap.
+          if (covered) return cardInner;
+          return (
+            <Swipeable
+              key={s.id}
+              friction={2}
+              rightThreshold={80}
+              overshootRight={false}
+              renderRightActions={renderRightActions}
+              onSwipeableWillOpen={(direction) => {
+                // Close any other open swipe row so only one shows
+                // its action at a time (matches iOS Mail UX).
+                if (openSwipeRef.current && (openSwipeRef.current as any)._id !== s.id) {
+                  try { openSwipeRef.current.close(); } catch {}
+                }
+              }}
+              onSwipeableOpen={(direction, ref) => {
+                if (direction === "right") {
+                  // Fully-opened swipe → treat as a decline. Close
+                  // immediately so the row animates out cleanly.
+                  try { ref?.close(); } catch {}
+                  handleDecline(s);
+                }
+              }}
+            >
+              {cardInner}
+            </Swipeable>
+          );
         })
       )}
     </ScrollView>
+  );
+
+  // Bottom snackbar for Undo — mounted OUTSIDE the ScrollView so it
+  // stays anchored while the list scrolls. We return a Fragment so
+  // both siblings can be rendered.
+  const undoBar = undoState ? (
+    <View
+      pointerEvents="box-none"
+      style={[
+        styles.snackbarWrap,
+        { bottom: Math.max(insets.bottom, 12) + 16 },
+      ]}
+    >
+      <View style={[styles.snackbar, { backgroundColor: colors.text }]}>
+        <Ionicons name="checkmark-circle" size={16} color={colors.bg} />
+        <Text style={[styles.snackbarText, { color: colors.bg }]} numberOfLines={1}>
+          Removed {undoState.label ? `“${undoState.label}”` : "submission"}
+        </Text>
+        <TouchableOpacity
+          testID="cover-decline-undo"
+          onPress={handleUndoDecline}
+          style={styles.snackbarBtn}
+          hitSlop={8}
+        >
+          <Text style={[styles.snackbarBtnText, { color: colors.bg }]}>UNDO</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  ) : null;
+
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      {scrollContent}
+      {undoBar}
+    </View>
   );
 }
 
@@ -445,4 +589,67 @@ const styles = StyleSheet.create({
     alignItems: "center", gap: spacing.sm,
   },
   emptyTitle: { fontSize: 14, fontWeight: "800", marginTop: 4 },
+
+  // Swipe-to-decline action rendered on the RIGHT of the row when the
+  // pricing agent drags leftwards.
+  declineActionWrap: {
+    justifyContent: "center",
+    alignItems: "flex-end",
+    marginBottom: spacing.sm,
+  },
+  declineAction: {
+    width: 100,
+    height: "100%",
+    borderRadius: radius.md,
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    // Match the row's bottom margin so the action height lines up with
+    // the neighbouring card exactly.
+  },
+  declineActionText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+
+  // Bottom-anchored Undo snackbar (shown for 5s after each decline).
+  snackbarWrap: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    ...(Platform.OS === "web" ? ({ pointerEvents: "box-none" as any } as any) : {}),
+  },
+  snackbar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    minWidth: 260,
+    maxWidth: 460,
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+  },
+  snackbarText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  snackbarBtn: {
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  snackbarBtnText: {
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
 });

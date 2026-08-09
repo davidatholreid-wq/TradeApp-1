@@ -8409,9 +8409,19 @@ async def list_cover_submissions(current: dict = Depends(require_pricing_agent))
     """List submissions available for a pricing agent to price.
 
     Rules: status in {pending, priced}, not a draft, and NOT owned by
-    this agent's dealership (they can't cover their own stock).
+    this agent's dealership (they can't cover their own stock). Any
+    submissions this agent has explicitly declined (via swipe-to-decline)
+    are also hidden — unless they've placed a cover on it since (in
+    which case the decline is auto-cleared server-side).
     """
     my_dealership = current.get("dealership_id")
+    # Load the set of submission ids this agent has declined. We keep
+    # this in a dedicated collection so undecline / audit is trivial.
+    declined_docs = await db.cover_declines.find(
+        {"agent_user_id": current["id"]},
+        {"_id": 0, "submission_id": 1},
+    ).to_list(5000)
+    declined_ids = {d["submission_id"] for d in declined_docs if d.get("submission_id")}
     cursor = db.submissions.find(
         {
             "status": {"$in": ["pending", "priced"]},
@@ -8432,9 +8442,23 @@ async def list_cover_submissions(current: dict = Depends(require_pricing_agent))
         {"_id": 0, "submission_id": 1, "price_zar": 1, "created_at": 1},
     ).to_list(1000)
     covers_by_sub = {c["submission_id"]: c for c in my_covers}
+    filtered: list = []
     for s in subs:
-        c = covers_by_sub.get(s["id"])
+        sid = s["id"]
+        c = covers_by_sub.get(sid)
         s["my_cover"] = c if c else None
+        # If the agent has already declined this sub, hide it — UNLESS
+        # they have subsequently placed a cover (edge case: they
+        # declined, then reopened the deep-link and gave cover). In
+        # that case honour the cover and clear the decline.
+        if sid in declined_ids and not c:
+            continue
+        if sid in declined_ids and c:
+            # Best-effort auto-cleanup; ignore failure.
+            try:
+                await db.cover_declines.delete_one({"agent_user_id": current["id"], "submission_id": sid})
+            except Exception:
+                pass
         # Derive a single "thumbnail" URL from whichever photo role is
         # present first — the frontend list card renders this. `photos`
         # in Fourbuy submissions is a dict keyed by role
@@ -8453,7 +8477,46 @@ async def list_cover_submissions(current: dict = Depends(require_pricing_agent))
         elif isinstance(photos, list):
             thumb = photos[0] if photos else None
         s["thumbnail"] = thumb
-    return {"submissions": subs}
+        filtered.append(s)
+    return {"submissions": filtered}
+
+
+@api_router.post("/cover/submissions/{sub_id}/decline")
+async def decline_cover_submission(
+    sub_id: str, current: dict = Depends(require_pricing_agent)
+):
+    """Pricing agent swipes-to-decline a submission → it no longer
+    appears in their `available to cover` list. This is a personal
+    filter — the submission remains fully available to every other
+    pricing agent. Placing a cover later automatically clears the
+    decline (see list_cover_submissions above)."""
+    sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0, "id": 1, "dealership_id": 1, "status": 1})
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+    if sub.get("dealership_id") == current.get("dealership_id"):
+        raise HTTPException(403, "You cannot decline your own stock.")
+    await db.cover_declines.update_one(
+        {"agent_user_id": current["id"], "submission_id": sub_id},
+        {"$set": {
+            "agent_user_id": current["id"],
+            "submission_id": sub_id,
+            "declined_at": datetime.now(timezone.utc).isoformat(),
+        }},
+        upsert=True,
+    )
+    return {"status": "declined"}
+
+
+@api_router.delete("/cover/submissions/{sub_id}/decline")
+async def undo_decline_cover_submission(
+    sub_id: str, current: dict = Depends(require_pricing_agent)
+):
+    """Undo a decline (used by the client-side "Undo" toast after a
+    swipe). Safe no-op if the decline was never persisted."""
+    await db.cover_declines.delete_one(
+        {"agent_user_id": current["id"], "submission_id": sub_id}
+    )
+    return {"status": "restored"}
 
 
 @api_router.get("/cover/submissions/{sub_id}")
