@@ -4259,7 +4259,17 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     textAlign: "center",
     letterSpacing: 0.3,
   },
-  scroll: { padding: spacing.lg, paddingBottom: 120 },
+  // ScrollView content — capped to a readable column width on desktop
+  // so label/value pairs (e.g. "Year Registered: 2023") sit close
+  // together instead of stretching to opposite edges of a 1440-px
+  // viewport. Mobile stays 100% width because it's below the cap.
+  scroll: {
+    padding: spacing.lg,
+    paddingBottom: 120,
+    width: "100%",
+    maxWidth: 820,
+    alignSelf: "center",
+  },
 
   // Combined advisory shown below the AutoTrader + WeBuyCars deep-link
   // cards. Explains how the two markets differ so the dealer doesn't
