@@ -1,6 +1,7 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from "react";
+import * as React from "react";
 import { Pressable } from "@/src/components/HapticButtons";
-import { View, Text, StyleSheet, ScrollView, Image, Platform, useWindowDimensions } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Image, Platform, useWindowDimensions, Alert, Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import Animated, {
@@ -99,6 +100,72 @@ export default function HomeScreen() {
   const insets = useBottomTabBarHeight();
   const router = useRouter();
   const { user } = useAuth();
+  const isSuspended = user?.active === false;
+
+  // When a dealer's account is suspended (billing hold, admin action,
+  // etc.) they must NOT be able to submit new valuations or place
+  // covers. Tapping Get Cover / Give Cover pops a modal offering to
+  // WhatsApp the admin directly with a pre-filled enquiry.
+  const handleGuardedNavigate = React.useCallback(
+    (target: string, tileLabel: string) => {
+      if (!isSuspended) {
+        router.push(target as never);
+        return;
+      }
+      const dealership =
+        user?.dealership?.name ||
+        (user as any)?.company_info?.company_name ||
+        "—";
+      const userName =
+        user?.name ||
+        [user?.dealer_info?.first_name, user?.dealer_info?.last_name]
+          .filter(Boolean)
+          .join(" ") ||
+        user?.email ||
+        "—";
+      const adminPhone = "27848819073";
+      const waText =
+        `Hi Fourbuy Admin,%0A%0A` +
+        `I'm enquiring about an account suspension.%0A` +
+        `Dealership: ${encodeURIComponent(dealership)}%0A` +
+        `User: ${encodeURIComponent(userName)}%0A%0A` +
+        `Please assist us to reactivate the account.`;
+      const waUrl = `https://wa.me/${adminPhone}?text=${waText}`;
+      const message =
+        `Your account is currently suspended, so you can't ${tileLabel === "Get Cover" ? "submit new valuations" : "place covers"} right now.\n\n` +
+        `Please contact the Fourbuy administrator to resolve this.`;
+      if (Platform.OS === "web") {
+        const ok = (globalThis as any).confirm?.(
+          `${message}\n\nOpen WhatsApp to message admin now?`
+        );
+        if (ok) (globalThis as any).open?.(waUrl, "_blank");
+        return;
+      }
+      Alert.alert(
+        "Account suspended",
+        message,
+        [
+          { text: "Ignore", style: "cancel" },
+          {
+            text: "WhatsApp Admin",
+            style: "default",
+            onPress: async () => {
+              try {
+                await Linking.openURL(waUrl);
+              } catch {
+                Alert.alert(
+                  "Could not open WhatsApp",
+                  "Please install WhatsApp or contact +27 84 881 9073 directly."
+                );
+              }
+            },
+          },
+        ],
+        { cancelable: true }
+      );
+    },
+    [isSuspended, router, user]
+  );
 
   const firstName =
     user?.dealer_info?.first_name?.trim() ||
@@ -450,7 +517,17 @@ export default function HomeScreen() {
                     icon={qa.icon}
                     tint={qa.tint}
                     badge={qa.badge}
-                    onNavigate={() => router.push(qa.to as never)}
+                    onNavigate={() => {
+                      // Suspension guard: Get Cover (submit valuations)
+                      // and Give Cover (place cover offers) both require
+                      // an active account. Other tiles are informational
+                      // (Billing, History, Rewards…) and remain open.
+                      if (qa.key === "get-cover" || qa.key === "cover") {
+                        handleGuardedNavigate(qa.to, qa.label);
+                        return;
+                      }
+                      router.push(qa.to as never);
+                    }}
                     styles={styles}
                     colors={colors}
                   />

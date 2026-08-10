@@ -325,6 +325,16 @@ async def place_cover_offer(
         raise HTTPException(400, "Invalid price_zar")
     if price <= 0:
         raise HTTPException(400, "price_zar must be a positive integer")
+    # Defense in depth — a suspended agent cannot place / update covers.
+    # The Home dashboard already intercepts the Give Cover tile on the
+    # frontend and pops a WhatsApp-admin alert; this guards the API path
+    # too so a suspended dealer cannot bypass by hitting the endpoint
+    # directly.
+    if current.get("active") is False:
+        raise HTTPException(
+            403,
+            "Your account has been suspended. Please contact Fourbuy to reactivate before placing covers.",
+        )
     sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
     if not sub:
         raise HTTPException(404, "Submission not found")
