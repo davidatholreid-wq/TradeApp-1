@@ -47,6 +47,8 @@ type Row = {
   sold?: boolean;
   sold_price_zar?: number | null;
   profit_zar?: number | null;
+  auto_expired?: boolean;
+  expired_at?: string | null;
 };
 
 type Report = {
@@ -249,6 +251,12 @@ export default function DealOutcomesScreen() {
                   {row.reference ? (
                     <Text style={[styles.rowMeta, { color: colors.textDisabled }]}>{row.reference}</Text>
                   ) : null}
+                  {row.auto_expired ? (
+                    <View style={styles.autoExpiredChip} testID={`auto-expired-${row.reference || row.id}`}>
+                      <Ionicons name="time-outline" size={11} color="#B45309" />
+                      <Text style={styles.autoExpiredTxt}>Auto-expired · tap to override</Text>
+                    </View>
+                  ) : null}
                 </View>
                 <View style={{ alignItems: "flex-end" }}>
                   {bucket === "deal_done" && row.profit_zar != null ? (
@@ -357,4 +365,21 @@ const makeStyles = (colors: any) =>
     rowSub: { fontSize: 12, fontWeight: "600", marginTop: 2 },
     rowMeta: { fontSize: 10, fontWeight: "700", letterSpacing: 0.3, marginTop: 2 },
     rowRight: { fontSize: 14, fontWeight: "900", fontFamily: fonts.number },
+    autoExpiredChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      alignSelf: "flex-start",
+      gap: 4,
+      marginTop: 4,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 4,
+      backgroundColor: "#FEF3C7",
+    },
+    autoExpiredTxt: {
+      color: "#B45309",
+      fontSize: 10,
+      fontWeight: "800",
+      letterSpacing: 0.2,
+    },
   });

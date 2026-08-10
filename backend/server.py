@@ -159,7 +159,12 @@ _push_client = httpx.AsyncClient(
 
 
 # ============ Helpers ============
-ARCHIVE_AFTER_DAYS = 14
+# How many days after a submission is CREATED before it archives (moves
+# to read-only history + PDF gets a red "SUBMISSION EXPIRED" banner).
+# The clock runs from `created_at` (raw submission date) not `priced_at`,
+# so a dealer always has the same predictable window to record an
+# outcome regardless of how quickly Fourbuy priced the car.
+ARCHIVE_AFTER_DAYS = 30
 BILLING_FEE_ZAR = 50.0
 BILLING_SLA_HOURS = 24
 
@@ -361,44 +366,120 @@ async def refund_points(user_id: str, points: int, redemption_id: str, note: str
 
 
 def compute_bucket(sub: dict) -> str:
-    """Return 'incoming', 'priced' or 'archived' based on status + priced_at age.
+    """Return 'incoming', 'priced' or 'archived' based on status + created_at age.
 
     - status == 'pending'  → 'incoming'
-    - status == 'priced' and priced_at within ARCHIVE_AFTER_DAYS → 'priced'
-    - status == 'priced' and priced_at older than ARCHIVE_AFTER_DAYS → 'archived'
+    - status == 'priced' and created_at within ARCHIVE_AFTER_DAYS → 'priced'
+    - status == 'priced' and created_at older than ARCHIVE_AFTER_DAYS → 'archived'
     - status == 'declined' — decisioned (no offer). Grouped into the 'priced'
       bucket so it lives with other decisioned cars, and archives after the
-      same window using declined_at as the reference.
+      same window using created_at as the reference so timing is consistent
+      across the whole submission lifecycle.
     """
     status = sub.get("status") or "pending"
+    # Anchor everything to created_at (raw submission date). Fall back
+    # to priced_at / declined_at only if the record is missing created_at
+    # (very old records from before the field existed).
+    anchor_raw = sub.get("created_at") or sub.get("submitted_at")
     if status == "declined":
-        declined_at_raw = sub.get("declined_at")
-        if not declined_at_raw:
+        anchor_raw = anchor_raw or sub.get("declined_at")
+        if not anchor_raw:
             return "priced"
         try:
-            declined_at = datetime.fromisoformat(declined_at_raw)
-            if declined_at.tzinfo is None:
-                declined_at = declined_at.replace(tzinfo=timezone.utc)
+            anchor = datetime.fromisoformat(anchor_raw)
+            if anchor.tzinfo is None:
+                anchor = anchor.replace(tzinfo=timezone.utc)
         except Exception:
             return "priced"
-        if datetime.now(timezone.utc) - declined_at > timedelta(days=ARCHIVE_AFTER_DAYS):
+        if datetime.now(timezone.utc) - anchor > timedelta(days=ARCHIVE_AFTER_DAYS):
             return "archived"
         return "priced"
     if status != "priced":
         return "incoming"
-    priced_at_raw = sub.get("priced_at")
-    if not priced_at_raw:
+    anchor_raw = anchor_raw or sub.get("priced_at")
+    if not anchor_raw:
         return "priced"
     try:
-        priced_at = datetime.fromisoformat(priced_at_raw)
-        if priced_at.tzinfo is None:
-            priced_at = priced_at.replace(tzinfo=timezone.utc)
+        anchor = datetime.fromisoformat(anchor_raw)
+        if anchor.tzinfo is None:
+            anchor = anchor.replace(tzinfo=timezone.utc)
     except Exception:
         return "priced"
-    age = datetime.now(timezone.utc) - priced_at
+    age = datetime.now(timezone.utc) - anchor
     if age > timedelta(days=ARCHIVE_AFTER_DAYS):
         return "archived"
     return "priced"
+
+
+async def auto_expire_pending_deal_outcomes(scope_query: Optional[dict] = None) -> int:
+    """Retroactively mark expired priced submissions as `no_deal`.
+
+    Any submission that is:
+      • status == 'priced'
+      • created more than ARCHIVE_AFTER_DAYS ago
+      • has no dealer-recorded outcome yet (deal missing or deal.done is null)
+    …gets `deal.done = false` written by "System (expired)". The dealer
+    can still override the outcome later from the vehicle detail screen.
+
+    The sweep is idempotent (WHERE deal.done ∈ {null, missing}) and
+    executes on the read-path of the Deal Outcomes stats/list endpoints,
+    so no cron / background worker is required.
+
+    `scope_query` lets callers restrict the sweep to a particular
+    dealership (dealer scope) — matches whatever WHERE the caller
+    already applies to the listing query.
+
+    Returns the number of submissions updated (mainly for logging /
+    testing).
+    """
+    cutoff_iso = (
+        datetime.now(timezone.utc) - timedelta(days=ARCHIVE_AFTER_DAYS)
+    ).isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    query: dict = {
+        "status": "priced",
+        "created_at": {"$lt": cutoff_iso},
+        # deal.done is null OR the deal object doesn't exist yet
+        "$or": [
+            {"deal": {"$exists": False}},
+            {"deal.done": None},
+            {"deal.done": {"$exists": False}},
+        ],
+    }
+    if scope_query:
+        # Merge caller scope in without stomping on our $or. Any
+        # caller-side $or is combined via $and so both sets of
+        # disjunctions must hold.
+        extra_or = scope_query.pop("$or", None)
+        if extra_or is not None:
+            query["$and"] = [{"$or": query.pop("$or")}, {"$or": extra_or}]
+        query.update(scope_query)
+
+    update = {
+        "$set": {
+            "deal.done": False,
+            "deal.auto_expired": True,
+            "deal.expired_at": now_iso,
+            "deal.updated_at": now_iso,
+            "deal.updated_by_name": "System (expired)",
+            # Clear any partial capture fields so the row renders as a
+            # clean "No Deal" and profit math short-circuits to 0.
+            "deal.purchase_price_zar": None,
+            "deal.sold": None,
+            "deal.recon_cost_zar": None,
+            "deal.sale_price_zar": None,
+        }
+    }
+    try:
+        result = await db.submissions.update_many(query, update)
+        n = getattr(result, "modified_count", 0) or 0
+        if n:
+            logging.info("auto_expire_pending_deal_outcomes: swept %s submission(s)", n)
+        return n
+    except Exception as e:  # pragma: no cover — defensive; sweep is non-fatal
+        logging.warning("auto_expire_pending_deal_outcomes failed: %s", e)
+        return 0
 
 
 async def _enrich_submissions_with_covers(subs: list) -> None:
@@ -877,6 +958,11 @@ async def deal_outcomes_stats(current: dict = Depends(get_current_user)):
         else:
             query["dealer_id"] = current.get("id")
 
+    # Retroactively close any submission that expired without a
+    # dealer-recorded outcome. Runs in the caller's scope so a dealer
+    # only sweeps their own dealership's records.
+    await auto_expire_pending_deal_outcomes(dict(query))
+
     pending = 0
     deal_done = 0
     no_deal = 0
@@ -945,6 +1031,12 @@ async def deal_outcomes_list(current: dict = Depends(get_current_user)):
         else:
             query["dealer_id"] = current.get("id")
 
+    # Retroactively close any submission that expired without a
+    # dealer-recorded outcome, so the report always reflects the
+    # up-to-date bucketing. Copy the query so the sweep uses the same
+    # scope (dealership / dealer_id) as the listing.
+    await auto_expire_pending_deal_outcomes(dict(query))
+
     projection = {
         "_id": 0,
         "id": 1, "reference": 1,
@@ -979,6 +1071,12 @@ async def deal_outcomes_list(current: dict = Depends(get_current_user)):
             "sold_price_zar": deal.get("sold_price_zar"),
             "profit_zar": _compute_deal_profit(deal).get("profit_zar"),
             "submitted_by_name": s.get("submitted_by_name"),
+            # Auto-expired rows are ones the system closed on the
+            # dealer's behalf after ARCHIVE_AFTER_DAYS days without a
+            # recorded outcome. Frontend badges these differently so
+            # dealers know they can still override.
+            "auto_expired": deal.get("auto_expired") is True,
+            "expired_at": deal.get("expired_at"),
         }
         if done_val is True:
             done_list.append(row)
@@ -1049,6 +1147,11 @@ async def deal_outcomes_by_dealer(current: dict = Depends(require_admin)):
 
     # Aggregate submissions.
     buckets: dict = {}  # key -> stats dict
+
+    # Retroactively close expired submissions with no recorded outcome
+    # so the per-dealer roll-up reflects the up-to-date bucketing. Admin
+    # scope: no dealer filter — sweep everything.
+    await auto_expire_pending_deal_outcomes({"status": "priced"})
 
     def _b(key: str, name: str) -> dict:
         if key not in buckets:
@@ -4824,6 +4927,12 @@ async def update_submission_deal(
         if done_val is not None and not isinstance(done_val, bool):
             raise HTTPException(400, "done must be true, false or null")
         deal["done"] = done_val
+        # Any manual override clears the auto-expired flag — this
+        # outcome is now dealer-owned regardless of what the sweep did
+        # previously.
+        if prev.get("auto_expired"):
+            deal["auto_expired"] = False
+            deal["expired_at"] = None
         if done_val is True and not prev.get("purchased_at"):
             deal["purchased_at"] = now_iso
         if done_val is False:
