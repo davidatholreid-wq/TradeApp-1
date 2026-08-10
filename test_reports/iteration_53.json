@@ -1,0 +1,45 @@
+{
+  "summary": "Backend regression tests written and PASSING for the Public Valuation Portal admin state-machine + Kredo market-values integration. 8/8 tests green in /app/backend/tests/test_public_valuation_state_machine.py. Verified: (a) bucket=priced EXCLUDES rows with delivered_email_at or delivered_whatsapp_at set, (b) bucket=delivered MATCHES rows delivered via any channel, (c) bucket=pending returns only status=pending, (d) POST /price on an already-delivered lead correctly updates price/priced_at/status=priced AND clears delivered_email_at, delivered_whatsapp_at, last_whatsapp_message, last_email_subject, last_email_body, (e) after re-price the lead re-appears in bucket=priced and is gone from bucket=delivered, (f) POST /market-values requires admin JWT (401 anonymous), returns 404 for unknown ids, returns 400 when make/model/year is missing, and returns 502 when Kredo cannot value the requested vehicle. Full happy-path (200 → market_values persisted) could not be observed in this preview environment because Kredo's Vehicle Values API rejected the sample BMW 3 Series / 320i M Sport / 2019 vehicle with 400 'No Values were found matching the requested vehicle' — this is a Kredo catalogue/vocabulary miss (public form derivatives do not carry Kredo's ALL-CAPS year-range suffix like '3 SERIES 2019 ON'), not an endpoint bug. Per spec, 502 (or ok) is acceptable and our endpoint correctly maps KredoAPIError → 502.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/admin/public-submissions/{id}/market-values",
+        "issue": "Kredo returns 400 'No Values were found matching the requested vehicle' for BMW / 3 Series / 320i M Sport / 2019 because the public form stores the frontend-friendly make/model/derivative (`BMW`, `3 Series`, `320i M Sport`) whereas Kredo expects the ALL-CAPS year-ranged form (`BMW`, `3 SERIES 2019 ON`, `320i M SPORT (F30) 4-DR A/T` or similar). The dealer flow already handles this via `_resolve_kredo_identifiers` in routes/kredo.py — the public-market-values endpoint at routes/public_valuation.py:592-604 passes the raw fields straight through and therefore fails for most real public submissions. Also, the 502 the backend returns has a helpful `detail` body, but on the preview ingress Cloudflare masks it with its own `502 Bad Gateway` HTML page — admins in the UI see no reason. Consider (a) reusing the dealer resolver so the request lines up with Kredo's vocabulary, and (b) returning 200 with `{market_values: {status: 'error', error: ...}}` (like the dealer flow does) instead of 502 so the message survives the ingress."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_public_valuation_state_machine.py",
+    "/app/test_reports/pytest/iteration_53_state_machine.xml"
+  ],
+  "action_items": [
+    "Consider wiring the public-market-values endpoint through the same `_resolve_kredo_identifiers` logic (or the catalogue join used by the dealer flow) so real public submissions can be valued against Kredo instead of always 502-ing.",
+    "Consider returning 200 with an inline `market_values.status=error` payload when Kredo replies with a business-level 400 ('No Values were found ...') — a hard 502 gets rewritten to the generic Cloudflare Bad-Gateway HTML at the ingress, so admins never see the real reason. This is exactly the pattern already used by `_run_market_values_fetch` in routes/kredo.py.",
+    "No fixes required for the state-machine — spec behaviour is fully implemented and covered by tests."
+  ],
+  "critical_code_review_comments": [
+    "routes/public_valuation.py:490-517 — bucket filter logic is correct. `bucket=priced` uses `delivered_email_at: None` AND `delivered_whatsapp_at: None`, and `bucket=delivered` uses a `$or` over the two timestamps. Behaviour matches the product spec exactly.",
+    "routes/public_valuation.py:532-560 — the /price endpoint always resets `delivered_*_at`, `last_whatsapp_message`, `last_email_subject`, `last_email_body`. This is unconditional, which is correct for the re-pricing use-case but means a benign price-notes-only edit would also blow away a valid delivery record. Product may want to distinguish 'edit notes' from 're-price'.",
+    "routes/public_valuation.py:563-635 — the market-values endpoint does NOT go through `_resolve_kredo_identifiers`. Public submissions therefore only work against Kredo if the derivative string already matches Kredo's ALL-CAPS year-ranged catalogue, which the public form does not produce.",
+    "routes/public_valuation.py — file is 713 lines, over the 700-line guideline. Consider splitting admin endpoints into their own module."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_public_valuation_state_machine.py (new file, 8 tests, all passing)"
+  ],
+  "success_rate": {
+    "backend": "8/8 (100%) on the new state-machine suite",
+    "frontend": "skipped per review_request (backend-only)"
+  },
+  "seed_data_creation": "Each test creates its own fresh public submission via POST /api/public/valuation using the TURNSTILE_TEST_BYPASS_TOKEN and a random X-Forwarded-For to avoid the 3/day/IP rate limit. Submissions accumulate in the `public_submissions` collection but are keyed off unique refs (FB-P-######) so re-runs are idempotent.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The state-machine (priced <-> delivered <-> re-priced) is fully verified. The only remaining nuance is the market-values Kredo mapping — if main agent wires the resolver in, add a test that asserts `market_values.status == 'ok'` and both `trade_price_zar` and `retail_price_zar` are integers after a successful call. Tests live at /app/backend/tests/test_public_valuation_state_machine.py — set EXPO_BACKEND_URL before invoking pytest.",
+  "rca_of_issue": "None for the state-machine — it works. For the Kredo 502: root cause is that routes/public_valuation.py:592-604 passes user-entered `make/model/year/derivative` straight to Kredo. Kredo's catalogue uses year-ranged model names (e.g. `3 SERIES 2019 ON`) and expanded derivative strings — a direct hit is only possible if the public form was populated from the Kredo-shaped cascade. Fix: reuse the dealer flow's `_resolve_kredo_identifiers` resolver (routes/kredo.py:102-198)."
+}

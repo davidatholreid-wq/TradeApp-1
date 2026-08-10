@@ -492,8 +492,16 @@ async def admin_list_public(request: Request, bucket: str = "pending"):
     _ = await _require_admin(request)
     from server import db
     filt: dict = {}
-    if bucket in ("pending", "priced"):
-        filt["status"] = bucket
+    if bucket == "pending":
+        filt["status"] = "pending"
+    elif bucket == "priced":
+        # PRICED silo = priced AND NOT YET delivered on any channel. Once
+        # delivered, the lead moves to the "delivered" silo (per product
+        # spec). Re-pricing clears the delivery timestamps and drops the
+        # lead back here for a fresh delivery.
+        filt["status"] = "priced"
+        filt["delivered_email_at"] = None
+        filt["delivered_whatsapp_at"] = None
     elif bucket == "delivered":
         # Match submissions delivered via ANY channel (email OR whatsapp).
         filt["$or"] = [
@@ -526,18 +534,133 @@ async def admin_price_public(sub_id: str, payload: PriceIn, request: Request):
     _ = await _require_admin(request)
     from server import db
     now = datetime.now(timezone.utc).isoformat()
+    # RE-pricing an already-delivered lead resets it back to a fresh
+    # "priced" state so the admin can deliver again. This is what moves
+    # the lead OUT of the delivered silo back into priced.
+    updates = {
+        "price": payload.price,
+        "price_notes": payload.price_notes,
+        "priced_at": now,
+        "status": "priced",
+        # Wipe prior delivery state so the row goes back to the priced
+        # silo and any prior canned message doesn't stick around with a
+        # stale price inside it.
+        "delivered_email_at": None,
+        "delivered_whatsapp_at": None,
+        "last_whatsapp_message": None,
+        "last_email_subject": None,
+        "last_email_body": None,
+    }
     result = await db.public_submissions.update_one(
         {"$or": [{"id": sub_id}, {"reference": sub_id}]},
-        {"$set": {
-            "price": payload.price,
-            "price_notes": payload.price_notes,
-            "priced_at": now,
-            "status": "priced",
-        }},
+        {"$set": updates},
     )
     if result.matched_count == 0:
         raise HTTPException(404, "Not found")
     return {"status": "priced", "priced_at": now}
+
+
+@router.post("/admin/public-submissions/{sub_id}/market-values")
+async def admin_public_market_values(sub_id: str, request: Request):
+    """Fetch Kredo Trade + Retail values for a public submission.
+
+    Reuses the dealer flow's `_resolve_kredo_identifiers` helper so we
+    speak Kredo's ALL-CAPS + year-ranged vocabulary (e.g. `3 SERIES
+    2019 ON` rather than the user's `3 Series`). Always returns 200
+    with a status envelope — ingress rewrites 5xx responses to HTML so
+    we can't rely on the client seeing the raw detail."""
+    _ = await _require_admin(request)
+    from server import db
+    from services.kredo_client import get_kredo_client, KredoAPIError
+    from routes.kredo import _resolve_kredo_identifiers, _parse_kredo_value
+
+    sub = await db.public_submissions.find_one(
+        {"$or": [{"id": sub_id}, {"reference": sub_id}]}, {"_id": 0}
+    )
+    if not sub:
+        raise HTTPException(404, "Not found")
+
+    v = sub.get("vehicle") or {}
+    make = (v.get("make") or "").strip()
+    model = (v.get("model") or "").strip()
+    year = v.get("year_of_production") or v.get("year")
+    mileage = int(v.get("mileage") or 0)
+
+    if not (make and model and year):
+        return {
+            "market_values": {
+                "status": "error",
+                "error": "Missing make/model/year on the submission.",
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+            }
+        }
+
+    # Reshape the public submission into the flat shape the dealer
+    # resolver expects.
+    resolver_input = {
+        "make_name": make,
+        "model_name": model,
+        "derivative_name": v.get("derivative") or "",
+        "year_of_production": int(year),
+    }
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        k_make, k_model, k_year, k_derivative = await _resolve_kredo_identifiers(resolver_input)
+        raw = await get_kredo_client().value(
+            make=k_make,
+            model=k_model,
+            year=k_year,
+            derivative=k_derivative,
+            mileage=mileage,
+            condition="clean",
+        )
+        parsed = _parse_kredo_value(raw)
+        market_values = {
+            "status": "ok",
+            "fetched_at": now_iso,
+            "source": "kredo_vehicle_values",
+            "input_mileage": mileage,
+            "input_condition": "clean",
+            "new_price_zar": parsed.get("new_price_zar"),
+            "retail_price_zar": parsed.get("retail_price_zar"),
+            "trade_price_zar": parsed.get("adjusted_trade_zar"),
+            "adjusted_retail_zar": parsed.get("adjusted_retail_zar"),
+            "adjusted_trade_zar": parsed.get("adjusted_trade_zar"),
+            "market_price_zar": parsed.get("market_price_zar"),
+            "mm_code": parsed.get("mm_code"),
+            "resolved_make": k_make,
+            "resolved_model": k_model,
+            "resolved_year": k_year,
+            "resolved_derivative": k_derivative,
+        }
+    except ValueError as e:
+        # Vocabulary resolver couldn't map the vehicle → surface as a
+        # friendly error the admin can read.
+        market_values = {
+            "status": "error",
+            "error": f"Vehicle not in Kredo catalogue: {e}",
+            "fetched_at": now_iso,
+        }
+    except KredoAPIError as e:
+        market_values = {
+            "status": "error",
+            "error": f"Kredo says: {e}",
+            "fetched_at": now_iso,
+        }
+    except Exception as e:  # pragma: no cover
+        logger.warning("public market-values unexpected: %s", e)
+        market_values = {
+            "status": "error",
+            "error": "Unexpected error contacting Kredo. Try again in a moment.",
+            "fetched_at": now_iso,
+        }
+
+    await db.public_submissions.update_one(
+        {"id": sub["id"]},
+        {"$set": {"market_values": market_values}},
+    )
+    return {"market_values": market_values}
 
 
 @router.post("/admin/public-submissions/{sub_id}/deliver")

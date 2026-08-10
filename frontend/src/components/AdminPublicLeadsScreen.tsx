@@ -86,6 +86,17 @@ type PublicSubmission = {
   utm_source?: string | null;
   utm_medium?: string | null;
   utm_campaign?: string | null;
+  market_values?: {
+    status?: string;
+    fetched_at?: string;
+    trade_price_zar?: number | null;
+    retail_price_zar?: number | null;
+    adjusted_trade_zar?: number | null;
+    adjusted_retail_zar?: number | null;
+    market_price_zar?: number | null;
+    new_price_zar?: number | null;
+    mm_code?: string | null;
+  } | null;
 };
 
 // -----------------------------------------------------------------------------
@@ -203,6 +214,26 @@ export default function AdminPublicLeadsScreen() {
 
   const [photoZoom, setPhotoZoom] = useState<string | null>(null);
   const [waFallbackUrl, setWaFallbackUrl] = useState<string | null>(null);
+
+  // Kredo market values
+  const [kredoLoading, setKredoLoading] = useState(false);
+
+  const fetchKredoValues = async () => {
+    if (!selected || kredoLoading) return;
+    setKredoLoading(true);
+    try {
+      const res = await apiFetch(`/api/admin/public-submissions/${selected.id}/market-values`, {
+        method: "POST",
+      });
+      if (res?.market_values) {
+        setSelected({ ...selected, market_values: res.market_values } as any);
+      }
+    } catch (e: any) {
+      Alert.alert("Kredo lookup failed", e?.message || "Please try again in a moment.");
+    } finally {
+      setKredoLoading(false);
+    }
+  };
 
   // ---------- data ----------
   const loadList = useCallback(async () => {
@@ -522,6 +553,87 @@ export default function AdminPublicLeadsScreen() {
                 {selected.utm_source ? <KV label="UTM source" value={selected.utm_source}  colors={colors} /> : null}
               </View>
 
+              {/* Kredo Market Values — always available, powers the pricing decision */}
+              <SectionTitle title="Kredo Market Values" colors={colors} />
+              <View style={{
+                borderWidth: 1,
+                borderColor: colors.border,
+                borderRadius: 12,
+                padding: 14,
+                backgroundColor: colors.card,
+                marginBottom: 12,
+              }}>
+                {selected.market_values && selected.market_values.status === "ok" ? (
+                  <>
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+                      <KredoBox label="Trade" value={selected.market_values.trade_price_zar} colors={colors} accent={colors.success} />
+                      <KredoBox label="Retail" value={selected.market_values.retail_price_zar} colors={colors} accent={colors.primary} />
+                      <KredoBox label="Adj. Trade" value={selected.market_values.adjusted_trade_zar} colors={colors} />
+                      <KredoBox label="Adj. Retail" value={selected.market_values.adjusted_retail_zar} colors={colors} />
+                      <KredoBox label="Market" value={selected.market_values.market_price_zar} colors={colors} />
+                      <KredoBox label="New List" value={selected.market_values.new_price_zar} colors={colors} />
+                    </View>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
+                      <Text style={{ color: colors.textSecondary, fontSize: 11 }}>
+                        {selected.market_values.mm_code ? `M&M ${selected.market_values.mm_code} • ` : ""}
+                        Fetched {fmtDateTime(selected.market_values.fetched_at)}
+                      </Text>
+                      <TouchableOpacity onPress={fetchKredoValues} disabled={kredoLoading}>
+                        <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700", textDecorationLine: "underline" }}>
+                          {kredoLoading ? "Refreshing…" : "Refresh"}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                ) : selected.market_values && selected.market_values.status === "error" ? (
+                  <View style={{ alignItems: "center", paddingVertical: 12 }}>
+                    <Ionicons name="warning-outline" size={28} color={colors.warning} />
+                    <Text style={{ color: colors.text, fontSize: 13, fontWeight: "600", marginTop: 6, textAlign: "center" }}>
+                      Kredo lookup failed
+                    </Text>
+                    <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4, marginBottom: 12, textAlign: "center", paddingHorizontal: 12 }}>
+                      {(selected.market_values as any).error || "Unknown error."}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={fetchKredoValues}
+                      disabled={kredoLoading}
+                      style={[styles.secondaryBtn, kredoLoading && { opacity: 0.6 }]}
+                    >
+                      {kredoLoading ? (
+                        <ActivityIndicator color={colors.text} />
+                      ) : (
+                        <>
+                          <Ionicons name="refresh" size={13} color={colors.text} />
+                          <Text style={styles.secondaryBtnText}>Try again</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={{ alignItems: "center", paddingVertical: 12 }}>
+                    <Ionicons name="cash-outline" size={30} color={colors.textSecondary} />
+                    <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 6, marginBottom: 12, textAlign: "center" }}>
+                      Fetch live Kredo Trade & Retail values to inform your pricing.
+                    </Text>
+                    <TouchableOpacity
+                      testID="fetch-kredo-values-btn"
+                      onPress={fetchKredoValues}
+                      disabled={kredoLoading}
+                      style={[styles.primaryBtn, { paddingHorizontal: 18 }, kredoLoading && { opacity: 0.6 }]}
+                    >
+                      {kredoLoading ? (
+                        <ActivityIndicator color={colors.onPrimary} />
+                      ) : (
+                        <>
+                          <Ionicons name="cloud-download-outline" size={14} color={colors.onPrimary} />
+                          <Text style={styles.primaryBtnText}>Fetch Kredo values</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+
               {/* Vehicle */}
               <SectionTitle title="Vehicle" colors={colors} />
               <View style={styles.grid}>
@@ -630,17 +742,29 @@ export default function AdminPublicLeadsScreen() {
                     >
                       <Ionicons name="paper-plane" size={14} color={colors.onPrimary} />
                       <Text style={styles.primaryBtnText}>
-                        {(selected.delivered_email_at || selected.delivered_whatsapp_at) ? "Deliver again" : "Deliver valuation"}
+                        {(selected.delivered_email_at || selected.delivered_whatsapp_at) ? "Re-deliver" : "Deliver valuation"}
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       testID="public-lead-repricing-btn"
                       style={styles.secondaryBtn}
                       onPress={() => {
-                        setPriceInput(String(selected.price || ""));
-                        setPriceNotes(selected.price_notes || "");
-                        // Force pending flow inline for editing.
-                        setSelected({ ...selected, status: "pending" });
+                        Alert.alert(
+                          "Edit price?",
+                          "Updating the price will move this lead back to the Priced silo and clear any prior delivery timestamps so you can send a fresh valuation.",
+                          [
+                            { text: "Cancel", style: "cancel" },
+                            {
+                              text: "Edit price",
+                              onPress: () => {
+                                setPriceInput(String(selected.price || ""));
+                                setPriceNotes(selected.price_notes || "");
+                                // Flip status locally so the price form re-renders.
+                                setSelected({ ...selected, status: "pending" });
+                              },
+                            },
+                          ],
+                        );
                       }}
                     >
                       <Ionicons name="create-outline" size={14} color={colors.text} />
@@ -884,6 +1008,47 @@ function KV({
       >
         {value ?? "—"}
       </Text>
+    </View>
+  );
+}
+
+function KredoBox({
+  label,
+  value,
+  colors,
+  accent,
+}: {
+  label: string;
+  value?: number | null;
+  colors: Palette;
+  accent?: string;
+}) {
+  const border = accent || colors.border;
+  return (
+    <View style={{
+      flexBasis: "30%",
+      flexGrow: 1,
+      minWidth: 90,
+      borderWidth: 1,
+      borderColor: border,
+      borderRadius: 8,
+      padding: 10,
+      backgroundColor: colors.paper,
+    }}>
+      <Text style={{
+        color: colors.textSecondary,
+        fontSize: 10,
+        letterSpacing: 1,
+        textTransform: "uppercase",
+        fontWeight: "700",
+      }}>{label}</Text>
+      <Text style={{
+        color: accent || colors.text,
+        fontSize: 15,
+        fontWeight: "800",
+        marginTop: 4,
+        fontFamily: fonts.number,
+      }}>{value != null ? fmtZAR(value) : "—"}</Text>
     </View>
   );
 }
