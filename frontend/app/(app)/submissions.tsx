@@ -428,19 +428,14 @@ export default function DashboardScreen() {
             ) : null}
           </View>
 
-          {/* Text stack — title, derivative, meta chips */}
+          {/* Text stack — title, meta chips. The vehicle title now uses
+              `year + make + derivative` (falling back to model when no
+              derivative is recorded) since the derivative already
+              contains the model info — otherwise we'd duplicate. */}
           <View style={styles.gridBody}>
             <Text style={[styles.gridTitle, { color: colors.text }]} numberOfLines={2}>
-              {item.year} {item.make_name} {item.model_name}
+              {item.year} {item.make_name} {item.derivative_name || item.model_name}
             </Text>
-            {item.derivative_name ? (
-              <Text
-                style={[styles.gridDeriv, { color: colors.textSecondary }]}
-                numberOfLines={1}
-              >
-                {item.derivative_name}
-              </Text>
-            ) : null}
             <View style={styles.gridMetaRow}>
               <View style={styles.gridMetaChip}>
                 <Ionicons name="speedometer-outline" size={11} color={colors.textSecondary} />

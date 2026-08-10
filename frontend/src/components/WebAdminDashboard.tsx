@@ -2310,7 +2310,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                         ? "27" + phoneDigits.slice(1)
                         : phoneDigits;
                     const waMessage = encodeURIComponent(
-                      `Hi ${c.agent_name || "there"}, regarding your cover of R${c.price_zar.toLocaleString()} on ${selected?.reference || "our vehicle"} (${[selected?.make_name, selected?.model_name].filter(Boolean).join(" ")}).`
+                      `Hi ${c.agent_name || "there"}, regarding your cover of R${c.price_zar.toLocaleString()} on ${selected?.reference || "our vehicle"} (${[selected?.make_name, selected?.derivative_name || selected?.model_name].filter(Boolean).join(" ")}).`
                     );
                     const waUrl = waNumber ? `https://wa.me/${waNumber}?text=${waMessage}` : null;
                     return (

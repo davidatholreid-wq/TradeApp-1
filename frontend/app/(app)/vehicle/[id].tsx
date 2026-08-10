@@ -1257,7 +1257,7 @@ export default function VehicleDetail() {
     // Two-step confirmation: the "Confirm Price" button in the modal is
     // the FIRST step; this final confirmation is the explicit second step
     // so admins can't accidentally submit a wrong number.
-    const vehicleLabel = `${sub?.year ?? ""} ${sub?.make_name ?? ""} ${sub?.model_name ?? ""}`.trim();
+    const vehicleLabel = `${sub?.year ?? ""} ${sub?.make_name ?? ""} ${sub?.derivative_name || sub?.model_name || ""}`.trim();
     const ok = await confirmAsync(
       "Confirm price",
       `Offer ${formatZAR(price)} for ${vehicleLabel}?\n\nThis will be shown to the dealer immediately.`,
@@ -2172,7 +2172,7 @@ export default function VehicleDetail() {
                         ? "27" + phoneDigits.slice(1)
                         : phoneDigits;
                   const waMessage = encodeURIComponent(
-                    `Hi ${c.agent_name || "there"}, this is regarding your cover of R${c.price_zar.toLocaleString()} on ${sub.reference || "our vehicle"} (${[sub.make_name, sub.model_name].filter(Boolean).join(" ")}).`
+                    `Hi ${c.agent_name || "there"}, this is regarding your cover of R${c.price_zar.toLocaleString()} on ${sub.reference || "our vehicle"} (${[sub.make_name, sub.derivative_name || sub.model_name].filter(Boolean).join(" ")}).`
                   );
                   const waUrl = waNumber ? `https://wa.me/${waNumber}?text=${waMessage}` : null;
                   return (

@@ -207,7 +207,9 @@ export default function GiveCoverScreen() {
     setDeclinedSubs((prev) =>
       prev.some((s) => s.id === sub.id) ? prev : [decliedRow, ...prev]
     );
-    const label = [sub.reference, sub.make_name, sub.model_name].filter(Boolean).join(" · ");
+    const label = [sub.reference, sub.make_name, sub.derivative_name || sub.model_name]
+      .filter(Boolean)
+      .join(" · ");
     setUndoState({ subId: sub.id, label });
     clearUndoTimer();
     undoTimer.current = setTimeout(() => setUndoState(null), 5000);
@@ -564,7 +566,13 @@ export default function GiveCoverScreen() {
                 pathname: "/vehicle/[id]",
                 params: { id: s.id, cover: "1" },
               });
-            const titleLine = [year, s.make_name, s.model_name].filter(Boolean).join(" ");
+            // Use derivative as the vehicle descriptor — it already contains
+            // the model info (e.g. "X4 xDrive20d M Sport") so repeating the
+            // model just duplicates. Falls back to model_name if the
+            // submission somehow has no derivative on record.
+            const titleLine = [year, s.make_name, s.derivative_name || s.model_name]
+              .filter(Boolean)
+              .join(" ");
             const gridColWidth = `${(100 / gridColumns).toFixed(4)}%` as any;
             return (
               <View
@@ -833,7 +841,7 @@ export default function GiveCoverScreen() {
                   )}
                 </View>
                 <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>
-                  {[s.make_name, s.model_name].filter(Boolean).join(" ")}
+                  {[s.make_name, s.derivative_name || s.model_name].filter(Boolean).join(" ")}
                 </Text>
                 {s.derivative_name ? (
                   <Text style={[styles.deriv, { color: colors.textSecondary }]} numberOfLines={1}>
