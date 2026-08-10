@@ -2290,6 +2290,14 @@ async def get_submission(sub_id: str, current: dict = Depends(get_current_user))
         # without re-computing on every field change.
         if isinstance(sub.get("deal"), dict):
             sub["deal_profit"] = _compute_deal_profit(sub["deal"])
+        # Also enrich with the aggregate cover metrics + hoist
+        # deal.dealer_offer_zar to top level so the single-sub view is
+        # consistent with /submissions/my and /admin/submissions. Without
+        # this call `sub.highest_cover_zar` was None on the vehicle
+        # detail response even when other dealers had placed binding
+        # covers — the reason FB-000143 wasn't showing Zelda's R450 000
+        # highest-cover chip in the submission view.
+        await _enrich_submissions_with_covers([sub])
 
     # Enrich with the submitter's profile pic + cover photo so the
     # detail page can show a WhatsApp-Business-style header banner
