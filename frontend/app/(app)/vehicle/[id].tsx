@@ -775,16 +775,43 @@ export default function VehicleDetail() {
         }
         setTimeout(() => URL.revokeObjectURL(objectUrl), 500);
       } else {
+        // Native (iOS / Android) — open the PDF inline in the in-app
+        // WebBrowser, exactly like the reconditioning sheet does.
+        // Previously the profit sheet went straight to a Share sheet
+        // via FileSystem.downloadAsync + Sharing.shareAsync, which felt
+        // heavier than needed — user just wants to preview.
         const token = await storage.secureGet<string>(TOKEN_KEY, "");
-        const base =
-          (process.env as any).EXPO_PUBLIC_BACKEND_URL || "";
-        const dest = `${FileSystem.cacheDirectory}profit_${sub.id}.pdf`;
-        const dl = await FileSystem.downloadAsync(`${base}${url}`, dest, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (dl.status >= 200 && dl.status < 300) {
-          await Sharing.shareAsync(dl.uri, { mimeType: "application/pdf" });
-        } else {
+        const base = (process.env as any).EXPO_PUBLIC_BACKEND_URL || "";
+        try {
+          const previewUrl = `${base}${url}?access_token=${encodeURIComponent(token || "")}`;
+          const opened = await WebBrowser.openBrowserAsync(previewUrl, {
+            dismissButtonStyle: "close",
+            controlsColor: colors.text,
+            toolbarColor: colors.paper,
+            enableBarCollapsing: true,
+          });
+          if (opened.type === "cancel" || opened.type === "dismiss") return;
+        } catch (previewErr) {
+          // Only fall back to Sharing if the in-app browser fails —
+          // download to cache then hand off to the OS share sheet so
+          // the user isn't dead-ended.
+          // eslint-disable-next-line no-console
+          console.error("[profit-pdf] preview failed:", previewErr);
+          const dest = `${FileSystem.cacheDirectory}profit_${sub.id}.pdf`;
+          const dl = await FileSystem.downloadAsync(`${base}${url}`, dest, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          if (dl.status >= 200 && dl.status < 300) {
+            const canShare = await Sharing.isAvailableAsync();
+            if (canShare) {
+              await Sharing.shareAsync(dl.uri, {
+                mimeType: "application/pdf",
+                dialogTitle: "Profit Analysis",
+                UTI: "com.adobe.pdf",
+              });
+              return;
+            }
+          }
           throw new Error(`Download failed (${dl.status})`);
         }
       }
