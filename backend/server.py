@@ -7258,11 +7258,13 @@ from routes.cover import (  # noqa: F401 — _sanitise_sub_for_pricing_agent use
     require_pricing_agent,
 )
 from routes.auth import router as auth_router
+from routes.public_valuation import router as public_valuation_router
 api_router.include_router(ads_router)
 api_router.include_router(rewards_router)
 api_router.include_router(kredo_router)
 api_router.include_router(cover_router)
 api_router.include_router(auth_router)
+api_router.include_router(public_valuation_router)
 
 
 app.include_router(api_router)
@@ -7331,6 +7333,13 @@ async def seed_data():
         )
     except Exception as e:
         logger.warning("reward_ledger referral index create failed (non-blocking): %s", e)
+
+    # -------- Public valuation indexes (2026-06) --------
+    try:
+        from routes.public_valuation import _ensure_indexes as _ensure_public_val_indexes
+        await _ensure_public_val_indexes(db)
+    except Exception as e:
+        logger.warning("public_valuation index bootstrap failed (non-blocking): %s", e)
     # Lifetime referral codes must be unique per dealer. Sparse so
     # admins / legacy users without a code don't fight the index.
     try:

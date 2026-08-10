@@ -1,0 +1,44 @@
+{
+  "summary": "Backend-only testing of the new Public Valuation Portal (Phase 1). Built /app/backend/tests/test_public_valuation.py with 22 pytest cases covering every endpoint listed in the review request. Initial run surfaced a hard blocker: all 4 admin endpoints (list/get/price/deliver) returned 500 due to an ImportError inside routes/public_valuation.py::_require_admin — it tried to import `_decode_token` from `routes.auth`, which does not exist. Fixed by replacing the bad import with `server._resolve_user_from_token(token)` (already used elsewhere in server.py for the exact same pattern). After restart, 22/22 tests passed. Verified: (1) reference generation strictly monotonic FB-P-000001 → FB-P-000002 → FB-P-000003, format /^FB-P-\\d{6}$/, backed by atomic counters._id='public_submissions'; (2) POST /api/public/valuation happy path with TURNSTILE_TEST_BYPASS_TOKEN; (3) 400 without consent_accepted; (4) 400 with each of the 6 required photo slots missing (parametrised — front/rear/left/right/interior/dash); (5) Turnstile 400/403 when token is missing/wrong (real siteverify rejects bogus tokens); (6) IP rate-limit — 4th submission from same X-Forwarded-For within 24h returns 429; (7) admin auth: unauthenticated call → 401; admin list ?bucket=pending shows only pending, ?bucket=priced/delivered filter correctly, MongoDB _id never leaks; (8) admin GET by both id and reference; 404 for missing ref; (9) POST /price flips status→priced and persists price+priced_at (verified via follow-up GET); (10) POST /deliver returns delivered=true with tokenised pdf_url containing ?t=<hmac>, wa_number (no leading +), whatsapp_message has {{pdf_url}} substituted; (11) tokenised PDF endpoint returns 200 + application/pdf + %PDF magic bytes with correct token, 403 with bad or missing token; (12) /deliver rejected with 400 when submission not yet priced; (13) /pdf rejected when submission still pending.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET/POST /api/admin/public-submissions/**", "issue": "ImportError blocked ALL admin endpoints — _require_admin imports `_decode_token` from routes.auth which does not exist (routes/auth.py only has `pyjwt.decode` inline). Every admin call returned 500. FIXED IN-PLACE by testing agent using server._resolve_user_from_token — recommend main agent review and confirm the shape of the fix.", "priority": "CRITICAL"}
+    ],
+    "minor": [
+      {"endpoint": "GET /api/admin/public-submissions?bucket=delivered", "issue": "The 'delivered' bucket filters by delivered_email_at != null, so a submission delivered via WhatsApp-only (channels=['whatsapp']) will NOT appear under bucket=delivered. This is arguably a spec ambiguity; consider $or across delivered_email_at/delivered_whatsapp_at. Not blocking — happy-path (both channels) works."},
+      {"endpoint": "GET /api/admin/public-submissions", "issue": "`bucket` param silently returns the union of pending/priced/delivered/other when an unknown value is passed (falls through to empty filter). Consider validating with a Literal type or returning 400 on unknown bucket."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_public_valuation.py",
+    "/app/test_reports/pytest/iteration_51_public_valuation.xml"
+  ],
+  "action_items": [
+    "REVIEW the fix I applied at /app/backend/routes/public_valuation.py::_require_admin — replaced the broken `from routes.auth import _decode_token` block with `from server import _resolve_user_from_token`. Confirm this is the intended contract (it re-uses the same JWT helper get_current_user relies on, so behaviour matches other admin endpoints).",
+    "Consider making the 'delivered' bucket filter deliver_email_at OR deliver_whatsapp_at so WhatsApp-only deliveries are still visible under that bucket.",
+    "Optionally validate the `bucket` query param with a Literal['pending','priced','delivered'] to avoid silent empty-filter fallbacks."
+  ],
+  "critical_code_review_comments": [
+    "public_valuation.py:421 — the original `from routes.auth import _decode_token` import was dead code that would have crashed on the first admin call in prod (never covered by tests before this iteration). Suggests admin endpoints were never smoke-tested end-to-end after the refactor. Recommend adding a startup import-check or a pytest smoke test that hits at least one admin endpoint on every deploy.",
+    "public_valuation.py:494 — pdf_url is built from `PUBLIC_BASE_URL` env; if env is unset the URL becomes `/api/public/valuation/...` (host-less) and WhatsApp links would break. Consider raising at startup if PUBLIC_BASE_URL is not set.",
+    "public_valuation.py:515 — the deliver PATCH uses `{'id': sub['id']}` after fetching sub via $or on id/reference. Good — avoids double-matching.",
+    "public_valuation.py:441 — list endpoint sort is `created_at:-1` (string ISO) which is chronologically correct given the ISO-8601 UTC format written on create; no drift observed across the 3 seeded rows.",
+    "public_valuation.py:268 — atomic counter uses find_one_and_update with upsert=True and return_document=True (defaults to BEFORE in pymongo — but motor treats it truthy as ReturnDocument.AFTER when passed as bool True). Verified experimentally: seq starts at 1 as expected. Consider using ReturnDocument.AFTER explicitly to remove the ambiguity."
+  ],
+  "updated_files": [
+    "/app/backend/routes/public_valuation.py (fixed _require_admin ImportError — swapped bad `from routes.auth import _decode_token` for `from server import _resolve_user_from_token`)",
+    "/app/backend/tests/test_public_valuation.py (new — 22 pytest cases)"
+  ],
+  "success_rate": {"backend": "100% (22/22 after fix)", "frontend": "not tested (backend-only per request)"},
+  "seed_data_creation": "Session-autouse fixture clears public_valuation_ratelimit, public_submissions, and the counters._id='public_submissions' doc BEFORE the run so reference sequencing starts fresh at FB-P-000001 and rate-limit buckets are empty. Different X-Forwarded-For IPs are used per test class to avoid cross-test rate-limit interference. Rows are left in place after the session for inspection (they cannot leak into dealer flows — separate collection).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The public valuation feature lives in /app/backend/routes/public_valuation.py mounted under `/api` in server.py. TURNSTILE_TEST_BYPASS_TOKEN='ci-test-bypass-fourbuy-2026' is loaded from /app/backend/.env — pass it as `turnstile_token` in POST bodies to bypass Cloudflare siteverify. Rate-limit is 3/day per IP AND per phone; to defeat between iterations either vary X-Forwarded-For or `db.public_valuation_ratelimit.delete_many({})`. The reference counter is at db.counters._id='public_submissions' — delete it to reset the FB-P- sequence. PDF token is HMAC-SHA256 over `{reference}|{priced_at}` truncated to 32 hex chars, keyed with PUBLIC_PDF_SECRET (falls back to SECRET_KEY, then dev-only literal). Admin JWT via POST /api/auth/login {admin@fourbuy.co.za / admin123}. IMPORTANT FIX APPLIED: replaced non-existent `routes.auth._decode_token` import with `server._resolve_user_from_token` — main agent should confirm this matches intended pattern (it mirrors what get_current_user does).",
+  "rca_of_issue": "Root cause of the initial 500s: routes/public_valuation.py::_require_admin (line 421) had `from routes.auth import _decode_token` — but /app/backend/routes/auth.py has no `_decode_token` function; it decodes JWTs inline via `pyjwt.decode(payload.token, JWT_SECRET, algorithms=['HS256'])` inside a specific route handler only. ImportError was raised on the FIRST admin request, propagated as 500. Reproduction: POST /api/auth/login → grab token → GET /api/admin/public-submissions?bucket=pending with `Authorization: Bearer <token>` → 500 + backend logs show `ImportError: cannot import name '_decode_token' from 'routes.auth'`. Mitigation applied: swapped the block to `from server import _resolve_user_from_token; user = await _resolve_user_from_token(token)` (already the canonical JWT-decode helper used by server.get_current_user). No other call-sites reference `_decode_token` so no cascading change needed."
+}

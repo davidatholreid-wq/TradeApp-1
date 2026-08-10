@@ -725,14 +725,86 @@ backend:
           agent: "main"
           comment: "Verified /api/auth/login and endpoint contract; frontend consumes {submissions:[{...,my_cover}]}."
 
+  - task: "Public Valuation — POST /api/public/valuation (no-auth, Turnstile-guarded)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/routes/public_valuation.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            NEW public endpoint for anonymous vehicle valuations.
+            Backend .env has TURNSTILE_SECRET set. For automated tests use
+            the bypass token from .env:
+              TURNSTILE_TEST_BYPASS_TOKEN=ci-test-bypass-fourbuy-2026
+            Pass this string as `turnstile_token` in the JSON payload to
+            skip real Turnstile siteverify.
+
+            Expected behaviour:
+              - 400 if consent_accepted != true
+              - 400 if any of the 6 photos missing (front, rear, left,
+                right, interior, dash) — each must be a data URL
+              - 400 if turnstile_token missing (and secret is set)
+              - 429 after >3 IP submissions in the same 24h window (uses
+                X-Forwarded-For for real IP)
+              - 200 → { reference: "FB-P-000001", status: "pending", ... }
+              - Persisted in `public_submissions` collection
+
+  - task: "Public Valuation — Admin endpoints (list/get/price/deliver)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/routes/public_valuation.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Admin-only (JWT bearer):
+              GET  /api/admin/public-submissions?bucket=pending|priced|delivered
+              GET  /api/admin/public-submissions/{id or reference}
+              POST /api/admin/public-submissions/{id}/price   {price, price_notes}
+              POST /api/admin/public-submissions/{id}/deliver {whatsapp_message, email_subject, email_body, channels}
+
+            Flow to test:
+              1. Create a submission via POST /api/public/valuation (bypass token).
+              2. Log in as admin (admin@fourbuy.co.za / admin123).
+              3. GET the pending list → must include the new ref.
+              4. POST /price → status flips to "priced", priced_at set.
+              5. POST /deliver → returns pdf_url with ?t=<hmac token>,
+                 wa_number (no leading +), email, and the message with
+                 {{pdf_url}} substituted.
+              6. GET /api/public/valuation/{ref}/pdf?t=<token> → 200 PDF bytes.
+              7. GET same URL with a tampered token → 403.
+              8. GET a non-existent reference → 404.
+
+  - task: "Public Valuation — Tokenised PDF endpoint"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/routes/public_valuation.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            GET /api/public/valuation/{reference}/pdf?t=<hmac>
+              - 404 unknown reference
+              - 400 if status != priced
+              - 403 invalid/missing token
+              - 410 after 30 days (based on priced_at)
+              - 200 application/pdf inline otherwise
+
 test_plan:
   current_focus:
-    - "Give Cover tile — live count badge + dynamic hint"
-    - "Regression — Cover swipe-to-decline + declined silo (2026-08-08)"
-    - "Regression — Admin Make Catalogue filter"
-    - "Regression — Forgot / Reset password magic-link flow"
-    - "Regression — Deal Tracking dealer-offer-gated with offer history"
-    - "Regression — Valuation PDF (requester + dealership blocks, no duplicate BMW options)"
+    - "Public Valuation — POST /api/public/valuation (no-auth, Turnstile-guarded)"
+    - "Public Valuation — Admin endpoints (list/get/price/deliver)"
+    - "Public Valuation — Tokenised PDF endpoint"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -740,19 +812,32 @@ test_plan:
 agent_communication:
   - agent: "main"
     message: |
-      Completed the "Give Cover" live count tile — NavFlipTile now shows a
-      tinted pill badge + dynamic hint driven by GET /api/cover/submissions.
-      Requesting a full regression run across last session's shipped work:
-      swipe-to-decline covers + declined silo, admin Make Catalogue toggles,
-      forgot/reset password magic-link flow (Emergent Resend), deal
-      tracking dealer-offer-gated flow with offer history, Valuation PDF
-      REQUESTED BY/DEALERSHIP blocks + de-duped BMW options page, TakeAlot
-      rewards tile, Web 3-column cover grid.
+      NEW FEATURE (Phase 1 backend): Public Valuation Portal.
+      Anonymous end-users submit a vehicle for pricing via a mobile-web
+      form (no login). Admin prices it in the cockpit and delivers via
+      wa.me link (containing a tokenised PDF URL) + Resend email.
 
-      Credentials (see /app/memory/test_credentials.md):
-        - Admin:  admin@fourbuy.co.za / admin123
-        - Dealer (pricing agent): dave@fourbuy.co.za / Dave1234!
+      Cloudflare Turnstile IS wired end-to-end:
+        - Site key (frontend): 0x4AAAAAAEMXz3ls0EMVhFhO
+        - Secret (backend .env): TURNSTILE_SECRET
+        - Hostname allowlist: TURNSTILE_HOSTNAMES
+        - Action expected: "public_valuation"
+
+      For automated tests use TURNSTILE_TEST_BYPASS_TOKEN
+      (value: ci-test-bypass-fourbuy-2026) as the `turnstile_token` in
+      the POST body — it bypasses the network round-trip to Cloudflare
+      while still exercising all other validation.
+
+      Rate limits (per user request): 3/day per client IP, 3/day per phone.
+      Use different X-Forwarded-For headers between test cases OR clear
+      the `public_valuation_ratelimit` collection between runs.
+
+      Photos: all 6 slots (front, rear, left, right, interior, dash)
+      MUST be present, each a `data:image/...` URL up to 5 MB.
+
+      Credentials:
+        - Admin: admin@fourbuy.co.za / admin123
 
 metadata:
   created_by: "main_agent"
-  version: "1.8"
+  version: "1.9"
