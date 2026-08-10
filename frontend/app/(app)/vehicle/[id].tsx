@@ -2447,11 +2447,67 @@ export default function VehicleDetail() {
                 ["Description", info.vehicleDescription],
                 ["VIN", info.vin],
                 ["Engine No", info.engineNo],
+                ["Date of Test", info.dateOfTest],
                 ["Expires", info.expiryDate],
                 ["Disc No", info.licenceDiscNo],
               ];
+              // Ownership signal derived from the disc's Date of Test:
+              //   • blank test date → 1-Owner from new (car has never
+              //     been re-registered, so no roadworthy test needed).
+              //   • present test date → approx. ownership duration
+              //     between last roadworthy test and this valuation.
+              // Both variants are highlighted with a strong badge so
+              // the indicator stands out from the rest of the disc data.
+              const submittedAtIso = sub.created_at || new Date().toISOString();
+              let ownership: { text: string; oneOwner: boolean } | null = null;
+              if (!info.dateOfTest) {
+                ownership = { text: "1-Owner from new", oneOwner: true };
+              } else {
+                try {
+                  const test = new Date(info.dateOfTest);
+                  const now = new Date(submittedAtIso);
+                  let months =
+                    (now.getFullYear() - test.getFullYear()) * 12 +
+                    (now.getMonth() - test.getMonth());
+                  if (now.getDate() < test.getDate()) months -= 1;
+                  if (months < 0) months = 0;
+                  const yrs = Math.floor(months / 12);
+                  const mos = months % 12;
+                  const parts: string[] = [];
+                  if (yrs > 0) parts.push(`${yrs} ${yrs === 1 ? "year" : "years"}`);
+                  if (mos > 0 || yrs === 0) parts.push(`${mos} ${mos === 1 ? "month" : "months"}`);
+                  ownership = { text: `Owned approx. ${parts.join(" ")}`, oneOwner: false };
+                } catch {
+                  ownership = null;
+                }
+              }
               return (
                 <View style={styles.diskDecodedBox}>
+                  {ownership ? (
+                    <View
+                      style={[
+                        styles.ownershipBadge,
+                        ownership.oneOwner ? styles.ownershipBadgeOne : styles.ownershipBadgeMulti,
+                      ]}
+                      testID="license-disk-ownership-badge"
+                    >
+                      <Ionicons
+                        name={ownership.oneOwner ? "ribbon" : "time-outline"}
+                        size={16}
+                        color={ownership.oneOwner ? "#065F46" : colors.text}
+                      />
+                      <Text
+                        style={[
+                          styles.ownershipBadgeText,
+                          ownership.oneOwner
+                            ? styles.ownershipBadgeTextOne
+                            : styles.ownershipBadgeTextMulti,
+                        ]}
+                      >
+                        {ownership.text}
+                      </Text>
+                    </View>
+                  ) : null}
                   {rows
                     .filter(([, v]) => !!v)
                     .map(([label, value]) => (
@@ -6444,6 +6500,37 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     padding: spacing.md,
     gap: 6,
   },
+  // Highlighted "1-Owner from new" or "Owned approx. …" badge that sits
+  // at the top of the licence-disc data section. Deliberately styled to
+  // stand out from the disc-field rows below (larger text, bold weight,
+  // strong background + border) so dealers reading the disc data spot
+  // the ownership signal immediately.
+  ownershipBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: radius.md,
+    marginBottom: 6,
+    borderWidth: 1.5,
+  },
+  ownershipBadgeOne: {
+    backgroundColor: "#D1FAE5",
+    borderColor: "#065F46",
+  },
+  ownershipBadgeMulti: {
+    backgroundColor: colors.paper,
+    borderColor: colors.text,
+  },
+  ownershipBadgeText: {
+    fontSize: 15,
+    fontWeight: "900",
+    letterSpacing: 0.4,
+  },
+  ownershipBadgeTextOne: { color: "#065F46" },
+  ownershipBadgeTextMulti: { color: colors.text },
   diskDecodedRow: {
     flexDirection: "row",
     justifyContent: "space-between",

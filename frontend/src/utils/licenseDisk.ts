@@ -22,7 +22,8 @@ export type LicenseDiskInfo = {
   colour?: string;             // e.g. "WHITE"
   vin?: string;                // 17-char VIN
   engineNo?: string;           // Engine number
-  expiryDate?: string;         // YYYY-MM-DD
+  expiryDate?: string;         // YYYY-MM-DD — licence expiry
+  dateOfTest?: string;         // YYYY-MM-DD — last roadworthy/COR test. Blank = 1-owner from new.
 };
 
 // SA VIN: 17 alphanumeric chars, excluding I, O, Q.
@@ -179,13 +180,26 @@ export function decodeLicenseDisk(raw: string): LicenseDiskInfo {
     }
   }
 
-  // 2) Expiry date (ISO YYYY-MM-DD).
+  // 2) Dates — SA discs carry BOTH `date of test` (earlier) AND `date
+  //    of expiry` (later). Collect every ISO YYYY-MM-DD token then
+  //    assign chronologically: earliest → dateOfTest, latest → expiry.
+  //    Single-date discs (brand-new vehicles that have never been
+  //    tested) leave dateOfTest blank, which downstream renders as
+  //    "1-Owner from new".
+  const dateIdx: number[] = [];
   for (let i = 0; i < tokens.length; i++) {
-    if (claimed.has(i)) continue;
-    if (ISO_DATE_RE.test(tokens[i])) {
-      claim(i, tokens[i], "expiryDate");
-      break;
-    }
+    if (!claimed.has(i) && ISO_DATE_RE.test(tokens[i])) dateIdx.push(i);
+  }
+  const uniqDates = Array.from(new Set(dateIdx.map((i) => tokens[i])));
+  if (uniqDates.length >= 2) {
+    uniqDates.sort();
+    // Claim by first occurrence of each value.
+    const firstIdxOf = (val: string) => dateIdx.find((i) => tokens[i] === val)!;
+    claim(firstIdxOf(uniqDates[0]), uniqDates[0], "dateOfTest");
+    claim(firstIdxOf(uniqDates[uniqDates.length - 1]), uniqDates[uniqDates.length - 1], "expiryDate");
+  } else if (uniqDates.length === 1) {
+    const firstIdxOf = dateIdx[0];
+    claim(firstIdxOf, uniqDates[0], "expiryDate");
   }
 
   // 3) Colour — matches a known colour word (single token).

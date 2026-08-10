@@ -1563,12 +1563,33 @@ def _parse_license_disk_string(raw: str) -> dict:
             out["vin"] = t.upper()
             break
 
-    # Expiry — YYYY-MM-DD (or YYYY/MM/DD).
+    # Dates — the SA disc barcode carries BOTH:
+    #   • Date of test    (last roadworthy / COR test)  — earlier
+    #   • Date of expiry  (licence disc expiry)         — later
+    # …in that order. Older parser only grabbed the first token and
+    # labelled it `expiryDate` which meant the test date was silently
+    # discarded on discs that carry both. Collect ALL YYYY-MM-DD tokens
+    # then assign by chronological order.
     date_re = re.compile(r"^\d{4}[-/]\d{2}[-/]\d{2}$")
+    all_dates: list[str] = []
     for t in tokens:
         if date_re.match(t):
-            out["expiryDate"] = t.replace("/", "-")
-            break
+            all_dates.append(t.replace("/", "-"))
+    # Dedupe preserving order.
+    seen: set = set()
+    dates_ordered: list[str] = []
+    for d in all_dates:
+        if d not in seen:
+            seen.add(d)
+            dates_ordered.append(d)
+    if len(dates_ordered) >= 2:
+        dates_ordered.sort()
+        out["dateOfTest"] = dates_ordered[0]
+        out["expiryDate"] = dates_ordered[-1]
+    elif len(dates_ordered) == 1:
+        # Single-date disc — treat as expiry, dateOfTest stays blank
+        # (which downstream renders as "1-Owner from new").
+        out["expiryDate"] = dates_ordered[0]
 
     # Colour — known SA vocabulary.
     colours = {
@@ -1738,7 +1759,8 @@ async def decode_license_disk(payload: LicenseDiskDecodeRequest, current: dict =
                     '  "model": "vehicle model in ALL CAPS or null",\n'
                     '  "colour": "vehicle colour Title-Cased or null",\n'
                     '  "description": "body-type description or null",\n'
-                    '  "expiryDate": "YYYY-MM-DD expiry or null"\n'
+                    '  "dateOfTest": "YYYY-MM-DD last roadworthy/COR test date or null (leave null if the field is blank on the disc — that indicates a 1-owner from new vehicle)",\n'
+                    '  "expiryDate": "YYYY-MM-DD licence expiry or null"\n'
                     "}\n"
                     "Return JSON ONLY. Nothing else."
                 )
@@ -1766,7 +1788,7 @@ async def decode_license_disk(payload: LicenseDiskDecodeRequest, current: dict =
                 # Whitelist + normalise the LLM's output so a misbehaved
                 # response can't leak weird keys back to the frontend.
                 out: dict = {}
-                for k in ("vin", "engineNo", "registration", "make", "model", "colour", "description", "expiryDate"):
+                for k in ("vin", "engineNo", "registration", "make", "model", "colour", "description", "dateOfTest", "expiryDate"):
                     v = parsed_ocr.get(k)
                     if isinstance(v, str) and v.strip() and v.strip().lower() not in ("null", "none", "n/a", "unknown", "-", ""):
                         out[k] = v.strip()
