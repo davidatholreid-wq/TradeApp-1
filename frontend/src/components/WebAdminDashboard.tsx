@@ -13,6 +13,7 @@ import KredoTestScreen from "@/app/(app)/kredo-test";
 import AdminRewardsScreen from "@/src/components/AdminRewardsScreen";
 import AdminAdvertisingScreen from "@/src/components/AdminAdvertisingScreen";
 import AdminCatalogueScreen from "@/src/components/AdminCatalogueScreen";
+import AdminPublicLeadsScreen from "@/src/components/AdminPublicLeadsScreen";
 import VinHistoryCompareModal from "@/src/components/VinHistoryCompareModal";
 import PhotoCarousel, { CarouselPhoto } from "@/src/components/PhotoCarousel";
 import ConditionRatingInfoModal from "@/src/components/ConditionRatingInfoModal";
@@ -227,7 +228,7 @@ function formatReportName(type: string): string {
 }
 
 type Bucket = "incoming" | "priced" | "archived";
-type CockpitView = "home" | "submissions" | "dealers" | "billing" | "rewards" | "kredo" | "ads" | "catalogue";
+type CockpitView = "home" | "submissions" | "dealers" | "billing" | "rewards" | "kredo" | "ads" | "catalogue" | "public-leads";
 
 export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }) {
   const colors = useThemeColors();
@@ -832,6 +833,16 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 Catalogue
               </Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              testID="cockpit-view-public-leads"
+              style={[styles.viewBtn, view === "public-leads" && styles.viewBtnActive]}
+              onPress={() => setView("public-leads")}
+            >
+              <Ionicons name="planet" size={14} color={view === "public-leads" ? colors.onPrimary : colors.text} />
+              <Text style={[styles.viewBtnText, view === "public-leads" && styles.viewBtnTextActive]}>
+                Public Leads
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
         <View style={styles.topbarRight}>
@@ -1213,6 +1224,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
               { key: "kredo", label: "Kredo", hint: "VIN reports & CarTrust tools", icon: "pricetag" as const, tint: "#F43F5E" },
               { key: "ads", label: "Advertising", hint: "Manage home-page ad tiles", icon: "megaphone" as const, tint: "#A78BFA" },
               { key: "catalogue", label: "Make Catalogue", hint: "Choose which makes & models dealers can pick", icon: "car-sport" as const, tint: "#0EA5E9" },
+              { key: "public-leads", label: "Public Leads", hint: "Anonymous public valuations from /get-valuation", icon: "planet" as const, tint: "#EC4899" },
             ].map((t) => (
               <TouchableOpacity
                 key={t.key}
@@ -1253,6 +1265,10 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
       ) : view === "catalogue" ? (
         <View style={{ flex: 1 }}>
           <AdminCatalogueScreen />
+        </View>
+      ) : view === "public-leads" ? (
+        <View style={{ flex: 1 }}>
+          <AdminPublicLeadsScreen />
         </View>
       ) : (
       <View style={styles.body}>
