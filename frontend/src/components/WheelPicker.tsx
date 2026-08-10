@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { TouchableOpacity } from "@/src/components/HapticButtons";
-import { View, Text, StyleSheet, ScrollView, Modal, NativeSyntheticEvent, NativeScrollEvent, Platform, TextInput } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { View, Text, StyleSheet, ScrollView, Modal, NativeSyntheticEvent, NativeScrollEvent, Platform } from "react-native";
 import { spacing, radius, fonts } from "@/src/theme";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 
@@ -48,29 +47,14 @@ export default function WheelPicker<T extends string | number>({
   const webScrollRef = useRef<any>(null);          // underlying DOM node on web
   const scrollDebounceRef = useRef<any>(null);
   const [current, setCurrent] = useState<T | null>(value ?? options[0] ?? null);
-  const [query, setQuery] = useState("");
 
-  // Reset filter every time the sheet opens so users don't return to
-  // a stale search from a previous session.
-  useEffect(() => {
-    if (visible) setQuery("");
-  }, [visible]);
-
-  // Filtered list — case-insensitive substring match on the display
-  // string (either `formatter(opt)` or `String(opt)`). Only shown when
-  // the caller passes more than 8 options.
-  const q = query.trim().toLowerCase();
-  const shown = q
-    ? options.filter((o) => (formatter ? formatter(o) : String(o)).toLowerCase().includes(q))
-    : options;
-
-  // Sync the wheel to the incoming value on open (BOTH platforms — the
-  // web wheel uses the same scroll-snap layout as native so it needs
-  // the same initial snap).
+  // Sync the wheel to the incoming value on open (BOTH platforms use
+  // the same scroll-snap layout).
   useEffect(() => {
     if (!visible) return;
-    const idx = Math.max(0, shown.findIndex((o) => o === value));
+    const idx = Math.max(0, options.findIndex((o) => o === value));
     const snapIndex = idx === -1 ? 0 : idx;
+    setCurrent(options[snapIndex] ?? options[0] ?? null);
     const t = setTimeout(() => {
       if (Platform.OS === "web") {
         try {
@@ -79,18 +63,16 @@ export default function WheelPicker<T extends string | number>({
       } else {
         scrollRef.current?.scrollTo({ y: snapIndex * ITEM_HEIGHT, animated: false });
       }
-      setCurrent(shown[snapIndex] ?? shown[0] ?? null);
     }, 30);
     return () => clearTimeout(t);
-    // Re-run when the visible/values change; on filter change reset to top.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, value, shown.length]);
+  }, [visible, value, options.length]);
 
   // Native — read scroll offset when momentum stops and snap to it.
   const onMomentumEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const y = e.nativeEvent.contentOffset.y;
-    const idx = Math.max(0, Math.min(shown.length - 1, Math.round(y / ITEM_HEIGHT)));
-    setCurrent(shown[idx]);
+    const idx = Math.max(0, Math.min(options.length - 1, Math.round(y / ITEM_HEIGHT)));
+    setCurrent(options[idx]);
     scrollRef.current?.scrollTo({ y: idx * ITEM_HEIGHT, animated: true });
   };
 
@@ -105,11 +87,11 @@ export default function WheelPicker<T extends string | number>({
       if (scrollDebounceRef.current) clearTimeout(scrollDebounceRef.current);
       scrollDebounceRef.current = setTimeout(() => {
         const y = target.scrollTop || 0;
-        const idx = Math.max(0, Math.min(shown.length - 1, Math.round(y / ITEM_HEIGHT)));
-        setCurrent(shown[idx] ?? null);
+        const idx = Math.max(0, Math.min(options.length - 1, Math.round(y / ITEM_HEIGHT)));
+        setCurrent(options[idx] ?? null);
       }, 130);
     },
-    [shown],
+    [options],
   );
 
   const scrollToIndex = (i: number) => {
@@ -120,11 +102,21 @@ export default function WheelPicker<T extends string | number>({
     } else {
       scrollRef.current?.scrollTo({ y: i * ITEM_HEIGHT, animated: true });
     }
-    setCurrent(shown[i]);
+    setCurrent(options[i]);
   };
 
   const confirm = () => {
-    if (current != null) onSelect(current);
+    // Belt-and-braces: on web, read the DOM scrollTop one last time
+    // before committing so we never commit a stale `current` (this
+    // catches the edge case where the user scrolls, taps DONE within
+    // the 130 ms debounce window).
+    let final: T | null = current;
+    if (Platform.OS === "web" && webScrollRef.current) {
+      const y = (webScrollRef.current as any).scrollTop || 0;
+      const idx = Math.max(0, Math.min(options.length - 1, Math.round(y / ITEM_HEIGHT)));
+      final = options[idx] ?? current;
+    }
+    if (final != null) onSelect(final);
     onClose();
   };
 
@@ -141,27 +133,6 @@ export default function WheelPicker<T extends string | number>({
               <Text style={[styles.done, current == null && { opacity: 0.35 }]}>DONE</Text>
             </TouchableOpacity>
           </View>
-
-          {/* Optional search — shown for lists of >8 options so users can
-              type a make/model instead of scrolling through 200+ rows. */}
-          {options.length > 8 ? (
-            <View style={styles.searchWrap}>
-              <Ionicons name="search" size={14} color={colors.textSecondary} />
-              <TextInput
-                testID={`${testID}-search`}
-                value={query}
-                onChangeText={setQuery}
-                placeholder={`Search ${title.toLowerCase()}…`}
-                placeholderTextColor={colors.textDisabled}
-                style={styles.searchInput}
-              />
-              {query ? (
-                <TouchableOpacity onPress={() => setQuery("")}>
-                  <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
-                </TouchableOpacity>
-              ) : null}
-            </View>
-          ) : null}
 
           {Platform.OS === "web" ? (
             /* -------- WEB WHEEL — CSS scroll-snap based -------- */
@@ -180,9 +151,6 @@ export default function WheelPicker<T extends string | number>({
                 scrollEventThrottle={16}
                 style={[
                   { height: ITEM_HEIGHT * VISIBLE },
-                  // React-native-web accepts arbitrary CSS via style. The
-                  // `scroll-snap-*` props give us the native-feel snap
-                  // on iOS Safari / Android Chrome for free.
                   {
                     scrollSnapType: "y mandatory",
                     // @ts-ignore — DOM-only prop.
@@ -195,14 +163,12 @@ export default function WheelPicker<T extends string | number>({
                   paddingBottom: ITEM_HEIGHT * PAD_ROWS,
                 }}
               >
-                {shown.length === 0 ? (
+                {options.length === 0 ? (
                   <View style={styles.emptyRow}>
-                    <Text style={styles.emptyText}>
-                      {options.length === 0 ? "No options available" : "No matches"}
-                    </Text>
+                    <Text style={styles.emptyText}>No options available</Text>
                   </View>
                 ) : (
-                  shown.map((opt, i) => {
+                  options.map((opt, i) => {
                     const isCurrent = current === opt;
                     return (
                       <TouchableOpacity
@@ -247,14 +213,12 @@ export default function WheelPicker<T extends string | number>({
                 }}
                 style={{ height: ITEM_HEIGHT * VISIBLE }}
               >
-                {shown.length === 0 ? (
+                {options.length === 0 ? (
                   <View style={styles.emptyRow}>
-                    <Text style={styles.emptyText}>
-                      {options.length === 0 ? "No options available" : "No matches"}
-                    </Text>
+                    <Text style={styles.emptyText}>No options available</Text>
                   </View>
                 ) : (
-                  shown.map((opt, i) => {
+                  options.map((opt, i) => {
                     const isCurrent = current === opt;
                     return (
                       <TouchableOpacity
@@ -369,26 +333,4 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
   emptyRow: { height: ITEM_HEIGHT * VISIBLE, alignItems: "center", justifyContent: "center" },
   emptyText: { color: colors.textDisabled, fontSize: 13 },
-
-  // Search — shown on both platforms when options.length > 8.
-  searchWrap: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginHorizontal: spacing.md,
-    marginTop: spacing.md,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.paper,
-  },
-  searchInput: {
-    flex: 1,
-    color: colors.text,
-    fontSize: 14,
-    // @ts-ignore — RN Web accepts `outlineStyle`.
-    outlineStyle: "none",
-  },
 });

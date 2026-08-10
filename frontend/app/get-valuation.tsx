@@ -246,13 +246,25 @@ export default function GetValuationScreen() {
   const scrollRef = useRef<ScrollView>(null);
 
   // ---------- vehicle options fetch (cascading) ----------
-  const fetchOptions = useCallback(async () => {
+  //
+  // IMPORTANT: When the user reopens a picker to change an already-set
+  // field, we must NOT include that field (or any DOWNSTREAM field) as
+  // a filter — otherwise the backend returns dependent lists (e.g.
+  // asking for `makes` while `make=BMW` returns BMW's models). We only
+  // pass filters STRICTLY UPSTREAM of the field being opened.
+  //
+  // Cascade order:
+  //   make → fuel_type → year_of_production → transmission → model → derivative
+  //
+  const fetchOptions = useCallback(async (forField?: WheelField) => {
+    const order: WheelField[] = ["make", "fuel_type", "year_of_production", "transmission", "model", "derivative"];
+    const currentIndex = forField ? order.indexOf(forField) : order.length;
     const params = new URLSearchParams();
-    if (make) params.set("make", make);
-    if (fuelType) params.set("fuel_type", fuelType);
-    if (yearOfProduction != null) params.set("year_of_production", String(yearOfProduction));
-    if (transmission) params.set("transmission", transmission);
-    if (model) params.set("model", model);
+    if (currentIndex > 0 && make) params.set("make", make);
+    if (currentIndex > 1 && fuelType) params.set("fuel_type", fuelType);
+    if (currentIndex > 2 && yearOfProduction != null) params.set("year_of_production", String(yearOfProduction));
+    if (currentIndex > 3 && transmission) params.set("transmission", transmission);
+    if (currentIndex > 4 && model) params.set("model", model);
     try {
       const r = await fetch(`${BACKEND_URL}/api/vehicles/options${params.toString() ? "?" + params.toString() : ""}`);
       const data = await r.json();
@@ -272,7 +284,7 @@ export default function GetValuationScreen() {
   const openWheel = async (field: WheelField) => {
     const isDiscrete = field === "year_registered" || field === "colour";
     if (!isDiscrete && field) {
-      await fetchOptions();
+      await fetchOptions(field);
     }
     setWheelField(field);
   };
@@ -506,6 +518,18 @@ export default function GetValuationScreen() {
               vin={vin} setVin={setVin}
               colour={colour}
               openWheel={openWheel}
+              onReset={() => {
+                setMake(null);
+                setFuelType(null);
+                setYearOfProduction(null);
+                setTransmission(null);
+                setModel(null);
+                setDerivative(null);
+                setYearRegistered(null);
+                setColour(null);
+                setVin("");
+                setMileage("");
+              }}
             />
           ) : null}
           {step === 3 ? (
@@ -665,7 +689,11 @@ function StepVehicle({
   vin, setVin,
   colour,
   openWheel,
+  onReset,
 }: any) {
+  const hasAnySelection = Boolean(
+    make || fuelType || yearOfProduction || transmission || model || derivative || yearRegistered || colour || vin || mileage
+  );
   return (
     <View>
       <StepTitle
@@ -673,6 +701,25 @@ function StepVehicle({
         title="Your vehicle"
         subtitle="Choose exactly the variant we've catalogued — accurate specs give you the accurate offer"
       />
+      {hasAnySelection ? (
+        <TouchableOpacity
+          style={styles.resetRow}
+          onPress={() =>
+            Alert.alert(
+              "Reset vehicle details?",
+              "This will clear everything you've picked so you can start again.",
+              [
+                { text: "Cancel", style: "cancel" },
+                { text: "Reset", style: "destructive", onPress: onReset },
+              ],
+            )
+          }
+          activeOpacity={0.7}
+        >
+          <Ionicons name="refresh" size={14} color={colors.textSecondary} />
+          <Text style={styles.resetText}>Start over</Text>
+        </TouchableOpacity>
+      ) : null}
       <PickerField styles={styles} label="Make" value={make} onPress={() => openWheel("make")} />
       <PickerField styles={styles} label="Fuel Type" value={fuelType}
         onPress={() => make ? openWheel("fuel_type") : Alert.alert("Choose Make first", "Please pick the make before the fuel type.")}
@@ -1150,6 +1197,26 @@ function makeStyles(colors: Palette) {
     },
     pickerValue: { fontSize: 15, color: colors.text, flex: 1, fontWeight: "500" },
     pickerValueDim: { color: colors.textDisabled, fontWeight: "400" },
+
+    resetRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      alignSelf: "flex-end",
+      gap: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      marginBottom: 4,
+      marginTop: -12,
+      borderRadius: 8,
+    },
+    resetText: {
+      color: colors.textSecondary,
+      fontSize: 12,
+      fontWeight: "600",
+      textTransform: "uppercase",
+      letterSpacing: 1,
+      textDecorationLine: "underline",
+    },
 
     consentRow: {
       flexDirection: "row",
