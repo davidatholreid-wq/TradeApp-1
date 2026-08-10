@@ -519,8 +519,8 @@ export default function HomeScreen() {
                   onPress={() => router.push("/(app)/history" as never)}
                   testID="deal-outcome-pending"
                 >
-                  <Ionicons name="hourglass-outline" size={16} color="#B67900" />
-                  <Text style={[styles.dealStatValue, { color: "#B67900" }]}>
+                  <Ionicons name="hourglass-outline" size={16} color="#E5E7EB" />
+                  <Text style={[styles.dealStatValue, { color: "#E5E7EB" }]}>
                     {dealOutcomes.pending}
                   </Text>
                   <Text style={styles.dealStatLabel}>PENDING</Text>
@@ -547,8 +547,8 @@ export default function HomeScreen() {
                   onPress={() => router.push("/(app)/history" as never)}
                   testID="deal-outcome-no"
                 >
-                  <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
-                  <Text style={[styles.dealStatValue, { color: colors.textSecondary }]}>
+                  <Ionicons name="close-circle" size={16} color="#DC2626" />
+                  <Text style={[styles.dealStatValue, { color: "#DC2626" }]}>
                     {dealOutcomes.no_deal}
                   </Text>
                   <Text style={styles.dealStatLabel}>NO DEAL</Text>
@@ -1263,17 +1263,21 @@ const makeStyles = (colors: Palette, isWide: boolean) => {
       alignItems: "flex-start",
       gap: 4,
     },
+    // Pending → monochrome / near-black: neutral surface with a hair-
+    // line white outline. Reads as "not yet answered" without shouting.
     dealStatCardPending: {
-      borderColor: "#B67900" + "55",
-      backgroundColor: "#B67900" + "14",
+      borderColor: "#FFFFFF" + "22",
+      backgroundColor: "#111111",
     },
+    // Deal done → green (unchanged).
     dealStatCardDone: {
       borderColor: "#1F7A3A" + "55",
       backgroundColor: "#1F7A3A" + "14",
     },
+    // No deal → red tint so it reads as a clear negative outcome.
     dealStatCardNo: {
-      borderColor: colors.border,
-      backgroundColor: colors.paper,
+      borderColor: "#DC2626" + "55",
+      backgroundColor: "#DC2626" + "14",
     },
     dealStatValue: {
       fontSize: isWide ? 32 : 26,
