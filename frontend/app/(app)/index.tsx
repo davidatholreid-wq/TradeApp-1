@@ -124,13 +124,19 @@ export default function HomeScreen() {
         user?.email ||
         "—";
       const adminPhone = "27848819073";
-      const waText =
-        `Hi Fourbuy Admin,%0A%0A` +
-        `I'm enquiring about an account suspension.%0A` +
-        `Dealership: ${encodeURIComponent(dealership)}%0A` +
-        `User: ${encodeURIComponent(userName)}%0A%0A` +
-        `Please assist us to reactivate the account.`;
-      const waUrl = `https://wa.me/${adminPhone}?text=${waText}`;
+      // Build the message in plain text first, then URL-encode the
+      // whole thing exactly ONCE. Earlier version mixed hard-coded
+      // `%0A` line breaks with `encodeURIComponent(dealership)` which
+      // double-encoded any special characters (apostrophes, ampersands,
+      // etc.) in dealership / user names — WhatsApp then displayed
+      // literal "%20" and "%2F" tokens in the pre-filled body.
+      const waMessage =
+        "Hi Fourbuy Admin,\n\n" +
+        "I'm enquiring about an account suspension.\n" +
+        `Dealership: ${dealership}\n` +
+        `User: ${userName}\n\n` +
+        "Please assist us to reactivate the account.";
+      const waUrl = `https://wa.me/${adminPhone}?text=${encodeURIComponent(waMessage)}`;
       const message =
         `Your account is currently suspended, so you can't ${tileLabel === "Get Cover" ? "submit new valuations" : "place covers"} right now.\n\n` +
         `Please contact the Fourbuy administrator to resolve this.`;
