@@ -555,11 +555,13 @@ export default function WeBuyCarsListingsCard(props: Props) {
         <Ionicons name="open-outline" size={18} color={colors.primary} />
       </TouchableOpacity>
 
-      <Text style={styles.disclaimer}>
-        Tip: WeBuyCars stock is NOT reconditioned — condition varies from
-        one listing to the next. Use it as a wholesale/trade reference,
-        and go through each listing carefully before drawing conclusions.
-      </Text>
+      <View style={styles.disclaimerWrap}>
+        <Text style={styles.disclaimer}>
+          Tip: WeBuyCars stock is NOT reconditioned — condition varies from
+          one listing to the next. Use it as a wholesale/trade reference,
+          and go through each listing carefully before drawing conclusions.
+        </Text>
+      </View>
     </View>
   );
 }
@@ -579,6 +581,11 @@ function makeStyles(colors: Palette) {
       // triggers flex-wrap → stacking on phones.
       flex: 1,
       minWidth: 300,
+      // Guarantees the disclaimer / children never paint outside the
+      // rounded border on web (RN Web occasionally ignores padding
+      // constraints when a text child is very long and italic — the
+      // "tip line overlapping the box" bug reported on desktop).
+      overflow: "hidden",
     },
     headerRow: {
       flexDirection: "row",
@@ -724,11 +731,23 @@ function makeStyles(colors: Palette) {
     btnTitle: { color: colors.text, fontSize: 14, fontWeight: "700" },
     btnSub: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
 
+    disclaimerWrap: {
+      // Visually separated hint strip pinned inside the card. Using an
+      // explicit self-stretch + top divider guarantees the italic tip
+      // stays contained inside the rounded border on every viewport —
+      // fixes the "Tip … overlapping the box" bug on desktop web.
+      alignSelf: "stretch",
+      marginTop: 8,
+      paddingTop: 8,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+    },
     disclaimer: {
       color: colors.textSecondary,
       fontSize: 11,
       fontStyle: "italic",
-      marginTop: 4,
+      lineHeight: 15,
+      flexShrink: 1,
     },
   });
 }

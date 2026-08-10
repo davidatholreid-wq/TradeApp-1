@@ -299,12 +299,14 @@ export default function ComparableListingsCard(props: Props) {
         <Ionicons name="open-outline" size={18} color={colors.primary} />
       </TouchableOpacity>
 
-      <Text style={styles.disclaimer}>
-        Tip: AutoTrader listings on this deep link come from reputable
-        franchise and dealer partners rated 3★ or higher — vehicles are
-        typically reconditioned and warrantied. Cheapest example gives
-        you a solid retail benchmark.
-      </Text>
+      <View style={styles.disclaimerWrap}>
+        <Text style={styles.disclaimer}>
+          Tip: AutoTrader listings on this deep link come from reputable
+          franchise and dealer partners rated 3★ or higher — vehicles are
+          typically reconditioned and warrantied. Cheapest example gives
+          you a solid retail benchmark.
+        </Text>
+      </View>
     </View>
   );
 }
@@ -325,6 +327,9 @@ function makeStyles(colors: Palette) {
       // and the two cards stack vertically instead of squeezing.
       flex: 1,
       minWidth: 300,
+      // Contains the italic disclaimer / children strictly inside the
+      // rounded border on web. Matches the sibling WeBuyCars card.
+      overflow: "hidden",
     },
     headerRow: {
       flexDirection: "row",
@@ -396,11 +401,19 @@ function makeStyles(colors: Palette) {
     btnTitle: { color: colors.text, fontSize: 14, fontWeight: "700" },
     btnSub: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
 
+    disclaimerWrap: {
+      alignSelf: "stretch",
+      marginTop: 8,
+      paddingTop: 8,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+    },
     disclaimer: {
       color: colors.textSecondary,
       fontSize: 11,
       fontStyle: "italic",
-      marginTop: 4,
+      lineHeight: 15,
+      flexShrink: 1,
     },
   });
 }
