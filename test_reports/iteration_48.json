@@ -1,0 +1,53 @@
+{
+  "summary": "Iteration 48 — Regression pass after routes refactor (2,687 lines moved from server.py into 5 new modules: routes/ads.py, routes/rewards.py, routes/kredo.py, routes/cover.py, routes/auth.py). Backend contract is 100% preserved. Pytest suite of 25 cases: 24 passed, 1 skipped (FB-000083 no longer exists in preview DB — earliest present is FB-000002 / FB-000104; not a code issue). Verified end-to-end from the UI: dealer Dave (dave@fourbuy.co.za / Dave1234!) logs in, home renders correctly with the 'Welcome back, David' hero, Give Cover NavFlipTile shows badge '1' and hint '1 car waiting · R10 each' (matches backend /api/cover/submissions filter !my_cover). Tapping Give Cover navigates to /cover which shows the three tabs (Available · 1 / Cover given · 5 / Declined · 0), the R10 explainer card, and the FB-000002 Toyota Hilux row with a red decline circle. Tapping the Rewards tile loads the Fourbuy Rewards screen showing balance 17 pts, '33 more points until your next voucher', Earned/Spent/Refunded chips, and the per-submission points-activity ledger. No red screens, zero JS console errors. AUTH: dealer + admin login OK, wrong-password → 401 with error detail, /auth/me returns {user:{...}} including referral_code + dealership enrichment, forgot-password returns 200 for both known and unknown emails (no account-existence leak), reset-password with bogus token → 400. ADS: /api/admin/ads returns {slots:[...]} with all 10 slots (slot 1 = Ford Bryanston with base64 image), /api/ads/active returns {ads:[...]} for the dealer rotating banner. REWARDS: /api/rewards/me + admin listings + leaderboard endpoints all 200. KREDO: /api/kredo/value with the correct payload shape (make, model, year:str, derivative, mileage, condition) returns 200 (the cross-module `_ensure_market_values` re-import at server.py:6595 works — highest-risk dependency), /api/kredo/makes 200 authed / 401 unauthed, /api/kredo/cartrust/status/{unknown} → 404. COVER: /api/cover/submissions 200 for pricing agent Dave (6 rows), /api/cover/declined-submissions 200, 401 unauthed, 403 for admin. REFERRAL: /api/referral/lookup?code=<Dave's code> returns his name + dealership; unknown code → 404. Refactor is safe to merge. Data-drift note: FB-000083 (previously cartrust=pending) is no longer in the preview DB, so that specific CarTrust status check was skipped — endpoint contract remains verified via the unknown-id 404 path.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/kredo/cartrust/status/{sub_id} — FB-000083 case",
+        "issue": "FB-000083 (which had cartrust=pending in iter26+) is no longer in the preview DB. Earliest submissions currently present are FB-000002 / FB-000104..FB-000141. The endpoint itself is verified via the unknown-id 404 branch. Consider re-seeding FB-000083 or picking a new fixture submission if this cartrust-pending path needs recurring regression coverage."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "Global (Expo web)",
+        "issue": "Deprecation warnings still emitted on home render (carried over from iter47): 'shadow* style props are deprecated. Use boxShadow', 'textShadow* style props are deprecated. Use textShadow', 'Image: style.resizeMode is deprecated. Please use props.resizeMode'. Non-blocking. Candidates: /app/frontend/app/(app)/index.tsx styles heroWrap/coversBannerWrap/frontTitleOnImage (shadow/textShadow) + TilePage front Image (resizeMode style)."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_48_refactor_regression.py",
+    "/app/test_reports/pytest/iteration_48.xml",
+    "/app/test_reports/screenshots/iter48_login_load.png",
+    "/app/test_reports/screenshots/iter48_dave_home.png",
+    "/app/test_reports/screenshots/iter48_cover_page.png",
+    "/app/test_reports/screenshots/iter48_rewards.png"
+  ],
+  "action_items": [
+    "Optional: re-seed FB-000083 (cartrust=pending) or update /app/memory/test_credentials.md with a new CarTrust-pending fixture reference so future CarTrust regression can be exercised on a real sub.",
+    "Optional: address RN-web deprecation warnings (shadow/textShadow → boxShadow, Image style.resizeMode → props.resizeMode) — cosmetic DX cleanup, no user impact.",
+    "server.py is still ~5900 lines after this refactor (was 8500+). Consider continuing extraction (submissions/*, admin/*, billing) — soft-limit warning carried over."
+  ],
+  "critical_code_review_comments": [
+    "The cross-module dependency called out as highest-risk — `from routes.kredo import router as kredo_router, _ensure_market_values` at server.py:6595 — is wired correctly. `_ensure_market_values` is invoked twice inside server.py (lines 2006 and 2084) and both paths worked in the /api/kredo/value regression call.",
+    "routes/__init__.py's docstring correctly documents that each module imports shared runtime state from `server` after `server.py` finishes defining them — no import-time circular errors observed in supervisor logs.",
+    "Response envelopes are inconsistent across modules and callers must remember which shape to use: /api/admin/ads → {slots:[...]}, /api/ads/active → {ads:[...]}, /api/cover/submissions → {submissions:[...]}. This is unchanged by the refactor but worth documenting for future frontend contributors."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_48_refactor_regression.py (new)"
+  ],
+  "success_rate": {
+    "backend": "24/25 (96%) — 1 skip for missing FB-000083 fixture, 0 failures",
+    "frontend": "Login → Home → Give Cover → Rewards flow verified on mobile 390x844 with no console errors and no red screen"
+  },
+  "seed_data_creation": "None — read-only regression. Non-destructive.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend routes are now split across /app/backend/routes/{ads,rewards,kredo,cover,auth}.py plus server.py. Envelope shapes to remember: /api/admin/ads returns {slots:[...]} (10 slots), /api/ads/active returns {ads:[...]}, /api/cover/submissions returns {submissions:[...]}. Auth /me returns {user:{...}} (wrapped). KredoValueRequest fields are make, model, year (string), derivative (not 'variant'), mileage (int), condition (default 'Good'). FB-000083 no longer exists in the preview DB — use FB-000002 or any FB-0001xx submission when the review request calls out FB-000083. KREDO_CARTRUST_SKIP_HMAC=1 is still set — do not test HMAC verification. Dave (dave@fourbuy.co.za / Dave1234!) still has is_pricing_agent=true and 1 available cover in the queue.",
+  "rca_of_issue": "N/A — clean regression pass after the 5-module refactor. All flows called out in the review request behave identically to iteration_47."
+}

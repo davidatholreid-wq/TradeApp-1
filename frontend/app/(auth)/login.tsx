@@ -21,12 +21,13 @@ import { darkPalette, type Palette } from "@/src/theme/ThemeContext";
 import { useAuth } from "@/src/context/AuthContext";
 
 // Marketing bullets shown on the hero side of the login screen — they
-// mirror the three Home landing tiles so a first-time visitor already
-// sees Fourbuy's core promise before they even sign in.
+// mirror the four pillars of the Fourbuy dealer app so a first-time
+// visitor immediately sees what the platform does before they sign in.
 const HERO_BULLETS: { icon: keyof typeof Ionicons.glyphMap; text: string }[] = [
-  { icon: "shield-checkmark-outline", text: "Trade with confidence — guaranteed cover prices" },
-  { icon: "flash-outline", text: "Confirmed pricing in under 90 seconds" },
-  { icon: "trophy-outline", text: "Earn rewards on every priced vehicle" },
+  { icon: "shield-checkmark-outline", text: "Get confirmed Trade Covers" },
+  { icon: "swap-horizontal-outline", text: "Give Trade Covers on other dealers' stock" },
+  { icon: "briefcase-outline", text: "Full trade-in management system" },
+  { icon: "leaf-outline", text: "Trade responsibly" },
 ];
 
 const HERO_IMAGE = {
@@ -85,11 +86,11 @@ export default function Login() {
         {layout !== "phone" ? (
           <>
             <Text style={styles.heroHeadline}>
-              Wholesale prices,{"\n"}confirmed in 90 seconds.
+              The complete dealer{"\n"}trade platform.
             </Text>
             <Text style={styles.heroSub}>
-              The dealer network for guaranteed cover prices, factory-option reports, service
-              history and accident checks — all in one place.
+              Get and give Trade Covers, manage every trade-in from valuation to sale, and pull
+              factory-option and accident history reports — all in one place.
             </Text>
             <View style={styles.bullets}>
               {HERO_BULLETS.map((b) => (
@@ -118,7 +119,7 @@ export default function Login() {
         <Text style={styles.formTitle}>Sign in</Text>
         <Text style={styles.formSubtitle}>
           {layout === "phone"
-            ? "Submit vehicles and unlock guaranteed cover prices."
+            ? "Get and give Trade Covers. Manage every trade-in in one app."
             : "Welcome back. Please enter your details."}
         </Text>
 
