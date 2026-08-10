@@ -2,24 +2,24 @@
  * PUBLIC VALUATION PORTAL — Fourbuy Car Buying Co.
  *
  * Anonymous, no-login funnel for members of the public to submit their
- * vehicle for a free valuation. This route lives at `/get-valuation` and
- * is a whitelisted public path in `app/_layout.tsx` — it must NEVER be
- * moved under `(app)/` or `(auth)/` which are auth-gated.
+ * vehicle for a free valuation. Route lives at `/get-valuation`. Uses the
+ * SAME theme/palette and the SAME cascading make/model wheel-pickers as
+ * the dealer submit flow, so the extracted vehicle data lines up exactly
+ * with our seeded Kredo catalogue (essential for accurate pricing).
  *
  * Six-step wizard:
- *   1. Seller       — name, phone, email, POPIA consent
- *   2. Vehicle      — year, make, model, mileage, VIN (opt), colour (opt)
+ *   1. Seller       — name, SA phone, email, POPIA consent
+ *   2. Vehicle      — Make → Fuel → Year of Production → Transmission →
+ *                     Model → Derivative → Year Registered → Mileage /
+ *                     Colour / VIN
  *   3. License disc — optional OCR scan / photo upload to auto-fill fields
  *   4. Condition    — overall grade, service history, accident flag
  *   5. Photos       — six mandatory slots (front / rear / L / R / interior / dash)
  *   6. Review       — summary, Cloudflare Turnstile, submit → success card
  *
- * Anti-abuse:
- *   - Cloudflare Turnstile (managed widget) — see `src/components/TurnstileWidget.tsx`
- *   - Backend rate-limit: 3/day per IP, 3/day per phone
- *   - Backend requires all 6 photo slots + POPIA consent + valid phone
+ * All vehicles are treated as "subject to view" — NO recon required.
  */
-import { useState, useCallback, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -39,27 +39,10 @@ import * as ImagePicker from "expo-image-picker";
 
 import { TouchableOpacity } from "@/src/components/HapticButtons";
 import TurnstileWidget from "@/src/components/TurnstileWidget";
+import WheelPicker from "@/src/components/WheelPicker";
 import { decodeLicenseDisk } from "@/src/utils/licenseDisk";
-
-// ---------------------------------------------------------------------------
-// Palette — LIGHT-mode fixed. Public marketing surface, not tied to the
-// dealer app's theme toggle. Editorial monochrome to match brand.
-// ---------------------------------------------------------------------------
-const P = {
-  bg: "#FFFFFF",
-  paper: "#F7F7F7",
-  card: "#FFFFFF",
-  border: "#E4E4E4",
-  borderStrong: "#111111",
-  text: "#0A0A0A",
-  textDim: "#5A5A5A",
-  textFaint: "#8A8A8A",
-  primary: "#0A0A0A",
-  onPrimary: "#FFFFFF",
-  danger: "#B00020",
-  success: "#0E7F3B",
-  accentBg: "#F1F1F1",
-};
+import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
+import { fonts } from "@/src/theme";
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 const TURNSTILE_SITE_KEY = process.env.EXPO_PUBLIC_TURNSTILE_SITE_KEY || "";
@@ -68,11 +51,9 @@ const TURNSTILE_SITE_KEY = process.env.EXPO_PUBLIC_TURNSTILE_SITE_KEY || "";
 // Types
 // ---------------------------------------------------------------------------
 type Overall = "Excellent" | "Good" | "Fair" | "Poor";
-type ServiceHistory = "Full" | "Partial" | "None" | "Not sure";
-type Transmission = "Automatic" | "Manual" | "";
-type FuelType = "Petrol" | "Diesel" | "Hybrid" | "Electric" | "";
-
+type ServiceHistoryVal = "Full" | "Partial" | "None" | "Not sure";
 type PhotoSlot = "front" | "rear" | "left" | "right" | "interior" | "dash";
+
 const PHOTO_ORDER: { key: PhotoSlot; label: string; hint: string }[] = [
   { key: "front", label: "Front", hint: "Full front, straight on" },
   { key: "rear", label: "Rear", hint: "Full rear, straight on" },
@@ -82,8 +63,15 @@ const PHOTO_ORDER: { key: PhotoSlot; label: string; hint: string }[] = [
   { key: "dash", label: "Odometer", hint: "Dashboard showing mileage" },
 ];
 
+// Wheel picker discrete option lists — kept in sync with dealer submit.tsx.
+const COLOURS = ["White", "Silver", "Grey", "Black", "Blue", "Red", "Green", "Brown", "Beige", "Yellow", "Orange", "Purple", "Gold", "Other"];
+
+type WheelField =
+  | "make" | "fuel_type" | "year_of_production" | "transmission"
+  | "model" | "derivative" | "year_registered" | "colour" | null;
+
 // ---------------------------------------------------------------------------
-// Small helpers
+// Helpers
 // ---------------------------------------------------------------------------
 const isEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 const isSaPhone = (v: string) => /^(\+?27|0)\d{9}$/.test(v.replace(/\s|-/g, ""));
@@ -110,10 +98,7 @@ async function pickPhoto(): Promise<string | null> {
             const perm = await ImagePicker.requestCameraPermissionsAsync();
             if (!perm.granted) return resolve(null);
             const r = await ImagePicker.launchCameraAsync({
-              base64: true,
-              quality: 0.5,
-              allowsEditing: false,
-              mediaTypes: ["images"],
+              base64: true, quality: 0.5, allowsEditing: false, mediaTypes: ["images"],
             });
             if (r.canceled || !r.assets?.[0]?.base64) return resolve(null);
             resolve(`data:image/jpeg;base64,${r.assets[0].base64}`);
@@ -125,10 +110,7 @@ async function pickPhoto(): Promise<string | null> {
             const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
             if (!perm.granted) return resolve(null);
             const r = await ImagePicker.launchImageLibraryAsync({
-              base64: true,
-              quality: 0.5,
-              allowsEditing: false,
-              mediaTypes: ["images"],
+              base64: true, quality: 0.5, allowsEditing: false, mediaTypes: ["images"],
             });
             if (r.canceled || !r.assets?.[0]?.base64) return resolve(null);
             resolve(`data:image/jpeg;base64,${r.assets[0].base64}`);
@@ -141,14 +123,15 @@ async function pickPhoto(): Promise<string | null> {
   });
 }
 
+const TOTAL_STEPS = 6;
+
 // ---------------------------------------------------------------------------
 // Main screen
 // ---------------------------------------------------------------------------
-const TOTAL_STEPS = 6;
-const CURRENT_YEAR = new Date().getFullYear();
-
 export default function GetValuationScreen() {
   const router = useRouter();
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [step, setStep] = useState(1);
 
   // Seller
@@ -157,41 +140,109 @@ export default function GetValuationScreen() {
   const [email, setEmail] = useState("");
   const [consent, setConsent] = useState(false);
 
-  // Vehicle
-  const [year, setYear] = useState("");
-  const [make, setMake] = useState("");
-  const [model, setModel] = useState("");
-  const [derivative, setDerivative] = useState("");
+  // Vehicle (cascading — matches dealer submit)
+  const [make, setMake] = useState<string | null>(null);
+  const [fuelType, setFuelType] = useState<string | null>(null);
+  const [yearOfProduction, setYearOfProduction] = useState<number | null>(null);
+  const [transmission, setTransmission] = useState<string | null>(null);
+  const [model, setModel] = useState<string | null>(null);
+  const [derivative, setDerivative] = useState<string | null>(null);
+  const [yearRegistered, setYearRegistered] = useState<number | null>(null);
+
+  // Extras
   const [vin, setVin] = useState("");
   const [mileage, setMileage] = useState("");
-  const [colour, setColour] = useState("");
-  const [transmission, setTransmission] = useState<Transmission>("");
-  const [fuelType, setFuelType] = useState<FuelType>("");
+  const [colour, setColour] = useState<string | null>(null);
+
+  // Wheel picker sheet
+  const [wheelField, setWheelField] = useState<WheelField>(null);
+  const [options, setOptions] = useState<{
+    makes: string[]; fuel_types: string[]; years: number[]; transmissions: string[]; models: string[]; derivatives: string[];
+  }>({ makes: [], fuel_types: [], years: [], transmissions: [], models: [], derivatives: [] });
+
+  // Disc capture
   const [dateOfTest, setDateOfTest] = useState<string | null>(null);
   const [licenseDiskData, setLicenseDiskData] = useState<string | null>(null);
   const [discPhoto, setDiscPhoto] = useState<string | null>(null);
 
   // Condition
   const [overall, setOverall] = useState<Overall | "">("");
-  const [service, setService] = useState<ServiceHistory | "">("");
-  const [accident, setAccident] = useState<boolean>(false);
+  const [service, setService] = useState<ServiceHistoryVal | "">("");
+  const [accident, setAccident] = useState(false);
   const [damageNotes, setDamageNotes] = useState("");
 
   // Photos
   const [photos, setPhotos] = useState<Record<PhotoSlot, string | null>>({
-    front: null,
-    rear: null,
-    left: null,
-    right: null,
-    interior: null,
-    dash: null,
+    front: null, rear: null, left: null, right: null, interior: null, dash: null,
   });
 
-  // Anti-abuse + submission
+  // Anti-abuse + submit
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ reference: string; message: string } | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+
+  // ---------- vehicle options fetch (cascading) ----------
+  const fetchOptions = useCallback(async () => {
+    const params = new URLSearchParams();
+    if (make) params.set("make", make);
+    if (fuelType) params.set("fuel_type", fuelType);
+    if (yearOfProduction != null) params.set("year_of_production", String(yearOfProduction));
+    if (transmission) params.set("transmission", transmission);
+    if (model) params.set("model", model);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/vehicles/options${params.toString() ? "?" + params.toString() : ""}`);
+      const data = await r.json();
+      setOptions({
+        makes: data.makes || [],
+        fuel_types: data.fuel_types || [],
+        years: data.years || [],
+        transmissions: data.transmissions || [],
+        models: data.models || [],
+        derivatives: data.derivatives || [],
+      });
+    } catch {
+      Alert.alert("Network error", "Could not fetch vehicle options. Please try again.");
+    }
+  }, [make, fuelType, yearOfProduction, transmission, model]);
+
+  const openWheel = async (field: WheelField) => {
+    const isDiscrete = field === "year_registered" || field === "colour";
+    if (!isDiscrete && field) {
+      await fetchOptions();
+    }
+    setWheelField(field);
+  };
+
+  // Cascading resets — matches dealer flow.
+  const setMakePick = (v: string) => { setMake(v); setFuelType(null); setYearOfProduction(null); setTransmission(null); setModel(null); setDerivative(null); };
+  const setFuelPick = (v: string) => { setFuelType(v); setYearOfProduction(null); setTransmission(null); setModel(null); setDerivative(null); };
+  const setYearPick = (v: number) => { setYearOfProduction(v); setTransmission(null); setModel(null); setDerivative(null); };
+  const setTransPick = (v: string) => { setTransmission(v); setModel(null); setDerivative(null); };
+  const setModelPick = (v: string) => { setModel(v); setDerivative(null); };
+
+  const wheelPropsFor = (): { title: string; options: any[]; value: any; onSelect: (v: any) => void; formatter?: (v: any) => string } => {
+    switch (wheelField) {
+      case "make": return { title: "Make", options: options.makes, value: make, onSelect: setMakePick };
+      case "fuel_type": return { title: "Fuel Type", options: options.fuel_types, value: fuelType, onSelect: setFuelPick };
+      case "year_of_production": return { title: "Year of Production", options: options.years, value: yearOfProduction, onSelect: setYearPick };
+      case "transmission": return { title: "Transmission", options: options.transmissions, value: transmission, onSelect: setTransPick };
+      case "model": return { title: "Model", options: options.models, value: model, onSelect: setModelPick };
+      case "derivative": return { title: "Derivative", options: options.derivatives, value: derivative, onSelect: setDerivative };
+      case "year_registered": {
+        const yrs: number[] = [];
+        const now = new Date().getFullYear();
+        const start = yearOfProduction ?? (now - 25);
+        const end = now + 1;
+        for (let y = start; y <= end; y++) yrs.push(y);
+        return { title: "Year Registered", options: yrs, value: yearRegistered, onSelect: setYearRegistered };
+      }
+      case "colour": return { title: "Colour", options: COLOURS, value: colour, onSelect: setColour };
+      default: return { title: "", options: [], value: null, onSelect: () => {} };
+    }
+  };
+  const wheelProps = wheelPropsFor();
 
   // ---------- validation ----------
   const validateStep = useCallback(
@@ -203,15 +254,17 @@ export default function GetValuationScreen() {
         if (!consent) return "Please accept the privacy notice to continue.";
       }
       if (s === 2) {
-        const y = parseInt(year || "0", 10);
-        if (!(y >= 1980 && y <= CURRENT_YEAR + 1)) return `Year must be between 1980 and ${CURRENT_YEAR + 1}.`;
-        if (make.trim().length < 1) return "Please enter the vehicle make.";
-        if (model.trim().length < 1) return "Please enter the vehicle model.";
+        if (!make) return "Please choose the vehicle make.";
+        if (!fuelType) return "Please choose the fuel type.";
+        if (!yearOfProduction) return "Please choose the year of production.";
+        if (!transmission) return "Please choose the transmission.";
+        if (!model) return "Please choose the model.";
+        if (!derivative) return "Please choose the derivative.";
+        if (!yearRegistered) return "Please choose the year the vehicle was registered.";
         const km = parseInt(mileage.replace(/\s|,/g, "") || "-1", 10);
         if (!(km >= 0 && km <= 2_000_000)) return "Please enter a valid mileage.";
         if (vin && !/^[A-HJ-NPR-Z0-9]{17}$/i.test(vin.trim())) return "VIN must be 17 characters (no I / O / Q).";
       }
-      // Step 3 (disc) is optional — no gate.
       if (s === 4) {
         if (!overall) return "Please choose an overall condition.";
         if (!service) return "Please choose a service history option.";
@@ -220,6 +273,7 @@ export default function GetValuationScreen() {
       if (s === 5) {
         for (const p of PHOTO_ORDER) {
           if (!photos[p.key]) return `Please add the ${p.label} photo.`;
+          if (!String(photos[p.key]).startsWith("data:image")) return `Photo ${p.label} is invalid — please retake.`;
         }
       }
       if (s === 6) {
@@ -227,15 +281,12 @@ export default function GetValuationScreen() {
       }
       return null;
     },
-    [fullName, phone, email, consent, year, make, model, mileage, vin, overall, service, accident, damageNotes, photos, turnstileToken],
+    [fullName, phone, email, consent, make, fuelType, yearOfProduction, transmission, model, derivative, yearRegistered, mileage, vin, overall, service, accident, damageNotes, photos, turnstileToken],
   );
 
   const goNext = () => {
     const err = validateStep(step);
-    if (err) {
-      Alert.alert("One more thing", err);
-      return;
-    }
+    if (err) { Alert.alert("One more thing", err); return; }
     setStep((s) => Math.min(TOTAL_STEPS, s + 1));
     scrollRef.current?.scrollTo({ y: 0, animated: true });
   };
@@ -248,10 +299,13 @@ export default function GetValuationScreen() {
   const applyDiscParsed = (parsed: any) => {
     if (!parsed) return;
     if (parsed.vin && /^[A-HJ-NPR-Z0-9]{17}$/i.test(parsed.vin)) setVin(String(parsed.vin).toUpperCase());
-    if (parsed.make && !make) setMake(String(parsed.make));
-    if (parsed.model && !model) setModel(String(parsed.model));
-    if (parsed.colour && !colour) setColour(String(parsed.colour));
     if (parsed.dateOfTest) setDateOfTest(String(parsed.dateOfTest));
+    if (parsed.colour && !colour) {
+      // Attempt to match against our COLOURS list; fall back to whatever the disc says.
+      const disk = String(parsed.colour).trim();
+      const match = COLOURS.find((c) => c.toLowerCase() === disk.toLowerCase());
+      setColour(match || disk);
+    }
   };
 
   const handleScanDisc = async () => {
@@ -260,28 +314,20 @@ export default function GetValuationScreen() {
     setDiscPhoto(img);
     try {
       const r = await fetch(`${BACKEND_URL}/api/public/license-disk/decode`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image_base64: img }),
       });
       const data = await r.json();
       if (!r.ok) {
-        Alert.alert(
-          "Couldn't read the disc",
-          data?.detail || "We couldn't decode that photo. Try a sharper, close-up shot of the whole disc — or just skip and enter details manually.",
-        );
+        Alert.alert("Couldn't read the disc", data?.detail || "We couldn't decode that photo. Try a sharper, close-up shot of the whole disc — or just skip and enter details manually.");
         return;
       }
       if (data?.raw) setLicenseDiskData(data.raw);
       applyDiscParsed(data?.parsed || {});
-      // If the raw came back and we didn't get parsed keys, try client parse.
       if (data?.raw && (!data?.parsed || !Object.keys(data.parsed).length)) {
-        try {
-          const p = decodeLicenseDisk(data.raw);
-          applyDiscParsed(p);
-        } catch {}
+        try { applyDiscParsed(decodeLicenseDisk(data.raw)); } catch {}
       }
-      Alert.alert("Disc scanned", "We've pre-filled the vehicle details for you. Please review them on the next screen.");
+      Alert.alert("Disc scanned", "We've captured your VIN and roadworthy date. Please continue and confirm the make/model on the next screen.");
     } catch (e: any) {
       Alert.alert("Network error", e?.message || "Could not reach the decoder. You can skip this step.");
     }
@@ -299,11 +345,9 @@ export default function GetValuationScreen() {
   const submit = async () => {
     if (submitting) return;
     const err = validateStep(6);
-    if (err) {
-      Alert.alert("One more thing", err);
-      return;
-    }
+    if (err) { Alert.alert("One more thing", err); return; }
     setSubmitting(true);
+    setSubmitError(null);
     try {
       const body = {
         seller: {
@@ -313,13 +357,15 @@ export default function GetValuationScreen() {
           consent_accepted: true,
         },
         vehicle: {
-          year: parseInt(year, 10),
-          make: make.trim(),
-          model: model.trim(),
-          derivative: derivative.trim() || undefined,
+          year_of_production: yearOfProduction,
+          year_registered: yearRegistered,
+          year: yearRegistered,  // back-compat with the old field
+          make,
+          model,
+          derivative,
           vin: vin.trim() ? vin.trim().toUpperCase() : undefined,
           mileage: parseInt(mileage.replace(/\s|,/g, ""), 10),
-          colour: colour.trim() || undefined,
+          colour: colour || undefined,
           transmission: transmission || undefined,
           fuel_type: fuelType || undefined,
           date_of_test: dateOfTest || undefined,
@@ -340,12 +386,10 @@ export default function GetValuationScreen() {
         body: JSON.stringify(body),
       });
       const data = await r.json();
-      if (!r.ok) {
-        throw new Error(data?.detail || `Submission failed (HTTP ${r.status})`);
-      }
+      if (!r.ok) throw new Error(data?.detail || `Submission failed (HTTP ${r.status})`);
       setResult({ reference: data.reference, message: data.message });
     } catch (e: any) {
-      Alert.alert("Submission failed", e?.message || "Something went wrong. Please try again.");
+      setSubmitError(e?.message || "Something went wrong. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -353,19 +397,14 @@ export default function GetValuationScreen() {
 
   // ---------- success ----------
   if (result) {
-    return <SuccessCard reference={result.reference} message={result.message} onDone={() => router.replace("/")} />;
+    return <SuccessCard colors={colors} styles={styles} reference={result.reference} message={result.message} onDone={() => router.replace("/")} />;
   }
 
-  // ---------- render ----------
   const progress = step / TOTAL_STEPS;
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={0}
-      >
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={0}>
         {/* Header */}
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
@@ -374,7 +413,7 @@ export default function GetValuationScreen() {
           </View>
           {step > 1 && !result ? (
             <TouchableOpacity onPress={goBack} style={styles.headerBack} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="chevron-back" size={20} color={P.text} />
+              <Ionicons name="chevron-back" size={20} color={colors.text} />
               <Text style={styles.headerBackText}>Back</Text>
             </TouchableOpacity>
           ) : null}
@@ -389,13 +428,10 @@ export default function GetValuationScreen() {
           <Text style={styles.progressLabel}>{Math.round(progress * 100)}%</Text>
         </View>
 
-        <ScrollView
-          ref={scrollRef}
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-        >
+        <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           {step === 1 ? (
             <StepSeller
+              colors={colors} styles={styles}
               fullName={fullName} setFullName={setFullName}
               phone={phone} setPhone={setPhone}
               email={email} setEmail={setEmail}
@@ -404,32 +440,30 @@ export default function GetValuationScreen() {
           ) : null}
           {step === 2 ? (
             <StepVehicle
-              year={year} setYear={setYear}
-              make={make} setMake={setMake}
-              model={model} setModel={setModel}
-              derivative={derivative} setDerivative={setDerivative}
-              vin={vin} setVin={setVin}
+              colors={colors} styles={styles}
+              make={make} fuelType={fuelType} yearOfProduction={yearOfProduction}
+              transmission={transmission} model={model} derivative={derivative}
+              yearRegistered={yearRegistered}
               mileage={mileage} setMileage={setMileage}
-              colour={colour} setColour={setColour}
-              transmission={transmission} setTransmission={setTransmission}
-              fuelType={fuelType} setFuelType={setFuelType}
+              vin={vin} setVin={setVin}
+              colour={colour}
+              openWheel={openWheel}
             />
           ) : null}
           {step === 3 ? (
             <StepDisc
+              colors={colors} styles={styles}
               discPhoto={discPhoto}
               onScan={handleScanDisc}
-              onClear={() => {
-                setDiscPhoto(null);
-                setLicenseDiskData(null);
-                setDateOfTest(null);
-              }}
-              didFillFields={!!(vin || make || model)}
+              onClear={() => { setDiscPhoto(null); setLicenseDiskData(null); setDateOfTest(null); }}
+              didFillFields={!!(vin || dateOfTest)}
               dateOfTest={dateOfTest}
+              capturedVin={vin}
             />
           ) : null}
           {step === 4 ? (
             <StepCondition
+              colors={colors} styles={styles}
               overall={overall} setOverall={setOverall}
               service={service} setService={setService}
               accident={accident} setAccident={setAccident}
@@ -437,19 +471,24 @@ export default function GetValuationScreen() {
             />
           ) : null}
           {step === 5 ? (
-            <StepPhotos photos={photos} onAdd={addPhoto} onRemove={removePhoto} />
+            <StepPhotos colors={colors} styles={styles} photos={photos} onAdd={addPhoto} onRemove={removePhoto} />
           ) : null}
           {step === 6 ? (
             <StepReview
+              colors={colors} styles={styles}
               summary={{
                 fullName, phone, email,
-                year, make, model, derivative, vin, mileage, colour,
+                yearOfProduction, yearRegistered,
+                make, fuelType, transmission, model, derivative,
+                vin, mileage, colour,
                 overall, service, accident, damageNotes,
               }}
-              onEditStep={(s) => setStep(s)}
+              onEditStep={(s: number) => setStep(s)}
               turnstileSiteKey={TURNSTILE_SITE_KEY}
+              turnstileToken={turnstileToken}
               onVerify={setTurnstileToken}
               onExpire={() => setTurnstileToken(null)}
+              submitError={submitError}
             />
           ) : null}
         </ScrollView>
@@ -459,7 +498,7 @@ export default function GetValuationScreen() {
           {step < TOTAL_STEPS ? (
             <TouchableOpacity style={styles.primaryBtn} onPress={goNext}>
               <Text style={styles.primaryBtnText}>Continue</Text>
-              <Ionicons name="arrow-forward" size={18} color={P.onPrimary} />
+              <Ionicons name="arrow-forward" size={18} color={colors.onPrimary} />
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
@@ -468,10 +507,10 @@ export default function GetValuationScreen() {
               disabled={submitting}
             >
               {submitting ? (
-                <ActivityIndicator color={P.onPrimary} />
+                <ActivityIndicator color={colors.onPrimary} />
               ) : (
                 <>
-                  <Ionicons name="paper-plane" size={16} color={P.onPrimary} />
+                  <Ionicons name="paper-plane" size={16} color={colors.onPrimary} />
                   <Text style={styles.primaryBtnText}>Get my valuation</Text>
                 </>
               )}
@@ -481,6 +520,18 @@ export default function GetValuationScreen() {
             Free • No obligation • We{"\u2019"}ll WhatsApp and email your valuation within 24 hours
           </Text>
         </View>
+
+        {/* Wheel picker sheet */}
+        <WheelPicker
+          visible={wheelField !== null}
+          title={wheelProps.title}
+          options={wheelProps.options}
+          value={wheelProps.value}
+          onSelect={(v: any) => { wheelProps.onSelect(v); setWheelField(null); }}
+          onClose={() => setWheelField(null)}
+          formatter={wheelProps.formatter}
+          testID={`wheel-${wheelField ?? "none"}`}
+        />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -489,49 +540,48 @@ export default function GetValuationScreen() {
 // ---------------------------------------------------------------------------
 // Step components
 // ---------------------------------------------------------------------------
-function StepSeller(props: any) {
-  const { fullName, setFullName, phone, setPhone, email, setEmail, consent, setConsent } = props;
+function StepSeller({ colors, styles, fullName, setFullName, phone, setPhone, email, setEmail, consent, setConsent }: any) {
   return (
     <View>
-      <StepTitle title="Your details" subtitle="We'll send your valuation to these contacts" />
-      <Field label="Full name">
+      <StepTitle styles={styles} title="Your details" subtitle="We'll send your valuation to these contacts" />
+      <FieldWrap styles={styles} label="Full name">
         <TextInput
           style={styles.input}
           placeholder="Firstname Lastname"
-          placeholderTextColor={P.textFaint}
+          placeholderTextColor={colors.textDisabled}
           value={fullName}
           onChangeText={setFullName}
           autoCapitalize="words"
           returnKeyType="next"
         />
-      </Field>
-      <Field label="Mobile number" hint="South African mobile only (WhatsApp)">
+      </FieldWrap>
+      <FieldWrap styles={styles} label="Mobile number" hint="South African mobile only (WhatsApp)">
         <TextInput
           style={styles.input}
           placeholder="082 123 4567"
-          placeholderTextColor={P.textFaint}
+          placeholderTextColor={colors.textDisabled}
           value={phone}
           onChangeText={setPhone}
           keyboardType="phone-pad"
           returnKeyType="next"
           maxLength={16}
         />
-      </Field>
-      <Field label="Email address">
+      </FieldWrap>
+      <FieldWrap styles={styles} label="Email address">
         <TextInput
           style={styles.input}
           placeholder="you@example.com"
-          placeholderTextColor={P.textFaint}
+          placeholderTextColor={colors.textDisabled}
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"
           keyboardType="email-address"
           returnKeyType="done"
         />
-      </Field>
+      </FieldWrap>
       <TouchableOpacity style={styles.consentRow} onPress={() => setConsent(!consent)} activeOpacity={0.7}>
         <View style={[styles.checkbox, consent && styles.checkboxOn]}>
-          {consent ? <Ionicons name="checkmark" size={14} color="#FFFFFF" /> : null}
+          {consent ? <Ionicons name="checkmark" size={14} color={colors.onPrimary} /> : null}
         </View>
         <Text style={styles.consentText}>
           I accept Fourbuy{"\u2019"}s <Text style={styles.link}>Privacy Notice</Text> and agree to be contacted by
@@ -542,111 +592,74 @@ function StepSeller(props: any) {
   );
 }
 
-function StepVehicle(props: any) {
+function StepVehicle({
+  colors, styles,
+  make, fuelType, yearOfProduction, transmission, model, derivative, yearRegistered,
+  mileage, setMileage,
+  vin, setVin,
+  colour,
+  openWheel,
+}: any) {
   return (
     <View>
-      <StepTitle title="Your vehicle" subtitle="A few basics — we'll polish the rest from your disc" />
-      <View style={styles.row2}>
-        <Field label="Year" style={{ flex: 1, marginRight: 8 }}>
-          <TextInput
-            style={styles.input}
-            placeholder="2019"
-            placeholderTextColor={P.textFaint}
-            value={props.year}
-            onChangeText={(t: string) => props.setYear(t.replace(/\D/g, "").slice(0, 4))}
-            keyboardType="number-pad"
-            maxLength={4}
-          />
-        </Field>
-        <Field label="Mileage (km)" style={{ flex: 1, marginLeft: 8 }}>
-          <TextInput
-            style={styles.input}
-            placeholder="85 000"
-            placeholderTextColor={P.textFaint}
-            value={props.mileage}
-            onChangeText={(t: string) => props.setMileage(t.replace(/[^\d\s]/g, ""))}
-            keyboardType="number-pad"
-            maxLength={9}
-          />
-        </Field>
-      </View>
-      <Field label="Make">
+      <StepTitle
+        styles={styles}
+        title="Your vehicle"
+        subtitle="Choose exactly the variant we've catalogued — accurate specs give you the accurate offer"
+      />
+      <PickerField styles={styles} label="Make" value={make} onPress={() => openWheel("make")} />
+      <PickerField styles={styles} label="Fuel Type" value={fuelType}
+        onPress={() => make ? openWheel("fuel_type") : Alert.alert("Choose Make first", "Please pick the make before the fuel type.")}
+        disabled={!make} />
+      <PickerField styles={styles} label="Year of Production" value={yearOfProduction?.toString() ?? null}
+        onPress={() => fuelType ? openWheel("year_of_production") : Alert.alert("Choose Fuel Type first", "Please pick the fuel type before the year.")}
+        disabled={!fuelType} />
+      <PickerField styles={styles} label="Transmission" value={transmission}
+        onPress={() => yearOfProduction ? openWheel("transmission") : Alert.alert("Choose Year first", "Please pick year of production first.")}
+        disabled={!yearOfProduction} />
+      <PickerField styles={styles} label="Model" value={model}
+        onPress={() => transmission ? openWheel("model") : Alert.alert("Choose Transmission first", "Please pick transmission first.")}
+        disabled={!transmission} />
+      <PickerField styles={styles} label="Derivative" value={derivative}
+        onPress={() => model ? openWheel("derivative") : Alert.alert("Choose Model first", "Please pick model first.")}
+        disabled={!model} />
+      <PickerField styles={styles} label="Year Registered" value={yearRegistered?.toString() ?? null}
+        onPress={() => openWheel("year_registered")} />
+      <FieldWrap styles={styles} label="Current mileage (km)" hint="Read the odometer">
         <TextInput
           style={styles.input}
-          placeholder="BMW"
-          placeholderTextColor={P.textFaint}
-          value={props.make}
-          onChangeText={props.setMake}
-          autoCapitalize="words"
+          placeholder="85 000"
+          placeholderTextColor={colors.textDisabled}
+          value={mileage}
+          onChangeText={(t: string) => setMileage(t.replace(/[^\d\s]/g, ""))}
+          keyboardType="number-pad"
+          maxLength={9}
         />
-      </Field>
-      <Field label="Model">
-        <TextInput
-          style={styles.input}
-          placeholder="3 Series"
-          placeholderTextColor={P.textFaint}
-          value={props.model}
-          onChangeText={props.setModel}
-          autoCapitalize="words"
-        />
-      </Field>
-      <Field label="Variant / trim (optional)">
-        <TextInput
-          style={styles.input}
-          placeholder="320i M Sport"
-          placeholderTextColor={P.textFaint}
-          value={props.derivative}
-          onChangeText={props.setDerivative}
-        />
-      </Field>
-      <Field label="VIN (optional but recommended)" hint="17 characters, e.g. WBA22CA0609U91380">
+      </FieldWrap>
+      <PickerField styles={styles} label="Colour (optional)" value={colour}
+        onPress={() => openWheel("colour")} />
+      <FieldWrap styles={styles} label="VIN (optional but recommended)" hint="17 characters, e.g. WBA22CA0609U91380">
         <TextInput
           style={styles.input}
           placeholder="WBA22CA0609U91380"
-          placeholderTextColor={P.textFaint}
-          value={props.vin}
-          onChangeText={(t: string) => props.setVin(t.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 17))}
+          placeholderTextColor={colors.textDisabled}
+          value={vin}
+          onChangeText={(t: string) => setVin(t.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 17))}
           autoCapitalize="characters"
           maxLength={17}
         />
-      </Field>
-      <View style={styles.row2}>
-        <Field label="Colour (optional)" style={{ flex: 1, marginRight: 8 }}>
-          <TextInput
-            style={styles.input}
-            placeholder="White"
-            placeholderTextColor={P.textFaint}
-            value={props.colour}
-            onChangeText={props.setColour}
-            autoCapitalize="words"
-          />
-        </Field>
-      </View>
-      <Field label="Transmission (optional)">
-        <SegmentedControl
-          options={["Automatic", "Manual"]}
-          value={props.transmission}
-          onChange={(v: string) => props.setTransmission(v as Transmission)}
-        />
-      </Field>
-      <Field label="Fuel type (optional)">
-        <SegmentedControl
-          options={["Petrol", "Diesel", "Hybrid", "Electric"]}
-          value={props.fuelType}
-          onChange={(v: string) => props.setFuelType(v as FuelType)}
-        />
-      </Field>
+      </FieldWrap>
     </View>
   );
 }
 
-function StepDisc(props: any) {
-  const { discPhoto, onScan, onClear, didFillFields, dateOfTest } = props;
+function StepDisc({ colors, styles, discPhoto, onScan, onClear, didFillFields, dateOfTest, capturedVin }: any) {
   return (
     <View>
       <StepTitle
+        styles={styles}
         title="License disc (optional)"
-        subtitle="Snap or upload your license disc — we'll auto-fill VIN, colour and roadworthy status"
+        subtitle="Snap or upload your license disc — we'll capture your VIN and roadworthy status"
       />
       <View style={styles.discCard}>
         {discPhoto ? (
@@ -655,24 +668,27 @@ function StepDisc(props: any) {
             <View style={styles.discResults}>
               {didFillFields ? (
                 <Text style={styles.discOk}>
-                  <Ionicons name="checkmark-circle" size={14} color={P.success} />
-                  {"  Details captured. You can review them by tapping Back."}
+                  <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+                  {"  Captured. Continue to review."}
                 </Text>
               ) : (
                 <Text style={styles.discWarn}>
-                  We saved a photo of your disc but couldn{"\u2019"}t fill in details — that{"\u2019"}s OK, you already entered them.
+                  We saved a photo of your disc but couldn{"\u2019"}t auto-fill any details — that{"\u2019"}s OK, you already entered them.
                 </Text>
               )}
+              {capturedVin ? (
+                <Text style={styles.discMuted}>VIN: {capturedVin}</Text>
+              ) : null}
               {dateOfTest ? (
                 <Text style={styles.discMuted}>Last roadworthy test: {dateOfTest}</Text>
               ) : null}
               <View style={{ flexDirection: "row", marginTop: 12, gap: 8 }}>
                 <TouchableOpacity style={styles.secondaryBtn} onPress={onScan}>
-                  <Ionicons name="camera-outline" size={16} color={P.text} />
+                  <Ionicons name="camera-outline" size={16} color={colors.text} />
                   <Text style={styles.secondaryBtnText}>Retake</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.secondaryBtn} onPress={onClear}>
-                  <Ionicons name="trash-outline" size={16} color={P.text} />
+                  <Ionicons name="trash-outline" size={16} color={colors.text} />
                   <Text style={styles.secondaryBtnText}>Remove</Text>
                 </TouchableOpacity>
               </View>
@@ -680,13 +696,13 @@ function StepDisc(props: any) {
           </>
         ) : (
           <>
-            <Ionicons name="scan-outline" size={40} color={P.textDim} />
+            <Ionicons name="scan-outline" size={40} color={colors.textSecondary} />
             <Text style={styles.discEmptyTitle}>Speed things up</Text>
             <Text style={styles.discEmptyBody}>
-              Take a clear photo of the round disc on your windscreen. We{"\u2019"}ll read the VIN, colour and roadworthy status for you.
+              Take a clear photo of the round disc on your windscreen. We{"\u2019"}ll read the VIN and roadworthy status for you.
             </Text>
             <TouchableOpacity style={styles.primaryBtnAlt} onPress={onScan}>
-              <Ionicons name="camera" size={18} color={P.text} />
+              <Ionicons name="camera" size={18} color={colors.text} />
               <Text style={styles.primaryBtnAltText}>
                 {Platform.OS === "web" ? "Upload disc photo" : "Scan or upload disc"}
               </Text>
@@ -699,55 +715,46 @@ function StepDisc(props: any) {
   );
 }
 
-function StepCondition(props: any) {
-  const { overall, setOverall, service, setService, accident, setAccident, damageNotes, setDamageNotes } = props;
+function StepCondition({ colors, styles, overall, setOverall, service, setService, accident, setAccident, damageNotes, setDamageNotes }: any) {
   return (
     <View>
-      <StepTitle title="Condition" subtitle="Honest info gets you the best offer" />
-      <Field label="Overall condition">
-        <SegmentedControl
-          options={["Excellent", "Good", "Fair", "Poor"]}
-          value={overall}
-          onChange={setOverall}
-        />
-      </Field>
-      <Field label="Service history">
-        <SegmentedControl
-          options={["Full", "Partial", "None", "Not sure"]}
-          value={service}
-          onChange={setService}
-        />
-      </Field>
+      <StepTitle styles={styles} title="Condition" subtitle="Honest info gets you the best offer" />
+      <FieldWrap styles={styles} label="Overall condition">
+        <SegmentedControl styles={styles} options={["Excellent", "Good", "Fair", "Poor"]} value={overall} onChange={setOverall} />
+      </FieldWrap>
+      <FieldWrap styles={styles} label="Service history">
+        <SegmentedControl styles={styles} options={["Full", "Partial", "None", "Not sure"]} value={service} onChange={setService} />
+      </FieldWrap>
       <TouchableOpacity style={styles.consentRow} onPress={() => setAccident(!accident)} activeOpacity={0.7}>
         <View style={[styles.checkbox, accident && styles.checkboxOn]}>
-          {accident ? <Ionicons name="checkmark" size={14} color="#FFFFFF" /> : null}
+          {accident ? <Ionicons name="checkmark" size={14} color={colors.onPrimary} /> : null}
         </View>
         <Text style={styles.consentText}>
           This vehicle has been in an accident or has structural / bodywork damage.
         </Text>
       </TouchableOpacity>
       {accident ? (
-        <Field label="What was damaged?" hint="A short description helps us price accurately">
+        <FieldWrap styles={styles} label="What was damaged?" hint="A short description helps us price accurately">
           <TextInput
             style={[styles.input, styles.inputMulti]}
             placeholder="e.g. Rear-ended, boot lid replaced, no chassis damage"
-            placeholderTextColor={P.textFaint}
+            placeholderTextColor={colors.textDisabled}
             value={damageNotes}
             onChangeText={setDamageNotes}
             multiline
             numberOfLines={4}
             textAlignVertical="top"
           />
-        </Field>
+        </FieldWrap>
       ) : null}
     </View>
   );
 }
 
-function StepPhotos({ photos, onAdd, onRemove }: any) {
+function StepPhotos({ colors, styles, photos, onAdd, onRemove }: any) {
   return (
     <View>
-      <StepTitle title="Six photos" subtitle="All six are required — clear photos help us give an accurate offer" />
+      <StepTitle styles={styles} title="Six photos" subtitle="All six are required — clear photos help us give an accurate offer" />
       <View style={styles.photoGrid}>
         {PHOTO_ORDER.map((p) => {
           const uri = photos[p.key];
@@ -768,7 +775,7 @@ function StepPhotos({ photos, onAdd, onRemove }: any) {
                   </>
                 ) : (
                   <>
-                    <Ionicons name="add" size={26} color={P.textDim} />
+                    <Ionicons name="add" size={26} color={colors.textSecondary} />
                     <Text style={styles.photoLabel}>{p.label}</Text>
                     <Text style={styles.photoHint}>{p.hint}</Text>
                   </>
@@ -782,45 +789,67 @@ function StepPhotos({ photos, onAdd, onRemove }: any) {
   );
 }
 
-function StepReview({ summary, onEditStep, turnstileSiteKey, onVerify, onExpire }: any) {
-  const { fullName, phone, email, year, make, model, derivative, vin, mileage, colour, overall, service, accident, damageNotes } = summary;
+function StepReview({ colors, styles, summary, onEditStep, turnstileSiteKey, turnstileToken, onVerify, onExpire, submitError }: any) {
+  const {
+    fullName, phone, email,
+    yearOfProduction, yearRegistered,
+    make, fuelType, transmission, model, derivative,
+    vin, mileage, colour,
+    overall, service, accident, damageNotes,
+  } = summary;
   return (
     <View>
-      <StepTitle title="Review & submit" subtitle="Have a quick look then send it through" />
+      <StepTitle styles={styles} title="Review & submit" subtitle="Have a quick look then send it through" />
 
-      <SummaryCard title="Your details" onEdit={() => onEditStep(1)}>
-        <SummaryLine label="Name" value={fullName} />
-        <SummaryLine label="Phone" value={phone} />
-        <SummaryLine label="Email" value={email} />
+      {submitError ? (
+        <View style={styles.errorBanner}>
+          <Ionicons name="alert-circle" size={20} color={colors.danger} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.errorBannerTitle}>Couldn{"\u2019"}t submit</Text>
+            <Text style={styles.errorBannerText}>{submitError}</Text>
+          </View>
+        </View>
+      ) : null}
+
+      <SummaryCard styles={styles} title="Your details" onEdit={() => onEditStep(1)}>
+        <SummaryLine styles={styles} label="Name" value={fullName} />
+        <SummaryLine styles={styles} label="Phone" value={phone} />
+        <SummaryLine styles={styles} label="Email" value={email} />
       </SummaryCard>
 
-      <SummaryCard title="Vehicle" onEdit={() => onEditStep(2)}>
-        <SummaryLine label="Year" value={year} />
-        <SummaryLine label="Make" value={make} />
-        <SummaryLine label="Model" value={model} />
-        {derivative ? <SummaryLine label="Variant" value={derivative} /> : null}
-        {vin ? <SummaryLine label="VIN" value={vin} /> : null}
-        <SummaryLine label="Mileage" value={`${mileage} km`} />
-        {colour ? <SummaryLine label="Colour" value={colour} /> : null}
+      <SummaryCard styles={styles} title="Vehicle" onEdit={() => onEditStep(2)}>
+        <SummaryLine styles={styles} label="Make" value={make} />
+        <SummaryLine styles={styles} label="Model" value={model} />
+        <SummaryLine styles={styles} label="Derivative" value={derivative} />
+        <SummaryLine styles={styles} label="Fuel / Trans" value={`${fuelType || "—"} • ${transmission || "—"}`} />
+        <SummaryLine styles={styles} label="Year (built / reg)" value={`${yearOfProduction ?? "—"} / ${yearRegistered ?? "—"}`} />
+        <SummaryLine styles={styles} label="Mileage" value={`${mileage} km`} />
+        {colour ? <SummaryLine styles={styles} label="Colour" value={colour} /> : null}
+        {vin ? <SummaryLine styles={styles} label="VIN" value={vin} /> : null}
       </SummaryCard>
 
-      <SummaryCard title="Condition" onEdit={() => onEditStep(4)}>
-        <SummaryLine label="Overall" value={overall} />
-        <SummaryLine label="Service history" value={service} />
-        <SummaryLine label="Accident / damage" value={accident ? "Yes" : "No"} />
-        {accident && damageNotes ? <SummaryLine label="Notes" value={damageNotes} /> : null}
+      <SummaryCard styles={styles} title="Condition" onEdit={() => onEditStep(4)}>
+        <SummaryLine styles={styles} label="Overall" value={overall} />
+        <SummaryLine styles={styles} label="Service history" value={service} />
+        <SummaryLine styles={styles} label="Accident / damage" value={accident ? "Yes" : "No"} />
+        {accident && damageNotes ? <SummaryLine styles={styles} label="Notes" value={damageNotes} /> : null}
       </SummaryCard>
 
       <View style={{ marginTop: 20 }}>
         <Text style={styles.turnstileHeader}>Prove you{"\u2019"}re human</Text>
         {turnstileSiteKey ? (
-          <TurnstileWidget
-            siteKey={turnstileSiteKey}
-            action="public_valuation"
-            theme="light"
-            onVerify={onVerify}
-            onExpire={onExpire}
-          />
+          <>
+            <TurnstileWidget
+              siteKey={turnstileSiteKey}
+              action="public_valuation"
+              theme="dark"
+              onVerify={onVerify}
+              onExpire={onExpire}
+            />
+            {Platform.OS === "web" && !turnstileToken ? (
+              <Text style={styles.turnstileHint}>Tap the checkbox above to complete the challenge.</Text>
+            ) : null}
+          </>
         ) : (
           <Text style={styles.turnstileMissing}>
             Anti-abuse widget is not configured. Please contact Fourbuy.
@@ -831,12 +860,12 @@ function StepReview({ summary, onEditStep, turnstileSiteKey, onVerify, onExpire 
   );
 }
 
-function SuccessCard({ reference, message, onDone }: any) {
+function SuccessCard({ colors, styles, reference, message, onDone }: any) {
   return (
     <SafeAreaView style={[styles.safe, { justifyContent: "center" }]} edges={["top", "bottom"]}>
       <View style={styles.successWrap}>
         <View style={styles.successCircle}>
-          <Ionicons name="checkmark" size={44} color="#FFFFFF" />
+          <Ionicons name="checkmark" size={44} color={colors.onPrimary} />
         </View>
         <Text style={styles.successTitle}>Thank you!</Text>
         <Text style={styles.successBody}>{message || "We'll be in touch within 24 hours."}</Text>
@@ -858,7 +887,7 @@ function SuccessCard({ reference, message, onDone }: any) {
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
-function StepTitle({ title, subtitle }: { title: string; subtitle?: string }) {
+function StepTitle({ styles, title, subtitle }: { styles: any; title: string; subtitle?: string }) {
   return (
     <View style={{ marginBottom: 20 }}>
       <Text style={styles.stepTitle}>{title}</Text>
@@ -867,9 +896,9 @@ function StepTitle({ title, subtitle }: { title: string; subtitle?: string }) {
   );
 }
 
-function Field({ label, hint, children, style }: any) {
+function FieldWrap({ styles, label, hint, children }: any) {
   return (
-    <View style={[{ marginBottom: 16 }, style]}>
+    <View style={{ marginBottom: 16 }}>
       <Text style={styles.label}>{label}</Text>
       {children}
       {hint ? <Text style={styles.hint}>{hint}</Text> : null}
@@ -877,18 +906,31 @@ function Field({ label, hint, children, style }: any) {
   );
 }
 
-function SegmentedControl({ options, value, onChange }: { options: string[]; value: string; onChange: (v: string) => void }) {
+function PickerField({ styles, label, value, onPress, disabled }: any) {
+  return (
+    <View style={{ marginBottom: 12 }}>
+      <Text style={styles.label}>{label}</Text>
+      <TouchableOpacity
+        style={[styles.pickerField, disabled && { opacity: 0.5 }]}
+        onPress={onPress}
+        activeOpacity={0.8}
+      >
+        <Text style={[styles.pickerValue, !value && styles.pickerValueDim]} numberOfLines={1}>
+          {value ?? "Tap to choose"}
+        </Text>
+        <Ionicons name="chevron-down" size={16} color={styles.__colors?.textSecondary || "#8A8A8A"} />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function SegmentedControl({ styles, options, value, onChange }: any) {
   return (
     <View style={styles.segRow}>
-      {options.map((opt) => {
+      {options.map((opt: string) => {
         const selected = value === opt;
         return (
-          <TouchableOpacity
-            key={opt}
-            style={[styles.segItem, selected && styles.segItemOn]}
-            onPress={() => onChange(opt)}
-            activeOpacity={0.8}
-          >
+          <TouchableOpacity key={opt} style={[styles.segItem, selected && styles.segItemOn]} onPress={() => onChange(opt)} activeOpacity={0.8}>
             <Text style={[styles.segItemText, selected && styles.segItemTextOn]}>{opt}</Text>
           </TouchableOpacity>
         );
@@ -897,21 +939,19 @@ function SegmentedControl({ options, value, onChange }: { options: string[]; val
   );
 }
 
-function SummaryCard({ title, onEdit, children }: any) {
+function SummaryCard({ styles, title, onEdit, children }: any) {
   return (
     <View style={styles.summaryCard}>
       <View style={styles.summaryHeader}>
         <Text style={styles.summaryTitle}>{title}</Text>
-        <TouchableOpacity onPress={onEdit}>
-          <Text style={styles.summaryEdit}>Edit</Text>
-        </TouchableOpacity>
+        <TouchableOpacity onPress={onEdit}><Text style={styles.summaryEdit}>Edit</Text></TouchableOpacity>
       </View>
       {children}
     </View>
   );
 }
 
-function SummaryLine({ label, value }: { label: string; value?: string | number }) {
+function SummaryLine({ styles, label, value }: { styles: any; label: string; value?: string | number }) {
   return (
     <View style={styles.summaryLine}>
       <Text style={styles.summaryLabel}>{label}</Text>
@@ -921,353 +961,365 @@ function SummaryLine({ label, value }: { label: string; value?: string | number 
 }
 
 // ---------------------------------------------------------------------------
-// Styles
+// Themed styles — pulls from the same `useThemeColors()` palette as the
+// rest of the app so light/dark modes render identically to the dealer UI.
 // ---------------------------------------------------------------------------
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: P.bg },
-  header: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    borderBottomWidth: 1,
-    borderBottomColor: P.border,
-    backgroundColor: P.bg,
-  },
-  brand: {
-    fontSize: 18,
-    fontWeight: "800",
-    letterSpacing: 3,
-    color: P.text,
-  },
-  brandSub: {
-    fontSize: 9,
-    letterSpacing: 3,
-    color: P.textDim,
-    marginTop: 2,
-  },
-  headerBack: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  headerBackText: { color: P.text, fontSize: 14, fontWeight: "500" },
-  progressBar: {
-    height: 3,
-    backgroundColor: P.border,
-    marginHorizontal: 16,
-    marginTop: 12,
-    borderRadius: 2,
-    overflow: "hidden",
-  },
-  progressFill: {
-    height: "100%",
-    backgroundColor: P.primary,
-  },
-  progressLabelRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    marginTop: 6,
-    marginBottom: 4,
-  },
-  progressLabel: { color: P.textFaint, fontSize: 11, letterSpacing: 1 },
+function makeStyles(colors: Palette) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: colors.bg },
+    header: {
+      paddingHorizontal: 16,
+      paddingTop: 8,
+      paddingBottom: 12,
+      flexDirection: "row",
+      alignItems: "center",
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      backgroundColor: colors.bg,
+    },
+    brand: {
+      fontSize: 18,
+      fontWeight: "800",
+      letterSpacing: 3,
+      color: colors.text,
+    },
+    brandSub: {
+      fontSize: 9,
+      letterSpacing: 3,
+      color: colors.textSecondary,
+      marginTop: 2,
+    },
+    headerBack: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
+    headerBackText: { color: colors.text, fontSize: 14, fontWeight: "500" },
 
-  scroll: { padding: 16, paddingBottom: 24, maxWidth: 700, width: "100%", alignSelf: "center" },
+    progressBar: {
+      height: 3,
+      backgroundColor: colors.border,
+      marginHorizontal: 16,
+      marginTop: 12,
+      borderRadius: 2,
+      overflow: "hidden",
+    },
+    progressFill: { height: "100%", backgroundColor: colors.primary },
+    progressLabelRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      paddingHorizontal: 16,
+      marginTop: 6,
+      marginBottom: 4,
+    },
+    progressLabel: { color: colors.textSecondary, fontSize: 11, letterSpacing: 1 },
 
-  stepTitle: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: P.text,
-    letterSpacing: -0.5,
-    marginBottom: 4,
-  },
-  stepSubtitle: { color: P.textDim, fontSize: 14, lineHeight: 20 },
+    scroll: { padding: 16, paddingBottom: 24, maxWidth: 700, width: "100%", alignSelf: "center" },
 
-  label: {
-    fontSize: 11,
-    letterSpacing: 1.5,
-    color: P.textFaint,
-    marginBottom: 8,
-    fontWeight: "600",
-    textTransform: "uppercase",
-  },
-  hint: {
-    fontSize: 12,
-    color: P.textFaint,
-    marginTop: 4,
-    fontStyle: "italic",
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: P.border,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: Platform.OS === "web" ? 12 : 14,
-    fontSize: 15,
-    color: P.text,
-    backgroundColor: P.card,
-  },
-  inputMulti: { minHeight: 88, paddingTop: 12 },
-  row2: { flexDirection: "row" },
+    stepTitle: {
+      fontSize: 24,
+      fontWeight: "700",
+      color: colors.text,
+      letterSpacing: -0.5,
+      marginBottom: 4,
+    },
+    stepSubtitle: { color: colors.textSecondary, fontSize: 14, lineHeight: 20 },
 
-  consentRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    paddingVertical: 8,
-    marginTop: 8,
-  },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 4,
-    borderWidth: 2,
-    borderColor: P.borderStrong,
-    marginRight: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 2,
-  },
-  checkboxOn: { backgroundColor: P.primary, borderColor: P.primary },
-  consentText: { flex: 1, color: P.text, fontSize: 13, lineHeight: 19 },
-  link: { textDecorationLine: "underline", fontWeight: "600" },
+    label: {
+      fontSize: 11,
+      letterSpacing: 1.5,
+      color: colors.textSecondary,
+      marginBottom: 8,
+      fontWeight: "600",
+      textTransform: "uppercase",
+    },
+    hint: { fontSize: 12, color: colors.textDisabled, marginTop: 4, fontStyle: "italic" },
+    input: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 10,
+      paddingHorizontal: 14,
+      paddingVertical: Platform.OS === "web" ? 12 : 14,
+      fontSize: 15,
+      color: colors.text,
+      backgroundColor: colors.inputBg,
+    },
+    inputMulti: { minHeight: 88, paddingTop: 12 },
 
-  discCard: {
-    borderWidth: 1,
-    borderColor: P.border,
-    borderRadius: 12,
-    padding: 20,
-    alignItems: "center",
-    backgroundColor: P.paper,
-  },
-  discEmptyTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: P.text,
-    marginTop: 12,
-    marginBottom: 4,
-  },
-  discEmptyBody: {
-    color: P.textDim,
-    fontSize: 13,
-    textAlign: "center",
-    lineHeight: 18,
-    marginBottom: 16,
-    paddingHorizontal: 8,
-  },
-  discSkip: { color: P.textFaint, fontSize: 12, marginTop: 12 },
-  discImage: {
-    width: "100%",
-    aspectRatio: 1,
-    maxWidth: 260,
-    borderRadius: 8,
-    backgroundColor: P.card,
-  },
-  discResults: { alignItems: "center", marginTop: 16, width: "100%" },
-  discOk: { color: P.success, fontSize: 13, fontWeight: "600" },
-  discWarn: { color: P.textDim, fontSize: 13, textAlign: "center" },
-  discMuted: { color: P.textFaint, fontSize: 12, marginTop: 6 },
+    // Picker field — used everywhere in the vehicle step
+    pickerField: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 10,
+      paddingHorizontal: 14,
+      paddingVertical: 14,
+      backgroundColor: colors.inputBg,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    pickerValue: { fontSize: 15, color: colors.text, flex: 1, fontWeight: "500" },
+    pickerValueDim: { color: colors.textDisabled, fontWeight: "400" },
 
-  segRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  segItem: {
-    borderWidth: 1,
-    borderColor: P.border,
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    backgroundColor: P.card,
-  },
-  segItemOn: { backgroundColor: P.primary, borderColor: P.primary },
-  segItemText: { color: P.text, fontSize: 14, fontWeight: "500" },
-  segItemTextOn: { color: P.onPrimary },
+    consentRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      paddingVertical: 8,
+      marginTop: 8,
+    },
+    checkbox: {
+      width: 22,
+      height: 22,
+      borderRadius: 4,
+      borderWidth: 2,
+      borderColor: colors.border,
+      marginRight: 12,
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: 2,
+      backgroundColor: colors.inputBg,
+    },
+    checkboxOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+    consentText: { flex: 1, color: colors.text, fontSize: 13, lineHeight: 19 },
+    link: { textDecorationLine: "underline", fontWeight: "600" },
 
-  photoGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
-  photoCell: { width: "48.5%", marginBottom: 10 },
-  photoTile: {
-    borderWidth: 1.5,
-    borderColor: P.border,
-    borderStyle: "dashed",
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: P.paper,
-    overflow: "hidden",
-    padding: 8,
-    aspectRatio: 1,
-  },
-  photoTileFilled: { borderStyle: "solid", borderColor: P.borderStrong },
-  photoLabel: { fontSize: 13, fontWeight: "600", color: P.text, marginTop: 6 },
-  photoHint: { fontSize: 10, color: P.textFaint, textAlign: "center", marginTop: 2 },
-  photoOverlay: {
-    position: "absolute",
-    top: 6,
-    right: 6,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: "rgba(0,0,0,0.7)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  photoOverlayText: { color: "#FFFFFF", fontSize: 11 },
+    discCard: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 12,
+      padding: 20,
+      alignItems: "center",
+      backgroundColor: colors.paper,
+    },
+    discEmptyTitle: { fontSize: 16, fontWeight: "700", color: colors.text, marginTop: 12, marginBottom: 4 },
+    discEmptyBody: { color: colors.textSecondary, fontSize: 13, textAlign: "center", lineHeight: 18, marginBottom: 16, paddingHorizontal: 8 },
+    discSkip: { color: colors.textDisabled, fontSize: 12, marginTop: 12 },
+    discImage: { width: "100%", aspectRatio: 1, maxWidth: 260, borderRadius: 8, backgroundColor: colors.card },
+    discResults: { alignItems: "center", marginTop: 16, width: "100%" },
+    discOk: { color: colors.success, fontSize: 13, fontWeight: "600" },
+    discWarn: { color: colors.textSecondary, fontSize: 13, textAlign: "center" },
+    discMuted: { color: colors.textDisabled, fontSize: 12, marginTop: 6, fontFamily: fonts.number },
 
-  summaryCard: {
-    borderWidth: 1,
-    borderColor: P.border,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-    backgroundColor: P.card,
-  },
-  summaryHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  summaryTitle: {
-    fontSize: 12,
-    letterSpacing: 1.5,
-    fontWeight: "700",
-    color: P.text,
-    textTransform: "uppercase",
-  },
-  summaryEdit: { fontSize: 13, color: P.textDim, textDecorationLine: "underline" },
-  summaryLine: { flexDirection: "row", paddingVertical: 4 },
-  summaryLabel: { width: 108, color: P.textFaint, fontSize: 13 },
-  summaryValue: { flex: 1, color: P.text, fontSize: 13, fontWeight: "500" },
+    segRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    segItem: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 8,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      backgroundColor: colors.card,
+    },
+    segItemOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+    segItemText: { color: colors.text, fontSize: 14, fontWeight: "500" },
+    segItemTextOn: { color: colors.onPrimary },
 
-  turnstileHeader: {
-    fontSize: 11,
-    letterSpacing: 1.5,
-    color: P.textFaint,
-    marginBottom: 10,
-    fontWeight: "600",
-    textTransform: "uppercase",
-  },
-  turnstileMissing: {
-    color: P.danger,
-    fontSize: 13,
-    padding: 12,
-    borderRadius: 8,
-    backgroundColor: "#FFF0F0",
-    borderColor: "#F5C2C2",
-    borderWidth: 1,
-  },
+    photoGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
+    photoCell: { width: "48.5%", marginBottom: 10 },
+    photoTile: {
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      borderStyle: "dashed",
+      borderRadius: 10,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.paper,
+      overflow: "hidden",
+      padding: 8,
+      aspectRatio: 1,
+    },
+    photoTileFilled: { borderStyle: "solid", borderColor: colors.primary },
+    photoLabel: { fontSize: 13, fontWeight: "600", color: colors.text, marginTop: 6 },
+    photoHint: { fontSize: 10, color: colors.textDisabled, textAlign: "center", marginTop: 2 },
+    photoOverlay: {
+      position: "absolute",
+      top: 6, right: 6,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      backgroundColor: "rgba(0,0,0,0.7)",
+      paddingHorizontal: 8, paddingVertical: 4,
+      borderRadius: 6,
+    },
+    photoOverlayText: { color: "#FFFFFF", fontSize: 11 },
 
-  footer: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: Platform.OS === "ios" ? 12 : 16,
-    borderTopWidth: 1,
-    borderTopColor: P.border,
-    backgroundColor: P.bg,
-  },
-  primaryBtn: {
-    backgroundColor: P.primary,
-    paddingVertical: 15,
-    borderRadius: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  primaryBtnText: { color: P.onPrimary, fontSize: 15, fontWeight: "600", letterSpacing: 0.5 },
-  primaryBtnAlt: {
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: P.borderStrong,
-    paddingHorizontal: 20,
-    paddingVertical: 13,
-    borderRadius: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    marginTop: 8,
-  },
-  primaryBtnAltText: { color: P.text, fontSize: 14, fontWeight: "600" },
-  secondaryBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: P.border,
-    borderRadius: 8,
-    backgroundColor: P.card,
-  },
-  secondaryBtnText: { color: P.text, fontSize: 13, fontWeight: "500" },
-  footerHint: {
-    color: P.textFaint,
-    fontSize: 11,
-    textAlign: "center",
-    marginTop: 8,
-    letterSpacing: 0.3,
-  },
+    summaryCard: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 12,
+      padding: 14,
+      marginBottom: 12,
+      backgroundColor: colors.card,
+    },
+    summaryHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 8,
+    },
+    summaryTitle: {
+      fontSize: 12,
+      letterSpacing: 1.5,
+      fontWeight: "700",
+      color: colors.text,
+      textTransform: "uppercase",
+    },
+    summaryEdit: { fontSize: 13, color: colors.textSecondary, textDecorationLine: "underline" },
+    summaryLine: { flexDirection: "row", paddingVertical: 4 },
+    summaryLabel: { width: 128, color: colors.textSecondary, fontSize: 13 },
+    summaryValue: { flex: 1, color: colors.text, fontSize: 13, fontWeight: "500" },
 
-  successWrap: {
-    alignItems: "center",
-    padding: 24,
-    maxWidth: 480,
-    alignSelf: "center",
-  },
-  successCircle: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: P.success,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 20,
-  },
-  successTitle: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: P.text,
-    marginBottom: 8,
-    letterSpacing: -0.5,
-  },
-  successBody: {
-    color: P.textDim,
-    fontSize: 15,
-    textAlign: "center",
-    lineHeight: 22,
-    marginBottom: 20,
-    paddingHorizontal: 8,
-  },
-  refPill: {
-    backgroundColor: P.accentBg,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: 12,
-    marginBottom: 16,
-    alignItems: "center",
-    minWidth: 200,
-  },
-  refPillLabel: {
-    color: P.textFaint,
-    fontSize: 10,
-    letterSpacing: 1.5,
-    textTransform: "uppercase",
-    fontWeight: "600",
-  },
-  refPillValue: {
-    color: P.text,
-    fontSize: 22,
-    fontWeight: "700",
-    marginTop: 4,
-    letterSpacing: 1,
-  },
-  successFooter: {
-    color: P.textFaint,
-    fontSize: 12,
-    textAlign: "center",
-    marginBottom: 20,
-    paddingHorizontal: 20,
-  },
-});
+    turnstileHeader: {
+      fontSize: 11,
+      letterSpacing: 1.5,
+      color: colors.textSecondary,
+      marginBottom: 10,
+      fontWeight: "600",
+      textTransform: "uppercase",
+    },
+    turnstileHint: {
+      color: colors.textSecondary,
+      fontSize: 12,
+      marginTop: 8,
+      fontStyle: "italic",
+    },
+    turnstileMissing: {
+      color: colors.danger,
+      fontSize: 13,
+      padding: 12,
+      borderRadius: 8,
+      backgroundColor: colors.card,
+      borderColor: colors.danger,
+      borderWidth: 1,
+    },
+
+    errorBanner: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 10,
+      padding: 12,
+      borderRadius: 10,
+      backgroundColor: colors.card,
+      borderColor: colors.danger,
+      borderWidth: 1.5,
+      marginBottom: 16,
+    },
+    errorBannerTitle: { color: colors.danger, fontWeight: "700", fontSize: 13, marginBottom: 2 },
+    errorBannerText: { color: colors.text, fontSize: 13, lineHeight: 18 },
+
+    footer: {
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      paddingBottom: Platform.OS === "ios" ? 12 : 16,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      backgroundColor: colors.bg,
+    },
+    primaryBtn: {
+      backgroundColor: colors.primary,
+      paddingVertical: 15,
+      borderRadius: 10,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+    },
+    primaryBtnText: { color: colors.onPrimary, fontSize: 15, fontWeight: "600", letterSpacing: 0.5 },
+    primaryBtnAlt: {
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.text,
+      paddingHorizontal: 20,
+      paddingVertical: 13,
+      borderRadius: 10,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 10,
+      marginTop: 8,
+    },
+    primaryBtnAltText: { color: colors.text, fontSize: 14, fontWeight: "600" },
+    secondaryBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 8,
+      backgroundColor: colors.card,
+    },
+    secondaryBtnText: { color: colors.text, fontSize: 13, fontWeight: "500" },
+    footerHint: {
+      color: colors.textDisabled,
+      fontSize: 11,
+      textAlign: "center",
+      marginTop: 8,
+      letterSpacing: 0.3,
+    },
+
+    successWrap: {
+      alignItems: "center",
+      padding: 24,
+      maxWidth: 480,
+      alignSelf: "center",
+    },
+    successCircle: {
+      width: 88, height: 88,
+      borderRadius: 44,
+      backgroundColor: colors.success,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 20,
+    },
+    successTitle: {
+      fontSize: 28,
+      fontWeight: "700",
+      color: colors.text,
+      marginBottom: 8,
+      letterSpacing: -0.5,
+    },
+    successBody: {
+      color: colors.textSecondary,
+      fontSize: 15,
+      textAlign: "center",
+      lineHeight: 22,
+      marginBottom: 20,
+      paddingHorizontal: 8,
+    },
+    refPill: {
+      backgroundColor: colors.paper,
+      paddingHorizontal: 20,
+      paddingVertical: 14,
+      borderRadius: 12,
+      marginBottom: 16,
+      alignItems: "center",
+      minWidth: 200,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    refPillLabel: {
+      color: colors.textSecondary,
+      fontSize: 10,
+      letterSpacing: 1.5,
+      textTransform: "uppercase",
+      fontWeight: "600",
+    },
+    refPillValue: {
+      color: colors.text,
+      fontSize: 22,
+      fontWeight: "700",
+      marginTop: 4,
+      letterSpacing: 1,
+      fontFamily: fonts.number,
+    },
+    successFooter: {
+      color: colors.textDisabled,
+      fontSize: 12,
+      textAlign: "center",
+      marginBottom: 20,
+      paddingHorizontal: 20,
+    },
+  });
+}

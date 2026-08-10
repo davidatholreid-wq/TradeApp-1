@@ -442,10 +442,12 @@ export default function AdminPublicLeadsScreen() {
               {/* Vehicle */}
               <SectionTitle title="Vehicle" colors={colors} />
               <View style={styles.grid}>
-                <KV label="VIN" value={selected.vehicle.vin || "—"} mono  colors={colors} />
-                <KV label="Colour" value={selected.vehicle.colour || "—"}  colors={colors} />
-                <KV label="Transmission" value={selected.vehicle.transmission || "—"}  colors={colors} />
                 <KV label="Fuel" value={selected.vehicle.fuel_type || "—"}  colors={colors} />
+                <KV label="Transmission" value={selected.vehicle.transmission || "—"}  colors={colors} />
+                <KV label="Year of production" value={(selected.vehicle as any).year_of_production || "—"} colors={colors} />
+                <KV label="Year registered" value={(selected.vehicle as any).year_registered || selected.vehicle.year || "—"} colors={colors} />
+                <KV label="VIN" value={selected.vehicle.vin || "—"} mono colors={colors} />
+                <KV label="Colour" value={selected.vehicle.colour || "—"}  colors={colors} />
                 <KV label="Roadworthy" value={selected.vehicle.date_of_test || "1-owner from new"}  colors={colors} />
               </View>
 

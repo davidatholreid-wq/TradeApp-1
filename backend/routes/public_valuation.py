@@ -91,7 +91,13 @@ class PublicSellerIn(BaseModel):
 
 
 class PublicVehicleIn(BaseModel):
-    year: int = Field(ge=1980, le=2030)
+    # Old public form used a single free-text `year`. New form uses the
+    # dealer-style split of "year of production" (when the variant was
+    # built) and "year registered" (when this car was first plated).
+    # BOTH old and new payloads are accepted for backwards compatibility.
+    year: Optional[int] = Field(default=None, ge=1980, le=2035)
+    year_of_production: Optional[int] = Field(default=None, ge=1980, le=2035)
+    year_registered: Optional[int] = Field(default=None, ge=1980, le=2035)
     make: str = Field(min_length=1, max_length=60)
     model: str = Field(min_length=1, max_length=80)
     derivative: Optional[str] = Field(default=None, max_length=120)
@@ -102,6 +108,13 @@ class PublicVehicleIn(BaseModel):
     fuel_type: Optional[str] = Field(default=None, max_length=20)
     date_of_test: Optional[str] = Field(default=None)  # YYYY-MM-DD
     license_disk_data: Optional[str] = Field(default=None, max_length=1200)
+
+    def model_post_init(self, __context) -> None:  # type: ignore[override]
+        # Normalise: if only `year` was sent, treat it as year_registered.
+        if self.year_registered is None and self.year is not None:
+            object.__setattr__(self, "year_registered", self.year)
+        if self.year is None and self.year_registered is not None:
+            object.__setattr__(self, "year", self.year_registered)
 
 
 class PublicConditionIn(BaseModel):
@@ -325,17 +338,35 @@ async def submit_public_valuation(
 ):
     from server import db  # late import to avoid circular
 
+    ip = _client_ip(request)
+    ua = (request.headers.get("user-agent", "") or "")[:120]
+    logger.info(
+        "public_valuation POST ip=%s ua=%s photos_keys=%s consent=%s phone=%s vehicle=%s/%s/%s",
+        ip, ua, list((payload.photos or {}).keys()) if isinstance(payload.photos, dict) else "n/a",
+        payload.seller.consent_accepted, (payload.seller.phone or "")[-4:],
+        payload.vehicle.year, payload.vehicle.make, payload.vehicle.model,
+    )
+
     if not payload.seller.consent_accepted:
+        logger.warning("public_valuation REJECT no-consent ip=%s", ip)
         raise HTTPException(400, "You must accept the POPIA privacy notice to continue.")
 
-    _validate_photos(payload.photos)
+    try:
+        _validate_photos(payload.photos)
+    except HTTPException as e:
+        logger.warning("public_valuation REJECT photos ip=%s reason=%s", ip, e.detail)
+        raise
 
-    ip = _client_ip(request)
     phone = _normalise_phone(payload.seller.phone)
     if not phone or len(phone) < 8:
+        logger.warning("public_valuation REJECT bad-phone ip=%s raw=%s", ip, payload.seller.phone)
         raise HTTPException(400, "A valid mobile number is required.")
 
-    await _verify_turnstile(payload.turnstile_token, ip, TURNSTILE_ACTION_PUBLIC_VALUATION)
+    try:
+        await _verify_turnstile(payload.turnstile_token, ip, TURNSTILE_ACTION_PUBLIC_VALUATION)
+    except HTTPException as e:
+        logger.warning("public_valuation REJECT turnstile ip=%s reason=%s", ip, e.detail)
+        raise
     await _rate_limit(db, ip, phone)
 
     now = datetime.now(timezone.utc).isoformat()
