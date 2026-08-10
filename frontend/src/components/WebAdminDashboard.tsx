@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TouchableOpacity } from "@/src/components/HapticButtons";
-import { View, Text, StyleSheet, ActivityIndicator, ScrollView, Image, TextInput, useWindowDimensions, Modal, Pressable } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, ScrollView, Image, TextInput, useWindowDimensions, Modal, Pressable, Animated, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { spacing, radius, fonts, BRAND } from "@/src/theme";
 import { useThemeColors, useThemeMode, type Palette } from "@/src/theme/ThemeContext";
@@ -247,6 +247,50 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
   const [vinCompareOpen, setVinCompareOpen] = useState(false);
   // Guard so the auto-open only fires ONCE per submission-id per admin session.
   const [vinAutoOpenedFor, setVinAutoOpenedFor] = useState<Set<string>>(new Set());
+
+  // Pulsing animation for the "Compare Previous" banner. A gentle
+  // scale + opacity loop draws the admin's eye without being noisy.
+  // Uses useNativeDriver: false because opacity on Web with the
+  // native driver has occasional glitches under React Native Web.
+  const vinPulseScale = useRef(new Animated.Value(1)).current;
+  const vinPulseOpacity = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (vinMatches.length === 0) return;
+    const scaleLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(vinPulseScale, {
+          toValue: 1.03,
+          duration: 700,
+          useNativeDriver: false,
+        }),
+        Animated.timing(vinPulseScale, {
+          toValue: 1.0,
+          duration: 700,
+          useNativeDriver: false,
+        }),
+      ]),
+    );
+    const opacityLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(vinPulseOpacity, {
+          toValue: 0.78,
+          duration: 700,
+          useNativeDriver: false,
+        }),
+        Animated.timing(vinPulseOpacity, {
+          toValue: 1,
+          duration: 700,
+          useNativeDriver: false,
+        }),
+      ]),
+    );
+    scaleLoop.start();
+    opacityLoop.start();
+    return () => {
+      scaleLoop.stop();
+      opacityLoop.stop();
+    };
+  }, [vinMatches.length, vinPulseScale, vinPulseOpacity]);
   const [loading, setLoading] = useState(true);
   const [bucket, setBucket] = useState<Bucket>("incoming");
   const [search, setSearch] = useState("");
@@ -1407,21 +1451,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                   admin sees who submitted the vehicle and can WhatsApp
                   the dealer BEFORE they scroll through details. */}
               <View style={styles.dealerBox}>
-                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                  <Text style={styles.boxTitle}>SUBMITTED BY</Text>
-                  {vinMatches.length > 0 ? (
-                    <TouchableOpacity
-                      testID="vin-compare-open-chip"
-                      style={styles.vinCompareChip}
-                      onPress={() => setVinCompareOpen(true)}
-                    >
-                      <Ionicons name="git-compare" size={14} color="#fff" />
-                      <Text style={styles.vinCompareChipTxt}>
-                        Compare Previous ({vinMatches.length})
-                      </Text>
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
+                <Text style={styles.boxTitle}>SUBMITTED BY</Text>
                 <View style={styles.dealerRow}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.dealerName}>{selected.dealer_name}</Text>
@@ -1513,6 +1543,39 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                   )}
                 </TouchableOpacity>
               </View>
+
+              {/* VIN-match compare CTA — pulsing red banner directly
+                  below the hero row so the admin can't miss it when
+                  the same VIN has been valued before. Auto-hidden if
+                  there are no prior matches. */}
+              {vinMatches.length > 0 ? (
+                <Animated.View
+                  style={[
+                    styles.vinCompareBanner,
+                    { transform: [{ scale: vinPulseScale }], opacity: vinPulseOpacity },
+                  ]}
+                >
+                  <TouchableOpacity
+                    testID="vin-compare-open-chip"
+                    style={styles.vinCompareBannerInner}
+                    onPress={() => setVinCompareOpen(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Compare with ${vinMatches.length} previous submission${vinMatches.length === 1 ? "" : "s"}`}
+                  >
+                    <View style={styles.vinCompareBannerDot} />
+                    <Ionicons name="git-compare" size={18} color="#fff" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.vinCompareBannerTitle}>
+                        Previous submission found on this VIN
+                      </Text>
+                      <Text style={styles.vinCompareBannerSub}>
+                        {vinMatches.length} prior valuation{vinMatches.length === 1 ? "" : "s"} · Tap to compare side-by-side
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color="#fff" />
+                  </TouchableOpacity>
+                </Animated.View>
+              ) : null}
 
               {/* Vehicle Details — vertical spec list, easy to scan top-to-bottom */}
               <Text style={styles.groupTitle}>Vehicle Details</Text>
@@ -3798,22 +3861,46 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     backgroundColor: colors.card,
   },
   boxTitle: { color: colors.textSecondary, fontSize: 12, fontWeight: "700", letterSpacing: 0.4 },
-  // "Compare Previous (N)" chip next to SUBMITTED BY header — shown
-  // whenever this VIN has been submitted before.
-  vinCompareChip: {
+  // Pulsing "Previous submission found" banner rendered directly below
+  // the hero Delete-button row. Deliberately bold red + high-contrast
+  // white text with a live pulsing dot so admins spot it immediately.
+  vinCompareBanner: {
+    marginTop: spacing.md,
+    borderRadius: radius.md,
+    overflow: "hidden",
+    // Subtle red glow (web-only; RN native ignores boxShadow gracefully).
+    ...(Platform.OS === "web"
+      ? { boxShadow: "0 0 0 3px rgba(220,38,38,0.15)" as any }
+      : {}),
+  },
+  vinCompareBannerInner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: colors.text,
+    gap: spacing.md,
+    paddingVertical: 12,
+    paddingHorizontal: spacing.md,
+    backgroundColor: "#DC2626",
+    borderRadius: radius.md,
   },
-  vinCompareChipTxt: {
+  vinCompareBannerDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#FEF3C7",
+    borderWidth: 2,
+    borderColor: "#fff",
+  },
+  vinCompareBannerTitle: {
     color: "#fff",
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 0.4,
+    fontSize: 14,
+    fontWeight: "900",
+    letterSpacing: 0.3,
+  },
+  vinCompareBannerSub: {
+    color: "#FEE2E2",
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 2,
   },
   dealerName: { color: colors.text, fontSize: 15, fontWeight: "700", marginTop: 6 },
   dealerMeta: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
