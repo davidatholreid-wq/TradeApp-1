@@ -43,6 +43,67 @@ import WheelPicker from "@/src/components/WheelPicker";
 import { decodeLicenseDisk } from "@/src/utils/licenseDisk";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { fonts } from "@/src/theme";
+import * as ImageManipulator from "expo-image-manipulator";
+
+// ---------------------------------------------------------------------------
+// Photo compression helpers — every captured image is downscaled to a max
+// long edge of 1600 px and JPEG-compressed to keep each photo well under
+// the backend's 5 MB per-slot cap (iPhone stills are typically 3-6 MB raw
+// as base64 which fails).
+// ---------------------------------------------------------------------------
+const MAX_LONG_EDGE = 1600;
+const TARGET_QUALITY = 0.6;
+
+async function compressWithNative(uri: string): Promise<string | null> {
+  try {
+    const result = await ImageManipulator.manipulateAsync(
+      uri,
+      [{ resize: { width: MAX_LONG_EDGE } }],
+      { compress: TARGET_QUALITY, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+    );
+    if (!result.base64) return null;
+    return `data:image/jpeg;base64,${result.base64}`;
+  } catch (e) {
+    console.warn("ImageManipulator failed:", e);
+    return null;
+  }
+}
+
+// Web-side compression via <canvas>. Runs in the browser and returns a
+// JPEG data URL. Falls back to the original data URL on error so the
+// user isn't stranded.
+function compressWithCanvas(dataUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    if (typeof document === "undefined") return resolve(dataUrl);
+    const img = new (window as any).Image();
+    img.onload = () => {
+      try {
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        const scale = Math.min(1, MAX_LONG_EDGE / Math.max(w, h));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(w * scale);
+        canvas.height = Math.round(h * scale);
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return resolve(dataUrl);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", TARGET_QUALITY));
+      } catch {
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+// Cross-platform: takes a raw data URL (or file URI on native) and
+// returns a compressed data URL that is safely under the backend cap.
+async function compressPhoto(sourceUriOrDataUrl: string): Promise<string> {
+  if (Platform.OS === "web") return compressWithCanvas(sourceUriOrDataUrl);
+  const compressed = await compressWithNative(sourceUriOrDataUrl);
+  return compressed || sourceUriOrDataUrl;
+}
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 const TURNSTILE_SITE_KEY = process.env.EXPO_PUBLIC_TURNSTILE_SITE_KEY || "";
@@ -80,12 +141,13 @@ async function pickPhoto(): Promise<string | null> {
   if (Platform.OS === "web") {
     const res = await ImagePicker.launchImageLibraryAsync({
       base64: true,
-      quality: 0.5,
+      quality: 0.9,
       allowsEditing: false,
       mediaTypes: ["images"],
     });
     if (res.canceled || !res.assets?.[0]?.base64) return null;
-    return `data:image/jpeg;base64,${res.assets[0].base64}`;
+    const raw = `data:image/jpeg;base64,${res.assets[0].base64}`;
+    return compressPhoto(raw);
   }
   return new Promise((resolve) => {
     Alert.alert(
@@ -98,10 +160,10 @@ async function pickPhoto(): Promise<string | null> {
             const perm = await ImagePicker.requestCameraPermissionsAsync();
             if (!perm.granted) return resolve(null);
             const r = await ImagePicker.launchCameraAsync({
-              base64: true, quality: 0.5, allowsEditing: false, mediaTypes: ["images"],
+              base64: false, quality: 1, allowsEditing: false, mediaTypes: ["images"],
             });
-            if (r.canceled || !r.assets?.[0]?.base64) return resolve(null);
-            resolve(`data:image/jpeg;base64,${r.assets[0].base64}`);
+            if (r.canceled || !r.assets?.[0]?.uri) return resolve(null);
+            resolve(await compressPhoto(r.assets[0].uri));
           },
         },
         {
@@ -110,10 +172,10 @@ async function pickPhoto(): Promise<string | null> {
             const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
             if (!perm.granted) return resolve(null);
             const r = await ImagePicker.launchImageLibraryAsync({
-              base64: true, quality: 0.5, allowsEditing: false, mediaTypes: ["images"],
+              base64: false, quality: 1, allowsEditing: false, mediaTypes: ["images"],
             });
-            if (r.canceled || !r.assets?.[0]?.base64) return resolve(null);
-            resolve(`data:image/jpeg;base64,${r.assets[0].base64}`);
+            if (r.canceled || !r.assets?.[0]?.uri) return resolve(null);
+            resolve(await compressPhoto(r.assets[0].uri));
           },
         },
         { text: "Cancel", style: "cancel", onPress: () => resolve(null) },
@@ -390,6 +452,8 @@ export default function GetValuationScreen() {
       setResult({ reference: data.reference, message: data.message });
     } catch (e: any) {
       setSubmitError(e?.message || "Something went wrong. Please try again.");
+      // Scroll to the top of step 6 so the user sees the red error banner.
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
     } finally {
       setSubmitting(false);
     }

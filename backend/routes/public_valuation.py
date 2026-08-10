@@ -273,9 +273,12 @@ def _validate_photos(photos: dict) -> None:
         val = photos[slot]
         if not isinstance(val, str) or not val.startswith("data:image"):
             raise HTTPException(400, f"Photo `{slot}` must be a data URL")
-        # Rough 5 MB cap per image after base64 → ~3.75 MB raw.
-        if len(val) > 5 * 1024 * 1024:
-            raise HTTPException(400, f"Photo `{slot}` is too large; max 5 MB.")
+        # Backend safety net — client-side compression already targets
+        # a max long edge of 1600px + JPEG q=0.6, which comfortably fits
+        # inside 3 MB. Anything larger than 6 MB after that has to be an
+        # abuse case, so we hard-fail.
+        if len(val) > 6 * 1024 * 1024:
+            raise HTTPException(400, f"Photo `{slot}` is too large; please retake or pick a smaller image.")
 
 
 async def _next_public_reference(db) -> str:
