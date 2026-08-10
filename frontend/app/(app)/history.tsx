@@ -47,6 +47,11 @@ type HistoryItem = {
   dealer_name?: string;
   company_name?: string;
   unseen?: boolean;
+  // Three-offer summary enriched by the backend (see server.py
+  // `_enrich_submissions_with_covers`).
+  dealer_offer_zar?: number | null;
+  highest_cover_zar?: number | null;
+  cover_count?: number;
 };
 
 const STATUS_OPTIONS = [
@@ -214,6 +219,47 @@ export default function HistoryScreen() {
             </Text>
           ) : null}
         </View>
+
+        {/* Three-offer summary. Rendered only when at least one of the
+            three enrichment fields is present so plain pending rows
+            stay compact. "My Offer" for dealers viewing their own list,
+            "Dealer Offer" when an admin is looking at another dealer's
+            history. */}
+        {(item.price != null && item.status === "priced") ||
+        item.highest_cover_zar != null ||
+        item.dealer_offer_zar != null ? (
+          <View style={styles.offersBlock}>
+            {item.status === "priced" && item.price != null ? (
+              <View style={styles.offerRow}>
+                <Text style={styles.offerLabel}>Fourbuy Offer</Text>
+                <Text style={[styles.offerValue, { color: colors.success }]}>
+                  {formatZAR(item.price)}
+                </Text>
+              </View>
+            ) : null}
+            {item.highest_cover_zar != null ? (
+              <View style={styles.offerRow}>
+                <Text style={styles.offerLabel}>
+                  Highest Cover
+                  {item.cover_count && item.cover_count > 1 ? ` · ${item.cover_count}` : ""}
+                </Text>
+                <Text style={[styles.offerValue, { color: colors.primary }]}>
+                  {formatZAR(item.highest_cover_zar)}
+                </Text>
+              </View>
+            ) : null}
+            {item.dealer_offer_zar != null ? (
+              <View style={styles.offerRow}>
+                <Text style={styles.offerLabel}>
+                  {isAdmin ? "Dealer Offer" : "My Offer"}
+                </Text>
+                <Text style={[styles.offerValue, { color: colors.text }]}>
+                  {formatZAR(item.dealer_offer_zar)}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
       </TouchableOpacity>
     );
   };
@@ -478,6 +524,32 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
   priceText: {
     color: colors.text,
+    fontSize: 14,
+    fontWeight: "800",
+    fontFamily: fonts.number,
+    fontVariant: ["tabular-nums"],
+  },
+  // ---- Three-offer summary block (Fourbuy · Highest Cover · My/Dealer) ----
+  offersBlock: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    gap: 4,
+  },
+  offerRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+  },
+  offerLabel: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
+  },
+  offerValue: {
     fontSize: 14,
     fontWeight: "800",
     fontFamily: fonts.number,

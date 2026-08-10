@@ -401,6 +401,46 @@ def compute_bucket(sub: dict) -> str:
     return "priced"
 
 
+async def _enrich_submissions_with_covers(subs: list) -> None:
+    """Attach `highest_cover_zar` + `cover_count` to each submission in place.
+
+    Runs a single aggregation over the `cover_offers` collection so listing
+    N submissions costs O(1) extra queries instead of O(N). Used by
+    `/submissions/my`, `/admin/submissions` and `/history` so that the list
+    UI can render the three-offer summary (Fourbuy Offer · Highest Cover ·
+    Dealer/My Offer) without a follow-up round-trip per row.
+    """
+    if not subs:
+        return
+    ids = [s.get("id") for s in subs if s.get("id")]
+    if not ids:
+        return
+    pipeline = [
+        {"$match": {"submission_id": {"$in": ids}}},
+        {
+            "$group": {
+                "_id": "$submission_id",
+                "max_price": {"$max": "$price_zar"},
+                "count": {"$sum": 1},
+            }
+        },
+    ]
+    agg_map: dict[str, dict] = {}
+    async for row in db.cover_offers.aggregate(pipeline):
+        agg_map[row["_id"]] = {
+            "highest_cover_zar": row.get("max_price"),
+            "cover_count": int(row.get("count") or 0),
+        }
+    for s in subs:
+        info = agg_map.get(s.get("id"))
+        if info:
+            s["highest_cover_zar"] = info["highest_cover_zar"]
+            s["cover_count"] = info["cover_count"]
+        else:
+            s["highest_cover_zar"] = None
+            s["cover_count"] = 0
+
+
 def hash_password(pw: str) -> str:
     return bcrypt.hashpw(pw.encode(), bcrypt.gensalt(10)).decode()
 
@@ -1786,6 +1826,10 @@ async def get_my_submissions(current: dict = Depends(get_current_user)):
         s["front_photo"] = _valid_front_photo(front)
         if bucket != "archived":
             visible.append(s)
+    # Enrich with the highest cover offer + total count so the list UI
+    # can render the three-offer summary (Fourbuy / Highest cover / My
+    # offer) without a follow-up round-trip per row.
+    await _enrich_submissions_with_covers(visible)
     return {"submissions": visible}
 
 
@@ -1856,6 +1900,7 @@ async def submission_history(
             s["dealer_name"] = f"{info.get('first_name', '')} {info.get('last_name', '')}".strip()
             s["company_name"] = co.get("company_name") or ""
 
+    await _enrich_submissions_with_covers(results)
     return {"submissions": results, "total": len(results)}
 
 
@@ -2233,6 +2278,9 @@ async def admin_list_submissions(
         counts[b] += 1
     if bucket and bucket != "all":
         subs = [s for s in subs if s["bucket"] == bucket]
+    # Enrich with the highest cover offer + total count so the admin
+    # cockpit's grid/list can show the three-offer summary at a glance.
+    await _enrich_submissions_with_covers(subs)
     return {"submissions": subs, "counts": counts, "archive_after_days": ARCHIVE_AFTER_DAYS}
 
 

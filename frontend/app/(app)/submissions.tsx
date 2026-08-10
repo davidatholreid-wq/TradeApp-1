@@ -44,6 +44,11 @@ type Submission = {
   created_at: string;
   front_photo?: string | null;
   unseen?: boolean;
+  // Three-offer summary — enriched by the backend so the list UI can
+  // show all pricing signals at a glance without a per-row query.
+  dealer_offer_zar?: number | null;   // dealer's own recorded buy-in
+  highest_cover_zar?: number | null;  // max pricing-agent cover on this sub
+  cover_count?: number;
 };
 
 type BucketCounts = { incoming: number; priced: number; archived: number };
@@ -290,16 +295,40 @@ export default function DashboardScreen() {
         </View>
       ) : null}
 
+      {/* Three-offer summary — always render every present offer so
+          dealers/admins can see the full pricing picture at a glance.
+          "My offer" for the dealer's own view, "Dealer offer" when an
+          admin is looking at the same row. */}
       {item.status === "priced" && item.price !== null ? (
-        <View style={styles.priceRow}>
-          <Text style={styles.priceLabel}>Offer</Text>
-          <Text style={styles.priceValue}>R {item.price.toLocaleString()}</Text>
+        <View style={styles.offerRow}>
+          <Text style={styles.offerRowLabel}>Fourbuy Offer</Text>
+          <Text style={[styles.offerRowValue, { color: colors.success }]}>
+            R {item.price.toLocaleString()}
+          </Text>
         </View>
       ) : item.status === "declined" ? (
-        <View style={styles.priceRow}>
-          <Text style={styles.priceLabel}>Outcome</Text>
-          <Text style={[styles.priceValue, { fontSize: 13, color: colors.textSecondary }]}>
+        <View style={styles.offerRow}>
+          <Text style={styles.offerRowLabel}>Fourbuy Offer</Text>
+          <Text style={[styles.offerRowValue, { fontSize: 13, color: colors.textSecondary, fontWeight: "700" }]}>
             No offer — not charged
+          </Text>
+        </View>
+      ) : null}
+      {item.highest_cover_zar != null ? (
+        <View style={styles.offerRow}>
+          <Text style={styles.offerRowLabel}>
+            Highest Cover {item.cover_count && item.cover_count > 1 ? `· ${item.cover_count} offers` : ""}
+          </Text>
+          <Text style={[styles.offerRowValue, { color: colors.primary }]}>
+            R {item.highest_cover_zar.toLocaleString()}
+          </Text>
+        </View>
+      ) : null}
+      {item.dealer_offer_zar != null ? (
+        <View style={styles.offerRow}>
+          <Text style={styles.offerRowLabel}>{isAdmin ? "Dealer Offer" : "My Offer"}</Text>
+          <Text style={[styles.offerRowValue, { color: colors.text }]}>
+            R {item.dealer_offer_zar.toLocaleString()}
           </Text>
         </View>
       ) : null}
@@ -414,32 +443,71 @@ export default function DashboardScreen() {
               </View>
             </View>
 
-            {/* Offer / outcome footer sits at the bottom of every card
-                so the same information rows always line up regardless
-                of derivative-name overflow. */}
+            {/* Three-offer footer — shows Fourbuy Offer, Highest Cover
+                and dealer's own offer (rebranded "My Offer" for the
+                dealer's own list and "Dealer Offer" when admin views).
+                Rows only render when a value is present, so a plain
+                Pending submission still shows the "Awaiting price"
+                placeholder. */}
             <View style={styles.gridFooter}>
               {item.status === "priced" && item.price !== null ? (
-                <>
+                <View style={styles.gridFooterRow}>
                   <Text style={[styles.gridFooterLabel, { color: colors.textSecondary }]}>
-                    Offer
+                    Fourbuy Offer
                   </Text>
                   <Text style={[styles.gridFooterValue, { color: colors.success }]}>
                     R {item.price.toLocaleString()}
                   </Text>
-                </>
+                </View>
               ) : item.status === "declined" ? (
-                <Text
-                  style={[styles.gridFooterValue, { color: colors.textSecondary, fontSize: 12 }]}
-                >
-                  No offer · not charged
-                </Text>
+                <View style={styles.gridFooterRow}>
+                  <Text style={[styles.gridFooterLabel, { color: colors.textSecondary }]}>
+                    Fourbuy Offer
+                  </Text>
+                  <Text
+                    style={[
+                      styles.gridFooterValue,
+                      { color: colors.textSecondary, fontSize: 11 },
+                    ]}
+                  >
+                    No offer
+                  </Text>
+                </View>
               ) : (
-                <Text
-                  style={[styles.gridFooterValue, { color: colors.textSecondary, fontSize: 12 }]}
-                >
-                  Awaiting price
-                </Text>
+                <View style={styles.gridFooterRow}>
+                  <Text style={[styles.gridFooterLabel, { color: colors.textSecondary }]}>
+                    Fourbuy Offer
+                  </Text>
+                  <Text
+                    style={[
+                      styles.gridFooterValue,
+                      { color: colors.textSecondary, fontSize: 11 },
+                    ]}
+                  >
+                    Awaiting
+                  </Text>
+                </View>
               )}
+              {item.highest_cover_zar != null ? (
+                <View style={styles.gridFooterRow}>
+                  <Text style={[styles.gridFooterLabel, { color: colors.textSecondary }]}>
+                    Highest Cover
+                  </Text>
+                  <Text style={[styles.gridFooterValue, { color: colors.primary }]}>
+                    R {item.highest_cover_zar.toLocaleString()}
+                  </Text>
+                </View>
+              ) : null}
+              {item.dealer_offer_zar != null ? (
+                <View style={styles.gridFooterRow}>
+                  <Text style={[styles.gridFooterLabel, { color: colors.textSecondary }]}>
+                    {isAdmin ? "Dealer Offer" : "My Offer"}
+                  </Text>
+                  <Text style={[styles.gridFooterValue, { color: colors.text }]}>
+                    R {item.dealer_offer_zar.toLocaleString()}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           </View>
         </TouchableOpacity>
@@ -867,6 +935,29 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
   priceLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: "600" },
   priceValue: { color: colors.success, fontSize: 18, fontWeight: "800" },
+  // ---- Three-offer summary rows (list card) ----
+  // The FIRST offerRow renders the divider so a card with 0 offers still
+  // has a clean bottom edge; subsequent rows stack tight below.
+  offerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 4,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  offerRowLabel: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+    textTransform: "uppercase",
+  },
+  offerRowValue: {
+    fontSize: 15,
+    fontWeight: "800",
+  },
 
   // ---- View toggle toolbar (list ↔ grid, plus 3/6 cols) ----
   viewToolbar: {
@@ -1022,13 +1113,17 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     fontWeight: "700",
   },
   gridFooter: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    justifyContent: "space-between",
     marginTop: 8,
     paddingTop: 6,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+    gap: 3,
+  },
+  gridFooterRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    gap: 6,
   },
   gridFooterLabel: {
     fontSize: 10,
@@ -1037,7 +1132,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     textTransform: "uppercase",
   },
   gridFooterValue: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "800",
   },
 
