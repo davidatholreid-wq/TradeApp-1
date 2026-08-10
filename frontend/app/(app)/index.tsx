@@ -424,7 +424,18 @@ export default function HomeScreen() {
               another section of the app. */}
           <View style={styles.quickGrid}>
             {quickActions.map((qa) => (
-              <View key={qa.key} style={styles.quickCardCol}>
+              <View
+                key={qa.key}
+                style={[
+                  styles.quickCardCol,
+                  // The Rewards tile is the 4th item in a 3-column
+                  // desktop grid — without `flexGrow: 0` it stretches to
+                  // fill the entire second row on its own. Constrain it
+                  // to the same 32% basis as its siblings so it looks
+                  // like a peer, not a hero banner.
+                  qa.key === "rewards" ? styles.quickCardColRewards : null,
+                ]}
+              >
                 {qa.key === "rewards" ? (
                   <TakealotRewardsTile
                     onNavigate={() => router.push(qa.to as never)}
@@ -662,10 +673,13 @@ function TakealotRewardsTile({
     );
   }, [rot, scale, onNavigate]);
 
-  // Warm gold accent for the REWARDS eyebrow — subtle enough to match
-  // the theme but distinct from the blue/green/violet tints used by
-  // sibling tiles. Reads as premium without shouting.
-  const rewardsAccent = "#F59E0B";
+  // Luxury monochrome palette — platinum text on graphite. No coloured
+  // tint anywhere in the tile so the Takealot logo (which we keep in
+  // its native brand blue as a small card at the bottom) reads as a
+  // deliberate accent, not a competing hue.
+  const luxAccent = "#E5E5E5";     // Platinum text / highlights
+  const luxAccentDim = "#9CA3AF";  // Silver secondary text
+  const luxTrack = "#3A3A3A";      // Progress bar track
 
   // Progress toward the next voucher (0..1). If rewards haven't loaded
   // yet or the balance is already past a voucher threshold, we clamp to
@@ -696,95 +710,73 @@ function TakealotRewardsTile({
         style={[
           styles.quickCard,
           styles.takealotCard,
-          { borderColor: rewardsAccent + "44" },
           faceStyle,
         ]}
       >
-        {/* Warm gradient wash keyed off the gold accent — matches how
-            the other NavFlipTiles use their tint colour but tuned way
-            softer so this tile still reads as neutral / theme-native. */}
+        {/* Subtle monochrome gradient — deep graphite fading to near-
+            black. Reads as a luxury metallic surface rather than a
+            coloured accent tile. */}
         <LinearGradient
-          colors={[rewardsAccent + "22", rewardsAccent + "0A", "transparent"]}
+          colors={["#1E1E1E", "#0B0B0B"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
           pointerEvents="none"
         />
 
-        {/* Eyebrow row — REWARDS pill + right-side status chip
-            ("REDEEM READY" when balance ≥ points_per_voucher) */}
+        {/* Header row — REWARDS eyebrow (left) + optional READY chip
+            (right) when the dealer's balance has crossed the next
+            voucher threshold. Both use hairline outlines only. */}
         <View style={styles.takealotHeaderRow}>
-          <View
-            style={[
-              styles.takealotEyebrowWrap,
-              { backgroundColor: rewardsAccent + "22", borderColor: rewardsAccent + "66" },
-            ]}
-          >
-            <Ionicons name="gift" size={11} color={rewardsAccent} />
-            <Text style={[styles.takealotEyebrow, { color: rewardsAccent }]}>REWARDS</Text>
+          <View style={[styles.takealotEyebrowWrap, { borderColor: luxAccent + "55" }]}>
+            <Ionicons name="diamond-outline" size={10} color={luxAccent} />
+            <Text style={[styles.takealotEyebrow, { color: luxAccent }]}>REWARDS</Text>
           </View>
           {canRedeem ? (
-            <View
-              style={[
-                styles.takealotReadyPill,
-                { backgroundColor: "#10B98122", borderColor: "#10B98166" },
-              ]}
-            >
-              <Ionicons name="checkmark-circle" size={11} color="#10B981" />
-              <Text style={[styles.takealotReadyPillTxt, { color: "#10B981" }]}>
-                REDEEM READY
-              </Text>
+            <View style={[styles.takealotReadyPill, { borderColor: "#FFFFFF" }]}>
+              <Ionicons name="checkmark-circle" size={10} color="#FFFFFF" />
+              <Text style={[styles.takealotReadyPillTxt, { color: "#FFFFFF" }]}>READY</Text>
             </View>
           ) : null}
         </View>
 
-        {/* HERO points display — the number is the whole point of the
-            tile so it gets the biggest type on the card. `pts` sits as
-            a small suffix so the number reads as the primary metric. */}
+        {/* Hero balance — pure white number, silver `pts` suffix. */}
         <View style={styles.takealotBalanceRow}>
-          <Text style={[styles.takealotBalanceNum, { color: colors.text }]}>
+          <Text style={[styles.takealotBalanceNum, { color: "#FFFFFF" }]}>
             {rewards ? balance : "—"}
           </Text>
-          <Text style={[styles.takealotBalanceUnit, { color: colors.textSecondary }]}>
-            pts
-          </Text>
+          <Text style={[styles.takealotBalanceUnit, { color: luxAccentDim }]}>pts</Text>
         </View>
 
-        {/* Progress bar toward the next voucher — the segment is filled
-            with the same warm gold so the whole tile feels colour-
-            coordinated. `points_to_next_voucher` label sits below. */}
-        <View style={[styles.takealotProgressTrack, { backgroundColor: colors.border }]}>
+        {/* Progress bar — thin white fill on a graphite track. Reads
+            like a fine watch bezel: precise, monochrome, high-end. */}
+        <View style={[styles.takealotProgressTrack, { backgroundColor: luxTrack }]}>
           <View
             style={[
               styles.takealotProgressFill,
-              { width: `${Math.round(progress * 100)}%`, backgroundColor: rewardsAccent },
+              { width: `${Math.round(progress * 100)}%`, backgroundColor: "#FFFFFF" },
             ]}
           />
         </View>
-        <Text style={[styles.takealotProgressLabel, { color: colors.textSecondary }]}>
+        <Text style={[styles.takealotProgressLabel, { color: luxAccentDim }]}>
           {rewards
             ? canRedeem
-              ? `Ready to redeem for R${voucherR}`
+              ? `Ready to redeem · R${voucherR}`
               : `${toNext} pts to next R${voucherR} voucher`
             : "Earn points on every deal"}
         </Text>
 
-        {/* Takealot brand chip — the partner brand's big moment. The
-            takealot.png wordmark sits front-and-center as a wide
-            rounded emblem, with a short REDEEM caption below explaining
-            what the points can be spent on. `resizeMode="cover"` picks
-            up the middle horizontal band of the square source asset so
-            the "takealot.com" wordmark reads legibly at every size. */}
-        <View style={styles.takealotBrandChip}>
+        {/* Takealot brand chip — framed in a clean white card at the
+            bottom so the partner blue is preserved (we can't recolour
+            it) but its edges "cut" cleanly against the monochrome tile
+            like a designer boutique's stockist badge. */}
+        <View style={styles.takealotBrandChipOuter}>
           <Image
             source={require("@/assets/brands/takealot.png")}
             style={styles.takealotBrandChipLogo}
             resizeMode="cover"
             accessibilityLabel="takealot.com"
           />
-          <Text style={[styles.takealotBrandChipEyebrow, { color: colors.textDisabled }]}>
-            REDEEM YOUR POINTS FOR TAKEALOT VOUCHERS
-          </Text>
         </View>
       </Animated.View>
     </Pressable>
@@ -1370,6 +1362,14 @@ const makeStyles = (colors: Palette, isWide: boolean) => {
           flexBasis: "48%",
           flexGrow: 1,
         },
+    // Constrain the Rewards tile column to the SAME width as its
+    // NavFlipTile siblings so it doesn't stretch across the entire
+    // second row when it wraps to a new line on desktop. `flexGrow: 0`
+    // + `maxWidth` do the trick without breaking the flex layout on
+    // narrower viewports.
+    quickCardColRewards: isWide
+      ? { flexGrow: 0, maxWidth: `${(100 - 2 * 2) / 3}%` }
+      : { flexGrow: 0, maxWidth: "48%" },
     quickCard: {
       backgroundColor: colors.paper,
       borderRadius: radius.lg,
@@ -1438,20 +1438,21 @@ const makeStyles = (colors: Palette, isWide: boolean) => {
     },
 
     // ---- Takealot co-branded rewards tile ----
-    // Redesigned 2026-08-10 as a compact rewards HUD:
-    //   • header row (REWARDS eyebrow + optional "REDEEM READY" pill)
-    //   • hero balance number ("17 pts")
-    //   • progress bar toward next voucher
-    //   • prominent full-width Takealot brand chip pinned to the bottom
-    // The tile still uses the same `paper` surface as sibling tiles so
-    // it feels native inside the quick-actions grid.
+    // Redesigned 2026-08-10 (v2): luxury monochrome — no coloured tint
+    // on the tile itself, a graphite→black gradient surface, thin
+    // platinum outlines, pure-white progress fill. Sized to match the
+    // sibling NavFlipTiles so it feels like a peer in the grid rather
+    // than a hero banner. All info (balance, progress, next-voucher,
+    // Takealot brand chip) fits inside the same footprint.
     takealotCard: {
-      backgroundColor: colors.paper,
+      backgroundColor: "#0F0F0F",
+      borderColor: "#FFFFFF22",
       alignItems: "stretch",
       justifyContent: "space-between",
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.md,
-      gap: 6,
+      gap: 4,
+      overflow: "hidden",
     },
     takealotHeaderRow: {
       flexDirection: "row",
@@ -1459,24 +1460,9 @@ const makeStyles = (colors: Palette, isWide: boolean) => {
       justifyContent: "space-between",
       gap: 6,
     },
+    // Thin outlined pill — platinum wordmark on the graphite surface.
+    // No fill so the tile stays clean and premium.
     takealotEyebrowWrap: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 5,
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-      borderRadius: 999,
-      borderWidth: 1,
-    },
-    takealotEyebrow: {
-      fontSize: 10,
-      fontWeight: "900",
-      letterSpacing: 1.2,
-    },
-    // Small green "REDEEM READY" pill that only shows when the dealer's
-    // balance has crossed the next-voucher threshold. Sits at the right
-    // side of the header row.
-    takealotReadyPill: {
       flexDirection: "row",
       alignItems: "center",
       gap: 4,
@@ -1484,82 +1470,89 @@ const makeStyles = (colors: Palette, isWide: boolean) => {
       paddingVertical: 2,
       borderRadius: 999,
       borderWidth: 1,
+      backgroundColor: "transparent",
+    },
+    takealotEyebrow: {
+      fontSize: 9,
+      fontWeight: "900",
+      letterSpacing: 1.4,
+    },
+    // "READY" pill only shows when balance ≥ points_per_voucher.
+    // Also outline-only so it feels of-a-piece with the eyebrow.
+    takealotReadyPill: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 3,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 999,
+      borderWidth: 1,
+      backgroundColor: "transparent",
     },
     takealotReadyPillTxt: {
       fontSize: 9,
       fontWeight: "900",
       letterSpacing: 1.1,
     },
-    // Hero points number — big, bold, left-aligned. `pts` sits as a
-    // small unit suffix to the right of the number so the number itself
-    // reads as the hero.
+    // Hero balance row — big number sits on the baseline of a small
+    // `pts` unit suffix. Kept compact so everything fits in the tile.
     takealotBalanceRow: {
       flexDirection: "row",
       alignItems: "baseline",
       gap: 4,
-      marginTop: 2,
+      marginTop: 4,
     },
     takealotBalanceNum: {
-      fontSize: isWide ? 34 : 30,
+      fontSize: isWide ? 30 : 26,
       fontWeight: "900",
-      letterSpacing: -1,
-      lineHeight: isWide ? 38 : 34,
+      letterSpacing: -0.8,
+      lineHeight: isWide ? 32 : 28,
       includeFontPadding: false,
     },
     takealotBalanceUnit: {
-      fontSize: 12,
+      fontSize: 11,
       fontWeight: "800",
-      letterSpacing: 0.4,
+      letterSpacing: 0.5,
       textTransform: "uppercase",
     },
-    // Progress bar toward next voucher — track is the theme border
-    // colour so it's a subtle rail, fill is the same warm gold as the
-    // REWARDS eyebrow so the whole tile reads as colour-coordinated.
+    // Progress bar — hairline height (4px) so it feels precise, not a
+    // game HUD. White fill on graphite track.
     takealotProgressTrack: {
-      height: 6,
+      height: 4,
       borderRadius: 999,
       overflow: "hidden",
-      marginTop: 4,
+      marginTop: 6,
     },
     takealotProgressFill: {
       height: "100%",
       borderRadius: 999,
     },
     takealotProgressLabel: {
-      fontSize: 11,
-      fontWeight: "700",
-      letterSpacing: 0.1,
-      marginTop: 2,
+      fontSize: 10,
+      fontWeight: "600",
+      letterSpacing: 0.2,
+      marginTop: 3,
     },
-    // -- Takealot brand chip -----------------------------------------
-    // Vertically-stacked co-brand block pinned to the bottom of the
-    // tile. Layout:
-    //   [ big centered takealot.png logo ]
-    //   [ REDEEM AT TAKEALOT.COM small caps ]
-    // The logo is a self-contained blue-branded square, so we let it
-    // sit as a fixed-size rounded emblem (never stretched) so the
-    // wordmark stays legible at all sizes.
-    takealotBrandChip: {
+    // Takealot brand chip — clean white card that frames the partner's
+    // native blue block. This "boutique stockist" framing lets the
+    // Takealot brand read cleanly on the monochrome tile without any
+    // recolouring. Fits at the bottom of the tile.
+    takealotBrandChipOuter: {
       marginTop: 8,
+      backgroundColor: "#FFFFFF",
+      borderRadius: radius.sm,
+      padding: 3,
       alignItems: "center",
       justifyContent: "center",
-      gap: 5,
     },
-    takealotBrandChipEyebrow: {
-      fontSize: 10,
-      fontWeight: "900",
-      letterSpacing: 1.6,
-      textAlign: "center",
-    },
-    // Sized so the wordmark is unmistakable at a glance:
-    //   • Mobile (narrow tile): 100px wide × 44 tall, cover-cropped so
-    //     only the middle horizontal band of the square asset shows
-    //     (that's where the "takealot.com" wordmark lives).
-    //   • Wide (desktop, spans a full row): 180 × 60.
+    // The takealot.png asset is a square blue block with the wordmark
+    // in the middle horizontal band. `resizeMode="cover"` picks up
+    // exactly that band so the wordmark reads legibly at a compact
+    // height while the sides fill the tile width.
     takealotBrandChipLogo: {
-      width: isWide ? 220 : 128,
-      height: isWide ? 68 : 44,
-      borderRadius: radius.sm,
+      width: "100%",
+      height: isWide ? 34 : 30,
+      borderRadius: 4,
       overflow: "hidden",
     },
     // Legacy CTA styles (kept for backwards-compat in case a caller uses
