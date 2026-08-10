@@ -292,6 +292,12 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
       opacityLoop.stop();
     };
   }, [vinMatches.length, vinPulseScale, vinPulseOpacity]);
+
+  // Pulsing animation for the INCOMING stat card on the Home screen.
+  // Fires only while there is at least one submission in the incoming
+  // bucket, so the admin's eye is drawn to pending work as soon as
+  // they land on the cockpit. Border-color + shadow modulate together.
+  const incomingPulse = useRef(new Animated.Value(0)).current;
   const [loading, setLoading] = useState(true);
   const [bucket, setBucket] = useState<Bucket>("incoming");
   const [search, setSearch] = useState("");
@@ -639,6 +645,26 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
   const pricedCount = counts.priced;
   const archivedCount = counts.archived;
 
+  // Kick the INCOMING card pulse whenever pendingCount ≥ 1.
+  useEffect(() => {
+    if (pendingCount < 1) {
+      incomingPulse.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(incomingPulse, {
+          toValue: 1, duration: 900, useNativeDriver: false,
+        }),
+        Animated.timing(incomingPulse, {
+          toValue: 0, duration: 900, useNativeDriver: false,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => { loop.stop(); };
+  }, [pendingCount, incomingPulse]);
+
   // -------- Month-to-date roll-up for the Cockpit Home landing --------
   // Fetched from /api/admin/stats/home-mtd. Loaded once when the Home view
   // is first rendered and refreshed each time the admin lands on Home.
@@ -877,10 +903,29 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
             </Text>
           </View>
           <View style={styles.homeStatsRow}>
-            <View style={[styles.homeStatCard, { borderColor: colors.warning + "55" }]}>
+            <Animated.View
+              testID="cockpit-home-incoming-card"
+              style={[
+                styles.homeStatCard,
+                {
+                  borderColor: pendingCount >= 1
+                    ? incomingPulse.interpolate({ inputRange: [0, 1], outputRange: [colors.warning + "55", colors.warning] })
+                    : colors.warning + "55",
+                  transform: pendingCount >= 1
+                    ? [{ scale: incomingPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.04] }) }]
+                    : undefined,
+                  shadowColor: colors.warning,
+                  shadowOpacity: pendingCount >= 1
+                    ? incomingPulse.interpolate({ inputRange: [0, 1], outputRange: [0.1, 0.55] })
+                    : 0,
+                  shadowRadius: 12,
+                  shadowOffset: { width: 0, height: 0 },
+                } as any,
+              ]}
+            >
               <Text style={styles.homeStatLabel}>INCOMING</Text>
               <Text style={[styles.homeStatValue, { color: colors.warning }]}>{pendingCount}</Text>
-            </View>
+            </Animated.View>
             <View style={[styles.homeStatCard, { borderColor: colors.success + "55" }]}>
               <Text style={styles.homeStatLabel}>PRICED</Text>
               <Text style={[styles.homeStatValue, { color: colors.success }]}>{pricedCount}</Text>
@@ -891,6 +936,35 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
             </View>
           </View>
 
+
+
+
+          <View style={styles.homeTilesRow}>
+            {[
+              { key: "submissions", label: "Submissions", hint: "Price & review dealer submissions", icon: "list" as const, tint: "#5B8DEF" },
+              { key: "dealers", label: "Dealers", hint: "Approve, edit & manage accounts", icon: "people" as const, tint: "#22C55E" },
+              { key: "billing", label: "Billing", hint: "Invoices, credits & receipts", icon: "cash" as const, tint: "#F59E0B" },
+              { key: "rewards", label: "Rewards", hint: "Points, referrals & vouchers", icon: "gift" as const, tint: "#F97316" },
+              { key: "kredo", label: "Kredo", hint: "VIN reports & CarTrust tools", icon: "pricetag" as const, tint: "#F43F5E" },
+              { key: "ads", label: "Advertising", hint: "Manage home-page ad tiles", icon: "megaphone" as const, tint: "#A78BFA" },
+              { key: "catalogue", label: "Make Catalogue", hint: "Choose which makes & models dealers can pick", icon: "car-sport" as const, tint: "#0EA5E9" },
+              { key: "public-leads", label: "Public Leads", hint: "Anonymous public valuations from /get-valuation", icon: "planet" as const, tint: "#EC4899" },
+            ].map((t) => (
+              <TouchableOpacity
+                key={t.key}
+                testID={`cockpit-home-tile-${t.key}`}
+                style={[styles.homeTile, { borderColor: t.tint + "55" }]}
+                onPress={() => setView(t.key as CockpitView)}
+                activeOpacity={0.85}
+              >
+                <View style={[styles.homeTileIconChip, { backgroundColor: t.tint + "22", borderColor: t.tint + "77" }]}>
+                  <Ionicons name={t.icon} size={26} color={t.tint} />
+                </View>
+                <Text style={styles.homeTileLabel}>{t.label}</Text>
+                <Text style={styles.homeTileHint} numberOfLines={2}>{t.hint}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
           {/* Month-to-date roll-up */}
           <View style={styles.mtdSection} testID="cockpit-mtd-section">
             <View style={styles.mtdSectionHeader}>
@@ -1211,35 +1285,6 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 </View>
               )
             ) : null}
-          </View>
-
-
-
-          <View style={styles.homeTilesRow}>
-            {[
-              { key: "submissions", label: "Submissions", hint: "Price & review dealer submissions", icon: "list" as const, tint: "#5B8DEF" },
-              { key: "dealers", label: "Dealers", hint: "Approve, edit & manage accounts", icon: "people" as const, tint: "#22C55E" },
-              { key: "billing", label: "Billing", hint: "Invoices, credits & receipts", icon: "cash" as const, tint: "#F59E0B" },
-              { key: "rewards", label: "Rewards", hint: "Points, referrals & vouchers", icon: "gift" as const, tint: "#F97316" },
-              { key: "kredo", label: "Kredo", hint: "VIN reports & CarTrust tools", icon: "pricetag" as const, tint: "#F43F5E" },
-              { key: "ads", label: "Advertising", hint: "Manage home-page ad tiles", icon: "megaphone" as const, tint: "#A78BFA" },
-              { key: "catalogue", label: "Make Catalogue", hint: "Choose which makes & models dealers can pick", icon: "car-sport" as const, tint: "#0EA5E9" },
-              { key: "public-leads", label: "Public Leads", hint: "Anonymous public valuations from /get-valuation", icon: "planet" as const, tint: "#EC4899" },
-            ].map((t) => (
-              <TouchableOpacity
-                key={t.key}
-                testID={`cockpit-home-tile-${t.key}`}
-                style={[styles.homeTile, { borderColor: t.tint + "55" }]}
-                onPress={() => setView(t.key as CockpitView)}
-                activeOpacity={0.85}
-              >
-                <View style={[styles.homeTileIconChip, { backgroundColor: t.tint + "22", borderColor: t.tint + "77" }]}>
-                  <Ionicons name={t.icon} size={26} color={t.tint} />
-                </View>
-                <Text style={styles.homeTileLabel}>{t.label}</Text>
-                <Text style={styles.homeTileHint} numberOfLines={2}>{t.hint}</Text>
-              </TouchableOpacity>
-            ))}
           </View>
         </ScrollView>
       ) : view === "billing" ? (
