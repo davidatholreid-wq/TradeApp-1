@@ -622,6 +622,13 @@ function makeStyles(colors: Palette) {
     pickerBlock: {
       marginTop: 4,
       gap: 6,
+      // Web-only: raise the picker's stacking context above the sibling
+      // chip row + Open-link card so the dropdown, when opened, cleanly
+      // covers anything below it. Without this, RN Web sometimes paints
+      // the chip row on top of the dropdown, which manifested as the
+      // "compare block overlapping" reported by admin.
+      zIndex: 5,
+      ...(Platform.OS === "web" ? { position: "relative" as const } : {}),
     },
     pickerHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
     pickerLabel: { color: colors.textSecondary, fontSize: 11, letterSpacing: 0.4, fontWeight: "700" },
@@ -644,6 +651,10 @@ function makeStyles(colors: Palette) {
       borderRadius: radius.md,
       backgroundColor: colors.card,
       overflow: "hidden",
+      // Keep the dropdown above sibling content in the same card so
+      // long lists never appear behind the chip row / Open-link card.
+      zIndex: 6,
+      elevation: 4,
     },
     pickerSearchRow: {
       flexDirection: "row",

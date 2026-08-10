@@ -1371,6 +1371,49 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 </View>
               ) : null}
 
+              {/* Dealer — moved up here (right below the cover) so the
+                  admin sees who submitted the vehicle and can WhatsApp
+                  the dealer BEFORE they scroll through details. */}
+              <View style={styles.dealerBox}>
+                <Text style={styles.boxTitle}>SUBMITTED BY</Text>
+                <View style={styles.dealerRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.dealerName}>{selected.dealer_name}</Text>
+                    <Text style={styles.dealerMeta}>{selected.company_name}</Text>
+                    <Text style={styles.dealerMeta}>{selected.dealer_email}</Text>
+                    {selected.dealer_phone ? (
+                      <Text style={styles.dealerMeta}>{selected.dealer_phone}</Text>
+                    ) : null}
+                  </View>
+                  {selected.dealer_phone ? (
+                    <TouchableOpacity
+                      testID="admin-whatsapp-button"
+                      style={styles.whatsappBtn}
+                      onPress={() => {
+                        const url = buildWhatsappUrl(
+                          selected.dealer_phone!,
+                          buildDealerMessage({
+                            dealerFirstName: selected.dealer_first_name,
+                            reference: selected.reference,
+                            year: selected.year,
+                            make: selected.make_name,
+                            model: selected.model_name,
+                            derivative: selected.derivative_name,
+                            price: selected.price,
+                            priceNotes: selected.price_notes,
+                          })
+                        );
+                        // @ts-ignore web-only
+                        window.open(url, "_blank");
+                      }}
+                    >
+                      <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
+                      <Text style={styles.whatsappBtnText}>WhatsApp</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              </View>
+
               {selected.unseen ? (
                 <View style={styles.detailUnseenBanner} testID="admin-unseen-banner">
                   <Ionicons name="eye-off" size={20} color="#B3261E" />
@@ -1403,16 +1446,9 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                         ? `  ·  ${selected.mileage.toLocaleString("en-ZA")} km`
                         : ""}
                     </Text>
-                    {selected.submitted_by_name ? (
-                      <View style={styles.adminSubmittedBy}>
-                        <Ionicons name="person-circle-outline" size={14} color={colors.textSecondary} />
-                        <Text style={styles.adminSubmittedByText}>
-                          Submitted by <Text style={styles.adminSubmittedByBold}>{selected.submitted_by_name}</Text>
-                          {selected.submitted_by_job_title ? ` · ${selected.submitted_by_job_title}` : ""}
-                          {selected.submitted_at ? ` · ${(selected.submitted_at || "").slice(0, 10)}` : ""}
-                        </Text>
-                      </View>
-                    ) : null}
+                    {/* Inline "Submitted by" pill removed — the full
+                        SUBMITTED BY card with WhatsApp now sits above,
+                        immediately below the dealer branding banner. */}
                   </View>
                 </View>
                 <TouchableOpacity
@@ -1739,117 +1775,16 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
               ) : null}
 
               {/* Dealer */}
-              <View style={styles.dealerBox}>
-                <Text style={styles.boxTitle}>SUBMITTED BY</Text>
-                <View style={styles.dealerRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.dealerName}>{selected.dealer_name}</Text>
-                    <Text style={styles.dealerMeta}>{selected.company_name}</Text>
-                    <Text style={styles.dealerMeta}>{selected.dealer_email}</Text>
-                    {selected.dealer_phone ? (
-                      <Text style={styles.dealerMeta}>{selected.dealer_phone}</Text>
-                    ) : null}
-                  </View>
-                  {selected.dealer_phone ? (
-                    <TouchableOpacity
-                      testID="admin-whatsapp-button"
-                      style={styles.whatsappBtn}
-                      onPress={() => {
-                        const url = buildWhatsappUrl(
-                          selected.dealer_phone!,
-                          buildDealerMessage({
-                            dealerFirstName: selected.dealer_first_name,
-                            reference: selected.reference,
-                            year: selected.year,
-                            make: selected.make_name,
-                            model: selected.model_name,
-                            derivative: selected.derivative_name,
-                            price: selected.price,
-                            priceNotes: selected.price_notes,
-                          })
-                        );
-                        // @ts-ignore web-only
-                        window.open(url, "_blank");
-                      }}
-                    >
-                      <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
-                      <Text style={styles.whatsappBtnText}>WhatsApp</Text>
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
-              </View>
+              {/* SUBMITTED BY block moved to the very top of the detail scroll,
+                  right below the dealer branding banner, so the admin can see
+                  contact info + WhatsApp before scrolling. */}
 
               {/* Pricing — initial-offer input for un-priced submissions,
                   OR a current-price readout + "Update Price" button once
                   the vehicle has been priced. Update flow enforces a
-                  mandatory rationale comment (logged to price_history). */}
-              <View style={styles.priceBox}>
-                <View style={styles.priceBoxHeader}>
-                  <Text style={styles.boxTitle}>PRICE OFFER</Text>
-                  {selected.status === "priced" && selected.price !== null ? (
-                    <Text style={styles.priceBadge}>R {selected.price?.toLocaleString()}</Text>
-                  ) : null}
-                </View>
-                {selected.status === "priced" && selected.price !== null ? (
-                  <View>
-                    {selected.price_notes ? (
-                      <Text style={styles.priceNotesReadout} numberOfLines={4}>
-                        {selected.price_notes}
-                      </Text>
-                    ) : null}
-                    <TouchableOpacity
-                      testID="admin-open-price-update"
-                      style={styles.priceUpdateBtn}
-                      onPress={openPriceUpdate}
-                    >
-                      <Ionicons name="create-outline" size={16} color="#fff" />
-                      <Text style={styles.priceUpdateBtnText}>Update Price</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.priceUpdateHint}>
-                      A reason for the change is required and will be logged in
-                      the price history.
-                    </Text>
-                  </View>
-                ) : (
-                  <>
-                    <View style={styles.priceInputRow}>
-                      <View style={styles.priceInputWrap}>
-                        <Text style={styles.currencyLabel}>R</Text>
-                        <TextInput
-                          testID="admin-price-input"
-                          style={styles.priceInput}
-                          value={priceInput}
-                          onChangeText={(t) => setPriceInput(formatMoneyInput(t))}
-                          placeholder="Enter price"
-                          placeholderTextColor={colors.textDisabled}
-                          keyboardType="numeric"
-                        />
-                      </View>
-                      <TouchableOpacity
-                        testID="admin-send-offer-button"
-                        style={[styles.sendBtn, priceSubmitting && { opacity: 0.6 }]}
-                        onPress={handlePrice}
-                        disabled={priceSubmitting}
-                      >
-                        {priceSubmitting ? (
-                          <ActivityIndicator size="small" color="#fff" />
-                        ) : (
-                          <Text style={styles.sendBtnText}>SEND OFFER</Text>
-                        )}
-                      </TouchableOpacity>
-                    </View>
-                    <TextInput
-                      testID="admin-notes-input"
-                      style={styles.notesInput}
-                      value={notesInput}
-                      onChangeText={setNotesInput}
-                      placeholder="Notes for dealer (optional)"
-                      placeholderTextColor={colors.textDisabled}
-                      multiline
-                    />
-                  </>
-                )}
-              </View>
+                  mandatory rationale comment (logged to price_history).
+                  MOVED to the very bottom of the detail scroll — see the
+                  PRICE OFFER block near </ScrollView>. */}
 
               {/* Market analysis */}
               <View style={styles.analysisBox}>
@@ -2075,46 +2010,9 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
               </View>
 
               {/* ================= MARKET VALUES (Kredo) ================= */}
-              {/* Locked-at-valuation Kredo snapshot: new list + M&M code
-                  from the flatfile, trade + retail from Kredo /value.
-                  Matches the mobile "Market Values" card 1:1. */}
-              <View style={styles.analysisBox}>
-                <View style={styles.priceBoxHeader}>
-                  <Text style={styles.boxTitle}>MARKET VALUES</Text>
-                  {selected.market_values?.status === "ok" ? (
-                    <View style={styles.lockedPill}>
-                      <Ionicons name="lock-closed" size={11} color={colors.textSecondary} />
-                      <Text style={styles.lockedPillText}>LOCKED AT VALUATION</Text>
-                    </View>
-                  ) : null}
-                </View>
-                {selected.market_values?.status === "ok" ? (
-                  <View style={styles.mvGrid}>
-                    <View style={styles.mvBox}>
-                      <Text style={styles.mvLabel}>NEW LIST PRICE</Text>
-                      <Text style={styles.mvValue}>{fmtZar(selected.market_values.new_list_price_zar)}</Text>
-                    </View>
-                    <View style={styles.mvBox}>
-                      <Text style={styles.mvLabel}>M&M CODE</Text>
-                      <Text style={[styles.mvValue, styles.mvMono]}>{selected.market_values.mm_code || "—"}</Text>
-                    </View>
-                    <View style={styles.mvBox}>
-                      <Text style={styles.mvLabel}>TRADE VALUE</Text>
-                      <Text style={styles.mvValue}>{fmtZar(selected.market_values.trade_price_zar)}</Text>
-                    </View>
-                    <View style={styles.mvBox}>
-                      <Text style={styles.mvLabel}>RETAIL VALUE</Text>
-                      <Text style={styles.mvValue}>{fmtZar(selected.market_values.retail_price_zar)}</Text>
-                    </View>
-                  </View>
-                ) : selected.market_values?.status === "error" ? (
-                  <Text style={styles.analysisEmpty}>
-                    Could not fetch market values: {selected.market_values.error || "Kredo lookup failed."}
-                  </Text>
-                ) : (
-                  <Text style={styles.analysisEmpty}>Fetching from Kredo…</Text>
-                )}
-              </View>
+              {/* Locked-at-valuation Kredo snapshot moved to the very
+                  bottom of the detail scroll — see the MARKET VALUES
+                  block near the OFFER HISTORY / </ScrollView>. */}
 
               {/* ================= COMPARE LIVE LISTINGS ================= */}
               {/* Deep-links into AutoTrader + WeBuyCars search results
@@ -2505,6 +2403,124 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                   );
                 })()
               ) : null}
+
+              {/* ================= MARKET VALUES (Kredo) ================= */}
+              {/* Locked-at-valuation Kredo snapshot: new list + M&M code
+                  from the flatfile, trade + retail from Kredo /value.
+                  Rendered near the bottom now (user requested) so the
+                  admin can absorb the vehicle details, condition, and
+                  live compares first, then anchor the pricing decision
+                  against these numbers immediately above the input. */}
+              <View style={styles.analysisBox}>
+                <View style={styles.priceBoxHeader}>
+                  <Text style={styles.boxTitle}>MARKET VALUES</Text>
+                  {selected.market_values?.status === "ok" ? (
+                    <View style={styles.lockedPill}>
+                      <Ionicons name="lock-closed" size={11} color={colors.textSecondary} />
+                      <Text style={styles.lockedPillText}>LOCKED AT VALUATION</Text>
+                    </View>
+                  ) : null}
+                </View>
+                {selected.market_values?.status === "ok" ? (
+                  <View style={styles.mvGrid}>
+                    <View style={styles.mvBox}>
+                      <Text style={styles.mvLabel}>NEW LIST PRICE</Text>
+                      <Text style={styles.mvValue}>{fmtZar(selected.market_values.new_list_price_zar)}</Text>
+                    </View>
+                    <View style={styles.mvBox}>
+                      <Text style={styles.mvLabel}>M&M CODE</Text>
+                      <Text style={[styles.mvValue, styles.mvMono]}>{selected.market_values.mm_code || "—"}</Text>
+                    </View>
+                    <View style={styles.mvBox}>
+                      <Text style={styles.mvLabel}>TRADE VALUE</Text>
+                      <Text style={styles.mvValue}>{fmtZar(selected.market_values.trade_price_zar)}</Text>
+                    </View>
+                    <View style={styles.mvBox}>
+                      <Text style={styles.mvLabel}>RETAIL VALUE</Text>
+                      <Text style={styles.mvValue}>{fmtZar(selected.market_values.retail_price_zar)}</Text>
+                    </View>
+                  </View>
+                ) : selected.market_values?.status === "error" ? (
+                  <Text style={styles.analysisEmpty}>
+                    Could not fetch market values: {selected.market_values.error || "Kredo lookup failed."}
+                  </Text>
+                ) : (
+                  <Text style={styles.analysisEmpty}>Fetching from Kredo…</Text>
+                )}
+              </View>
+
+              {/* ================= PRICE OFFER (bottom) ================= */}
+              {/* Anchored at the bottom of the scroll so the admin has
+                  reviewed vehicle details, condition, compares, and the
+                  Kredo market values immediately above before committing
+                  a number. */}
+              <View style={styles.priceBox}>
+                <View style={styles.priceBoxHeader}>
+                  <Text style={styles.boxTitle}>PRICE OFFER</Text>
+                  {selected.status === "priced" && selected.price !== null ? (
+                    <Text style={styles.priceBadge}>R {selected.price?.toLocaleString()}</Text>
+                  ) : null}
+                </View>
+                {selected.status === "priced" && selected.price !== null ? (
+                  <View>
+                    {selected.price_notes ? (
+                      <Text style={styles.priceNotesReadout} numberOfLines={4}>
+                        {selected.price_notes}
+                      </Text>
+                    ) : null}
+                    <TouchableOpacity
+                      testID="admin-open-price-update"
+                      style={styles.priceUpdateBtn}
+                      onPress={openPriceUpdate}
+                    >
+                      <Ionicons name="create-outline" size={16} color="#fff" />
+                      <Text style={styles.priceUpdateBtnText}>Update Price</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.priceUpdateHint}>
+                      A reason for the change is required and will be logged in
+                      the price history.
+                    </Text>
+                  </View>
+                ) : (
+                  <>
+                    <View style={styles.priceInputRow}>
+                      <View style={styles.priceInputWrap}>
+                        <Text style={styles.currencyLabel}>R</Text>
+                        <TextInput
+                          testID="admin-price-input"
+                          style={styles.priceInput}
+                          value={priceInput}
+                          onChangeText={(t) => setPriceInput(formatMoneyInput(t))}
+                          placeholder="Enter price"
+                          placeholderTextColor={colors.textDisabled}
+                          keyboardType="numeric"
+                        />
+                      </View>
+                      <TouchableOpacity
+                        testID="admin-send-offer-button"
+                        style={[styles.sendBtn, priceSubmitting && { opacity: 0.6 }]}
+                        onPress={handlePrice}
+                        disabled={priceSubmitting}
+                      >
+                        {priceSubmitting ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <Text style={styles.sendBtnText}>SEND OFFER</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                    <TextInput
+                      testID="admin-notes-input"
+                      style={styles.notesInput}
+                      value={notesInput}
+                      onChangeText={setNotesInput}
+                      placeholder="Notes for dealer (optional)"
+                      placeholderTextColor={colors.textDisabled}
+                      multiline
+                    />
+                  </>
+                )}
+              </View>
 
               {/* ================= OFFER HISTORY ================= */}
               {selected.price_history && selected.price_history.length > 0 ? (
