@@ -298,6 +298,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
   // bucket, so the admin's eye is drawn to pending work as soon as
   // they land on the cockpit. Border-color + shadow modulate together.
   const incomingPulse = useRef(new Animated.Value(0)).current;
+  const incomingSweep = useRef(new Animated.Value(0)).current;
   const [loading, setLoading] = useState(true);
   const [bucket, setBucket] = useState<Bucket>("incoming");
   const [search, setSearch] = useState("");
@@ -646,24 +647,41 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
   const archivedCount = counts.archived;
 
   // Kick the INCOMING card pulse whenever pendingCount ≥ 1.
+  // Two independent animations combine into a "lighthouse" effect:
+  //   1. `incomingPulse`  — the bright halo breathing in/out
+  //   2. `incomingSweep`  — the beam of light rotating around the card
   useEffect(() => {
     if (pendingCount < 1) {
       incomingPulse.setValue(0);
+      incomingSweep.setValue(0);
       return;
     }
-    const loop = Animated.loop(
+    const pulse = Animated.loop(
       Animated.sequence([
         Animated.timing(incomingPulse, {
-          toValue: 1, duration: 900, useNativeDriver: false,
+          toValue: 1, duration: 850, useNativeDriver: false,
         }),
         Animated.timing(incomingPulse, {
-          toValue: 0, duration: 900, useNativeDriver: false,
+          toValue: 0, duration: 850, useNativeDriver: false,
         }),
       ]),
     );
-    loop.start();
-    return () => { loop.stop(); };
-  }, [pendingCount, incomingPulse]);
+    // The sweep runs continuously (0 → 1 in 2.4 s, then resets). We
+    // interpolate the value to `0deg → 360deg` for the CSS rotation on
+    // web. On native it feeds a subtle rotate on the halo overlay.
+    const sweep = Animated.loop(
+      Animated.timing(incomingSweep, {
+        toValue: 1, duration: 2400, useNativeDriver: false, isInteraction: false,
+      }),
+    );
+    pulse.start();
+    sweep.start();
+    return () => {
+      pulse.stop();
+      sweep.stop();
+      incomingSweep.setValue(0);
+    };
+  }, [pendingCount, incomingPulse, incomingSweep]);
 
   // -------- Month-to-date roll-up for the Cockpit Home landing --------
   // Fetched from /api/admin/stats/home-mtd. Loaded once when the Home view
@@ -903,29 +921,118 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
             </Text>
           </View>
           <View style={styles.homeStatsRow}>
-            <Animated.View
-              testID="cockpit-home-incoming-card"
-              style={[
-                styles.homeStatCard,
-                {
-                  borderColor: pendingCount >= 1
-                    ? incomingPulse.interpolate({ inputRange: [0, 1], outputRange: [colors.warning + "55", colors.warning] })
-                    : colors.warning + "55",
-                  transform: pendingCount >= 1
-                    ? [{ scale: incomingPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.04] }) }]
-                    : undefined,
-                  shadowColor: colors.warning,
-                  shadowOpacity: pendingCount >= 1
-                    ? incomingPulse.interpolate({ inputRange: [0, 1], outputRange: [0.1, 0.55] })
-                    : 0,
-                  shadowRadius: 12,
-                  shadowOffset: { width: 0, height: 0 },
-                } as any,
-              ]}
-            >
-              <Text style={styles.homeStatLabel}>INCOMING</Text>
-              <Text style={[styles.homeStatValue, { color: colors.warning }]}>{pendingCount}</Text>
-            </Animated.View>
+            {/* -------------------- INCOMING (lighthouse) -------------------- */}
+            {pendingCount >= 1 ? (
+              <View
+                testID="cockpit-home-incoming-card"
+                style={[styles.homeStatCard, { position: "relative", overflow: "visible", padding: 0 }]}
+              >
+                {/* Rotating light beam (web-only via conic-gradient). On
+                    native this layer stays hidden — the halo + border
+                    pulse are the primary attention cue. */}
+                {Platform.OS === "web" ? (
+                  <Animated.View
+                    pointerEvents="none"
+                    style={{
+                      position: "absolute",
+                      left: -8, right: -8, top: -8, bottom: -8,
+                      borderRadius: 20,
+                      opacity: 0.85,
+                      // @ts-ignore — DOM-only style.
+                      backgroundImage: `conic-gradient(from 0deg, transparent 0deg, ${colors.warning}66 40deg, ${colors.warning}00 100deg, transparent 180deg, ${colors.warning}44 220deg, ${colors.warning}00 280deg, transparent 360deg)`,
+                      transform: [
+                        {
+                          rotate: incomingSweep.interpolate({
+                            inputRange: [0, 1], outputRange: ["0deg", "360deg"],
+                          }),
+                        },
+                      ],
+                    } as any}
+                  />
+                ) : null}
+                {/* Bright pulsing halo (works on all platforms) */}
+                <Animated.View
+                  pointerEvents="none"
+                  style={{
+                    position: "absolute",
+                    left: 0, right: 0, top: 0, bottom: 0,
+                    borderRadius: 16,
+                    borderWidth: 2,
+                    borderColor: incomingPulse.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [colors.warning + "AA", colors.warning],
+                    }),
+                    shadowColor: colors.warning,
+                    shadowOpacity: incomingPulse.interpolate({
+                      inputRange: [0, 1], outputRange: [0.35, 0.9],
+                    }),
+                    shadowRadius: incomingPulse.interpolate({
+                      inputRange: [0, 1], outputRange: [16, 32],
+                    }),
+                    shadowOffset: { width: 0, height: 0 },
+                    // Web-only extras — glow + subtle inset for depth.
+                    // @ts-ignore
+                    boxShadow: Platform.OS === "web"
+                      ? `0 0 24px ${colors.warning}90, 0 0 48px ${colors.warning}55, inset 0 0 0 1px ${colors.warning}`
+                      : undefined,
+                  } as any}
+                />
+                {/* Card body — sits above the beam layer */}
+                <Animated.View
+                  style={{
+                    padding: spacing.md,
+                    borderRadius: 16,
+                    backgroundColor: colors.cardElev,
+                    zIndex: 1,
+                    transform: [
+                      {
+                        scale: incomingPulse.interpolate({
+                          inputRange: [0, 1], outputRange: [1, 1.05],
+                        }),
+                      },
+                    ],
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                    <Text style={[styles.homeStatLabel, { color: colors.warning, fontWeight: "800", letterSpacing: 1.5 }]}>
+                      INCOMING
+                    </Text>
+                    {/* "NEW" badge */}
+                    <Animated.View
+                      style={{
+                        paddingHorizontal: 6,
+                        paddingVertical: 2,
+                        borderRadius: 4,
+                        backgroundColor: colors.warning,
+                        opacity: incomingPulse.interpolate({
+                          inputRange: [0, 1], outputRange: [0.75, 1],
+                        }),
+                      }}
+                    >
+                      <Text style={{ color: "#0A0A0A", fontSize: 9, fontWeight: "900", letterSpacing: 1 }}>
+                        NEW
+                      </Text>
+                    </Animated.View>
+                  </View>
+                  <Text
+                    style={[
+                      styles.homeStatValue,
+                      { color: colors.warning, fontSize: 36, fontWeight: "900" },
+                    ]}
+                  >
+                    {pendingCount}
+                  </Text>
+                  <Text style={{ color: colors.warning, fontSize: 11, marginTop: 2, letterSpacing: 0.3, fontWeight: "600" }}>
+                    {pendingCount === 1 ? "1 submission needs pricing" : `${pendingCount} submissions need pricing`}
+                  </Text>
+                </Animated.View>
+              </View>
+            ) : (
+              <View style={[styles.homeStatCard, { borderColor: colors.warning + "55" }]}>
+                <Text style={styles.homeStatLabel}>INCOMING</Text>
+                <Text style={[styles.homeStatValue, { color: colors.warning }]}>{pendingCount}</Text>
+              </View>
+            )}
             <View style={[styles.homeStatCard, { borderColor: colors.success + "55" }]}>
               <Text style={styles.homeStatLabel}>PRICED</Text>
               <Text style={[styles.homeStatValue, { color: colors.success }]}>{pricedCount}</Text>
