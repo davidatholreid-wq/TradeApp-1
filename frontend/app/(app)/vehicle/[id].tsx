@@ -514,6 +514,7 @@ export default function VehicleDetail() {
     { my_cover: { price_zar: number; created_at: string; note?: string | null } | null; cover_cost_zar: number } | null
   >(null);
   const [placingCover, setPlacingCover] = useState(false);
+  const [decliningCover, setDecliningCover] = useState(false);
   const [coverPriceInput, setCoverPriceInput] = useState("");
 
   // ---- Deal Tracking state ----------------------------------------------
@@ -3939,55 +3940,102 @@ export default function VehicleDetail() {
                 : `R${coverMeta.cover_cost_zar} billed on submit. Binding subject to inspection.`}
             </Text>
           </View>
-          <TouchableOpacity
-            testID="cover-submit-btn"
-            style={[styles.coverBtn, placingCover && { opacity: 0.6 }]}
-            onPress={async () => {
-              const n = parseInt(coverPriceInput.replace(/[^0-9]/g, ""), 10);
-              if (!n || n <= 0) {
-                Alert.alert("Enter a valid amount", "Please enter your cover price in Rand.");
-                return;
-              }
-              const cost = coverMeta.cover_cost_zar;
-              const isUpdate = !!coverMeta.my_cover;
-              const proceed = await confirmAsync(
-                isUpdate ? "Confirm cover update" : "Confirm binding cover",
-                isUpdate
-                  ? `Update your binding cover to R${n.toLocaleString()}. This update is free — the R${cost} cover fee was charged on the initial placement. Cover remains binding subject to physical inspection.`
-                  : `Cover of R${n.toLocaleString()}. You'll be billed R${cost} to your next invoice. Cover is binding subject to physical inspection and confirmation that all submission details are accurate.`,
-                "Confirm",
-              );
-              if (!proceed) return;
-              setPlacingCover(true);
-              try {
-                await apiFetch(`/api/submissions/${sub!.id}/covers`, {
-                  method: "POST",
-                  body: JSON.stringify({ price_zar: n }),
-                });
-                setCoverPriceInput("");
-                await loadCoverMeta();
-                Alert.alert(
-                  isUpdate ? "Cover updated" : "Cover placed",
+          <View style={styles.coverBtnRow}>
+            {/* Decline — bail out and move this submission into the
+                dealer's Declined silo so it never surfaces on the
+                Available tab again (unless they Restore it). We only
+                show the Decline button when the agent hasn't placed a
+                cover yet — no point declining after having covered. */}
+            {!coverMeta.my_cover ? (
+              <TouchableOpacity
+                testID="cover-decline-btn"
+                style={[styles.coverDeclineBtn, decliningCover && { opacity: 0.6 }]}
+                disabled={placingCover || decliningCover}
+                onPress={async () => {
+                  const proceed = await confirmAsync(
+                    "Decline this cover?",
+                    "You won't see this submission on your Available list again. You can restore it later from the Declined silo.",
+                    "Decline",
+                  );
+                  if (!proceed) return;
+                  setDecliningCover(true);
+                  try {
+                    await apiFetch(`/api/cover/submissions/${sub!.id}/decline`, {
+                      method: "POST",
+                    });
+                    // Return to the Give Cover Available silo. Using
+                    // replace so the vehicle detail is removed from
+                    // the back stack — the agent shouldn't be able
+                    // to swipe back into a submission they just
+                    // declined.
+                    router.replace("/(app)/cover?tab=available" as never);
+                  } catch (e: any) {
+                    Alert.alert("Decline", e?.message || "Could not decline this cover.");
+                  } finally {
+                    setDecliningCover(false);
+                  }
+                }}
+              >
+                {decliningCover ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="close-circle" size={16} color="#fff" />
+                    <Text style={styles.coverDeclineBtnText}>Decline</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity
+              testID="cover-submit-btn"
+              style={[styles.coverBtn, placingCover && { opacity: 0.6 }]}
+              onPress={async () => {
+                const n = parseInt(coverPriceInput.replace(/[^0-9]/g, ""), 10);
+                if (!n || n <= 0) {
+                  Alert.alert("Enter a valid amount", "Please enter your cover price in Rand.");
+                  return;
+                }
+                const cost = coverMeta.cover_cost_zar;
+                const isUpdate = !!coverMeta.my_cover;
+                const proceed = await confirmAsync(
+                  isUpdate ? "Confirm cover update" : "Confirm binding cover",
                   isUpdate
-                    ? `Your binding cover is now R${n.toLocaleString()}. No additional charge for updates.`
-                    : `Your binding cover of R${n.toLocaleString()} has been recorded. R${cost} was added to your next invoice.`,
+                    ? `Update your binding cover to R${n.toLocaleString()}. This update is free — the R${cost} cover fee was charged on the initial placement. Cover remains binding subject to physical inspection.`
+                    : `Cover of R${n.toLocaleString()}. You'll be billed R${cost} to your next invoice. Cover is binding subject to physical inspection and confirmation that all submission details are accurate.`,
+                  "Confirm",
                 );
-              } catch (e: any) {
-                Alert.alert("Cover", e?.message || "Could not save cover.");
-              } finally {
-                setPlacingCover(false);
-              }
-            }}
-            disabled={placingCover}
-          >
-            {placingCover ? (
-              <ActivityIndicator color={colors.onPrimary} />
-            ) : (
-              <Text style={styles.coverBtnText}>
-                {coverMeta.my_cover ? "Update" : "Place Cover"}
-              </Text>
-            )}
-          </TouchableOpacity>
+                if (!proceed) return;
+                setPlacingCover(true);
+                try {
+                  await apiFetch(`/api/submissions/${sub!.id}/covers`, {
+                    method: "POST",
+                    body: JSON.stringify({ price_zar: n }),
+                  });
+                  setCoverPriceInput("");
+                  await loadCoverMeta();
+                  Alert.alert(
+                    isUpdate ? "Cover updated" : "Cover placed",
+                    isUpdate
+                      ? `Your binding cover is now R${n.toLocaleString()}. No additional charge for updates.`
+                      : `Your binding cover of R${n.toLocaleString()} has been recorded. R${cost} was added to your next invoice.`,
+                  );
+                } catch (e: any) {
+                  Alert.alert("Cover", e?.message || "Could not save cover.");
+                } finally {
+                  setPlacingCover(false);
+                }
+              }}
+              disabled={placingCover || decliningCover}
+            >
+              {placingCover ? (
+                <ActivityIndicator color={colors.onPrimary} />
+              ) : (
+                <Text style={styles.coverBtnText}>
+                  {coverMeta.my_cover ? "Update" : "Place Cover"}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
       ) : null}
 
@@ -5665,6 +5713,31 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
   coverBtnText: {
     color: colors.onPrimary,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+  // Stacked vertically: Decline sits directly above Place Cover so
+  // both live in the same right-hand column and the label + colour
+  // contrast make the primary/destructive choice obvious.
+  coverBtnRow: {
+    flexDirection: "column",
+    alignItems: "stretch",
+    justifyContent: "center",
+    gap: 8,
+  },
+  coverDeclineBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: radius.sm,
+    backgroundColor: "#DC2626",
+    minWidth: 120,
+  },
+  coverDeclineBtnText: {
+    color: "#fff",
     fontWeight: "800",
     letterSpacing: 0.3,
   },
