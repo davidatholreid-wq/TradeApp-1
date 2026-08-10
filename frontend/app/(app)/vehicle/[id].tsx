@@ -3419,7 +3419,7 @@ export default function VehicleDetail() {
               <View style={styles.dealerOfferCard} testID="dealer-offer-card">
                 <View style={styles.dealerOfferHeader}>
                   <Ionicons name="cash-outline" size={16} color={colors.text} />
-                  <Text style={styles.dealerOfferTitle}>Dealer Offer</Text>
+                  <Text style={styles.dealerOfferTitle}>{isAdmin ? "Dealer Offer" : "My Offer"}</Text>
                   {savedOffer != null ? (
                     <View style={styles.dealerOfferPill} testID="dealer-offer-set-pill">
                       <Ionicons name="checkmark-circle" size={11} color="#fff" />
@@ -3445,8 +3445,12 @@ export default function VehicleDetail() {
                   {canEditOffer
                     ? "Your dealership's own offer to the seller. Save this to unlock the Deal Tracking section below."
                     : savedOffer != null
-                      ? "This is the offer your dealership's manager has recorded for the seller."
-                      : "Waiting on your dealership's manager to record the offer."}
+                      ? (isAdmin
+                          ? "This is the offer the dealership's manager has recorded for the seller."
+                          : "This is the offer your dealership's manager has recorded for the seller.")
+                      : (isAdmin
+                          ? "Waiting on the dealership's manager to record the offer."
+                          : "Waiting on your dealership's manager to record the offer.")}
                 </Text>
                 {canEditOffer ? (
                   <View style={styles.dealerOfferInputRow}>

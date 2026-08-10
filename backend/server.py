@@ -520,6 +520,16 @@ async def _enrich_submissions_with_covers(subs: list) -> None:
         else:
             s["highest_cover_zar"] = None
             s["cover_count"] = 0
+        # Hoist the nested deal.dealer_offer_zar (a.k.a. "My Offer" on
+        # the dealer side, "Dealer Offer" on the admin side) up to the
+        # top level so list-card renderers don't need to walk the deal
+        # object. Same for the offer timestamp. Non-destructive — never
+        # overwrites a value already present at the top level.
+        deal = s.get("deal") or {}
+        if s.get("dealer_offer_zar") is None and deal.get("dealer_offer_zar") is not None:
+            s["dealer_offer_zar"] = deal.get("dealer_offer_zar")
+        if s.get("dealer_offer_at") is None and deal.get("dealer_offer_at") is not None:
+            s["dealer_offer_at"] = deal.get("dealer_offer_at")
 
 
 def hash_password(pw: str) -> str:
@@ -1064,7 +1074,7 @@ async def deal_outcomes_list(current: dict = Depends(get_current_user)):
             "colour": s.get("colour"),
             "price": s.get("price"),
             "priced_at": s.get("priced_at"),
-            "dealer_offer_zar": s.get("dealer_offer_zar"),
+            "dealer_offer_zar": s.get("dealer_offer_zar") or deal.get("dealer_offer_zar"),
             "front_photo": _valid_front_photo(photos.get("front") or photos.get("side")),
             "sold": deal.get("sold") is True,
             "recon_cost_zar": deal.get("recon_cost_zar"),
