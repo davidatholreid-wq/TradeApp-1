@@ -188,6 +188,46 @@ export default function HomeScreen() {
   useEffect(() => { loadDealOutcomes(); }, [loadDealOutcomes]);
   useFocusEffect(useCallback(() => { loadDealOutcomes(); }, [loadDealOutcomes]));
 
+  // Fourbuy Rewards — running balance + how far to the next voucher.
+  // Powers the redesigned TakealotRewardsTile so dealers can see their
+  // points and how much more they need to earn a Takealot voucher, all
+  // from the home dashboard. Refreshed on every focus so returning from
+  // the Rewards screen (which may have redeemed) immediately reflects
+  // the new balance. Admins don't have a rewards ledger so we skip the
+  // fetch for them entirely.
+  type RewardsSummary = {
+    balance: number;
+    points_to_next_voucher: number;
+    points_per_voucher: number;
+    voucher_value_zar: number;
+    voucher_provider: string;
+    can_redeem: boolean;
+  };
+  const [rewards, setRewards] = useState<RewardsSummary | null>(null);
+  const loadRewards = useCallback(async () => {
+    if (user?.role === "admin") {
+      setRewards(null);
+      return;
+    }
+    try {
+      const r = await apiFetch("/api/rewards/me");
+      if (r && typeof r === "object") {
+        setRewards({
+          balance: Number((r as any).balance) || 0,
+          points_to_next_voucher: Number((r as any).points_to_next_voucher) || 0,
+          points_per_voucher: Number((r as any).points_per_voucher) || 50,
+          voucher_value_zar: Number((r as any).voucher_value_zar) || 500,
+          voucher_provider: String((r as any).voucher_provider || "Takealot"),
+          can_redeem: !!(r as any).can_redeem,
+        });
+      }
+    } catch {
+      // Non-fatal — the tile falls back to its base copy without stats.
+    }
+  }, [user?.role]);
+  useEffect(() => { loadRewards(); }, [loadRewards]);
+  useFocusEffect(useCallback(() => { loadRewards(); }, [loadRewards]));
+
   // How many submissions are currently AVAILABLE for the caller to
   // cover — powers the badge on the "Give Cover" home tile so pricing
   // agents can see at a glance how much fresh work is waiting. Only
@@ -390,6 +430,7 @@ export default function HomeScreen() {
                     onNavigate={() => router.push(qa.to as never)}
                     styles={styles}
                     colors={colors}
+                    rewards={rewards}
                   />
                 ) : (
                   <NavFlipTile
@@ -571,19 +612,33 @@ export default function HomeScreen() {
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // TakealotRewardsTile — co-branded Rewards tile matching the app's dark
-// theme. Fourbuy Rewards is the hero; the Takealot lockup sits as a
-// small "powered by" badge at the bottom. Uses the actual takealot.png
-// asset (which is a blue-backed logo block) as a compact chip so the
-// partner brand still reads clearly without dominating the tile.
+// theme.
+//
+// Redesigned 2026-08-10: the tile now surfaces the dealer's live points
+// balance + a progress bar toward their next voucher, and gives the
+// Takealot logo a much more prominent stage (a full-width branded chip
+// at the bottom, not a "powered by" footer footnote). This turns the
+// tile from a static landing card into a glanceable rewards HUD.
 // ---------------------------------------------------------------------------
+type RewardsSummary = {
+  balance: number;
+  points_to_next_voucher: number;
+  points_per_voucher: number;
+  voucher_value_zar: number;
+  voucher_provider: string;
+  can_redeem: boolean;
+};
+
 function TakealotRewardsTile({
   onNavigate,
   styles,
   colors,
+  rewards,
 }: {
   onNavigate: () => void;
   styles: ReturnType<typeof makeStyles>;
   colors: Palette;
+  rewards: RewardsSummary | null;
 }) {
   const rot = useSharedValue(0);
   const scale = useSharedValue(1);
@@ -612,11 +667,28 @@ function TakealotRewardsTile({
   // sibling tiles. Reads as premium without shouting.
   const rewardsAccent = "#F59E0B";
 
+  // Progress toward the next voucher (0..1). If rewards haven't loaded
+  // yet or the balance is already past a voucher threshold, we clamp to
+  // sensible bounds so the bar never looks broken.
+  const perVoucher = rewards?.points_per_voucher || 50;
+  const balance = rewards?.balance ?? 0;
+  const toNext = rewards?.points_to_next_voucher ?? perVoucher;
+  const progressPointsInCurrentCycle = Math.max(0, perVoucher - toNext);
+  const progress = rewards
+    ? Math.max(0, Math.min(1, progressPointsInCurrentCycle / perVoucher))
+    : 0;
+  const voucherR = rewards?.voucher_value_zar ?? 500;
+  const canRedeem = !!rewards?.can_redeem;
+
   return (
     <Pressable
       onPress={onTap}
       accessibilityRole="button"
-      accessibilityLabel="Fourbuy Rewards, powered by takealot.com"
+      accessibilityLabel={
+        rewards
+          ? `Fourbuy Rewards. ${balance} points. ${toNext} points until your next R${voucherR} Takealot voucher.`
+          : "Fourbuy Rewards, powered by takealot.com"
+      }
       testID="rewards-takealot-tile"
       style={({ pressed }) => [{ opacity: pressed ? 0.92 : 1 }]}
     >
@@ -639,41 +711,80 @@ function TakealotRewardsTile({
           pointerEvents="none"
         />
 
-        {/* Eyebrow row — "REWARDS" pill with a gift icon in the gold
-            accent so the label reads clearly on the dark surface. */}
-        <View
-          style={[
-            styles.takealotEyebrowWrap,
-            { backgroundColor: rewardsAccent + "22", borderColor: rewardsAccent + "66" },
-          ]}
-        >
-          <Ionicons name="gift" size={11} color={rewardsAccent} />
-          <Text style={[styles.takealotEyebrow, { color: rewardsAccent }]}>REWARDS</Text>
+        {/* Eyebrow row — REWARDS pill + right-side status chip
+            ("REDEEM READY" when balance ≥ points_per_voucher) */}
+        <View style={styles.takealotHeaderRow}>
+          <View
+            style={[
+              styles.takealotEyebrowWrap,
+              { backgroundColor: rewardsAccent + "22", borderColor: rewardsAccent + "66" },
+            ]}
+          >
+            <Ionicons name="gift" size={11} color={rewardsAccent} />
+            <Text style={[styles.takealotEyebrow, { color: rewardsAccent }]}>REWARDS</Text>
+          </View>
+          {canRedeem ? (
+            <View
+              style={[
+                styles.takealotReadyPill,
+                { backgroundColor: "#10B98122", borderColor: "#10B98166" },
+              ]}
+            >
+              <Ionicons name="checkmark-circle" size={11} color="#10B981" />
+              <Text style={[styles.takealotReadyPillTxt, { color: "#10B981" }]}>
+                REDEEM READY
+              </Text>
+            </View>
+          ) : null}
         </View>
 
-        {/* Hero title — the primary product name */}
-        <Text style={[styles.takealotTitle, { color: colors.text }]}>Fourbuy Rewards</Text>
-        <Text style={[styles.takealotSubtitle, { color: colors.textSecondary }]}>
-          Earn points on every deal
+        {/* HERO points display — the number is the whole point of the
+            tile so it gets the biggest type on the card. `pts` sits as
+            a small suffix so the number reads as the primary metric. */}
+        <View style={styles.takealotBalanceRow}>
+          <Text style={[styles.takealotBalanceNum, { color: colors.text }]}>
+            {rewards ? balance : "—"}
+          </Text>
+          <Text style={[styles.takealotBalanceUnit, { color: colors.textSecondary }]}>
+            pts
+          </Text>
+        </View>
+
+        {/* Progress bar toward the next voucher — the segment is filled
+            with the same warm gold so the whole tile feels colour-
+            coordinated. `points_to_next_voucher` label sits below. */}
+        <View style={[styles.takealotProgressTrack, { backgroundColor: colors.border }]}>
+          <View
+            style={[
+              styles.takealotProgressFill,
+              { width: `${Math.round(progress * 100)}%`, backgroundColor: rewardsAccent },
+            ]}
+          />
+        </View>
+        <Text style={[styles.takealotProgressLabel, { color: colors.textSecondary }]}>
+          {rewards
+            ? canRedeem
+              ? `Ready to redeem for R${voucherR}`
+              : `${toNext} pts to next R${voucherR} voucher`
+            : "Earn points on every deal"}
         </Text>
 
-        {/* Thin divider so the "powered by" lockup feels like a
-            secondary attribution, not a competing brand. */}
-        <View style={[styles.takealotDivider, { backgroundColor: colors.border }]} />
-
-        {/* Powered by — small caps eyebrow + the actual Takealot logo
-            asset as a tight, rounded chip. Using the PNG (not a text
-            lockup) so the partner mark is unmistakably real. */}
-        <View style={styles.takealotPoweredRow}>
-          <Text style={[styles.takealotPoweredBy, { color: colors.textDisabled }]}>
-            POWERED BY
-          </Text>
+        {/* Takealot brand chip — the partner brand's big moment. The
+            takealot.png wordmark sits front-and-center as a wide
+            rounded emblem, with a short REDEEM caption below explaining
+            what the points can be spent on. `resizeMode="cover"` picks
+            up the middle horizontal band of the square source asset so
+            the "takealot.com" wordmark reads legibly at every size. */}
+        <View style={styles.takealotBrandChip}>
           <Image
             source={require("@/assets/brands/takealot.png")}
-            style={styles.takealotLogoImg}
-            resizeMode="contain"
+            style={styles.takealotBrandChipLogo}
+            resizeMode="cover"
             accessibilityLabel="takealot.com"
           />
+          <Text style={[styles.takealotBrandChipEyebrow, { color: colors.textDisabled }]}>
+            REDEEM YOUR POINTS FOR TAKEALOT VOUCHERS
+          </Text>
         </View>
       </Animated.View>
     </Pressable>
@@ -1327,16 +1438,25 @@ const makeStyles = (colors: Palette, isWide: boolean) => {
     },
 
     // ---- Takealot co-branded rewards tile ----
-    // Grey/theme-matched surface — uses the same `paper` background as
-    // sibling NavFlipTiles so the tile feels native. A warm gold eyebrow
-    // pill + a divider + a "Powered by [takealot logo]" footer give
-    // Fourbuy Rewards the hero role without shouting the partner brand.
+    // Redesigned 2026-08-10 as a compact rewards HUD:
+    //   • header row (REWARDS eyebrow + optional "REDEEM READY" pill)
+    //   • hero balance number ("17 pts")
+    //   • progress bar toward next voucher
+    //   • prominent full-width Takealot brand chip pinned to the bottom
+    // The tile still uses the same `paper` surface as sibling tiles so
+    // it feels native inside the quick-actions grid.
     takealotCard: {
       backgroundColor: colors.paper,
-      alignItems: "center",
+      alignItems: "stretch",
       justifyContent: "space-between",
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.md,
+      gap: 6,
+    },
+    takealotHeaderRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
       gap: 6,
     },
     takealotEyebrowWrap: {
@@ -1347,54 +1467,99 @@ const makeStyles = (colors: Palette, isWide: boolean) => {
       paddingVertical: 3,
       borderRadius: 999,
       borderWidth: 1,
-      marginBottom: 2,
     },
     takealotEyebrow: {
       fontSize: 10,
       fontWeight: "900",
       letterSpacing: 1.2,
     },
-    takealotTitle: {
-      fontSize: isWide ? 18 : 17,
-      fontWeight: "900",
-      textAlign: "center",
-      letterSpacing: -0.3,
-      marginTop: 2,
-    },
-    takealotSubtitle: {
-      fontSize: 11,
-      fontWeight: "600",
-      textAlign: "center",
-      letterSpacing: 0.1,
-    },
-    // Thin divider bar between the hero title and the "powered by"
-    // attribution. Uses the surrounding theme border colour so it
-    // reads as a subtle horizontal rule.
-    takealotDivider: {
-      width: "60%",
-      height: 1,
-      marginVertical: 8,
-      opacity: 0.6,
-    },
-    takealotPoweredRow: {
+    // Small green "REDEEM READY" pill that only shows when the dealer's
+    // balance has crossed the next-voucher threshold. Sits at the right
+    // side of the header row.
+    takealotReadyPill: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 6,
+      gap: 4,
+      paddingHorizontal: 7,
+      paddingVertical: 2,
+      borderRadius: 999,
+      borderWidth: 1,
+    },
+    takealotReadyPillTxt: {
+      fontSize: 9,
+      fontWeight: "900",
+      letterSpacing: 1.1,
+    },
+    // Hero points number — big, bold, left-aligned. `pts` sits as a
+    // small unit suffix to the right of the number so the number itself
+    // reads as the hero.
+    takealotBalanceRow: {
+      flexDirection: "row",
+      alignItems: "baseline",
+      gap: 4,
       marginTop: 2,
     },
-    takealotPoweredBy: {
-      fontSize: 9,
-      fontWeight: "800",
-      letterSpacing: 1.4,
+    takealotBalanceNum: {
+      fontSize: isWide ? 34 : 30,
+      fontWeight: "900",
+      letterSpacing: -1,
+      lineHeight: isWide ? 38 : 34,
+      includeFontPadding: false,
     },
-    // The takealot.png asset is a full square blue block with the
-    // wordmark centered. Rendered at 40×40 as a rounded chip so the
-    // "takealot.com" mark is legible without the tile drifting from
-    // the app's grey theme.
-    takealotLogoImg: {
-      width: 40,
-      height: 40,
-      borderRadius: 6,
+    takealotBalanceUnit: {
+      fontSize: 12,
+      fontWeight: "800",
+      letterSpacing: 0.4,
+      textTransform: "uppercase",
+    },
+    // Progress bar toward next voucher — track is the theme border
+    // colour so it's a subtle rail, fill is the same warm gold as the
+    // REWARDS eyebrow so the whole tile reads as colour-coordinated.
+    takealotProgressTrack: {
+      height: 6,
+      borderRadius: 999,
+      overflow: "hidden",
+      marginTop: 4,
+    },
+    takealotProgressFill: {
+      height: "100%",
+      borderRadius: 999,
+    },
+    takealotProgressLabel: {
+      fontSize: 11,
+      fontWeight: "700",
+      letterSpacing: 0.1,
+      marginTop: 2,
+    },
+    // -- Takealot brand chip -----------------------------------------
+    // Vertically-stacked co-brand block pinned to the bottom of the
+    // tile. Layout:
+    //   [ big centered takealot.png logo ]
+    //   [ REDEEM AT TAKEALOT.COM small caps ]
+    // The logo is a self-contained blue-branded square, so we let it
+    // sit as a fixed-size rounded emblem (never stretched) so the
+    // wordmark stays legible at all sizes.
+    takealotBrandChip: {
+      marginTop: 8,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 5,
+    },
+    takealotBrandChipEyebrow: {
+      fontSize: 10,
+      fontWeight: "900",
+      letterSpacing: 1.6,
+      textAlign: "center",
+    },
+    // Sized so the wordmark is unmistakable at a glance:
+    //   • Mobile (narrow tile): 100px wide × 44 tall, cover-cropped so
+    //     only the middle horizontal band of the square asset shows
+    //     (that's where the "takealot.com" wordmark lives).
+    //   • Wide (desktop, spans a full row): 180 × 60.
+    takealotBrandChipLogo: {
+      width: isWide ? 220 : 128,
+      height: isWide ? 68 : 44,
+      borderRadius: radius.sm,
       overflow: "hidden",
     },
     // Legacy CTA styles (kept for backwards-compat in case a caller uses
