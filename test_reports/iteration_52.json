@@ -1,0 +1,46 @@
+{
+  "summary": "Frontend testing for the NEW Public Valuation Portal wizard at /get-valuation (Fourbuy Car Buying Co.). All 6 wizard steps, progress bar, validation gates, Back button, brand header, photo grid, and success-path routing verified on mobile viewport (390x844). Route is confirmed public — loads directly without any auth redirect (both fresh load and after clearing storage). Turnstile widget mounts and the Cloudflare api.js script is injected, BUT the widget shows Cloudflare error 110200 (domain-not-allowed) because the site key 0x4AAAAAAEMXz3ls0EMVhFhO is not registered for host fourbuy-admin.preview.emergentagent.com — the widget therefore never issues a token and 'Get my valuation' cannot be exercised end-to-end in the browser. Because the Turnstile challenge cannot be solved on this hostname, the final submission → success card path (FB-P-###### reference) could not be end-to-end verified from the UI; the frontend wiring (button, submit handler, validateStep guard) is otherwise correct.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Step 6 → Turnstile → Submit",
+        "issue": "Cloudflare Turnstile renders in error state: 'Unable to connect to website — Troubleshoot' with console error '[Cloudflare Turnstile] Error: 110200'. Error 110200 is 'domain not allowed for this site key'. The preview host 'fourbuy-admin.preview.emergentagent.com' must be added to the allowed hostnames on Turnstile site key 0x4AAAAAAEMXz3ls0EMVhFhO in the Cloudflare dashboard. Because the widget never fires the verify callback, turnstileToken stays null and the 'Get my valuation' button is blocked by validateStep(6). End-to-end submission → success card (FB-P-######) could not be exercised from the UI on this host.",
+        "affected_testIDs": []
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "expo-image-picker",
+        "issue": "Console warning: 'ImagePicker.MediaTypeOptions have been deprecated. Use ImagePicker.MediaType or an array of ImagePicker.MediaType instead.' Reference: /app/frontend/app/get-valuation.tsx:97, 116, 131 (three occurrences of mediaTypes: ImagePicker.MediaTypeOptions.Images inside pickPhoto()). Non-blocking for now but will break in a future expo-image-picker major."
+      }
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Add 'fourbuy-admin.preview.emergentagent.com' (and any other preview / production hostnames) to the allowed hostnames on Cloudflare Turnstile site key 0x4AAAAAAEMXz3ls0EMVhFhO so the widget can issue a token in the preview environment. Without this, the whole submit path cannot be UI-tested and real public users on the preview host will be blocked.",
+    "Optional: replace ImagePicker.MediaTypeOptions.Images with ImagePicker.MediaType.Images (or ['images']) at get-valuation.tsx lines 97, 116, 131 to silence the deprecation warning.",
+    "Once Turnstile domain is fixed, re-run an end-to-end test to confirm: token flows into state → 'Get my valuation' submits → success card renders with reference matching /^FB-P-\\d{6}$/ and copy 'We\u2019ll WhatsApp and email your valuation within 24 hours.'",
+    "Consider adding testID props to the six photo tiles, the Continue/Back buttons and the top-level wizard container so future automation can select by testID instead of by text label."
+  ],
+  "critical_code_review_comments": [
+    "get-valuation.tsx uses Alert.alert for validation errors. On web this maps to window.alert, which is dismissible modal — fine, but consider inline error text under fields for a better public-portal UX.",
+    "TurnstileWidget onError only surfaces a console message; the parent has no UI to tell the user the widget failed to load — so when domain-not-allowed (110200) fires, the user just sees the Cloudflare error card with no context. Consider showing a top-level 'anti-abuse check failed to load, please refresh' message.",
+    "get-valuation.tsx is 1274 lines — approaching the 700-line guideline. Split step components (StepSeller/StepVehicle/StepDisc/StepCondition/StepPhotos/StepReview) and the SuccessCard into separate files under app/(public)/ or src/screens/valuation/."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "skipped (previously 22/22 in iteration_51)",
+    "frontend": "8/9 flows verified; 1 blocked (Turnstile domain-not-allowed prevents end-to-end submission)"
+  },
+  "seed_data_creation": "None",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The wizard UI, validation, progress, Back navigation, photo upload (via filechooser), and public-route gating all work correctly on mobile viewport 390x844. The ONLY blocker for a full green run is Cloudflare Turnstile error 110200 (domain-not-allowed) on host fourbuy-admin.preview.emergentagent.com. Once main agent adds the preview host to the site key's allowed domains, retest step 6 → submit → success card. To upload the 6 photos in Playwright, use `page.expect_file_chooser()` when tapping each labelled tile (Front / Rear / Left side / Right side / Interior / Odometer) — expo-image-picker on RN Web triggers a native file chooser. Use `page.once('dialog', lambda d: d.accept())` before every Continue click to swallow the RN Alert.alert() validation dialogs.",
+  "rca_of_issue": "Turnstile error 110200 = the current hostname is not in the site key's allowed-hostnames list. Cloudflare docs: https://developers.cloudflare.com/turnstile/troubleshooting/. Fix: log into Cloudflare dashboard → Turnstile → site key 0x4AAAAAAEMXz3ls0EMVhFhO → add fourbuy-admin.preview.emergentagent.com to the hostnames. No code change required."
+}

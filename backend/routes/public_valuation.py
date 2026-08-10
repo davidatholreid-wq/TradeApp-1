@@ -289,6 +289,35 @@ def _verify_pdf_token(reference: str, priced_at: str, token: str) -> bool:
 # -----------------------------------------------------------------------------
 # Public endpoints (no auth)
 # -----------------------------------------------------------------------------
+@router.post("/public/license-disk/decode")
+async def public_decode_disk(payload: dict, request: Request):
+    """Public shim around the private license-disc decoder.
+
+    Same behaviour as `/api/vehicles/license-disk/decode` but with no auth
+    and a light per-IP rate limit (20/day) so bots can't burn through the
+    LLM OCR budget.
+    """
+    from server import db, decode_license_disk, LicenseDiskDecodeRequest
+
+    ip = _client_ip(request)
+    # Standalone rate-limit bucket for OCR calls (separate from submissions).
+    now = datetime.now(timezone.utc)
+    day_ago = now - timedelta(days=1)
+    hit_count = await db.public_valuation_ocr_ratelimit.count_documents(
+        {"ip": ip, "at": {"$gte": day_ago}}
+    )
+    if hit_count >= 20:
+        raise HTTPException(429, "Too many license disk scans from this IP today.")
+    await db.public_valuation_ocr_ratelimit.insert_one({"ip": ip, "at": now})
+
+    try:
+        req = LicenseDiskDecodeRequest(**payload)
+    except Exception as e:
+        raise HTTPException(400, f"Invalid payload: {e}")
+    # decode_license_disk does not use `current` — pass a stub.
+    return await decode_license_disk(req, current={"id": "public", "role": "public"})
+
+
 @router.post("/public/valuation")
 async def submit_public_valuation(
     payload: PublicSubmissionCreate,
@@ -541,6 +570,9 @@ async def _ensure_indexes(db):
         return
     try:
         await db.public_valuation_ratelimit.create_index(
+            "at", expireAfterSeconds=60 * 60 * 25
+        )
+        await db.public_valuation_ocr_ratelimit.create_index(
             "at", expireAfterSeconds=60 * 60 * 25
         )
         await db.public_submissions.create_index("reference", unique=True)
