@@ -361,19 +361,21 @@ const makeStyles = (colors: Palette, isWide: boolean) => StyleSheet.create({
   coverClip: {
     // Inner container that actually holds the cover image (or placeholder)
     // and clips it to a rounded rectangle on desktop / full-bleed banner
-    // on mobile.
+    // on mobile. We anchor on aspectRatio 16/9 (rather than fixed
+    // heights) so the SAME uploaded photo crops identically across
+    // phones, tablets, and desktop web — no more "top of the dealership
+    // cut off on web".
     width: "100%",
+    aspectRatio: 16 / 9,
     backgroundColor: colors.card,
     overflow: "hidden",
     ...(isWide
       ? {
-          height: 220,
           borderRadius: radius.lg,
           borderWidth: 1,
           borderColor: colors.border,
         }
       : {
-          height: 160,
           borderBottomWidth: 1,
           borderBottomColor: colors.border,
         }),

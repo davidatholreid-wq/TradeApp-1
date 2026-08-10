@@ -56,10 +56,25 @@ export default function DealerPhotosModal({ dealer, onClose, onSaved }: Props) {
         aspect: kind === "profile" ? [1, 1] : [16, 9],
       });
       if (res.canceled || !res.assets?.[0]?.base64) return;
-      const data = `data:image/jpeg;base64,${res.assets[0].base64}`;
+      const b64 = res.assets[0].base64;
+      // Reject anything larger than the recommended cap — base64 is ~1.37x
+      // the raw byte size, so a 500 KB image comes out around 685 KB of
+      // b64. Cover ceiling: 800 KB b64 (~600 KB raw). Profile ceiling:
+      // 400 KB b64 (~300 KB raw).
+      const maxBytes = kind === "cover" ? 800 * 1024 : 400 * 1024;
+      if (b64.length > maxBytes) {
+        const kb = Math.round(b64.length / 1024);
+        const capKb = Math.round(maxBytes / 1024);
+        const msg = `That ${kind} photo is ${kb} KB — please pick one under ${capKb} KB (or re-export at lower quality).`;
+        setError(msg);
+        if (Platform.OS !== "web") Alert.alert("Photo too large", msg);
+        return;
+      }
+      const data = `data:image/jpeg;base64,${b64}`;
       if (kind === "profile") setProfilePic(data);
       else setCoverPhoto(data);
       setDirty(true);
+      setError(null);
     } catch (e: any) {
       setError(e.message || "Could not attach photo");
     }
@@ -163,7 +178,9 @@ export default function DealerPhotosModal({ dealer, onClose, onSaved }: Props) {
 
             {/* Profile controls */}
             <Text style={[styles.groupLabel, { marginTop: spacing.lg }]}>PROFILE PICTURE</Text>
-            <Text style={styles.groupHint}>Square avatar (1:1). Shown as the round photo above the cover.</Text>
+            <Text style={styles.groupHint}>
+              Square avatar (1:1). Recommended: <Text style={styles.groupHintBold}>512 × 512 px</Text> · max <Text style={styles.groupHintBold}>300 KB</Text>. Shown as the round photo above the cover.
+            </Text>
             <View style={styles.btnRow}>
               <TouchableOpacity style={styles.btn} onPress={() => pick("profile")} testID="dealer-profile-upload">
                 <Ionicons name="cloud-upload-outline" size={16} color={colors.text} />
@@ -228,7 +245,11 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   subtitle: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
   body: { padding: spacing.md },
   coverPreview: {
-    height: 180,
+    // Use 16:9 aspect ratio so the admin sees the EXACT crop that
+    // will render on the dealer profile + vehicle detail banner
+    // across every platform.
+    width: "100%",
+    aspectRatio: 16 / 9,
     borderRadius: radius.md,
     overflow: "hidden",
     backgroundColor: colors.paper,
@@ -264,7 +285,8 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     justifyContent: "center",
   },
   groupLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 2 },
-  groupHint: { color: colors.textDisabled, fontSize: 12, marginTop: 4, marginBottom: spacing.sm },
+  groupHint: { color: colors.textDisabled, fontSize: 12, marginTop: 4, marginBottom: spacing.sm, lineHeight: 16 },
+  groupHintBold: { color: colors.textSecondary, fontWeight: "800" },
   btnRow: { flexDirection: "row", gap: spacing.sm, flexWrap: "wrap" },
   btn: {
     flexDirection: "row",

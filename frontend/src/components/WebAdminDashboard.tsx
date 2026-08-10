@@ -3309,7 +3309,10 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     position: "relative",
   },
   adminDealerBannerCover: {
-    height: 140,
+    width: "100%",
+    // Match every other cover surface across the app — same 16:9
+    // aspect so uploaded photos aren't cropped differently here.
+    aspectRatio: 16 / 9,
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,

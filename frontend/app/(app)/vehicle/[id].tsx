@@ -4832,7 +4832,9 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
   dealerBannerCoverClip: {
     width: "100%",
-    aspectRatio: 3,
+    // 16:9 matches the admin upload crop + the profile banner across
+    // every platform so the picture is never partially cropped away.
+    aspectRatio: 16 / 9,
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
