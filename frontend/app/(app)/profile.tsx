@@ -345,14 +345,16 @@ const makeStyles = (colors: Palette, isWide: boolean) => StyleSheet.create({
     // Outer positioning wrapper. On desktop we constrain the width and
     // centre the banner, but crucially we DO NOT clip overflow here so
     // that the avatar (position:absolute, bottom:-50) can hang below.
-    // The rounded/clipped cover image lives inside `coverClip`.
+    // The rounded/clipped cover image lives inside `coverClip`. Width
+    // is capped at 720 so the banner + avatar + identity block all
+    // share the same visual column and the page doesn't push the
+    // profile below the fold on desktop.
     ...(isWide
       ? {
-          maxWidth: 1100,
+          maxWidth: 720,
           width: "100%",
           alignSelf: "center",
           marginTop: spacing.md,
-          marginHorizontal: spacing.lg,
         }
       : {}),
     marginBottom: 60,
@@ -364,13 +366,17 @@ const makeStyles = (colors: Palette, isWide: boolean) => StyleSheet.create({
     // on mobile. We anchor on aspectRatio 16/9 (rather than fixed
     // heights) so the SAME uploaded photo crops identically across
     // phones, tablets, and desktop web — no more "top of the dealership
-    // cut off on web".
+    // cut off on web". On desktop we cap the width so the banner
+    // doesn't hog the whole viewport and push the profile below the
+    // fold; the aspect ratio is preserved so nothing gets cropped.
     width: "100%",
     aspectRatio: 16 / 9,
     backgroundColor: colors.card,
     overflow: "hidden",
     ...(isWide
       ? {
+          maxWidth: 720,
+          alignSelf: "center",
           borderRadius: radius.lg,
           borderWidth: 1,
           borderColor: colors.border,
@@ -423,7 +429,7 @@ const makeStyles = (colors: Palette, isWide: boolean) => StyleSheet.create({
     marginBottom: spacing.lg,
     marginTop: spacing.sm,
     ...(isWide
-      ? { maxWidth: 1100, width: "100%", alignSelf: "center", paddingHorizontal: spacing.lg * 2 }
+      ? { maxWidth: 720, width: "100%", alignSelf: "center", paddingHorizontal: spacing.lg * 2 }
       : {}),
   },
   name: { color: colors.text, fontSize: 24, fontWeight: "800", fontFamily: fonts.heading, letterSpacing: 0.3 },
@@ -472,7 +478,7 @@ const makeStyles = (colors: Palette, isWide: boolean) => StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     ...(isWide
-      ? { maxWidth: 1100, width: "100%", alignSelf: "center", marginHorizontal: "auto" }
+      ? { maxWidth: 720, width: "100%", alignSelf: "center", marginHorizontal: "auto" }
       : {}),
   },
   sectionTitle: {
@@ -511,7 +517,7 @@ const makeStyles = (colors: Palette, isWide: boolean) => StyleSheet.create({
     borderRadius: radius.md,
     backgroundColor: colors.card,
     marginBottom: spacing.md,
-    ...(isWide ? { maxWidth: 1100, width: "100%", alignSelf: "center" } : {}),
+    ...(isWide ? { maxWidth: 720, width: "100%", alignSelf: "center" } : {}),
   },
   hintText: { color: colors.textSecondary, fontSize: 12, flex: 1, lineHeight: 17 },
 
