@@ -1225,9 +1225,9 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
           ) : filtered.length === 0 ? (
             <Text style={styles.emptyList}>
               {bucket === "archived"
-                ? "Archive is empty — vehicles priced over 14 days ago will land here"
+                ? "Archive is empty — vehicles submitted over 30 days ago will land here"
                 : bucket === "priced"
-                ? "Nothing priced in the last 14 days"
+                ? "Nothing priced in the last 30 days"
                 : "No incoming submissions"}
             </Text>
           ) : (

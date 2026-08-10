@@ -691,14 +691,14 @@ export default function DashboardScreen() {
             {isAdmin
               ? bucket === "incoming"
                 ? "No incoming submissions"
-                : "Nothing priced in the last 14 days"
+                : "Nothing priced in the last 30 days"
               : "No submissions yet"}
           </Text>
           <Text style={styles.emptyText}>
             {isAdmin
               ? bucket === "incoming"
                 ? "New dealer submissions will appear here"
-                : "Priced vehicles appear here for 14 days then move to Archive on desktop"
+                : "Priced vehicles appear here for 30 days then move to Archive on desktop"
               : "Submit your first vehicle for pricing"}
           </Text>
           {!isAdmin ? (

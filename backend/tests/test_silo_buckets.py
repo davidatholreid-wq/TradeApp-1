@@ -1,4 +1,4 @@
-"""Backend tests for Silo/Bucket tabs + 14-day auto-archive feature."""
+"""Backend tests for Silo/Bucket tabs + 30-day auto-archive feature."""
 import os
 import pytest
 import requests
@@ -48,7 +48,7 @@ class TestAdminSubmissionsBuckets:
         assert "submissions" in data
         assert "counts" in data
         assert "archive_after_days" in data
-        assert data["archive_after_days"] == 14
+        assert data["archive_after_days"] == 30
         counts = data["counts"]
         for k in ("incoming", "priced", "archived"):
             assert k in counts, f"missing count key: {k}"

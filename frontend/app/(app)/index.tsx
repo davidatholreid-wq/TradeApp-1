@@ -73,7 +73,7 @@ const BASE_TILES: Tile[] = [
       { icon: "flash", text: "Submit a vehicle for a Confirmed Cover Price in under 90 Seconds" },
       { icon: "shield-checkmark", text: "Fourbuy Car Buying Co, will issue you a guarantee (Subject to final inspection)" },
       { icon: "business", text: "Backed by the Fourbuy Group so you can commit to your customer TODAY!" },
-      { icon: "cash", text: "One Flat Submission Fee — Cover Price holds for 14-Days" },
+      { icon: "cash", text: "One Flat Submission Fee — Cover Price holds for 30-Days" },
     ],
   },
   {
