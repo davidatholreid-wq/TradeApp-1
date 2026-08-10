@@ -566,13 +566,13 @@ export default function GiveCoverScreen() {
                 pathname: "/vehicle/[id]",
                 params: { id: s.id, cover: "1" },
               });
-            // Use derivative as the vehicle descriptor — it already contains
-            // the model info (e.g. "X4 xDrive20d M Sport") so repeating the
-            // model just duplicates. Falls back to model_name if the
-            // submission somehow has no derivative on record.
-            const titleLine = [year, s.make_name, s.derivative_name || s.model_name]
-              .filter(Boolean)
-              .join(" ");
+            // Vehicle title split into two lines everywhere in the app:
+            //   • bold `titleLine`: year + make only (e.g. "2021 Land Rover")
+            //   • lighter `subtitleLine`: derivative (falling back to model)
+            // This avoids the previous duplication where derivative appeared
+            // in both title and subtitle.
+            const titleLine = [year, s.make_name].filter(Boolean).join(" ");
+            const subtitleLine = s.derivative_name || s.model_name || "";
             const gridColWidth = `${(100 / gridColumns).toFixed(4)}%` as any;
             return (
               <View
@@ -624,14 +624,15 @@ export default function GiveCoverScreen() {
                     ) : null}
                   </TouchableOpacity>
 
-                  {/* Text stack */}
+                  {/* Text stack — bold title = year + make, lighter
+                      subtitle = derivative (falling back to model). */}
                   <View style={styles.gridBody}>
                     <Text style={[styles.gridTitle, { color: colors.text }]} numberOfLines={2}>
                       {titleLine || "Vehicle"}
                     </Text>
-                    {s.derivative_name ? (
-                      <Text style={[styles.gridDeriv, { color: colors.textSecondary }]} numberOfLines={1}>
-                        {s.derivative_name}
+                    {subtitleLine ? (
+                      <Text style={[styles.gridDeriv, { color: colors.textSecondary }]} numberOfLines={2}>
+                        {subtitleLine}
                       </Text>
                     ) : null}
                     <View style={styles.gridMetaRow}>
@@ -841,11 +842,11 @@ export default function GiveCoverScreen() {
                   )}
                 </View>
                 <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>
-                  {[s.make_name, s.derivative_name || s.model_name].filter(Boolean).join(" ")}
+                  {[s.year, s.make_name].filter(Boolean).join(" ") || s.make_name || "Vehicle"}
                 </Text>
-                {s.derivative_name ? (
-                  <Text style={[styles.deriv, { color: colors.textSecondary }]} numberOfLines={1}>
-                    {s.derivative_name}
+                {s.derivative_name || s.model_name ? (
+                  <Text style={[styles.deriv, { color: colors.textSecondary }]} numberOfLines={2}>
+                    {s.derivative_name || s.model_name}
                   </Text>
                 ) : null}
                 {meta ? (

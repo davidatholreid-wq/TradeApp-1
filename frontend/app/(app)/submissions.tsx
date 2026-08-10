@@ -219,9 +219,14 @@ export default function DashboardScreen() {
           {item.reference ? (
             <Text style={styles.cardRef}>{item.reference}</Text>
           ) : null}
-          <Text style={styles.cardTitle} numberOfLines={2}>
-            {item.year} {item.make_name} {item.derivative_name || item.model_name}
+          <Text style={styles.cardTitle} numberOfLines={1}>
+            {item.year} {item.make_name}
           </Text>
+          {item.derivative_name || item.model_name ? (
+            <Text style={styles.cardSubtitle} numberOfLines={2}>
+              {item.derivative_name || item.model_name}
+            </Text>
+          ) : null}
           {item.unseen ? (
             <View style={styles.unseenPill} testID="unseen-pill">
               <Ionicons name="eye-off-outline" size={10} color={colors.textSecondary} />
@@ -428,14 +433,24 @@ export default function DashboardScreen() {
             ) : null}
           </View>
 
-          {/* Text stack — title, meta chips. The vehicle title now uses
-              `year + make + derivative` (falling back to model when no
-              derivative is recorded) since the derivative already
-              contains the model info — otherwise we'd duplicate. */}
+          {/* Text stack — title, meta chips. Vehicle title is split
+              into TWO lines everywhere in the app:
+                • bold `year + make` (e.g. "2021 Land Rover")
+                • lighter `derivative` line below (falls back to model)
+              This avoids the previous duplication where derivative
+              appeared both in the title and as a subtitle. */}
           <View style={styles.gridBody}>
-            <Text style={[styles.gridTitle, { color: colors.text }]} numberOfLines={2}>
-              {item.year} {item.make_name} {item.derivative_name || item.model_name}
+            <Text style={[styles.gridTitle, { color: colors.text }]} numberOfLines={1}>
+              {item.year} {item.make_name}
             </Text>
+            {item.derivative_name || item.model_name ? (
+              <Text
+                style={[styles.gridDeriv, { color: colors.textSecondary }]}
+                numberOfLines={2}
+              >
+                {item.derivative_name || item.model_name}
+              </Text>
+            ) : null}
             <View style={styles.gridMetaRow}>
               <View style={styles.gridMetaChip}>
                 <Ionicons name="speedometer-outline" size={11} color={colors.textSecondary} />
@@ -921,7 +936,16 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   thumbPlaceholder: { flex: 1, alignItems: "center", justifyContent: "center" },
   cardRef: { color: "#fff", fontSize: 14, fontWeight: "800", letterSpacing: 0.6, fontFamily: fonts.mono, marginBottom: 6 },
   cardTitle: { color: colors.text, fontSize: 17, fontWeight: "700", letterSpacing: 0.1 },
-  cardSubtitle: { color: colors.textSecondary, fontSize: 14, marginTop: 3, letterSpacing: 0.1 },
+  // Lighter subtitle sitting directly under the bold title. Renders
+  // the derivative (or model, when no derivative). Keeps every list
+  // card in step with the grid layout's title/subtitle rhythm.
+  cardSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "600",
+    letterSpacing: 0.05,
+    marginTop: 2,
+  },
   unseenPill: {
     alignSelf: "flex-start",
     flexDirection: "row",

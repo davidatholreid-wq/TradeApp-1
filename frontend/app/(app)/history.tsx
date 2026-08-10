@@ -143,15 +143,16 @@ export default function HistoryScreen() {
             {item.reference ? (
               <Text style={styles.reference}>{item.reference}</Text>
             ) : null}
-            <Text style={styles.vehicle}>
-              {[
-                item.year_registered || item.year,
-                item.make_name,
-                item.derivative_name || item.model_name,
-              ]
+            <Text style={styles.vehicle} numberOfLines={1}>
+              {[item.year_registered || item.year, item.make_name]
                 .filter(Boolean)
                 .join(" ")}
             </Text>
+            {item.derivative_name || item.model_name ? (
+              <Text style={styles.derivative} numberOfLines={2}>
+                {item.derivative_name || item.model_name}
+              </Text>
+            ) : null}
             {item.unseen ? (
               <View style={styles.unseenPill} testID="unseen-pill">
                 <Ionicons name="eye-off" size={9} color="#B3261E" />
