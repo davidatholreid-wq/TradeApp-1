@@ -202,6 +202,7 @@ export default function AdminPublicLeadsScreen() {
   const [delivering, setDelivering] = useState(false);
 
   const [photoZoom, setPhotoZoom] = useState<string | null>(null);
+  const [waFallbackUrl, setWaFallbackUrl] = useState<string | null>(null);
 
   // ---------- data ----------
   const loadList = useCallback(async () => {
@@ -283,6 +284,18 @@ export default function AdminPublicLeadsScreen() {
       );
       return;
     }
+    // ---- Popup-blocker workaround ----
+    // Browsers only allow `window.open(...)` when it's the direct
+    // synchronous result of a user gesture. Because we `await` the
+    // deliver call before calling wa.me, Safari (and most modern
+    // browsers) will silently block a fresh window.open() from an
+    // async callback. So pre-open a blank tab synchronously here and
+    // fill in the URL once we have it.
+    let waTab: Window | null = null;
+    if (Platform.OS === "web" && waOn) {
+      try { waTab = window.open("about:blank", "_blank"); } catch { waTab = null; }
+    }
+
     setDelivering(true);
     try {
       const channels: string[] = [];
@@ -297,23 +310,49 @@ export default function AdminPublicLeadsScreen() {
           channels,
         }),
       });
-      // Open WhatsApp in a new tab (admin's own WhatsApp session sends the msg)
+      // Redirect the pre-opened tab (or fall back to a manual link).
+      let waUrl: string | null = null;
       if (waOn && res?.wa_number && res?.whatsapp_message) {
-        const url = `https://wa.me/${res.wa_number}?text=${encodeURIComponent(res.whatsapp_message)}`;
+        waUrl = `https://wa.me/${res.wa_number}?text=${encodeURIComponent(res.whatsapp_message)}`;
         if (Platform.OS === "web") {
-          window.open(url, "_blank");
+          if (waTab && !waTab.closed) {
+            try { waTab.location.href = waUrl; } catch { /* cross-origin, ignore */ }
+          } else {
+            // Popup was blocked — try one more direct open, then show
+            // the manual fallback modal below if that also fails.
+            try {
+              const late = window.open(waUrl, "_blank");
+              if (!late) throw new Error("blocked");
+            } catch {
+              // Store the URL so we render a "Tap to open WhatsApp"
+              // fallback link the admin can click manually.
+              setWaFallbackUrl(waUrl);
+            }
+          }
         } else {
-          Linking.openURL(url).catch(() => {});
+          Linking.openURL(waUrl).catch(() => {});
         }
+      } else if (waOn && waTab) {
+        try { waTab.close(); } catch {}
       }
-      Alert.alert(
-        "Delivered",
-        `${selected.reference} has been marked as delivered. Reference PDF: ${res?.pdf_url || "(link ready)"}`,
-      );
+
       setDeliverOpen(false);
       await loadSelected();
       await loadList();
+
+      // Success feedback — with a manual link if we couldn't open the tab.
+      if (waOn && Platform.OS === "web" && !waTab && waUrl) {
+        // Fallback banner already set above; no alert.
+      } else {
+        Alert.alert(
+          "Delivered",
+          `${selected.reference} has been marked as delivered.`,
+        );
+      }
     } catch (e: any) {
+      // Close the blank pre-opened tab so we don't leave the admin with
+      // an empty tab if delivery fails.
+      try { waTab?.close(); } catch {}
       Alert.alert("Failed", e?.message || "Could not deliver valuation.");
     } finally {
       setDelivering(false);
@@ -413,6 +452,50 @@ export default function AdminPublicLeadsScreen() {
             </View>
           ) : (
             <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
+              {/* WhatsApp popup-blocker fallback — shown when the browser
+                  refuses to auto-open the wa.me tab. Admin taps this to
+                  launch WhatsApp manually. */}
+              {waFallbackUrl ? (
+                <View style={{
+                  padding: 12,
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: "#25D366",
+                  backgroundColor: "#25D36612",
+                  marginBottom: 14,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 10,
+                }}>
+                  <Ionicons name="logo-whatsapp" size={24} color="#25D366" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: colors.text, fontSize: 13, fontWeight: "600" }}>
+                      WhatsApp tab blocked by browser
+                    </Text>
+                    <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>
+                      Tap below to open WhatsApp manually.
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (Platform.OS === "web") window.open(waFallbackUrl!, "_blank");
+                      else Linking.openURL(waFallbackUrl!);
+                      setWaFallbackUrl(null);
+                    }}
+                    style={{
+                      backgroundColor: "#25D366",
+                      paddingHorizontal: 14,
+                      paddingVertical: 10,
+                      borderRadius: 8,
+                    }}
+                  >
+                    <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 13 }}>Open</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setWaFallbackUrl(null)}>
+                    <Ionicons name="close" size={20} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                </View>
+              ) : null}
               {/* Title bar */}
               <View style={styles.detailHeader}>
                 <View style={{ flex: 1 }}>
@@ -568,10 +651,39 @@ export default function AdminPublicLeadsScreen() {
                     <View style={styles.deliveredBox}>
                       <Text style={styles.deliveredHead}>Delivery log</Text>
                       {selected.delivered_whatsapp_at ? (
-                        <Text style={styles.deliveredLine}>
-                          <Ionicons name="logo-whatsapp" size={11} color="#25D366" />{" "}
-                          WhatsApp • {fmtDateTime(selected.delivered_whatsapp_at)}
-                        </Text>
+                        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginVertical: 3 }}>
+                          <Text style={styles.deliveredLine}>
+                            <Ionicons name="logo-whatsapp" size={11} color="#25D366" />{" "}
+                            WhatsApp • {fmtDateTime(selected.delivered_whatsapp_at)}
+                          </Text>
+                          <TouchableOpacity
+                            testID="reopen-whatsapp-btn"
+                            onPress={() => {
+                              // Direct synchronous open — this ALWAYS
+                              // works because it's fired from the click
+                              // event itself. Uses the last persisted
+                              // WhatsApp body (already has the tokenised
+                              // {{pdf_url}} substituted server-side).
+                              const phone = (selected.seller.phone || "").replace(/[^\d]/g, "");
+                              const msg = selected.last_whatsapp_message || "";
+                              const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+                              if (Platform.OS === "web") window.open(url, "_blank");
+                              else Linking.openURL(url);
+                            }}
+                            style={{
+                              backgroundColor: "#25D366",
+                              paddingHorizontal: 10,
+                              paddingVertical: 5,
+                              borderRadius: 6,
+                              flexDirection: "row",
+                              alignItems: "center",
+                              gap: 4,
+                            }}
+                          >
+                            <Ionicons name="open-outline" size={11} color="#FFFFFF" />
+                            <Text style={{ color: "#FFFFFF", fontSize: 11, fontWeight: "700" }}>Reopen</Text>
+                          </TouchableOpacity>
+                        </View>
                       ) : null}
                       {selected.delivered_email_at ? (
                         <Text style={styles.deliveredLine}>
