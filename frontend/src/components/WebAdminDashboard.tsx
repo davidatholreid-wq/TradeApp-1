@@ -13,6 +13,7 @@ import KredoTestScreen from "@/app/(app)/kredo-test";
 import AdminRewardsScreen from "@/src/components/AdminRewardsScreen";
 import AdminAdvertisingScreen from "@/src/components/AdminAdvertisingScreen";
 import AdminCatalogueScreen from "@/src/components/AdminCatalogueScreen";
+import VinHistoryCompareModal from "@/src/components/VinHistoryCompareModal";
 import PhotoCarousel, { CarouselPhoto } from "@/src/components/PhotoCarousel";
 import ConditionRatingInfoModal from "@/src/components/ConditionRatingInfoModal";
 import ComparableListingsCard from "@/src/components/ComparableListingsCard";
@@ -238,6 +239,14 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
   const [counts, setCounts] = useState<Record<Bucket, number>>({ incoming: 0, priced: 0, archived: 0 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<SubmissionFull | null>(null);
+  // ---- VIN history compare state ------------------------------------------
+  // Fires whenever a submission is loaded and populates with sibling
+  // submissions for the same VIN. Used to auto-pop a compare modal on
+  // first view + to power the persistent "Compare Previous (N)" chip.
+  const [vinMatches, setVinMatches] = useState<any[]>([]);
+  const [vinCompareOpen, setVinCompareOpen] = useState(false);
+  // Guard so the auto-open only fires ONCE per submission-id per admin session.
+  const [vinAutoOpenedFor, setVinAutoOpenedFor] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [bucket, setBucket] = useState<Bucket>("incoming");
   const [search, setSearch] = useState("");
@@ -313,6 +322,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
   const loadSelected = useCallback(async () => {
     if (!selectedId) {
       setSelected(null);
+      setVinMatches([]);
       return;
     }
     try {
@@ -320,10 +330,32 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
       setSelected(data.submission);
       setPriceInput(data.submission.price ? String(data.submission.price) : "");
       setNotesInput(data.submission.price_notes || "");
+
+      // Fetch previous VIN matches in parallel (best-effort — this
+      // should never block the main detail view).
+      try {
+        const vinData = await apiFetch(
+          `/api/admin/submissions/${selectedId}/vin-history`
+        );
+        const matches = (vinData?.matches || []) as any[];
+        setVinMatches(matches);
+        // Auto-open the compare modal the FIRST time an admin sees
+        // this submission and there's at least one prior match. Guard
+        // via `vinAutoOpenedFor` so we don't re-pop it every time the
+        // user navigates back to the same file within this session.
+        if (matches.length > 0 && !vinAutoOpenedFor.has(selectedId)) {
+          setVinCompareOpen(true);
+          setVinAutoOpenedFor((prev) => new Set(prev).add(selectedId));
+        }
+      } catch (vinErr) {
+        // Non-fatal — just skip the compare feature for this file.
+        console.log("vin-history fetch failed:", vinErr);
+        setVinMatches([]);
+      }
     } catch (e) {
       console.log(e);
     }
-  }, [selectedId]);
+  }, [selectedId, vinAutoOpenedFor]);
 
   useEffect(() => {
     loadList();
@@ -1375,7 +1407,21 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                   admin sees who submitted the vehicle and can WhatsApp
                   the dealer BEFORE they scroll through details. */}
               <View style={styles.dealerBox}>
-                <Text style={styles.boxTitle}>SUBMITTED BY</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  <Text style={styles.boxTitle}>SUBMITTED BY</Text>
+                  {vinMatches.length > 0 ? (
+                    <TouchableOpacity
+                      testID="vin-compare-open-chip"
+                      style={styles.vinCompareChip}
+                      onPress={() => setVinCompareOpen(true)}
+                    >
+                      <Ionicons name="git-compare" size={14} color="#fff" />
+                      <Text style={styles.vinCompareChipTxt}>
+                        Compare Previous ({vinMatches.length})
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
                 <View style={styles.dealerRow}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.dealerName}>{selected.dealer_name}</Text>
@@ -2623,6 +2669,15 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
         onClose={() => setCarouselIdx(null)}
       />
 
+      {/* VIN history compare — read-only side-by-side of the current
+          submission and any previous submission that shares the VIN. */}
+      <VinHistoryCompareModal
+        visible={vinCompareOpen}
+        onClose={() => setVinCompareOpen(false)}
+        current={selected as any}
+        matches={vinMatches}
+      />
+
       {/* Update-Price modal — REQUIRES a rationale comment so every
           price change is properly audit-logged in price_history. */}
       <Modal
@@ -3743,6 +3798,23 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     backgroundColor: colors.card,
   },
   boxTitle: { color: colors.textSecondary, fontSize: 12, fontWeight: "700", letterSpacing: 0.4 },
+  // "Compare Previous (N)" chip next to SUBMITTED BY header — shown
+  // whenever this VIN has been submitted before.
+  vinCompareChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: colors.text,
+  },
+  vinCompareChipTxt: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+  },
   dealerName: { color: colors.text, fontSize: 15, fontWeight: "700", marginTop: 6 },
   dealerMeta: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
   dealerRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },

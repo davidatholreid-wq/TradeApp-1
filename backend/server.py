@@ -2654,6 +2654,87 @@ async def admin_delete_submission(sub_id: str, current: dict = Depends(require_a
     return {"status": "deleted"}
 
 
+@api_router.get("/admin/submissions/{sub_id}/vin-history")
+async def admin_submission_vin_history(
+    sub_id: str,
+    current: dict = Depends(require_admin),
+):
+    """Return previous submissions that share this submission's VIN.
+
+    Used by the admin cockpit to pop a side-by-side compare when the
+    same car is submitted for valuation a second (or third) time —
+    lets Fourbuy see if the story has changed (condition ratings,
+    mileage, dealer, notes, etc.) since the last time it went through
+    the desk.
+
+    Matches are:
+      • Same normalised VIN (case-insensitive, whitespace-stripped)
+      • Any dealership (a resold vehicle by a different dealer is the
+        most interesting case)
+      • Any status EXCEPT drafts (drafts weren't formally submitted)
+      • Excludes the caller's own submission (the one we're comparing
+        FROM).
+    """
+    current_sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
+    if not current_sub:
+        raise HTTPException(404, "Submission not found")
+    vin = (current_sub.get("vin") or "").strip().upper()
+    if not vin or len(vin) < 5:
+        return {"vin": None, "matches": []}
+
+    # Case-insensitive VIN match — regex anchored, upper-case source.
+    vin_regex = {"$regex": f"^{re.escape(vin)}$", "$options": "i"}
+    projection = {
+        "_id": 0,
+        "id": 1,
+        "reference": 1,
+        "status": 1,
+        "created_at": 1,
+        "priced_at": 1,
+        "price": 1,
+        "price_notes": 1,
+        "year": 1,
+        "make_name": 1,
+        "model_name": 1,
+        "derivative_name": 1,
+        "colour": 1,
+        "mileage": 1,
+        "vin": 1,
+        "photos": 1,
+        "mechanical_condition": 1,
+        "cosmetic_condition": 1,
+        "interior_condition": 1,
+        "history_condition": 1,
+        "unseen": 1,
+        "dealer_id": 1,
+        "dealership_id": 1,
+        "submitted_by_name": 1,
+        "dealer_name": 1,
+        "company_name": 1,
+        "deal": 1,
+        "notes": 1,
+    }
+    cursor = db.submissions.find(
+        {
+            "vin": vin_regex,
+            "id": {"$ne": sub_id},
+            "status": {"$ne": "draft"},
+        },
+        projection,
+    ).sort("created_at", -1)
+    matches = await cursor.to_list(50)
+
+    # Hoist deal.dealer_offer_zar to top level so the frontend compare
+    # card can render "Dealer Offer" without walking the deal object,
+    # matching the enrichment other list endpoints do.
+    for m in matches:
+        deal = (m.get("deal") or {}) if isinstance(m.get("deal"), dict) else {}
+        if m.get("dealer_offer_zar") is None and deal.get("dealer_offer_zar") is not None:
+            m["dealer_offer_zar"] = deal.get("dealer_offer_zar")
+
+    return {"vin": vin, "matches": matches, "match_count": len(matches)}
+
+
 # ============ Vehicle report orders (VIN-linked, chargeable) ============
 @api_router.get("/reports/catalog")
 async def report_catalog(
