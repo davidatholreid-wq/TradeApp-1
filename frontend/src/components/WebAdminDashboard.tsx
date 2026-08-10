@@ -18,6 +18,7 @@ import ConditionRatingInfoModal from "@/src/components/ConditionRatingInfoModal"
 import ComparableListingsCard from "@/src/components/ComparableListingsCard";
 import WeBuyCarsListingsCard from "@/src/components/WeBuyCarsListingsCard";
 import { computeServiceGap, formatMonthsAgo, formatKm, formatMoneyInput } from "@/src/utils/format";
+import { resolvePhoto } from "@/src/utils/vehicle-detail";
 
 type ReconItem = {
   label: string;
@@ -207,11 +208,6 @@ const PHOTO_ORDER: { key: string; fallback?: string; label: string }[] = [
   { key: "rear", label: "Rear" },
   { key: "interior", label: "Interior" },
 ];
-
-function resolvePhoto(photos: Record<string, string> | undefined, key: string, fallback?: string) {
-  if (!photos) return "";
-  return photos[key] || (fallback ? photos[fallback] : "") || "";
-}
 
 /** Format a ZAR amount for the market-value + report cost tiles. */
 function fmtZar(v: number | null | undefined): string {

@@ -1,0 +1,82 @@
+"""Registration and dealership Pydantic request schemas.
+
+Extracted 2026-08-09 from `backend/server.py` as part of a small,
+low-risk file-hygiene pass. These 6 classes are pure request-body
+shapes with no runtime logic, so moving them is safe as long as
+`server.py` (and any future route modules) re-imports them from here.
+"""
+
+from typing import Optional
+
+from pydantic import BaseModel, EmailStr
+
+
+class DealerInfo(BaseModel):
+    first_name: str
+    last_name: str
+    phone: str
+    id_number: Optional[str] = None
+    # Job Title (e.g. "Sales Manager", "F&I", "Buyer"). Free text.
+    # Optional for backwards compatibility with pre-multi-user users.
+    job_title: Optional[str] = None
+
+
+class CompanyInfo(BaseModel):
+    company_name: str
+    company_address: str
+    company_reg_no: Optional[str] = None
+    vat_no: Optional[str] = None
+
+
+class RegisterRequest(BaseModel):
+    """Public register — always creates a brand new Dealership plus the
+    first user (who becomes a regular dealer user, not an owner because
+    all users of a dealership are equal per product spec)."""
+    email: EmailStr
+    password: str
+    dealer_info: DealerInfo
+    company_info: CompanyInfo
+
+
+class AdminInviteUserRequest(BaseModel):
+    """Admin creates a new user inside an existing dealership."""
+    email: EmailStr
+    password: str
+    dealer_info: DealerInfo
+    active: bool = True
+    # South African ID Number — required for every new dealer account so
+    # we have a verifiable identity for compliance / billing purposes.
+    sa_id_number: str
+    # Optional referral code — if the new dealer applied via another
+    # dealer's referral link, admin keys the code here and we link the
+    # accounts so the referrer earns matching Fourbuy Rewards points.
+    referred_by_code: Optional[str] = None
+
+
+class DealershipUpdate(BaseModel):
+    name: Optional[str] = None
+    address: Optional[str] = None
+    company_reg_no: Optional[str] = None
+    vat_no: Optional[str] = None
+    active: Optional[bool] = None
+
+
+class DealershipCreate(BaseModel):
+    """Admin creates a brand-new dealership from the admin cockpit.
+    Only `name` is truly required — the rest are optional metadata that
+    we can fill in later via PATCH /admin/dealerships/{id}."""
+    name: str
+    address: Optional[str] = ""
+    company_reg_no: Optional[str] = None
+    vat_no: Optional[str] = None
+    active: bool = True
+
+
+__all__ = [
+    "DealerInfo",
+    "CompanyInfo",
+    "RegisterRequest",
+    "AdminInviteUserRequest",
+    "DealershipUpdate",
+    "DealershipCreate",
+]

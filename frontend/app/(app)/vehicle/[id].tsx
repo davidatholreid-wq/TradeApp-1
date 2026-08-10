@@ -84,6 +84,12 @@ import BrandLogo from "@/src/components/BrandLogo";
 import ComparableListingsCard from "@/src/components/ComparableListingsCard";
 import WeBuyCarsListingsCard from "@/src/components/WeBuyCarsListingsCard";
 import { formatZAR, computeServiceGap, formatMonthsAgo, formatKm } from "@/src/utils/format";
+import {
+  resolvePhoto,
+  formatMV,
+  formatFetched,
+  confirmAsync,
+} from "@/src/utils/vehicle-detail";
 
 type ReconItem = {
   // Legacy free-text label + single photo, and new category + multi-photo.
@@ -279,57 +285,6 @@ const PHOTO_ORDER: { key: string; fallback?: string; label: string }[] = [
   { key: "rear", label: "Rear" },
   { key: "interior", label: "Interior" },
 ];
-
-function resolvePhoto(photos: Record<string, string>, key: string, fallback?: string) {
-  return photos?.[key] || (fallback ? photos?.[fallback] : "") || "";
-}
-
-/** Format a Kredo market-value amount in R with no decimals. */
-function formatMV(v: number | null | undefined): string {
-  if (v == null || Number.isNaN(v) || v === 0) return "—";
-  return `R${Number(v).toLocaleString("en-ZA", { maximumFractionDigits: 0 })}`;
-}
-
-/** Compact "fetched X ago" label for the Kredo market-values footer. */
-function formatFetched(iso: string | Date | null | undefined): string {
-  if (!iso) return "";
-  try {
-    const d = typeof iso === "string" ? new Date(iso) : iso;
-    if (Number.isNaN(d.getTime())) return "";
-    const diffSec = Math.max(0, (Date.now() - d.getTime()) / 1000);
-    if (diffSec < 60) return "just now";
-    if (diffSec < 3600) return `${Math.floor(diffSec / 60)} min ago`;
-    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} hr ago`;
-    return d.toLocaleDateString("en-ZA");
-  } catch {
-    return "";
-  }
-}
-
-/**
- * Cross-platform "OK / Cancel" confirmation.
- *
- * `Alert.alert(title, msg, buttons)` renders the buttons natively on iOS/
- * Android, but the react-native-web implementation shows the message and
- * silently drops the buttons — so on the web preview the user has no way to
- * confirm or cancel. This helper falls back to `window.confirm` on web so
- * flows like admin pricing/deletion/report ordering still work there.
- */
-function confirmAsync(title: string, message: string, confirmLabel = "Confirm"): Promise<boolean> {
-  return new Promise((resolve) => {
-    if (Platform.OS === "web") {
-      const combined = title ? `${title}\n\n${message}` : message;
-      // eslint-disable-next-line no-alert
-      const ok = typeof window !== "undefined" && window.confirm(combined);
-      resolve(ok);
-      return;
-    }
-    Alert.alert(title, message, [
-      { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
-      { text: confirmLabel, style: "default", onPress: () => resolve(true) },
-    ]);
-  });
-}
 
 export default function VehicleDetail() {
   const colors = useThemeColors();
