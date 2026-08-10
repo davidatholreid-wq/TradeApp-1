@@ -111,6 +111,7 @@ export default function AppLayout() {
         <Tabs.Screen name="billing" options={{ href: null }} />
         <Tabs.Screen name="history" options={{ href: null }} />
         <Tabs.Screen name="rewards" options={{ href: null }} />
+        <Tabs.Screen name="deal-outcomes" options={{ href: null }} />
         <Tabs.Screen name="vehicle/[id]" options={{ href: null }} />
         <Tabs.Screen name="scan" options={{ href: null }} />
         <Tabs.Screen name="cover" options={{ href: null }} />

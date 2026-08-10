@@ -498,25 +498,29 @@ export default function HomeScreen() {
               dealer can spot pending outcomes at a glance. */}
           {dealOutcomes && dealOutcomes.total > 0 ? (
             <View style={styles.dealStatWrap} testID="deal-outcomes-tile">
-              <View style={styles.dealStatHead}>
+              <Pressable
+                style={styles.dealStatHead}
+                onPress={() => router.push("/(app)/deal-outcomes?bucket=pending" as never)}
+                testID="deal-outcomes-header"
+              >
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.dealStatEyebrow}>
                     {isAdmin ? "ALL DEALERSHIPS" : "YOUR DEALERSHIP"}
                   </Text>
                   <Text style={styles.dealStatTitle}>Deal Outcomes</Text>
                   <Text style={styles.dealStatSub}>
-                    Track which submissions still need an outcome recorded.
+                    Tap for the 90-day report · outcome & win-rate.
                   </Text>
                 </View>
                 <View style={styles.dealStatTotalChip}>
                   <Text style={styles.dealStatTotalNum}>{dealOutcomes.total}</Text>
                   <Text style={styles.dealStatTotalLbl}>TOTAL</Text>
                 </View>
-              </View>
+              </Pressable>
               <View style={styles.dealStatRow}>
                 <Pressable
                   style={[styles.dealStatCard, styles.dealStatCardPending]}
-                  onPress={() => router.push("/(app)/history" as never)}
+                  onPress={() => router.push("/(app)/deal-outcomes?bucket=pending" as never)}
                   testID="deal-outcome-pending"
                 >
                   <Ionicons name="hourglass-outline" size={16} color="#E5E7EB" />
@@ -530,7 +534,7 @@ export default function HomeScreen() {
                 </Pressable>
                 <Pressable
                   style={[styles.dealStatCard, styles.dealStatCardDone]}
-                  onPress={() => router.push("/(app)/history" as never)}
+                  onPress={() => router.push("/(app)/deal-outcomes?bucket=deal_done" as never)}
                   testID="deal-outcome-done"
                 >
                   <Ionicons name="checkmark-circle" size={16} color="#1F7A3A" />
@@ -544,7 +548,7 @@ export default function HomeScreen() {
                 </Pressable>
                 <Pressable
                   style={[styles.dealStatCard, styles.dealStatCardNo]}
-                  onPress={() => router.push("/(app)/history" as never)}
+                  onPress={() => router.push("/(app)/deal-outcomes?bucket=no_deal" as never)}
                   testID="deal-outcome-no"
                 >
                   <Ionicons name="close-circle" size={16} color="#DC2626" />

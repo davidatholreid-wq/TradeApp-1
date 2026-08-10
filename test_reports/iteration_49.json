@@ -1,0 +1,39 @@
+{
+  "summary": "Tested new Deal Outcomes report screen (/(app)/deal-outcomes) end-to-end. Backend endpoint GET /api/stats/deal-outcomes/list verified via 7 pytest cases (all pass). Frontend UI verified as dealer (dave@fourbuy.co.za) and admin (admin@fourbuy.co.za): tile header + 3 status pills navigate correctly with ?bucket= deep-link params, filter pills switch buckets, conversion percentages render and sum to 100% when >=1 answered, rows render with photo/make/model/year/price/reference, tapping a row navigates to /(app)/vehicle/{id}, and reload (pull-to-refresh equivalent on web) re-fetches successfully. Admin sees larger roll-up (22 pending) than dealer (16 pending) — aggregation confirmed. One minor UX issue: subtitle 'Dealership · last 90 days' is shown even for admin, and the deal-outcomes route is appearing as a bottom-tab entry (should likely be a stack-only route).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/(app)/deal-outcomes", "issues": [
+        "Subtitle reads 'Dealership · last 90 days' even for admins — should say 'All dealerships · last 90 days' when role=admin (deal-outcomes.tsx line 113).",
+        "The 'Deal Done' pill label wraps onto two lines (\"Deal\\nDone\") at 390px viewport because pills use flex:1 with paddingHorizontal:10 — consider tightening padding or shortening to 'Done' on narrow widths (deal-outcomes.tsx lines 176, 311-321).",
+        "The /(app)/deal-outcomes route is showing up as a bottom-tab bar entry (visible as 'deal-outcomes' / 'deal-outc...' pill on both dealer and admin bottom bar). Report screens usually shouldn't appear in the primary tab bar — verify tab layout / route config in /(app)/_layout to hide this route from the tab bar."
+      ]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_deal_outcomes_list.py",
+    "/app/test_reports/pytest/iteration_49_deal_outcomes.xml"
+  ],
+  "action_items": [
+    "(Minor) Update subtitle to 'All dealerships · last 90 days' when current user is admin.",
+    "(Minor) Fix 'Deal Done' pill label wrapping on 390px viewport — reduce paddingHorizontal or use a shorter label.",
+    "(Minor) Hide /(app)/deal-outcomes from the bottom tab bar (declare it in the (app) stack but exclude from Tabs). It currently surfaces as a tab item on both dealer + admin views."
+  ],
+  "critical_code_review_comments": [
+    "deal-outcomes.tsx uses ScrollView with rows.map — fine for ≤ a few dozen items but consider FlatList if the 90-day window can produce hundreds of rows.",
+    "apiFetch failure in load() silently swallows errors (empty catch) — the empty state falls through but a small inline error banner would help dealers know the report failed to load (deal-outcomes.tsx lines 84-94)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% (all requested flows verified)"},
+  "seed_data_creation": "None — existing seeded data used (dealer 'dave' has 16 pending + 1 deal_done + 0 no_deal in the 90-day window; admin sees 22 pending + 1 deal_done + 0 no_deal aggregate).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Deal Outcomes feature (/(app)/deal-outcomes) is fully working — backend /api/stats/deal-outcomes/list returns correct schema and honors role scoping; frontend deep-links via ?bucket=pending|deal_done|no_deal; row taps route to /(app)/vehicle/{id}. Playwright UI login form quirk: text-based SIGN IN click does NOT fire submission — use page.keyboard.press('Enter') after filling password field, that reliably logs in. All bucket pill / tile header / percentage / row-tap testIDs listed in the review request are present and functional.",
+  "rca_of_issue": ""
+}

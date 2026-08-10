@@ -914,6 +914,99 @@ async def deal_outcomes_stats(current: dict = Depends(get_current_user)):
     }
 
 
+@api_router.get("/stats/deal-outcomes/list")
+async def deal_outcomes_list(current: dict = Depends(get_current_user)):
+    """Full deal-outcomes report — the list of dealership submissions
+    (last 90 days) that have a Fourbuy offer recorded, grouped by
+    outcome bucket. Powers the "Deal Outcomes" report screen.
+
+    Filters:
+      • Dealership-wide (not just the caller's own submissions).
+      • Only submissions with `status != 'pending'` (dealer must have
+        seen an offer before we can ask if they did the deal).
+      • Only submissions priced within the last 90 days.
+
+    Returns three lists + counts + percentages. Pending submissions do
+    NOT count toward the deal-done / no-deal percentage split.
+    """
+    role = current.get("role")
+    ninety_days_ago = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
+    query: dict = {
+        "status": {"$ne": "pending"},
+        "priced_at": {"$gte": ninety_days_ago},
+    }
+    if role != "admin":
+        my_dship = await _get_user_dealership_id(current)
+        if my_dship:
+            query["$or"] = [
+                {"dealership_id": my_dship},
+                {"dealer_id": current.get("id")},
+            ]
+        else:
+            query["dealer_id"] = current.get("id")
+
+    projection = {
+        "_id": 0,
+        "id": 1, "reference": 1,
+        "make_name": 1, "model_name": 1, "derivative_name": 1,
+        "year": 1, "mileage": 1, "colour": 1,
+        "price": 1, "priced_at": 1, "status": 1,
+        "photos": 1,
+        "deal": 1,
+        "dealer_offer_zar": 1,
+        "submitted_by_name": 1,
+    }
+    pending_list, done_list, nod_list = [], [], []
+    async for s in db.submissions.find(query, projection):
+        deal = s.get("deal") or {}
+        done_val = deal.get("done")
+        photos = s.get("photos") or {}
+        row = {
+            "id": s.get("id"),
+            "reference": s.get("reference"),
+            "make_name": s.get("make_name"),
+            "model_name": s.get("model_name"),
+            "derivative_name": s.get("derivative_name"),
+            "year": s.get("year"),
+            "mileage": s.get("mileage"),
+            "colour": s.get("colour"),
+            "price": s.get("price"),
+            "priced_at": s.get("priced_at"),
+            "dealer_offer_zar": s.get("dealer_offer_zar"),
+            "front_photo": _valid_front_photo(photos.get("front") or photos.get("side")),
+            "sold": deal.get("sold") is True,
+            "recon_cost_zar": deal.get("recon_cost_zar"),
+            "sold_price_zar": deal.get("sold_price_zar"),
+            "profit_zar": _compute_deal_profit(deal).get("profit_zar"),
+            "submitted_by_name": s.get("submitted_by_name"),
+        }
+        if done_val is True:
+            done_list.append(row)
+        elif done_val is False:
+            nod_list.append(row)
+        else:
+            pending_list.append(row)
+
+    answered = len(done_list) + len(nod_list)
+    return {
+        "period_days": 90,
+        "counts": {
+            "pending": len(pending_list),
+            "deal_done": len(done_list),
+            "no_deal": len(nod_list),
+        },
+        # Percentage of ANSWERED submissions that ended in a deal.
+        # Pending are excluded from the denominator per product spec.
+        "percentages": {
+            "deal_done": round((len(done_list) / answered) * 100, 1) if answered else 0.0,
+            "no_deal": round((len(nod_list) / answered) * 100, 1) if answered else 0.0,
+        },
+        "pending": pending_list,
+        "deal_done": done_list,
+        "no_deal": nod_list,
+    }
+
+
 @api_router.get("/admin/stats/deal-outcomes-by-dealer")
 async def deal_outcomes_by_dealer(current: dict = Depends(require_admin)):
     """Per-dealership deal-outcomes roll-up for the Admin Cockpit home.
