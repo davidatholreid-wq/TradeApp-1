@@ -19,6 +19,7 @@ to `services/kredo_client.py`.
 
 from __future__ import annotations
 
+import asyncio
 import base64 as _base64
 import hashlib as _hashlib
 import hmac as _hmac
@@ -56,6 +57,14 @@ from server import (
 
 
 router = APIRouter()
+
+
+# Strong references to in-flight background tasks. Python's asyncio can
+# garbage-collect a task whose only reference lives on the call stack of
+# a request handler that already returned — silently killing the fetch.
+# Store each background market-values fetch here (keyed by submission
+# id) and remove it in the task's own done-callback.
+_IN_FLIGHT_MARKET_VALUES: dict[str, "asyncio.Task[dict]"] = {}
 
 
 def _kredo_502(e: KredoAPIError) -> HTTPException:
@@ -268,23 +277,39 @@ async def _ensure_market_values(sub: dict, *, background: bool = False) -> dict:
         return existing
 
     # If a fetch is currently in-flight (loading placeholder recently set),
-    # don't kick off another one.
-    if isinstance(existing, dict) and existing.get("status") == "loading":
-        last_at = existing.get("fetched_at")
-        if isinstance(last_at, datetime):
-            age = (now_utc() - last_at).total_seconds()
-            if age < 90:
-                return existing
+    # don't kick off another one. `fetched_at` is stored as an ISO
+    # string via now_utc(), so parse before comparing — the previous
+    # `isinstance(last_at, datetime)` check always evaluated False and
+    # let concurrent fetches pile up.
+    def _age_seconds(raw: Any) -> Optional[float]:
+        try:
+            if isinstance(raw, datetime):
+                dt = raw if raw.tzinfo else raw.replace(tzinfo=timezone.utc)
+            elif isinstance(raw, str):
+                dt = datetime.fromisoformat(raw)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+            else:
+                return None
+            return (datetime.now(timezone.utc) - dt).total_seconds()
+        except Exception:
+            return None
+
+    last_at = existing.get("fetched_at") if isinstance(existing, dict) else None
+    age = _age_seconds(last_at)
+
+    if existing.get("status") == "loading":
+        # If another task is still running for this sub, ride on it.
+        if sub["id"] in _IN_FLIGHT_MARKET_VALUES:
+            return existing
+        # Placeholder < 90s old but no in-flight task → orphaned. Fall
+        # through to kick off a fresh fetch.
+        if age is not None and age < 90 and sub["id"] in _IN_FLIGHT_MARKET_VALUES:
+            return existing
 
     # Back off on recent failure (60s).
-    last_at = existing.get("fetched_at") if isinstance(existing, dict) else None
-    if existing.get("status") == "error" and isinstance(last_at, datetime):
-        try:
-            age = (now_utc() - last_at).total_seconds()
-            if age < 60:
-                return existing
-        except Exception:
-            pass
+    if existing.get("status") == "error" and age is not None and age < 60:
+        return existing
 
     # Set a loading placeholder immediately.
     placeholder = {
@@ -296,9 +321,19 @@ async def _ensure_market_values(sub: dict, *, background: bool = False) -> dict:
 
     # Kick off the real Kredo fetch as a background task so the caller
     # returns fast. The frontend polls GET /submissions/{id} until the
-    # status transitions out of "loading".
+    # status transitions out of "loading". CRITICAL: we retain a
+    # strong reference to the task in `_IN_FLIGHT_MARKET_VALUES` so
+    # Python's asyncio doesn't garbage-collect it mid-flight (a
+    # well-known 3.11+ pitfall that manifested as market values
+    # getting stuck at "loading" forever on the admin cockpit).
     if not background:
-        asyncio.create_task(_run_market_values_fetch(sub["id"]))
+        task = asyncio.create_task(_run_market_values_fetch(sub["id"]))
+        _IN_FLIGHT_MARKET_VALUES[sub["id"]] = task
+
+        def _cleanup(_t: "asyncio.Task[dict]", sid: str = sub["id"]) -> None:
+            _IN_FLIGHT_MARKET_VALUES.pop(sid, None)
+
+        task.add_done_callback(_cleanup)
         return placeholder
 
     # `background=True` code path — run synchronously (used by the
