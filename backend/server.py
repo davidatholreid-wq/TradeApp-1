@@ -2827,8 +2827,14 @@ async def order_submission_report(
         raise HTTPException(404, "Submission not found")
     if not await _can_access_submission(sub, current):
         raise HTTPException(403, "Not authorized")
-    if sub.get("status") != "priced":
-        raise HTTPException(400, "Reports can only be ordered after an offer has been received")
+    # NOTE: previously this endpoint required status == "priced" so a
+    # dealer could only buy a VIN report AFTER Fourbuy had made an
+    # offer. Business ask (2026-08-10): the submitting dealer must be
+    # able to spend on a VIN-linked report the moment their car is in
+    # the system — Fourbuy's pricing turnaround shouldn't block dealer
+    # workflow. Access remains gated to the owning dealership + a
+    # valid VIN + explicit charge acceptance. Admins are still blocked
+    # from ordering on behalf of a dealer.
 
     vin = (sub.get("vin") or "").strip()
     if not vin or vin.upper() == "TBC":

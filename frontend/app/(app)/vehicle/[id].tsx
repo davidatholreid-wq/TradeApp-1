@@ -2973,8 +2973,13 @@ export default function VehicleDetail() {
         ) : null}
 
         {/* VIN-linked Reports — order or view. Collapsible; opens by
-            default because ordering is a primary dealer action. */}
-        {sub.status === "priced" ? (
+            default because ordering is a primary dealer action.
+            IMPORTANT: this section is available REGARDLESS of the
+            submission's pricing status. Business rule (2026-08-10):
+            the owning dealer must be able to spend on VIN reports
+            the instant they've loaded the car; Fourbuy's pricing
+            turnaround shouldn't block dealer workflow. */}
+        {true ? (
           <CollapsibleSection
             title={isAdmin || isCoverMode ? "VIN-Linked Reports" : "Order a VIN-Linked Report"}
             open={isOpen("reports")}
@@ -3406,10 +3411,12 @@ export default function VehicleDetail() {
 
             Hidden in cover-mode (pricing agents inspecting other
             dealerships' submissions must never see the local dealer
-            offer). Hidden while the vehicle is still pending — no
-            offer can be committed before Fourbuy has priced it.
+            offer). Now VISIBLE while the vehicle is still pending —
+            business rule (2026-08-10): the owning dealership must
+            be able to commit their own offer the moment the car is
+            loaded, without waiting on Fourbuy's pricing turnaround.
         */}
-        {!isCoverMode && sub.status !== "pending" && (isAdmin || isOwningDealer) ? (
+        {!isCoverMode && (isAdmin || isOwningDealer) ? (
           (() => {
             const deal = (sub as any).deal as DealInfo | null | undefined;
             const savedOffer = deal?.dealer_offer_zar ?? null;
