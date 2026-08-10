@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { TouchableOpacity } from "@/src/components/HapticButtons";
-import { View, Text, StyleSheet, Modal, Image, ActivityIndicator, ScrollView, Platform, Alert } from "react-native";
+import { View, Text, StyleSheet, Modal, Image, ActivityIndicator, ScrollView, Platform, Alert, useWindowDimensions } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { spacing, radius, fonts } from "@/src/theme";
@@ -25,7 +25,11 @@ type Props = {
 // POST /api/admin/dealers/{id}/photos. Empty string clears a photo.
 export default function DealerPhotosModal({ dealer, onClose, onSaved }: Props) {
   const colors = useThemeColors();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { width: winW } = useWindowDimensions();
+  // Wide-viewport = "centered card" layout (desktop web / tablet).
+  // Narrow = full-height bottom-sheet (phone).
+  const isWide = winW >= 720;
+  const styles = useMemo(() => makeStyles(colors, isWide), [colors, isWide]);
   const [profilePic, setProfilePic] = useState<string | null | undefined>(undefined);
   const [coverPhoto, setCoverPhoto] = useState<string | null | undefined>(undefined);
   const [dirty, setDirty] = useState(false);
@@ -51,25 +55,52 @@ export default function DealerPhotosModal({ dealer, onClose, onSaved }: Props) {
       const res = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         base64: true,
-        quality: 0.6,
+        quality: 0.8,
         allowsEditing: true,
         aspect: kind === "profile" ? [1, 1] : [16, 9],
       });
-      if (res.canceled || !res.assets?.[0]?.base64) return;
-      const b64 = res.assets[0].base64;
-      // Reject anything larger than the recommended cap — base64 is ~1.37x
-      // the raw byte size, so a 500 KB image comes out around 685 KB of
-      // b64. Cover ceiling: 800 KB b64 (~600 KB raw). Profile ceiling:
-      // 400 KB b64 (~300 KB raw).
-      const maxBytes = kind === "cover" ? 800 * 1024 : 400 * 1024;
-      if (b64.length > maxBytes) {
-        const kb = Math.round(b64.length / 1024);
-        const capKb = Math.round(maxBytes / 1024);
-        const msg = `That ${kind} photo is ${kb} KB — please pick one under ${capKb} KB (or re-export at lower quality).`;
+      if (res.canceled || !res.assets?.[0]) return;
+      const asset = res.assets[0];
+      const b64 = asset.base64;
+      if (!b64) {
+        setError("Could not read the selected image. Please try another file.");
+        return;
+      }
+
+      // === 1. Aspect-ratio guard =============================================
+      // On native platforms the image-picker crops to `aspect` before
+      // returning, so the returned dimensions always match. On web
+      // `allowsEditing` is a no-op — the raw file comes through — so we
+      // measure width / height ourselves and reject anything more than
+      // 5% off the target ratio.
+      const w = asset.width || 0;
+      const h = asset.height || 0;
+      if (w > 0 && h > 0) {
+        const ratio = w / h;
+        const target = kind === "cover" ? 16 / 9 : 1;
+        const drift = Math.abs(ratio - target) / target;
+        if (drift > 0.05) {
+          const nice = kind === "cover" ? "16:9 (e.g. 1600 × 900)" : "1:1 (e.g. 512 × 512)";
+          const msg = `Aspect ratio ${ratio.toFixed(2)}:1 doesn't match the required ${nice}. Please crop the ${kind} photo before uploading.`;
+          setError(msg);
+          if (Platform.OS !== "web") Alert.alert("Aspect ratio", msg);
+          return;
+        }
+      }
+
+      // === 2. File-size guard ================================================
+      // Business rule: both profile + cover capped at 500 KB (raw
+      // bytes). Base64 encoding adds ~37% overhead, so the b64 string
+      // ceiling = 500 KB × 1.37 ≈ 685 KB.
+      const rawKb = Math.round((b64.length * 3) / 4 / 1024);
+      const maxKb = 500;
+      if (rawKb > maxKb) {
+        const msg = `That ${kind} photo is ${rawKb} KB — max allowed is ${maxKb} KB. Please re-export at a smaller size or lower JPEG quality.`;
         setError(msg);
         if (Platform.OS !== "web") Alert.alert("Photo too large", msg);
         return;
       }
+
       const data = `data:image/jpeg;base64,${b64}`;
       if (kind === "profile") setProfilePic(data);
       else setCoverPhoto(data);
@@ -162,7 +193,9 @@ export default function DealerPhotosModal({ dealer, onClose, onSaved }: Props) {
 
             {/* Cover controls */}
             <Text style={styles.groupLabel}>COVER PHOTO</Text>
-            <Text style={styles.groupHint}>Wide banner (16:9). Shown at the top of the dealer profile.</Text>
+            <Text style={styles.groupHint}>
+              Wide banner (16:9). Recommended: <Text style={styles.groupHintBold}>1600 × 900 px</Text> · max <Text style={styles.groupHintBold}>500 KB</Text>. Shown at the top of the dealer profile, on submitted vehicles, and in the admin cockpit.
+            </Text>
             <View style={styles.btnRow}>
               <TouchableOpacity style={styles.btn} onPress={() => pick("cover")} testID="dealer-cover-upload">
                 <Ionicons name="cloud-upload-outline" size={16} color={colors.text} />
@@ -179,7 +212,7 @@ export default function DealerPhotosModal({ dealer, onClose, onSaved }: Props) {
             {/* Profile controls */}
             <Text style={[styles.groupLabel, { marginTop: spacing.lg }]}>PROFILE PICTURE</Text>
             <Text style={styles.groupHint}>
-              Square avatar (1:1). Recommended: <Text style={styles.groupHintBold}>512 × 512 px</Text> · max <Text style={styles.groupHintBold}>300 KB</Text>. Shown as the round photo above the cover.
+              Square avatar (1:1). Recommended: <Text style={styles.groupHintBold}>512 × 512 px</Text> · max <Text style={styles.groupHintBold}>500 KB</Text>. Shown as the round photo above the cover.
             </Text>
             <View style={styles.btnRow}>
               <TouchableOpacity style={styles.btn} onPress={() => pick("profile")} testID="dealer-profile-upload">
@@ -223,15 +256,27 @@ export default function DealerPhotosModal({ dealer, onClose, onSaved }: Props) {
   );
 }
 
-const makeStyles = (colors: Palette) => StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", justifyContent: "flex-end" },
+const makeStyles = (colors: Palette, isWide: boolean) => StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.85)",
+    // Centered card on desktop / tablet; bottom sheet on phone.
+    justifyContent: isWide ? "center" : "flex-end",
+    alignItems: isWide ? "center" : "stretch",
+    padding: isWide ? spacing.lg : 0,
+  },
   card: {
     backgroundColor: colors.card,
+    // Rounded on all corners for centered card; top-only for bottom sheet.
+    borderRadius: isWide ? radius.lg : 0,
     borderTopLeftRadius: radius.lg,
     borderTopRightRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.borderLight,
-    maxHeight: "92%",
+    maxHeight: isWide ? 640 : "92%",
+    width: isWide ? "100%" : undefined,
+    maxWidth: isWide ? 560 : undefined,
+    overflow: "hidden",
   },
   header: {
     flexDirection: "row",
@@ -247,7 +292,9 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   coverPreview: {
     // Use 16:9 aspect ratio so the admin sees the EXACT crop that
     // will render on the dealer profile + vehicle detail banner
-    // across every platform.
+    // across every platform. Height is implicitly bounded by the
+    // modal card's `maxWidth: 560` on desktop, so this can't dominate
+    // the viewport any more.
     width: "100%",
     aspectRatio: 16 / 9,
     borderRadius: radius.md,
