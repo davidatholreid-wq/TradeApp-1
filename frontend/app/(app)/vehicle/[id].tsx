@@ -750,7 +750,13 @@ export default function VehicleDetail() {
       if (Platform.OS === "web") {
         // Fetch as blob + trigger a download link so the browser respects
         // our Content-Disposition filename instead of opening in-tab.
-        const token = await storage.getItem(TOKEN_KEY);
+        // Auth token lives in SecureStore (persisted via `secureSet`),
+        // so we MUST read it back with `secureGet` — the earlier
+        // `storage.getItem` variant looked in AsyncStorage and always
+        // resolved to null, which made the fetch fire without an
+        // Authorization header → backend 401 → user saw "Download
+        // failed (401)".
+        const token = await storage.secureGet<string>(TOKEN_KEY, "");
         const base =
           (process.env as any).EXPO_PUBLIC_BACKEND_URL ||
           (globalThis as any).location?.origin ||
@@ -769,7 +775,7 @@ export default function VehicleDetail() {
         }
         setTimeout(() => URL.revokeObjectURL(objectUrl), 500);
       } else {
-        const token = await storage.getItem(TOKEN_KEY);
+        const token = await storage.secureGet<string>(TOKEN_KEY, "");
         const base =
           (process.env as any).EXPO_PUBLIC_BACKEND_URL || "";
         const dest = `${FileSystem.cacheDirectory}profit_${sub.id}.pdf`;
