@@ -657,16 +657,45 @@ export default function GiveCoverScreen() {
                         Declined {declinedAgo}
                       </Text>
                     ) : covered ? (
-                      <Text style={[styles.gridFootnote, { color: colors.textDisabled }]}>
-                        {historyCount > 0
-                          ? `Updated ${new Date(s.my_cover!.updated_at || s.my_cover!.created_at).toLocaleDateString()} · ${historyCount + 1} versions`
-                          : `Placed ${new Date(s.my_cover!.created_at).toLocaleDateString()}`}
-                      </Text>
+                      /* Cover-given card — show the cover PRICE as the
+                         hero data point (green highlight chip) plus a
+                         subtle "Placed / Updated" footnote below.
+                         Tapping anywhere on the card opens the vehicle
+                         detail where the price can be updated. The old
+                         "Update cover" CTA has been removed at the
+                         user's request. */
+                      <View style={styles.gridCoveredBlock}>
+                        <View
+                          style={[
+                            styles.gridCoveredChip,
+                            { borderColor: colors.success + "66", backgroundColor: colors.success + "18" },
+                          ]}
+                        >
+                          <Text
+                            style={[styles.gridCoveredChipLabel, { color: colors.success }]}
+                          >
+                            YOUR COVER
+                          </Text>
+                          <Text
+                            style={[styles.gridCoveredChipValue, { color: colors.success }]}
+                          >
+                            R {(s.my_cover?.price_zar || 0).toLocaleString()}
+                          </Text>
+                        </View>
+                        <Text style={[styles.gridFootnote, { color: colors.textDisabled }]}>
+                          {historyCount > 0
+                            ? `Updated ${new Date(s.my_cover!.updated_at || s.my_cover!.created_at).toLocaleDateString()} · ${historyCount + 1} versions · tap to change`
+                            : `Placed ${new Date(s.my_cover!.created_at).toLocaleDateString()} · tap to change`}
+                        </Text>
+                      </View>
                     ) : null}
                   </View>
 
                   {/* Action bar — Offer / Decline for available cards,
-                      Update Cover for given, Restore for declined. */}
+                      Restore for declined. Cover-given cards no longer
+                      show an action bar — tapping the card itself opens
+                      the vehicle detail where the cover price can be
+                      updated. */}
                   <View style={styles.gridActionRow}>
                     {isDeclinedTab ? (
                       <TouchableOpacity
@@ -678,19 +707,7 @@ export default function GiveCoverScreen() {
                         <Ionicons name="arrow-undo" size={14} color="#fff" />
                         <Text style={styles.gridBtnText}>Restore</Text>
                       </TouchableOpacity>
-                    ) : covered ? (
-                      <TouchableOpacity
-                        testID={`cover-grid-update-${s.id}`}
-                        onPress={openVehicle}
-                        style={[styles.gridBtn, styles.gridBtnFull, { backgroundColor: colors.primary }]}
-                        activeOpacity={0.85}
-                      >
-                        <Ionicons name="pencil" size={14} color={colors.onPrimary} />
-                        <Text style={[styles.gridBtnText, { color: colors.onPrimary }]}>
-                          Update cover
-                        </Text>
-                      </TouchableOpacity>
-                    ) : (
+                    ) : covered ? null : (
                       <>
                         <TouchableOpacity
                           testID={`cover-grid-decline-${s.id}`}
@@ -1212,6 +1229,35 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontStyle: "italic",
     marginTop: 6,
+  },
+  // -- "Your cover" price chip for cards on the Cover-given tab --
+  // Shown INSIDE the card body (below the meta chips) so the agent
+  // sees the price they placed at a glance without needing to open
+  // the vehicle detail. A small footnote below reminds them the
+  // whole card is tappable for changes.
+  gridCoveredBlock: {
+    marginTop: 8,
+    gap: 4,
+  },
+  gridCoveredChip: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "baseline",
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  gridCoveredChipLabel: {
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  gridCoveredChipValue: {
+    fontSize: 16,
+    fontWeight: "900",
+    letterSpacing: -0.2,
   },
   gridActionRow: {
     flexDirection: "row",

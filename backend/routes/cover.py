@@ -27,6 +27,7 @@ can re-import them for the non-cover code path that also references
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
