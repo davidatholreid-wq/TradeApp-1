@@ -23,6 +23,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/src/context/AuthContext";
 import { apiFetch } from "@/src/api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useThemeColors } from "@/src/theme/ThemeContext";
 import { spacing, radius, fonts } from "@/src/theme";
 
@@ -60,13 +61,42 @@ export default function GiveCoverScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
 
-  // Web-only responsive grid layout for the cover list — mirrors the
-  // WeBuyCars catalogue card grid (image-forward, 3 cards per row on
-  // desktop, 2 on tablet, 1 on narrow web). On native we always fall
-  // back to the vertical list because the swipe interaction is much
-  // nicer as a single-column stack.
-  const isWebGrid = Platform.OS === "web" && width >= 700;
-  const gridColumns = width >= 1200 ? 3 : width >= 900 ? 3 : width >= 700 ? 2 : 1;
+  // Web-only list/grid toggle — mirrors the toolbar in `submissions.tsx`.
+  // The user's choice (mode + column count) is persisted to
+  // AsyncStorage so it sticks across sessions and matches how they've
+  // already configured the My Vehicles list.
+  const canUseGrid = Platform.OS === "web" && width >= 700;
+  const [viewMode, setViewMode] = useState<"list" | "grid">(
+    canUseGrid ? "grid" : "list",
+  );
+  const [gridColumnsPref, setGridColumnsPref] = useState<3 | 6>(3);
+  useEffect(() => {
+    (async () => {
+      try {
+        const savedMode = await AsyncStorage.getItem("cover.viewMode");
+        if ((savedMode === "list" || savedMode === "grid") && canUseGrid) {
+          setViewMode(savedMode);
+        }
+        const savedCols = await AsyncStorage.getItem("cover.gridColumns");
+        const n = Number(savedCols);
+        if (n === 3 || n === 6) setGridColumnsPref(n as 3 | 6);
+      } catch {}
+    })();
+  }, [canUseGrid]);
+  const setViewModePersist = useCallback((next: "list" | "grid") => {
+    setViewMode(next);
+    AsyncStorage.setItem("cover.viewMode", next).catch(() => {});
+  }, []);
+  const setGridColumnsPrefPersist = useCallback((next: 3 | 6) => {
+    setGridColumnsPref(next);
+    AsyncStorage.setItem("cover.gridColumns", String(next)).catch(() => {});
+  }, []);
+
+  // Actual number of columns rendered — 6 needs a wide viewport, else
+  // fall back to 3.
+  const isWebGrid = canUseGrid && viewMode === "grid";
+  const gridColumns =
+    isWebGrid && gridColumnsPref === 6 && width >= 1500 ? 6 : 3;
   const [subs, setSubs] = useState<CoverSub[]>([]);
   const [declinedSubs, setDeclinedSubs] = useState<CoverSub[]>([]);
   const [loading, setLoading] = useState(true);
@@ -371,6 +401,96 @@ export default function GiveCoverScreen() {
           </Text>
         </View>
       </View>
+
+      {/* View toggle toolbar (List / Grid + 3/6 cols) — only rendered
+          when a grid layout is actually usable at the current viewport.
+          Mirrors the toolbar in My Vehicles so users get a consistent
+          mental model. Persisted per browser via AsyncStorage. */}
+      {canUseGrid ? (
+        <View style={styles.viewToolbar} testID="cover-view-toolbar">
+          <View style={[styles.viewToggle, { borderColor: colors.border }]}>
+            <TouchableOpacity
+              testID="cover-view-toggle-list"
+              onPress={() => setViewModePersist("list")}
+              activeOpacity={0.85}
+              style={[
+                styles.viewToggleBtn,
+                viewMode === "list" && { backgroundColor: colors.primary + "22" },
+              ]}
+            >
+              <Ionicons
+                name="list"
+                size={16}
+                color={viewMode === "list" ? colors.primary : colors.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.viewToggleText,
+                  { color: viewMode === "list" ? colors.primary : colors.textSecondary },
+                ]}
+              >
+                List
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="cover-view-toggle-grid"
+              onPress={() => setViewModePersist("grid")}
+              activeOpacity={0.85}
+              style={[
+                styles.viewToggleBtn,
+                viewMode === "grid" && { backgroundColor: colors.primary + "22" },
+              ]}
+            >
+              <Ionicons
+                name="grid"
+                size={16}
+                color={viewMode === "grid" ? colors.primary : colors.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.viewToggleText,
+                  { color: viewMode === "grid" ? colors.primary : colors.textSecondary },
+                ]}
+              >
+                Grid
+              </Text>
+            </TouchableOpacity>
+          </View>
+          {viewMode === "grid" ? (
+            <View style={[styles.viewToggle, { borderColor: colors.border }]}>
+              {([3, 6] as const).map((n) => {
+                const disabled = n === 6 && width < 1500;
+                const active = gridColumns === n;
+                return (
+                  <TouchableOpacity
+                    key={n}
+                    testID={`cover-grid-cols-${n}`}
+                    onPress={() => !disabled && setGridColumnsPrefPersist(n)}
+                    activeOpacity={disabled ? 1 : 0.85}
+                    style={[
+                      styles.viewToggleBtn,
+                      active && { backgroundColor: colors.primary + "22" },
+                      disabled && { opacity: 0.4 },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.viewToggleText,
+                        {
+                          color: active ? colors.primary : colors.textSecondary,
+                          fontWeight: "800",
+                        },
+                      ]}
+                    >
+                      {n} cols
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
 
       {loading ? (
         <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xl }} />
@@ -1180,5 +1300,37 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "900",
     letterSpacing: 1,
+  },
+  // ---- View-toggle toolbar (list ↔ grid + 3/6 cols) ----
+  // Same visual language as the toolbar in My Vehicles so both screens
+  // feel like sibling views of the same "car list" concept.
+  viewToolbar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 8,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  viewToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 2,
+    gap: 2,
+  },
+  viewToggleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  viewToggleText: {
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.2,
   },
 });

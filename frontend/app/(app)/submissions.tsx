@@ -23,6 +23,12 @@ import { apiFetch } from "@/src/api";
 import BrandLogo from "@/src/components/BrandLogo";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+// Gold accent used to make the dealer's own offer visually dominate
+// over the neutral Fourbuy Offer + Highest Cover rows. Warm and
+// premium — reads as "your number" without competing with the green
+// (accepted) / red (declined) status colours already on the card.
+const MY_OFFER_ACCENT = "#D4A017";
+
 type Submission = {
   id: string;
   reference?: string;
@@ -324,14 +330,27 @@ export default function DashboardScreen() {
           </Text>
         </View>
       ) : null}
-      {item.dealer_offer_zar != null ? (
-        <View style={styles.offerRow}>
-          <Text style={styles.offerRowLabel}>{isAdmin ? "Dealer Offer" : "My Offer"}</Text>
-          <Text style={[styles.offerRowValue, { color: colors.text }]}>
+      {/* My Offer / Dealer Offer — ALWAYS rendered so the row is
+          visually the dealer's own stake in the deal. Rendered as a
+          gold highlight chip so it dominates over the neutral Fourbuy
+          and Highest Cover rows above (dealer's own number matters
+          most to them). Placeholder shows "Not set" when the dealer
+          hasn't recorded an offer yet — tapping the row takes them to
+          the vehicle detail where they can enter one. */}
+      <View style={[styles.offerRowHighlight, { borderColor: MY_OFFER_ACCENT + "66", backgroundColor: MY_OFFER_ACCENT + "14" }]}>
+        <Text style={[styles.offerRowHighlightLabel, { color: MY_OFFER_ACCENT }]}>
+          {isAdmin ? "Dealer Offer" : "My Offer"}
+        </Text>
+        {item.dealer_offer_zar != null ? (
+          <Text style={[styles.offerRowHighlightValue, { color: MY_OFFER_ACCENT }]}>
             R {item.dealer_offer_zar.toLocaleString()}
           </Text>
-        </View>
-      ) : null}
+        ) : (
+          <Text style={[styles.offerRowHighlightValue, { color: MY_OFFER_ACCENT + "AA", fontSize: 13 }]}>
+            Not set
+          </Text>
+        )}
+      </View>
     </TouchableOpacity>
   );
 
@@ -498,16 +517,38 @@ export default function DashboardScreen() {
                   </Text>
                 </View>
               ) : null}
-              {item.dealer_offer_zar != null ? (
-                <View style={styles.gridFooterRow}>
-                  <Text style={[styles.gridFooterLabel, { color: colors.textSecondary }]}>
-                    {isAdmin ? "Dealer Offer" : "My Offer"}
-                  </Text>
-                  <Text style={[styles.gridFooterValue, { color: colors.text }]}>
+              {/* My Offer / Dealer Offer — ALWAYS rendered as a gold
+                  highlight chip so the dealer's own stake dominates
+                  visually over Fourbuy Offer / Highest Cover. Empty
+                  state shows "Not set" so the row still occupies the
+                  same vertical footprint and grid cards line up. */}
+              <View
+                style={[
+                  styles.gridFooterHighlight,
+                  {
+                    borderColor: MY_OFFER_ACCENT + "66",
+                    backgroundColor: MY_OFFER_ACCENT + "14",
+                  },
+                ]}
+              >
+                <Text style={[styles.gridFooterHighlightLabel, { color: MY_OFFER_ACCENT }]}>
+                  {isAdmin ? "Dealer Offer" : "My Offer"}
+                </Text>
+                {item.dealer_offer_zar != null ? (
+                  <Text style={[styles.gridFooterHighlightValue, { color: MY_OFFER_ACCENT }]}>
                     R {item.dealer_offer_zar.toLocaleString()}
                   </Text>
-                </View>
-              ) : null}
+                ) : (
+                  <Text
+                    style={[
+                      styles.gridFooterHighlightValue,
+                      { color: MY_OFFER_ACCENT + "AA", fontSize: 11 },
+                    ]}
+                  >
+                    Not set
+                  </Text>
+                )}
+              </View>
             </View>
           </View>
         </TouchableOpacity>
@@ -958,6 +999,31 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     fontSize: 15,
     fontWeight: "800",
   },
+  // -- My Offer / Dealer Offer highlight row (list card) --
+  // A gold chip that visually dominates over the muted Fourbuy /
+  // Highest Cover rows above. Uses larger type + tinted background so
+  // the dealer's own number is the first thing the eye lands on.
+  offerRowHighlight: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+  },
+  offerRowHighlightLabel: {
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  offerRowHighlightValue: {
+    fontSize: 18,
+    fontWeight: "900",
+    letterSpacing: -0.2,
+  },
 
   // ---- View toggle toolbar (list ↔ grid, plus 3/6 cols) ----
   viewToolbar: {
@@ -1134,6 +1200,31 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   gridFooterValue: {
     fontSize: 13,
     fontWeight: "800",
+  },
+  // -- Grid card My Offer / Dealer Offer highlight --
+  // Same "gold chip" as the list card but tuned for the grid's tighter
+  // footprint. Sits directly below the neutral Fourbuy + Highest Cover
+  // rows so it caps every card with a bold gold band.
+  gridFooterHighlight: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+  },
+  gridFooterHighlightLabel: {
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+  },
+  gridFooterHighlightValue: {
+    fontSize: 14,
+    fontWeight: "900",
+    letterSpacing: -0.1,
   },
 
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.sm, padding: spacing.lg },
