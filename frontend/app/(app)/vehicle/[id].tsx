@@ -3788,6 +3788,32 @@ export default function VehicleDetail() {
                   ) : null}
                 </View>
 
+                {/* Reconditioning Requirement Sheet — the workshop
+                    handoff. Placed just above Stage 2 (Have you sold
+                    the car?) because reconditioning is done BEFORE
+                    the sale — the dealer downloads this the moment
+                    they've committed to buying the car, hands it to
+                    their reconditioner, and only then answers Stage 2. */}
+                {done ? (
+                  <TouchableOpacity
+                    testID="deal-download-recon-pdf"
+                    disabled={downloadingRecon}
+                    style={[styles.dealPdfBtn, styles.dealReconBtn]}
+                    onPress={handleDownloadReconditioningPdf}
+                  >
+                    {downloadingRecon ? (
+                      <ActivityIndicator size="small" color={colors.text} />
+                    ) : (
+                      <>
+                        <Ionicons name="construct-outline" size={16} color={colors.text} />
+                        <Text style={[styles.dealPdfBtnText, { color: colors.text }]}>
+                          Download Reconditioning Sheet
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                ) : null}
+
                 {/* ------ Stage 2: Sale (unlocked after Stage 1 = Yes) ------ */}
                 {done ? (
                   <View style={styles.dealStage} testID="deal-stage-2">
@@ -3881,7 +3907,7 @@ export default function VehicleDetail() {
                     ]}
                     disabled={!dealFinancialsDirty || dealSaving}
                     onPress={saveDealFinancials}
-                    accessibilityLabel="Save profit analysis details"
+                    accessibilityLabel="Save deal tracking details"
                   >
                     {dealSaving ? (
                       <ActivityIndicator size="small" color="#fff" />
@@ -3889,7 +3915,7 @@ export default function VehicleDetail() {
                       <>
                         <Ionicons name="save-outline" size={16} color="#fff" />
                         <Text style={styles.dealSaveBtnText}>
-                          Update Profit Analysis
+                          Save Deal Tracking
                         </Text>
                       </>
                     ) : (
@@ -3976,29 +4002,8 @@ export default function VehicleDetail() {
                         )}
                       </TouchableOpacity>
                     ) : null}
-                    {/* Reconditioning Requirement Sheet — available the
-                        moment the dealer marks the deal as done. Hands
-                        the workshop / detailer a printable A4 with all
-                        recon line items, estimated costs and photos. */}
-                    {done ? (
-                      <TouchableOpacity
-                        testID="deal-download-recon-pdf"
-                        disabled={downloadingRecon}
-                        style={[styles.dealPdfBtn, styles.dealReconBtn]}
-                        onPress={handleDownloadReconditioningPdf}
-                      >
-                        {downloadingRecon ? (
-                          <ActivityIndicator size="small" color={colors.text} />
-                        ) : (
-                          <>
-                            <Ionicons name="construct-outline" size={16} color={colors.text} />
-                            <Text style={[styles.dealPdfBtnText, { color: colors.text }]}>
-                              Download Reconditioning Sheet
-                            </Text>
-                          </>
-                        )}
-                      </TouchableOpacity>
-                    ) : null}
+                    {/* Reconditioning Sheet button moved above Stage 2
+                        so it sits inline with the pre-sale workflow. */}
                   </View>
                 ) : null}
               </View>
