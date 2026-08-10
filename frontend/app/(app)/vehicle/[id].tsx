@@ -1495,6 +1495,80 @@ export default function VehicleDetail() {
     }
   };
 
+  const [downloadingRecon, setDownloadingRecon] = useState(false);
+  const handleDownloadReconditioningPdf = async () => {
+    if (!sub) return;
+    setDownloadingRecon(true);
+    try {
+      const backend = process.env.EXPO_PUBLIC_BACKEND_URL;
+      if (!backend) throw new Error("Missing EXPO_PUBLIC_BACKEND_URL");
+      const path = `/api/submissions/${sub.id}/reconditioning.pdf`;
+      const token = await storage.secureGet<string>(TOKEN_KEY, "");
+      const filename = `reconditioning_${sub.reference || sub.id}.pdf`;
+
+      if (Platform.OS === "web") {
+        const res = await fetch(`${backend}${path}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (!res.ok) {
+          const errText = await res.text().catch(() => "");
+          throw new Error(`Server returned HTTP ${res.status} ${errText.slice(0, 120)}`);
+        }
+        const blob = await res.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        window.open(objectUrl, "_blank");
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      } else {
+        const url = `${backend}${path}?access_token=${encodeURIComponent(token || "")}`;
+        const opened = await WebBrowser.openBrowserAsync(url, {
+          dismissButtonStyle: "close",
+          controlsColor: colors.text,
+          toolbarColor: colors.paper,
+          enableBarCollapsing: true,
+        });
+        if (opened.type === "cancel" || opened.type === "dismiss") return;
+      }
+      // Silence unused-var lint for `filename` on web-only paths.
+      void filename;
+    } catch (e: any) {
+      // eslint-disable-next-line no-console
+      console.error("[recon-pdf] preview failed:", e);
+      try {
+        const backend = process.env.EXPO_PUBLIC_BACKEND_URL;
+        const token = await storage.secureGet<string>(TOKEN_KEY, "");
+        const cacheDir = FileSystem.cacheDirectory || FileSystem.documentDirectory;
+        if (cacheDir && sub) {
+          const target = `${cacheDir}reconditioning_${sub.reference || sub.id}.pdf`;
+          const dl = await FileSystem.downloadAsync(
+            `${backend}/api/submissions/${sub.id}/reconditioning.pdf`,
+            target,
+            { headers: token ? { Authorization: `Bearer ${token}` } : undefined }
+          );
+          if (dl.status >= 200 && dl.status < 300) {
+            const canShare = await Sharing.isAvailableAsync();
+            if (canShare) {
+              await Sharing.shareAsync(dl.uri, {
+                mimeType: "application/pdf",
+                dialogTitle: "Reconditioning Sheet",
+                UTI: "com.adobe.pdf",
+              });
+              return;
+            }
+          }
+        }
+      } catch (fallbackErr) {
+        // eslint-disable-next-line no-console
+        console.error("[recon-pdf] fallback share failed:", fallbackErr);
+      }
+      Alert.alert(
+        "Preview failed",
+        e?.message ? String(e.message) : "Could not open the reconditioning sheet. Please try again."
+      );
+    } finally {
+      setDownloadingRecon(false);
+    }
+  };
+
   const handleOpenReportPdf = async (reportType: ReportOrder["type"]) => {
     if (!sub) return;
     try {
@@ -3902,6 +3976,29 @@ export default function VehicleDetail() {
                         )}
                       </TouchableOpacity>
                     ) : null}
+                    {/* Reconditioning Requirement Sheet — available the
+                        moment the dealer marks the deal as done. Hands
+                        the workshop / detailer a printable A4 with all
+                        recon line items, estimated costs and photos. */}
+                    {done ? (
+                      <TouchableOpacity
+                        testID="deal-download-recon-pdf"
+                        disabled={downloadingRecon}
+                        style={[styles.dealPdfBtn, styles.dealReconBtn]}
+                        onPress={handleDownloadReconditioningPdf}
+                      >
+                        {downloadingRecon ? (
+                          <ActivityIndicator size="small" color={colors.text} />
+                        ) : (
+                          <>
+                            <Ionicons name="construct-outline" size={16} color={colors.text} />
+                            <Text style={[styles.dealPdfBtnText, { color: colors.text }]}>
+                              Download Reconditioning Sheet
+                            </Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
                 ) : null}
               </View>
@@ -5506,6 +5603,14 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     fontSize: 13,
     fontWeight: "800",
     letterSpacing: 0.4,
+  },
+  // Secondary (outlined) style for the Reconditioning Sheet button —
+  // sits directly below the primary Profit Analysis PDF button so both
+  // downloads share the same footprint without competing for the eye.
+  dealReconBtn: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   // "Update Profit Analysis" save button — replaces the on-blur autosave
   // so the dealer explicitly commits their edits.

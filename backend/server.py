@@ -4469,6 +4469,246 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
     return buf.getvalue()
 
 
+async def _build_reconditioning_pdf(sub: dict) -> bytes:
+    """Render a dealer-facing "Reconditioning Requirement Sheet" PDF.
+
+    A simple, self-contained sheet the dealer downloads AFTER they've
+    confirmed the deal is done — hands to their workshop / detailer with
+    all recon line items, estimated pricing and the photos taken on the
+    valuation walk-around.
+
+    Layout:
+      - Black header band (Fourbuy monochrome, brand + reference).
+      - Vehicle summary block (year make derivative + VIN + mileage + colour).
+      - Recon line items — one block per item with heading, estimated
+        cost, and up to 5 thumbnails.
+      - Total row.
+    """
+    from io import BytesIO
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors as rl_colors
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+        Image as RLImage, KeepTogether,
+    )
+    import base64 as _b64
+    from PIL import Image as PILImage
+
+    INK = rl_colors.HexColor("#111111")
+    PAPER = rl_colors.HexColor("#F5F3EE")
+    BLACK = rl_colors.HexColor("#000000")
+    MUTED = rl_colors.HexColor("#666666")
+
+    async def _fetch(uri: str) -> Optional[bytes]:
+        if not uri or not isinstance(uri, str):
+            return None
+        try:
+            if uri.startswith("data:"):
+                _, _, b64part = uri.partition(",")
+                return _b64.b64decode(b64part)
+            if uri.startswith("http://") or uri.startswith("https://"):
+                async with httpx.AsyncClient(timeout=15.0) as cli:
+                    r = await cli.get(uri)
+                    r.raise_for_status()
+                    return r.content
+        except Exception as e:
+            logger.warning("recon PDF image fetch failed for %s: %s", uri[:80], e)
+        return None
+
+    def _thumb(raw: bytes, max_w_mm: float, max_h_mm: float):
+        if not raw:
+            return None
+        try:
+            im = PILImage.open(BytesIO(raw))
+            if im.mode not in ("RGB", "L"):
+                im = im.convert("RGB")
+            im.thumbnail((1200, 1200), PILImage.LANCZOS)
+            out = BytesIO()
+            im.save(out, format="JPEG", quality=82, optimize=True)
+            out.seek(0)
+            iw, ih = im.size
+            max_w_pt = float(max_w_mm) * mm
+            max_h_pt = float(max_h_mm) * mm
+            ratio = min(max_w_pt / iw, max_h_pt / ih)
+            return RLImage(out, width=iw * ratio, height=ih * ratio)
+        except Exception as e:
+            logger.warning("recon PDF image render failed: %s", e)
+            return None
+
+    ref = sub.get("reference") or sub.get("id") or ""
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=12 * mm, rightMargin=12 * mm,
+        topMargin=14 * mm, bottomMargin=14 * mm,
+        title=f"Reconditioning {ref}",
+        author="Fourbuy Car Buying Co.",
+    )
+    styles = getSampleStyleSheet()
+    body = ParagraphStyle("body", parent=styles["Normal"], fontName="Helvetica",
+                          fontSize=9.5, textColor=INK, leading=13)
+    small = ParagraphStyle("small", parent=body, fontSize=8, textColor=MUTED, leading=11)
+    h_title = ParagraphStyle("h_title", parent=body, fontName="Helvetica-Bold",
+                             fontSize=16, textColor=INK, leading=20)
+    section_title = ParagraphStyle("section", parent=body, fontName="Helvetica-Bold",
+                                   fontSize=10.5, textColor=INK, leading=14, spaceAfter=4)
+    label = ParagraphStyle("label", parent=small, fontName="Helvetica-Bold", textColor=INK)
+
+    story: list = []
+
+    # ---- Header band ----
+    header_left = Paragraph(
+        '<font name="Helvetica-Bold" size="11" color="#FFFFFF">FOURBUY CAR BUYING CO.</font>'
+        '<br/><font size="8" color="#DDDDDD">Reconditioning Requirement Sheet</font>',
+        body,
+    )
+    header_right = Paragraph(
+        f'<para align="right"><font name="Helvetica-Bold" size="11" color="#FFFFFF">{ref}</font>'
+        f'<br/><font size="8" color="#DDDDDD">'
+        f'{datetime.now(timezone.utc).strftime("%d %b %Y")}</font></para>',
+        body,
+    )
+    header = Table([[header_left, header_right]], colWidths=[110 * mm, 76 * mm])
+    header.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), BLACK),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    story.append(header)
+    story.append(Spacer(1, 8))
+
+    # ---- Vehicle summary ----
+    year = sub.get("year") or sub.get("year_registered") or ""
+    make = sub.get("make_name") or ""
+    deriv = sub.get("derivative_name") or sub.get("model_name") or ""
+    title_line = f"{year} {make}".strip()
+    story.append(Paragraph(title_line or "Vehicle", h_title))
+    if deriv:
+        story.append(Paragraph(deriv, body))
+    story.append(Spacer(1, 6))
+
+    def _fmt_km(v):
+        try:
+            return f"{int(v):,} km" if v is not None else "—"
+        except Exception:
+            return str(v) if v else "—"
+
+    veh_rows = [
+        [Paragraph("Reference", label), Paragraph(ref or "—", body),
+         Paragraph("VIN", label), Paragraph(sub.get("vin") or "—", body)],
+        [Paragraph("Mileage", label), Paragraph(_fmt_km(sub.get("mileage")), body),
+         Paragraph("Colour", label), Paragraph(sub.get("colour") or "—", body)],
+        [Paragraph("Transmission", label), Paragraph(sub.get("transmission") or "—", body),
+         Paragraph("Fuel", label), Paragraph(sub.get("fuel_type") or "—", body)],
+    ]
+    t_veh = Table(veh_rows, colWidths=[26 * mm, 66 * mm, 26 * mm, 68 * mm])
+    t_veh.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("BACKGROUND", (0, 0), (-1, -1), PAPER),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.5, rl_colors.HexColor("#E2DED7")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story.append(t_veh)
+    story.append(Spacer(1, 10))
+
+    # ---- Recon items ----
+    recon = sub.get("reconditioning_items") or []
+    if not recon:
+        story.append(Paragraph("RECONDITIONING", section_title))
+        story.append(Paragraph(
+            "No reconditioning items were captured for this submission.",
+            body,
+        ))
+    else:
+        story.append(Paragraph("RECONDITIONING REQUIREMENTS", section_title))
+        head_style = ParagraphStyle("reconHead", parent=body, fontName="Helvetica-Bold",
+                                    fontSize=10, textColor=INK, leading=13)
+        for r in recon:
+            heading = r.get("category") or r.get("label") or "Reconditioning"
+            amount = _fmt_zar(r.get("amount_zar") or 0)
+            # Photos: prefer `photos` list, fall back to legacy `photo`.
+            raw_photos: list = []
+            if isinstance(r.get("photos"), list):
+                raw_photos.extend([p for p in r["photos"] if p])
+            if r.get("photo") and r["photo"] not in raw_photos:
+                raw_photos.append(r["photo"])
+            photo_row_widget = None
+            if raw_photos:
+                thumbs: list = []
+                for uri in raw_photos[:5]:
+                    raw = await _fetch(uri)
+                    img = _thumb(raw, max_w_mm=34, max_h_mm=26) if raw else None
+                    thumbs.append(img or Paragraph("", small))
+                while len(thumbs) < 5:
+                    thumbs.append(Paragraph("", small))
+                photo_row_widget = Table([thumbs], colWidths=[36 * mm] * 5)
+                photo_row_widget.setStyle(TableStyle([
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 1),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 1),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                ]))
+            head_row = Table(
+                [[Paragraph(heading, head_style),
+                  Paragraph(f'<para align="right"><font name="Courier-Bold" size="10">{amount}</font></para>', body)]],
+                colWidths=[140 * mm, 46 * mm],
+            )
+            head_row.setStyle(TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("BACKGROUND", (0, 0), (-1, -1), PAPER),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]))
+            grouping: list = [head_row]
+            if photo_row_widget is not None:
+                grouping.append(photo_row_widget)
+            grouping.append(Spacer(1, 6))
+            story.append(KeepTogether(grouping))
+
+        total = sub.get("reconditioning_total_zar") or sum(
+            (x.get("amount_zar") or 0) for x in recon
+        )
+        total_row = Table(
+            [[Paragraph('<font color="#FFFFFF">TOTAL RECONDITIONING</font>', body),
+              Paragraph(
+                  f'<para align="right"><font name="Courier-Bold" size="11" color="#FFFFFF">{_fmt_zar(total)}</font></para>',
+                  body,
+              )]],
+            colWidths=[140 * mm, 46 * mm],
+        )
+        total_row.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), BLACK),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ]))
+        story.append(total_row)
+
+    story.append(Spacer(1, 12))
+    story.append(Paragraph(
+        "Estimates are based on the dealer's own capture at valuation. "
+        "Confirm final costs with your reconditioning partner before commencing work.",
+        small,
+    ))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
 async def _build_report_pdf(sub: dict, order: dict) -> bytes:
     """Render a single VIN report as a stand-alone PDF.
 
@@ -5414,6 +5654,47 @@ async def download_valuation_pdf(sub_id: str, current: dict = Depends(get_user_f
     # `inline` so mobile in-app browsers preview the PDF instead of prompting to
     # download. On the web/desktop flow the frontend fetches as a blob and
     # triggers a download link itself, so `inline` is fine for both cases.
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+@api_router.get("/submissions/{sub_id}/reconditioning.pdf")
+async def download_reconditioning_pdf(sub_id: str, current: dict = Depends(get_user_flexible)):
+    """Dealer-facing "Reconditioning Requirement Sheet" PDF.
+
+    Available once the dealer has confirmed the deal is done — pulls
+    the recon line items + estimated pricing + photos captured during
+    the valuation and returns a hand-to-workshop A4 sheet.
+
+    Guards:
+      • Caller must have read access to the submission (owning
+        dealership member or admin).
+      • `deal.done` must be true — the sheet only makes sense after
+        the dealer has committed to purchasing the vehicle.
+    """
+    sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+    if not await _can_access_submission(sub, current):
+        raise HTTPException(403, "Not authorized")
+
+    deal = sub.get("deal") or {}
+    if deal.get("done") is not True:
+        raise HTTPException(
+            400,
+            "Reconditioning sheet is available only after the deal has been marked as done.",
+        )
+
+    try:
+        pdf_bytes = await _build_reconditioning_pdf(sub)
+    except Exception as e:
+        logger.exception("Reconditioning PDF generation failed")
+        raise HTTPException(500, f"Failed to generate PDF: {e}")
+
+    filename = f"reconditioning_{sub.get('reference') or sub_id}.pdf".replace(" ", "_")
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
