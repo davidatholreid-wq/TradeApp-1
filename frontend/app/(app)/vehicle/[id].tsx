@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, TouchableOpacity } from "@/src/components/HapticButtons";
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Image, TextInput, Modal, KeyboardAvoidingView, Platform, Alert, LayoutAnimation, UIManager, Keyboard } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -1741,9 +1742,13 @@ export default function VehicleDetail() {
         )}
       </View>
 
-      <ScrollView
-        ref={scrollRef}
+      <KeyboardAwareScrollView
+        ref={scrollRef as any}
         contentContainerStyle={[styles.scroll, isCoverMode && { paddingBottom: 220 }]}
+        keyboardShouldPersistTaps="handled"
+        // Keep the focused TextInput 24px above the keyboard so the
+        // "My Offer" amount is visible while the dealer is typing.
+        bottomOffset={24}
       >
         {/* Dealer branding banner — WhatsApp Business-style header with
             cover photo + circular profile pic + submitter name + the
@@ -3897,7 +3902,7 @@ export default function VehicleDetail() {
         ) : null}
 
 
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       {/* Floating footer removed — pricing is now inline at the bottom
           of the scroll content. */}
