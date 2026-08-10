@@ -468,30 +468,24 @@ export default function GetValuationScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
+      {/* STATIC HEADER — outside KeyboardAvoidingView so it never jumps
+          when the keyboard opens. Logo centered, no back button (Back
+          now lives next to Continue in the sticky footer). */}
+      <View style={styles.header}>
+        <Text style={styles.brand}>FOURBUY</Text>
+        <Text style={styles.brandSub}>CAR BUYING CO.</Text>
+      </View>
+
+      {/* STATIC PROGRESS BAR — also outside the KeyboardAvoidingView. */}
+      <View style={styles.progressBar}>
+        <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+      </View>
+      <View style={styles.progressLabelRow}>
+        <Text style={styles.progressLabel}>Step {step} of {TOTAL_STEPS}</Text>
+        <Text style={styles.progressLabel}>{Math.round(progress * 100)}%</Text>
+      </View>
+
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={0}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.brand}>FOURBUY</Text>
-            <Text style={styles.brandSub}>CAR BUYING CO.</Text>
-          </View>
-          {step > 1 && !result ? (
-            <TouchableOpacity onPress={goBack} style={styles.headerBack} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="chevron-back" size={20} color={colors.text} />
-              <Text style={styles.headerBackText}>Back</Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
-
-        {/* Progress */}
-        <View style={styles.progressBar}>
-          <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
-        </View>
-        <View style={styles.progressLabelRow}>
-          <Text style={styles.progressLabel}>Step {step} of {TOTAL_STEPS}</Text>
-          <Text style={styles.progressLabel}>{Math.round(progress * 100)}%</Text>
-        </View>
-
         <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           {step === 1 ? (
             <StepSeller
@@ -557,29 +551,37 @@ export default function GetValuationScreen() {
           ) : null}
         </ScrollView>
 
-        {/* Sticky footer */}
+        {/* Sticky footer — Back (if applicable) + Continue / Submit side-by-side */}
         <View style={styles.footer}>
-          {step < TOTAL_STEPS ? (
-            <TouchableOpacity style={styles.primaryBtn} onPress={goNext}>
-              <Text style={styles.primaryBtnText}>Continue</Text>
-              <Ionicons name="arrow-forward" size={18} color={colors.onPrimary} />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={[styles.primaryBtn, submitting && { opacity: 0.6 }]}
-              onPress={submit}
-              disabled={submitting}
-            >
-              {submitting ? (
-                <ActivityIndicator color={colors.onPrimary} />
-              ) : (
-                <>
-                  <Ionicons name="paper-plane" size={16} color={colors.onPrimary} />
-                  <Text style={styles.primaryBtnText}>Get my valuation</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
+          <View style={styles.footerBtnRow}>
+            {step > 1 ? (
+              <TouchableOpacity style={styles.backBtn} onPress={goBack} disabled={submitting}>
+                <Ionicons name="chevron-back" size={18} color={colors.text} />
+                <Text style={styles.backBtnText}>Back</Text>
+              </TouchableOpacity>
+            ) : null}
+            {step < TOTAL_STEPS ? (
+              <TouchableOpacity style={[styles.primaryBtn, { flex: 1 }]} onPress={goNext}>
+                <Text style={styles.primaryBtnText}>Continue</Text>
+                <Ionicons name="arrow-forward" size={18} color={colors.onPrimary} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.primaryBtn, { flex: 1 }, submitting && { opacity: 0.6 }]}
+                onPress={submit}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <ActivityIndicator color={colors.onPrimary} />
+                ) : (
+                  <>
+                    <Ionicons name="paper-plane" size={16} color={colors.onPrimary} />
+                    <Text style={styles.primaryBtnText}>Get my valuation</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
           <Text style={styles.footerHint}>
             Free • No obligation • We{"\u2019"}ll WhatsApp and email your valuation within 24 hours
           </Text>
@@ -1035,8 +1037,8 @@ function makeStyles(colors: Palette) {
       paddingHorizontal: 16,
       paddingTop: 8,
       paddingBottom: 12,
-      flexDirection: "row",
-      alignItems: "center",
+      alignItems: "center",           // center the brand horizontally
+      justifyContent: "center",
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
       backgroundColor: colors.bg,
@@ -1046,20 +1048,43 @@ function makeStyles(colors: Palette) {
       fontWeight: "800",
       letterSpacing: 3,
       color: colors.text,
+      textAlign: "center",
     },
     brandSub: {
       fontSize: 9,
       letterSpacing: 3,
       color: colors.textSecondary,
       marginTop: 2,
+      textAlign: "center",
     },
     headerBack: {
+      display: "none",
+    },
+    headerBackText: { display: "none" as any },
+
+    footerBtnRow: {
+      flexDirection: "row",
+      alignItems: "stretch",
+      gap: 8,
+    },
+    backBtn: {
       flexDirection: "row",
       alignItems: "center",
-      paddingHorizontal: 10,
-      paddingVertical: 6,
+      justifyContent: "center",
+      paddingHorizontal: 18,
+      paddingVertical: 15,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+      gap: 4,
     },
-    headerBackText: { color: colors.text, fontSize: 14, fontWeight: "500" },
+    backBtnText: {
+      color: colors.text,
+      fontSize: 15,
+      fontWeight: "600",
+      letterSpacing: 0.3,
+    },
 
     progressBar: {
       height: 3,
