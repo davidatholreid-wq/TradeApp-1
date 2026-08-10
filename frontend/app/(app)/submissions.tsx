@@ -1,6 +1,17 @@
-import { useCallback, useState, useMemo, useRef } from "react";
+import { useCallback, useState, useMemo, useRef, useEffect } from "react";
 import { TouchableOpacity } from "@/src/components/HapticButtons";
-import { View, Text, StyleSheet, FlatList, RefreshControl, ActivityIndicator, Image } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  RefreshControl,
+  ActivityIndicator,
+  Image,
+  Platform,
+  useWindowDimensions,
+  ScrollView,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -10,6 +21,7 @@ import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { useAuth } from "@/src/context/AuthContext";
 import { apiFetch } from "@/src/api";
 import BrandLogo from "@/src/components/BrandLogo";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 type Submission = {
   id: string;
@@ -57,6 +69,55 @@ export default function DashboardScreen() {
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [draftsExpanded, setDraftsExpanded] = useState(false);
   const isAdmin = user?.role === "admin";
+
+  // ---- List / Grid view toggle (web-first) --------------------------
+  // Two orthogonal preferences persisted to AsyncStorage so the user's
+  // last choice sticks between sessions:
+  //   • `viewMode` — "list" (traditional row cards) OR "grid" (WeBuyCars-
+  //     style image-forward card catalogue). Grid is only OFFERED on web
+  //     at ≥700px wide; native and narrow web stay on the list.
+  //   • `gridColumns` — 3 or 6. On very wide desktops (>=1500px) users
+  //     can pack 6 cards per row for a WeBuyCars-showroom feel; 3 keeps
+  //     each card comfortably large.
+  const { width } = useWindowDimensions();
+  const canUseGrid = Platform.OS === "web" && width >= 700;
+  const [viewMode, setViewMode] = useState<"list" | "grid">(
+    canUseGrid ? "grid" : "list",
+  );
+  const [gridColumns, setGridColumns] = useState<3 | 6>(3);
+
+  // Load persisted preferences on mount and normalise legacy values.
+  useEffect(() => {
+    (async () => {
+      try {
+        const savedMode = await AsyncStorage.getItem("submissions.viewMode");
+        if ((savedMode === "list" || savedMode === "grid") && canUseGrid) {
+          setViewMode(savedMode);
+        }
+        const savedCols = await AsyncStorage.getItem("submissions.gridColumns");
+        const n = Number(savedCols);
+        if (n === 3 || n === 6) setGridColumns(n as 3 | 6);
+      } catch {
+        // First load / storage unavailable — keep defaults.
+      }
+    })();
+  }, [canUseGrid]);
+
+  // Persist whenever the user changes either preference.
+  const setViewModePersist = useCallback((next: "list" | "grid") => {
+    setViewMode(next);
+    AsyncStorage.setItem("submissions.viewMode", next).catch(() => {});
+  }, []);
+  const setGridColumnsPersist = useCallback((next: 3 | 6) => {
+    setGridColumns(next);
+    AsyncStorage.setItem("submissions.gridColumns", String(next)).catch(() => {});
+  }, []);
+
+  // The grid can't render at 6 columns on medium-width web (900-1400px)
+  // without cards becoming too skinny — auto-clamp to 3 columns in that
+  // window so the layout never looks broken even if a user stored 6.
+  const effectiveGridColumns: 3 | 6 =
+    viewMode === "grid" && gridColumns === 6 && width < 1500 ? 3 : gridColumns;
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
@@ -245,6 +306,147 @@ export default function DashboardScreen() {
     </TouchableOpacity>
   );
 
+  // ---- Grid card renderer (WeBuyCars-style — web only) --------------
+  // Image-forward layout with the front photo at the top, title + meta
+  // beneath, and a subtle price/status footer. Mirrors the same visual
+  // language as `Give Cover`, minus the Offer/Decline action bar since
+  // this is the dealer's own submission catalogue, not the pricing-
+  // agent inbox. Tapping any card opens the vehicle detail.
+  const renderGridCard = (item: Submission) => {
+    const gridColWidth = `${(100 / effectiveGridColumns).toFixed(4)}%` as any;
+    const statusColour =
+      item.status === "priced"
+        ? colors.success
+        : item.status === "declined"
+          ? colors.danger
+          : colors.warning;
+    return (
+      <View
+        key={item.id}
+        style={[styles.gridCol, { width: gridColWidth }]}
+      >
+        <TouchableOpacity
+          testID={`submission-card-${item.id}`}
+          onPress={() => router.push(`/(app)/vehicle/${item.id}` as any)}
+          activeOpacity={0.92}
+          style={[
+            styles.gridCard,
+            { backgroundColor: colors.paper, borderColor: colors.border },
+          ]}
+        >
+          {/* Front image — 4:3 aspect matches the Give Cover grid. */}
+          <View style={styles.gridImgWrap}>
+            {item.front_photo ? (
+              <Image
+                source={{ uri: item.front_photo }}
+                style={styles.gridImg}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={[styles.gridImg, styles.gridImgEmpty, { backgroundColor: colors.bg }]}>
+                <Ionicons name="car-outline" size={44} color={colors.textDisabled} />
+              </View>
+            )}
+            {item.reference ? (
+              <View style={styles.gridRefBadge}>
+                <Text style={styles.gridRefBadgeText}>{item.reference}</Text>
+              </View>
+            ) : null}
+            <View style={[styles.gridStatusBadge, { backgroundColor: statusColour }]}>
+              <Ionicons
+                name={
+                  item.status === "priced"
+                    ? "shield-checkmark"
+                    : item.status === "declined"
+                      ? "close-circle"
+                      : "time"
+                }
+                size={11}
+                color="#fff"
+              />
+              <Text style={styles.gridStatusBadgeText}>
+                {item.status === "priced"
+                  ? "PRICED"
+                  : item.status === "declined"
+                    ? "NO OFFER"
+                    : "PENDING"}
+              </Text>
+            </View>
+            {item.unseen ? (
+              <View style={styles.gridUnseenBadge}>
+                <Ionicons name="eye-off-outline" size={10} color="#fff" />
+                <Text style={styles.gridUnseenBadgeText}>SUBJECT TO VIEW</Text>
+              </View>
+            ) : null}
+          </View>
+
+          {/* Text stack — title, derivative, meta chips */}
+          <View style={styles.gridBody}>
+            <Text style={[styles.gridTitle, { color: colors.text }]} numberOfLines={2}>
+              {item.year} {item.make_name} {item.model_name}
+            </Text>
+            {item.derivative_name ? (
+              <Text
+                style={[styles.gridDeriv, { color: colors.textSecondary }]}
+                numberOfLines={1}
+              >
+                {item.derivative_name}
+              </Text>
+            ) : null}
+            <View style={styles.gridMetaRow}>
+              <View style={styles.gridMetaChip}>
+                <Ionicons name="speedometer-outline" size={11} color={colors.textSecondary} />
+                <Text style={[styles.gridMetaChipText, { color: colors.textSecondary }]}>
+                  {item.mileage.toLocaleString()} km
+                </Text>
+              </View>
+              <View style={styles.gridMetaChip}>
+                <Ionicons name="color-palette-outline" size={11} color={colors.textSecondary} />
+                <Text style={[styles.gridMetaChipText, { color: colors.textSecondary }]}>
+                  {item.colour}
+                </Text>
+              </View>
+              <View style={styles.gridMetaChip}>
+                <Ionicons name="star-outline" size={11} color={colors.textSecondary} />
+                <Text style={[styles.gridMetaChipText, { color: colors.textSecondary }]}>
+                  {item.condition}/10
+                </Text>
+              </View>
+            </View>
+
+            {/* Offer / outcome footer sits at the bottom of every card
+                so the same information rows always line up regardless
+                of derivative-name overflow. */}
+            <View style={styles.gridFooter}>
+              {item.status === "priced" && item.price !== null ? (
+                <>
+                  <Text style={[styles.gridFooterLabel, { color: colors.textSecondary }]}>
+                    Offer
+                  </Text>
+                  <Text style={[styles.gridFooterValue, { color: colors.success }]}>
+                    R {item.price.toLocaleString()}
+                  </Text>
+                </>
+              ) : item.status === "declined" ? (
+                <Text
+                  style={[styles.gridFooterValue, { color: colors.textSecondary, fontSize: 12 }]}
+                >
+                  No offer · not charged
+                </Text>
+              ) : (
+                <Text
+                  style={[styles.gridFooterValue, { color: colors.textSecondary, fontSize: 12 }]}
+                >
+                  Awaiting price
+                </Text>
+              )}
+            </View>
+          </View>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       {/* Slim brand strip so the logo is always visible above the header. */}
@@ -391,13 +593,132 @@ export default function DashboardScreen() {
           ) : null}
         </View>
       ) : (
-        <FlatList
-          data={visibleItems}
-          keyExtractor={(i) => i.id}
-          renderItem={renderItem}
-          contentContainerStyle={[styles.list, { paddingBottom: tabBarHeight + spacing.md }]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-        />
+        <>
+          {/* View-toggle toolbar — only shown when a grid mode is
+              actually usable at the current viewport (web + wide
+              enough). Lets the user switch between the row list and a
+              WeBuyCars-style grid, and pick 3 or 6 columns in grid
+              mode. Preferences are persisted per browser via
+              AsyncStorage. */}
+          {canUseGrid ? (
+            <View style={styles.viewToolbar} testID="submissions-view-toolbar">
+              <View style={[styles.viewToggle, { borderColor: colors.border }]}>
+                <TouchableOpacity
+                  testID="view-toggle-list"
+                  onPress={() => setViewModePersist("list")}
+                  activeOpacity={0.85}
+                  style={[
+                    styles.viewToggleBtn,
+                    viewMode === "list" && { backgroundColor: colors.primary + "22" },
+                  ]}
+                >
+                  <Ionicons
+                    name="list"
+                    size={16}
+                    color={viewMode === "list" ? colors.primary : colors.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.viewToggleText,
+                      { color: viewMode === "list" ? colors.primary : colors.textSecondary },
+                    ]}
+                  >
+                    List
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  testID="view-toggle-grid"
+                  onPress={() => setViewModePersist("grid")}
+                  activeOpacity={0.85}
+                  style={[
+                    styles.viewToggleBtn,
+                    viewMode === "grid" && { backgroundColor: colors.primary + "22" },
+                  ]}
+                >
+                  <Ionicons
+                    name="grid"
+                    size={16}
+                    color={viewMode === "grid" ? colors.primary : colors.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.viewToggleText,
+                      { color: viewMode === "grid" ? colors.primary : colors.textSecondary },
+                    ]}
+                  >
+                    Grid
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {viewMode === "grid" ? (
+                <View style={[styles.viewToggle, { borderColor: colors.border }]}>
+                  {([3, 6] as const).map((n) => {
+                    // 6-column mode needs at least 1500px of viewport to
+                    // avoid cards becoming too skinny — greyed out on
+                    // narrower windows so the intent is obvious.
+                    const disabled = n === 6 && width < 1500;
+                    const active = effectiveGridColumns === n;
+                    return (
+                      <TouchableOpacity
+                        key={n}
+                        testID={`grid-cols-${n}`}
+                        onPress={() => !disabled && setGridColumnsPersist(n)}
+                        activeOpacity={disabled ? 1 : 0.85}
+                        style={[
+                          styles.viewToggleBtn,
+                          active && { backgroundColor: colors.primary + "22" },
+                          disabled && { opacity: 0.4 },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.viewToggleText,
+                            {
+                              color: active ? colors.primary : colors.textSecondary,
+                              fontWeight: "800",
+                            },
+                          ]}
+                        >
+                          {n} cols
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+
+          {viewMode === "grid" && canUseGrid ? (
+            /* WeBuyCars-style grid — a plain ScrollView with flex-wrapping
+               children. FlatList doesn't support arbitrary CSS-grid
+               widths so we use a manual wrap layout matching the pattern
+               used in the Give Cover screen. */
+            <ScrollView
+              testID="submissions-grid"
+              contentContainerStyle={[
+                styles.gridScroll,
+                { paddingBottom: tabBarHeight + spacing.md },
+              ]}
+              refreshControl={
+                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+              }
+            >
+              <View style={styles.gridContainer}>
+                {visibleItems.map((it) => renderGridCard(it))}
+              </View>
+            </ScrollView>
+          ) : (
+            <FlatList
+              data={visibleItems}
+              keyExtractor={(i) => i.id}
+              renderItem={renderItem}
+              contentContainerStyle={[styles.list, { paddingBottom: tabBarHeight + spacing.md }]}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+            />
+          )}
+        </>
       )}
     </SafeAreaView>
   );
@@ -546,6 +867,180 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
   priceLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: "600" },
   priceValue: { color: colors.success, fontSize: 18, fontWeight: "800" },
+
+  // ---- View toggle toolbar (list ↔ grid, plus 3/6 cols) ----
+  viewToolbar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+  },
+  viewToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderRadius: radius.sm,
+    padding: 2,
+    gap: 2,
+  },
+  viewToggleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.sm - 2,
+  },
+  viewToggleText: {
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+  },
+
+  // ---- WeBuyCars-style grid (web only) ----
+  gridScroll: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+  },
+  gridContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap" as const,
+    marginHorizontal: -6,
+  },
+  gridCol: {
+    paddingHorizontal: 6,
+    paddingBottom: 12,
+  },
+  gridCard: {
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    overflow: "hidden",
+    // Match sibling card heights within a row.
+    height: "100%",
+    display: "flex" as any,
+    flexDirection: "column",
+  },
+  gridImgWrap: {
+    width: "100%",
+    aspectRatio: 4 / 3,
+    position: "relative" as any,
+    ...(Platform.OS === "web" ? ({ cursor: "pointer" as any } as any) : {}),
+  },
+  gridImg: {
+    width: "100%",
+    height: "100%",
+  },
+  gridImgEmpty: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  gridRefBadge: {
+    position: "absolute" as any,
+    top: 8,
+    left: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 5,
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  gridRefBadgeText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+  },
+  gridStatusBadge: {
+    position: "absolute" as any,
+    top: 8,
+    right: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  gridStatusBadgeText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  gridUnseenBadge: {
+    position: "absolute" as any,
+    bottom: 8,
+    left: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 5,
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  gridUnseenBadgeText: {
+    color: "#fff",
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+  },
+  gridBody: {
+    padding: 10,
+    gap: 3,
+    flex: 1,
+    justifyContent: "space-between",
+  },
+  gridTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: -0.1,
+  },
+  gridDeriv: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  gridMetaRow: {
+    flexDirection: "row",
+    flexWrap: "wrap" as const,
+    gap: 5,
+    marginTop: 4,
+  },
+  gridMetaChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.10)",
+  },
+  gridMetaChipText: {
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  gridFooter: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    marginTop: 8,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  gridFooterLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
+  },
+  gridFooterValue: {
+    fontSize: 14,
+    fontWeight: "800",
+  },
+
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.sm, padding: spacing.lg },
   emptyTitle: { color: colors.text, fontSize: 18, fontWeight: "700", marginTop: spacing.sm },
   emptyText: { color: colors.textSecondary, fontSize: 14, textAlign: "center" },
