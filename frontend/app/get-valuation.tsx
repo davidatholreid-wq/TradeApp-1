@@ -252,6 +252,83 @@ export default function GetValuationScreen() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
+  // Full-wizard "Start over" — clears EVERY field the user has filled
+  // (seller details, vehicle, license disc, condition, photos,
+  // Turnstile token, submission state) and bounces back to Step 1.
+  // Uses `window.confirm` on web because `Alert.alert` on
+  // react-native-web renders as a button-less banner (the previous
+  // implementation confirmed but the destructive "Reset" tap never
+  // fired — the whole reason the button "didn't work" for public
+  // mobile users).
+  const resetEverything = useCallback(() => {
+    // Seller
+    setFullName("");
+    setPhone("");
+    setEmail("");
+    setConsent(false);
+    // Vehicle cascade
+    setMake(null);
+    setFuelType(null);
+    setYearOfProduction(null);
+    setTransmission(null);
+    setModel(null);
+    setDerivative(null);
+    setYearRegistered(null);
+    setColour(null);
+    setVin("");
+    setMileage("");
+    // Disc capture
+    setDateOfTest(null);
+    setLicenseDiskData(null);
+    setDiscPhoto(null);
+    // Condition
+    setOverall("");
+    setService("");
+    setAccident(false);
+    setDamageNotes("");
+    // Photos
+    setPhotos({ front: null, rear: null, left: null, right: null, interior: null, dash: null });
+    // Anti-abuse + submit state
+    setTurnstileToken(null);
+    setSubmitting(false);
+    setResult(null);
+    setSubmitError(null);
+    // Back to step 1
+    setStep(1);
+    // Scroll to the very top so the user lands on the fresh Step 1
+    // header instead of wherever they were scrolled on the previous
+    // step.
+    try {
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+    } catch {
+      /* no-op */
+    }
+  }, []);
+
+  const confirmStartOver = useCallback(async () => {
+    const msg = "Start over? This clears everything you've entered and takes you back to Step 1. Your data is not sent anywhere until you tap 'Get my valuation' on the final step.";
+    let proceed = false;
+    if (Platform.OS === "web") {
+      // react-native-web's Alert only renders a banner without buttons,
+      // so the destructive "Reset" tap never fired. Use the native
+      // browser confirm dialog on web instead.
+      const w = (globalThis as any).window;
+      proceed = w && typeof w.confirm === "function" ? w.confirm(msg) : true;
+    } else {
+      proceed = await new Promise<boolean>((resolve) => {
+        Alert.alert(
+          "Start over?",
+          msg,
+          [
+            { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+            { text: "Start over", style: "destructive", onPress: () => resolve(true) },
+          ],
+        );
+      });
+    }
+    if (proceed) resetEverything();
+  }, [resetEverything]);
+
   // ---------- vehicle options fetch (cascading) ----------
   //
   // IMPORTANT: When the user reopens a picker to change an already-set
@@ -532,18 +609,7 @@ export default function GetValuationScreen() {
               vin={vin} setVin={setVin}
               colour={colour}
               openWheel={openWheel}
-              onReset={() => {
-                setMake(null);
-                setFuelType(null);
-                setYearOfProduction(null);
-                setTransmission(null);
-                setModel(null);
-                setDerivative(null);
-                setYearRegistered(null);
-                setColour(null);
-                setVin("");
-                setMileage("");
-              }}
+              onReset={confirmStartOver}
             />
           ) : null}
           {step === 3 ? (
@@ -718,17 +784,11 @@ function StepVehicle({
       {hasAnySelection ? (
         <TouchableOpacity
           style={styles.resetRow}
-          onPress={() =>
-            Alert.alert(
-              "Reset vehicle details?",
-              "This will clear everything you've picked so you can start again.",
-              [
-                { text: "Cancel", style: "cancel" },
-                { text: "Reset", style: "destructive", onPress: onReset },
-              ],
-            )
-          }
+          onPress={onReset}
           activeOpacity={0.7}
+          testID="public-valuation-start-over"
+          accessibilityRole="button"
+          accessibilityLabel="Start over — clear everything and return to Step 1"
         >
           <Ionicons name="refresh" size={14} color={colors.textSecondary} />
           <Text style={styles.resetText}>Start over</Text>
