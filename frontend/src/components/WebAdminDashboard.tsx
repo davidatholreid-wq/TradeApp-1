@@ -238,6 +238,14 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
   const [view, setView] = useState<CockpitView>("home");
   const [subs, setSubs] = useState<Submission[]>([]);
   const [counts, setCounts] = useState<Record<Bucket, number>>({ incoming: 0, priced: 0, archived: 0 });
+  // Public leads Pending count. Rendered inside the same "Incoming"
+  // lighthouse tile on the cockpit home so an admin can't miss a
+  // fresh public submission that's still awaiting a price. Kept in a
+  // separate state (rather than merged into `counts.incoming`)
+  // because the two lists are stored in different collections and
+  // travel through independent pricing workflows — surfacing them
+  // separately in the UI mirrors that.
+  const [publicPendingCount, setPublicPendingCount] = useState<number>(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<SubmissionFull | null>(null);
   // ---- VIN history compare state ------------------------------------------
@@ -368,6 +376,17 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
       console.log(e);
     } finally {
       setLoading(false);
+    }
+    // Piggy-back the public-leads Pending count onto the same refresh
+    // so the Cockpit-Home "Incoming" lighthouse tile lights up for a
+    // fresh public submission with the same urgency as a dealer one.
+    // Fetched in parallel — failures are non-fatal (the tile just
+    // falls back to dealer-only count).
+    try {
+      const pub = await apiFetch("/api/admin/public-submissions?bucket=pending");
+      setPublicPendingCount((pub?.count as number) ?? (pub?.submissions?.length ?? 0));
+    } catch (e) {
+      console.log("public pending count failed", e);
     }
   }, []);
 
@@ -646,12 +665,19 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
   const pricedCount = counts.priced;
   const archivedCount = counts.archived;
 
-  // Kick the INCOMING card pulse whenever pendingCount ≥ 1.
-  // Two independent animations combine into a "lighthouse" effect:
+  // Combined "Incoming" figure — dealer submissions + public-lead
+  // submissions that are still Pending. Drives both the lighthouse
+  // pulse and the big number rendered on the tile so admins never
+  // miss a fresh submission from either channel.
+  const incomingTotal = pendingCount + publicPendingCount;
+
+  // Kick the INCOMING card pulse whenever there is ANY pending work
+  // (dealer OR public). Two independent animations combine into a
+  // "lighthouse" effect:
   //   1. `incomingPulse`  — the bright halo breathing in/out
   //   2. `incomingSweep`  — the beam of light rotating around the card
   useEffect(() => {
-    if (pendingCount < 1) {
+    if (incomingTotal < 1) {
       incomingPulse.setValue(0);
       incomingSweep.setValue(0);
       return;
@@ -681,7 +707,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
       sweep.stop();
       incomingSweep.setValue(0);
     };
-  }, [pendingCount, incomingPulse, incomingSweep]);
+  }, [incomingTotal, incomingPulse, incomingSweep]);
 
   // -------- Month-to-date roll-up for the Cockpit Home landing --------
   // Fetched from /api/admin/stats/home-mtd. Loaded once when the Home view
@@ -922,7 +948,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
           </View>
           <View style={styles.homeStatsRow}>
             {/* -------------------- INCOMING (lighthouse) -------------------- */}
-            {pendingCount >= 1 ? (
+            {incomingTotal >= 1 ? (
               <View
                 testID="cockpit-home-incoming-card"
                 style={[styles.homeStatCard, { position: "relative", overflow: "visible", padding: 0 }]}
@@ -935,11 +961,13 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                     pointerEvents="none"
                     style={{
                       position: "absolute",
-                      left: -8, right: -8, top: -8, bottom: -8,
-                      borderRadius: 20,
-                      opacity: 0.85,
-                      // @ts-ignore — DOM-only style.
-                      backgroundImage: `conic-gradient(from 0deg, transparent 0deg, ${colors.warning}66 40deg, ${colors.warning}00 100deg, transparent 180deg, ${colors.warning}44 220deg, ${colors.warning}00 280deg, transparent 360deg)`,
+                      left: -12, right: -12, top: -12, bottom: -12,
+                      borderRadius: 22,
+                      opacity: 0.95,
+                      // @ts-ignore — DOM-only style. Brighter conic
+                      // gradient with a warmer amber for maximum
+                      // "lighthouse" visibility.
+                      backgroundImage: `conic-gradient(from 0deg, transparent 0deg, ${colors.warning}88 30deg, ${colors.warning}55 90deg, transparent 160deg, transparent 200deg, ${colors.warning}66 260deg, ${colors.warning}22 320deg, transparent 360deg)`,
                       transform: [
                         {
                           rotate: incomingSweep.interpolate({
@@ -950,30 +978,34 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                     } as any}
                   />
                 ) : null}
-                {/* Bright pulsing halo (works on all platforms) */}
+                {/* Bright pulsing halo (works on all platforms). The
+                    box-shadow spread was doubled from the original
+                    24/48px to 40/80px so the tile now genuinely
+                    "lights up" — the user asked for a luminous
+                    flashing border they can't miss. */}
                 <Animated.View
                   pointerEvents="none"
                   style={{
                     position: "absolute",
                     left: 0, right: 0, top: 0, bottom: 0,
                     borderRadius: 16,
-                    borderWidth: 2,
+                    borderWidth: 3,
                     borderColor: incomingPulse.interpolate({
                       inputRange: [0, 1],
                       outputRange: [colors.warning + "AA", colors.warning],
                     }),
                     shadowColor: colors.warning,
                     shadowOpacity: incomingPulse.interpolate({
-                      inputRange: [0, 1], outputRange: [0.35, 0.9],
+                      inputRange: [0, 1], outputRange: [0.55, 1],
                     }),
                     shadowRadius: incomingPulse.interpolate({
-                      inputRange: [0, 1], outputRange: [16, 32],
+                      inputRange: [0, 1], outputRange: [24, 48],
                     }),
                     shadowOffset: { width: 0, height: 0 },
-                    // Web-only extras — glow + subtle inset for depth.
+                    // Web-only extras — outer + inner luminous glow.
                     // @ts-ignore
                     boxShadow: Platform.OS === "web"
-                      ? `0 0 24px ${colors.warning}90, 0 0 48px ${colors.warning}55, inset 0 0 0 1px ${colors.warning}`
+                      ? `0 0 40px ${colors.warning}CC, 0 0 80px ${colors.warning}77, inset 0 0 0 2px ${colors.warning}`
                       : undefined,
                   } as any}
                 />
@@ -1020,17 +1052,38 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                       { color: colors.warning, fontSize: 36, fontWeight: "900" },
                     ]}
                   >
-                    {pendingCount}
+                    {incomingTotal}
                   </Text>
-                  <Text style={{ color: colors.warning, fontSize: 11, marginTop: 2, letterSpacing: 0.3, fontWeight: "600" }}>
-                    {pendingCount === 1 ? "1 submission needs pricing" : `${pendingCount} submissions need pricing`}
-                  </Text>
+                  {/* Breakdown line — separates dealer submissions from
+                      Public-leads Pending so the admin knows where to
+                      look next. Rendered as two dot-separated chips
+                      when BOTH channels have work; falls back to a
+                      single line when only one channel does. */}
+                  {publicPendingCount > 0 && pendingCount > 0 ? (
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+                      <Text style={{ color: colors.warning, fontSize: 11, letterSpacing: 0.3, fontWeight: "700" }}>
+                        {pendingCount} dealer
+                      </Text>
+                      <Text style={{ color: colors.warning, fontSize: 11, opacity: 0.6 }}>•</Text>
+                      <Text style={{ color: colors.warning, fontSize: 11, letterSpacing: 0.3, fontWeight: "700" }}>
+                        {publicPendingCount} public
+                      </Text>
+                    </View>
+                  ) : publicPendingCount > 0 ? (
+                    <Text style={{ color: colors.warning, fontSize: 11, marginTop: 4, letterSpacing: 0.3, fontWeight: "600" }}>
+                      {publicPendingCount === 1 ? "1 public lead awaiting price" : `${publicPendingCount} public leads awaiting price`}
+                    </Text>
+                  ) : (
+                    <Text style={{ color: colors.warning, fontSize: 11, marginTop: 4, letterSpacing: 0.3, fontWeight: "600" }}>
+                      {pendingCount === 1 ? "1 submission needs pricing" : `${pendingCount} submissions need pricing`}
+                    </Text>
+                  )}
                 </Animated.View>
               </View>
             ) : (
               <View style={[styles.homeStatCard, { borderColor: colors.warning + "55" }]}>
                 <Text style={styles.homeStatLabel}>INCOMING</Text>
-                <Text style={[styles.homeStatValue, { color: colors.warning }]}>{pendingCount}</Text>
+                <Text style={[styles.homeStatValue, { color: colors.warning }]}>{incomingTotal}</Text>
               </View>
             )}
             <View style={[styles.homeStatCard, { borderColor: colors.success + "55" }]}>
