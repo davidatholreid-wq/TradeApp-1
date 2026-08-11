@@ -40,7 +40,7 @@ import { apiFetch } from "@/src/api";
 // -----------------------------------------------------------------------------
 // Types
 // -----------------------------------------------------------------------------
-type Bucket = "pending" | "priced" | "delivered";
+type Bucket = "pending" | "priced" | "delivered" | "deleted";
 
 type PublicSubmission = {
   id: string;
@@ -81,6 +81,12 @@ type PublicSubmission = {
   last_whatsapp_message?: string | null;
   last_email_subject?: string | null;
   last_email_body?: string | null;
+  // Soft-delete markers — populated when an admin has moved this lead
+  // into the Deleted silo. Nullable so pending / priced / delivered
+  // rows stay untouched.
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  deleted_by_email?: string | null;
   created_at: string;
   ip_address?: string | null;
   utm_source?: string | null;
@@ -269,6 +275,59 @@ export default function AdminPublicLeadsScreen() {
   useEffect(() => { loadSelected(); }, [loadSelected]);
 
   // ---------- actions ----------
+
+  // Soft-delete a Pending or Priced lead. Delivered leads are guarded
+  // server-side (409) so this button is also hidden in the UI for that
+  // silo. Uses a native confirm dialog on web (Alert.alert on web only
+  // renders a button-less banner) and Alert.alert on native.
+  const confirmDelete = useCallback(async (row: PublicSubmission) => {
+    const label = `${row.reference} — ${row.vehicle.year} ${row.vehicle.make} ${row.vehicle.model}`;
+    const proceed = await new Promise<boolean>((resolve) => {
+      if (Platform.OS === "web") {
+        const w = (globalThis as any).window;
+        resolve(w && typeof w.confirm === "function" ? w.confirm(`Delete this lead?\n\n${label}\n\nThe lead will move to the Deleted silo. Delivered leads can never be deleted.`) : true);
+      } else {
+        Alert.alert(
+          "Delete this lead?",
+          `${label}\n\nIt will move to the Deleted silo. Delivered leads can never be deleted.`,
+          [
+            { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+            { text: "Delete", style: "destructive", onPress: () => resolve(true) },
+          ],
+        );
+      }
+    });
+    if (!proceed) return;
+    try {
+      await apiFetch(`/api/admin/public-submissions/${row.id}`, { method: "DELETE" });
+      // If the currently-selected lead was the one we deleted, clear
+      // the detail pane so it doesn't show a "ghost" state.
+      if (selectedId === row.id) {
+        setSelectedId(null);
+        setSelected(null);
+      }
+      await loadList();
+    } catch (e: any) {
+      Alert.alert("Delete failed", e?.message || "Could not delete lead.");
+    }
+  }, [selectedId, loadList]);
+
+  // Restore a soft-deleted lead back to its previous silo (Pending or
+  // Priced, depending on where it was before deletion — the server
+  // preserves `price` / `priced_at` across deletions).
+  const restoreLead = useCallback(async (row: PublicSubmission) => {
+    try {
+      await apiFetch(`/api/admin/public-submissions/${row.id}/restore`, { method: "POST" });
+      if (selectedId === row.id) {
+        setSelectedId(null);
+        setSelected(null);
+      }
+      await loadList();
+    } catch (e: any) {
+      Alert.alert("Restore failed", e?.message || "Could not restore lead.");
+    }
+  }, [selectedId, loadList]);
+
   const handlePrice = async () => {
     if (!selected) return;
     const p = parseIntSafe(priceInput);
@@ -405,7 +464,7 @@ export default function AdminPublicLeadsScreen() {
           </View>
         </View>
         <View style={styles.tabsRow}>
-          {(["pending", "priced", "delivered"] as Bucket[]).map((b) => (
+          {(["pending", "priced", "delivered", "deleted"] as Bucket[]).map((b) => (
             <TouchableOpacity
               key={b}
               testID={`public-leads-tab-${b}`}
@@ -441,32 +500,63 @@ export default function AdminPublicLeadsScreen() {
           ) : (
             <ScrollView contentContainerStyle={{ padding: spacing.sm }}>
               {rows.map((r) => (
-                <TouchableOpacity
-                  key={r.id}
-                  testID={`public-lead-row-${r.reference}`}
-                  style={[styles.row, selectedId === r.id && styles.rowActive]}
-                  onPress={() => setSelectedId(r.id)}
-                  activeOpacity={0.85}
-                >
-                  <View style={styles.rowHead}>
-                    <Text style={styles.rowRef}>{r.reference}</Text>
-                    <Text style={styles.rowDate}>{fmtDate(r.created_at)}</Text>
-                  </View>
-                  <Text style={styles.rowTitle} numberOfLines={1}>
-                    {r.vehicle.year} {r.vehicle.make} {r.vehicle.model}
-                    {r.vehicle.derivative ? ` ${r.vehicle.derivative}` : ""}
-                  </Text>
-                  <View style={styles.rowMetaRow}>
-                    <Text style={styles.rowMeta}>{fmtKm(r.vehicle.mileage)}</Text>
-                    <Text style={styles.rowMeta}>•</Text>
-                    <Text style={styles.rowMeta} numberOfLines={1}>{r.seller.full_name}</Text>
-                  </View>
-                  {r.status === "priced" ? (
-                    <View style={styles.rowPrice}>
-                      <Text style={styles.rowPriceText}>{fmtZAR(r.price)}</Text>
+                <View key={r.id} style={styles.rowWrap}>
+                  <TouchableOpacity
+                    testID={`public-lead-row-${r.reference}`}
+                    style={[styles.row, selectedId === r.id && styles.rowActive]}
+                    onPress={() => setSelectedId(r.id)}
+                    activeOpacity={0.85}
+                  >
+                    <View style={styles.rowHead}>
+                      <Text style={styles.rowRef}>{r.reference}</Text>
+                      <Text style={styles.rowDate}>
+                        {bucket === "deleted" && r.deleted_at
+                          ? `Deleted ${fmtDate(r.deleted_at)}`
+                          : fmtDate(r.created_at)}
+                      </Text>
                     </View>
+                    <Text style={styles.rowTitle} numberOfLines={1}>
+                      {r.vehicle.year} {r.vehicle.make} {r.vehicle.model}
+                      {r.vehicle.derivative ? ` ${r.vehicle.derivative}` : ""}
+                    </Text>
+                    <View style={styles.rowMetaRow}>
+                      <Text style={styles.rowMeta}>{fmtKm(r.vehicle.mileage)}</Text>
+                      <Text style={styles.rowMeta}>•</Text>
+                      <Text style={styles.rowMeta} numberOfLines={1}>{r.seller.full_name}</Text>
+                    </View>
+                    {r.status === "priced" ? (
+                      <View style={styles.rowPrice}>
+                        <Text style={styles.rowPriceText}>{fmtZAR(r.price)}</Text>
+                      </View>
+                    ) : null}
+                  </TouchableOpacity>
+                  {/* Row action rail — a small trash / restore button
+                      lives on top of the row so it's reachable without
+                      opening the detail pane. Delivered leads never
+                      show this rail (they're protected server-side). */}
+                  {bucket === "pending" || bucket === "priced" ? (
+                    <TouchableOpacity
+                      testID={`public-lead-delete-${r.reference}`}
+                      style={styles.rowAction}
+                      onPress={() => confirmDelete(r)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete ${r.reference}`}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={colors.danger} />
+                    </TouchableOpacity>
                   ) : null}
-                </TouchableOpacity>
+                  {bucket === "deleted" ? (
+                    <TouchableOpacity
+                      testID={`public-lead-restore-${r.reference}`}
+                      style={styles.rowAction}
+                      onPress={() => restoreLead(r)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Restore ${r.reference}`}
+                    >
+                      <Ionicons name="refresh" size={16} color={colors.primary} />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
               ))}
             </ScrollView>
           )}
@@ -1184,8 +1274,34 @@ function makeStyles(colors: Palette) {
     dim: { color: colors.textSecondary, marginTop: 12 },
     dimSmall: { color: colors.textDisabled, marginTop: 4, fontSize: 12 },
 
+    // Wrap for the row + its trailing action button. `position: relative`
+    // so the action floats over the row's top-right corner regardless of
+    // row content height.
+    rowWrap: { position: "relative" },
+    // Trash / restore button — a small floating chip pinned to the row's
+    // top-right. Uses a neutral card background so it reads above the
+    // row's own tint without dominating.
+    rowAction: {
+      position: "absolute",
+      top: 8,
+      right: 8,
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      backgroundColor: colors.paper,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: "center",
+      justifyContent: "center",
+      zIndex: 2,
+      elevation: 2,
+    },
+
     row: {
       padding: 12,
+      // Reserve breathing room on the right so the floating action
+      // chip never overlaps the reference number.
+      paddingRight: 44,
       borderWidth: 1,
       borderColor: colors.border,
       borderRadius: 10,

@@ -492,8 +492,15 @@ async def admin_list_public(request: Request, bucket: str = "pending"):
     _ = await _require_admin(request)
     from server import db
     filt: dict = {}
+    # Every silo except "deleted" hides soft-deleted rows so admins don't
+    # see the same lead twice. We use `deleted_at` as the soft-delete
+    # marker — leaving the document in-place preserves audit history
+    # (created_at, seller consent IP, license disk data, prior
+    # deliveries) if we ever need to restore or investigate a lead.
+    exclude_deleted = {"$or": [{"deleted_at": None}, {"deleted_at": {"$exists": False}}]}
     if bucket == "pending":
         filt["status"] = "pending"
+        filt.update(exclude_deleted)
     elif bucket == "priced":
         # PRICED silo = priced AND NOT YET delivered on any channel. Once
         # delivered, the lead moves to the "delivered" silo (per product
@@ -502,12 +509,27 @@ async def admin_list_public(request: Request, bucket: str = "pending"):
         filt["status"] = "priced"
         filt["delivered_email_at"] = None
         filt["delivered_whatsapp_at"] = None
+        filt.update(exclude_deleted)
     elif bucket == "delivered":
         # Match submissions delivered via ANY channel (email OR whatsapp).
-        filt["$or"] = [
-            {"delivered_email_at": {"$ne": None}},
-            {"delivered_whatsapp_at": {"$ne": None}},
+        # Delivered leads are protected from deletion so this silo always
+        # reflects the actual delivery ledger. We still filter out any
+        # soft-deleted rows defensively in case a future migration ever
+        # allows deleting a delivered lead.
+        filt["$and"] = [
+            exclude_deleted,
+            {"$or": [
+                {"delivered_email_at": {"$ne": None}},
+                {"delivered_whatsapp_at": {"$ne": None}},
+            ]},
         ]
+    elif bucket == "deleted":
+        # Soft-deleted archive. Sort by deletion time (most-recently
+        # deleted first) so admins can quickly restore a mistake.
+        filt["deleted_at"] = {"$ne": None}
+        cursor = db.public_submissions.find(filt, {"_id": 0}).sort("deleted_at", -1)
+        subs = await cursor.to_list(500)
+        return {"submissions": subs, "count": len(subs)}
     elif bucket == "all":
         pass
     else:
@@ -558,6 +580,74 @@ async def admin_price_public(sub_id: str, payload: PriceIn, request: Request):
     if result.matched_count == 0:
         raise HTTPException(404, "Not found")
     return {"status": "priced", "priced_at": now}
+
+
+@router.delete("/admin/public-submissions/{sub_id}")
+async def admin_delete_public(sub_id: str, request: Request):
+    """Soft-delete a Pending or Priced public lead into the Deleted silo.
+
+    Business rules:
+      • Only Pending (`status="pending"`) and Priced-not-yet-delivered
+        leads can be deleted. Delivered leads are LOCKED because the
+        `delivered_*_at` timestamps are the source of truth for our
+        seller-facing delivery ledger — silently deleting them would
+        break audit / compliance.
+      • Soft delete only — we set `deleted_at` + `deleted_by` on the
+        existing document instead of `delete_one()`. This preserves
+        seller consent info, license disk data, photos, and the whole
+        state timeline for a future restore or investigation.
+
+    Response mirrors the price/deliver endpoints for consistency.
+    """
+    admin_user = await _require_admin(request)
+    from server import db
+    sub = await db.public_submissions.find_one(
+        {"$or": [{"id": sub_id}, {"reference": sub_id}]}, {"_id": 0}
+    )
+    if not sub:
+        raise HTTPException(404, "Not found")
+    if sub.get("deleted_at"):
+        # Idempotent — already deleted.
+        return {"status": "deleted", "deleted_at": sub["deleted_at"]}
+    # Delivered leads are protected.
+    if sub.get("delivered_email_at") or sub.get("delivered_whatsapp_at"):
+        raise HTTPException(
+            409,
+            "Delivered leads cannot be deleted. If this was sent in error, "
+            "reach out to support so the delivery ledger stays consistent.",
+        )
+    now = datetime.now(timezone.utc).isoformat()
+    await db.public_submissions.update_one(
+        {"$or": [{"id": sub_id}, {"reference": sub_id}]},
+        {"$set": {
+            "deleted_at": now,
+            "deleted_by": admin_user.get("id"),
+            "deleted_by_email": admin_user.get("email"),
+        }},
+    )
+    return {"status": "deleted", "deleted_at": now}
+
+
+@router.post("/admin/public-submissions/{sub_id}/restore")
+async def admin_restore_public(sub_id: str, request: Request):
+    """Restore a soft-deleted lead back to its previous silo (Pending or
+    Priced). Clears the `deleted_*` markers. If the lead was priced
+    before deletion its price + priced_at are preserved so it lands
+    back in the Priced silo automatically."""
+    _ = await _require_admin(request)
+    from server import db
+    sub = await db.public_submissions.find_one(
+        {"$or": [{"id": sub_id}, {"reference": sub_id}]}, {"_id": 0}
+    )
+    if not sub:
+        raise HTTPException(404, "Not found")
+    if not sub.get("deleted_at"):
+        return {"status": "not_deleted"}
+    await db.public_submissions.update_one(
+        {"$or": [{"id": sub_id}, {"reference": sub_id}]},
+        {"$unset": {"deleted_at": "", "deleted_by": "", "deleted_by_email": ""}},
+    )
+    return {"status": "restored"}
 
 
 @router.post("/admin/public-submissions/{sub_id}/market-values")
