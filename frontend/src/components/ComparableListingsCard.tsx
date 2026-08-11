@@ -104,10 +104,11 @@ function derivativeKeywords(derivative?: string, model?: string): string[] {
 }
 
 // Once a MODEL is selected from the picker we don't want the derivative
-// keywords to also include the model-name tokens (that would just
-// double-search for `keyword=A&keyword=Class` on top of `/a-class`).
-// Strip any token whose normalised form appears in the resolved
-// model — keep everything else (trim, spec, sport suffix).
+// keywords to leak into the URL — see the reasoning in
+// `buildAutoTraderUrl`. Kept as a helper for callers that still want
+// the "trim-only" token list (e.g. a future "narrow further" affordance),
+// but the main URL builder no longer uses it.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function trimKeywords(
   derivative: string | undefined,
   model: string | undefined,
@@ -221,10 +222,15 @@ function buildAutoTraderUrl(
   if (trans) qs.set("transmission", trans);
   qs.set("dealerrating", "3");
 
-  // Path A: catalogue-driven make/model.
+  // Path A: catalogue-driven make/model. Model page is precise enough
+  // on its own — the year + fuel + transmission chips already narrow
+  // things further, and adding derivative tokens as `keyword=` pills
+  // was over-filtering (e.g. `keyword=200` cut a `A-Class` search
+  // down from ~800 hits to just the handful of listings whose
+  // description happens to spell out "200"). If the dealer wants
+  // trim-level narrowing they can clear the picker and switch back
+  // to keyword search via the "Clear" row below the dropdown.
   if (canonicalMake && canonicalModel) {
-    const trimTokens = trimKeywords(p.derivative, p.model, canonicalModel);
-    for (const k of trimTokens) qs.append("keyword", k);
     const path = `${atSlug(canonicalMake)}/${atSlug(canonicalModel)}`;
     return `https://www.autotrader.co.za/cars-for-sale/${path}?${qs.toString()}`;
   }
@@ -340,9 +346,14 @@ export default function ComparableListingsCard(props: Props) {
   const fuel = normaliseFuel(props.fuelType);
   const trans = normaliseTransmission(props.transmission);
 
-  // Compact chips describing what's pre-applied.
+  // Compact chips describing what's pre-applied. When a catalogue
+  // model is selected the URL relies purely on the make/model path +
+  // year/fuel/transmission chips (no keyword pills — see
+  // `buildAutoTraderUrl` for the reasoning), so we also hide the
+  // derivative tokens from the chip row to match what AT actually
+  // sees. Falling back to keyword search? Show the tokens.
   const kwTokens = effectiveModel
-    ? trimKeywords(props.derivative, props.model, effectiveModel)
+    ? []
     : derivativeKeywords(props.derivative, props.model);
   const chips: string[] = [];
   if (effectiveMake) chips.push(effectiveMake);
