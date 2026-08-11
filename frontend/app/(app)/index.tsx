@@ -1031,10 +1031,16 @@ type FlipTileProps = {
 function FlipTile({ tile, styles, colors, autoRotateMs = 0, outerStyle }: FlipTileProps) {
   // Total pages:
   //   * `heroes` tiles = one page per hero image (no front / no footer).
-  //   * Bullet/ad tiles = 1 (front) + points/ads + optional footer.
+  //   * `ads` tiles    = one page per ad (no front / no footer either — the
+  //     ads are self-explanatory, and the old "Advertising · Featured
+  //     partners" front page was just eating an impression the paying
+  //     partners deserved).
+  //   * Bullet-point tiles = 1 (front) + points + optional footer.
   const totalPages = tile.heroes
     ? tile.heroes.length
-    : 1 + (tile.points?.length ?? tile.ads?.length ?? 0) + (tile.footer ? 1 : 0);
+    : tile.ads
+      ? tile.ads.length
+      : 1 + (tile.points?.length ?? 0) + (tile.footer ? 1 : 0);
   const [idx, setIdx] = useState(0);
   const rot = useSharedValue(0); // 0..1 flip progress
   const scale = useSharedValue(1);
@@ -1151,7 +1157,24 @@ function TilePage({ tile, pageIdx, styles, colors }: { tile: Tile; pageIdx: numb
     );
   }
 
-  // Front page
+  // Ad tiles skip the front / footer pages entirely — every page is
+  // one ad slot (see totalPages calc in FlipTile). Renders full-bleed
+  // image with a small "ADVERTISING" pill in the top-left corner.
+  if (tile.ads) {
+    const ad = tile.ads[pageIdx];
+    if (!ad) return null;
+    return (
+      <View style={styles.pageAd}>
+        <Image source={ad.image} style={styles.adImg} resizeMode="contain" />
+        <View style={styles.adBadge}>
+          <Ionicons name="megaphone-outline" size={10} color="#fff" />
+          <Text style={styles.adBadgeText}>ADVERTISING</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Front page (bullet-point tiles only — heroes + ads skip this earlier).
   if (pageIdx === 0) {
     // Lifestyle-image front (currently only the "Trade with Confidence" tile).
     if (tile.frontImage) {
@@ -1199,21 +1222,6 @@ function TilePage({ tile, pageIdx, styles, colors }: { tile: Tile; pageIdx: numb
       <View style={styles.pageFooter}>
         <Ionicons name="sparkles" size={24} color={colors.textSecondary} />
         <Text style={styles.footerText}>{tile.footer}</Text>
-      </View>
-    );
-  }
-
-  // Ad page
-  if (tile.ads) {
-    const ad = tile.ads[pageIdx - 1];
-    if (!ad) return null;
-    return (
-      <View style={styles.pageAd}>
-        <Image source={ad.image} style={styles.adImg} resizeMode="contain" />
-        <View style={styles.adBadge}>
-          <Ionicons name="megaphone-outline" size={10} color="#fff" />
-          <Text style={styles.adBadgeText}>ADVERTISING</Text>
-        </View>
       </View>
     );
   }
