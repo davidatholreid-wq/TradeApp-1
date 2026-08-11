@@ -452,6 +452,16 @@ export default function HomeScreen() {
 
   const tiles: Tile[] = dynamicTiles;
 
+  // Split out the Ads tile so we can promote it into the hero row on
+  // wide screens (side-by-side with the Fourbuy brand banner) — the
+  // user requested it there because it was reading as an out-of-place
+  // orphan tile all the way at the bottom of the "Why Fourbuy" section.
+  // On phones the ad stays where it is (the hero row stacks anyway and
+  // there's no horizontal real-estate to spare next to the video).
+  const adsTile = tiles.find((t) => t.key === "ads") || null;
+  const nonAdsTiles = tiles.filter((t) => t.key !== "ads");
+  const tilesForGrid = isWide ? nonAdsTiles : tiles;
+
   return (
     <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
       <ScrollView
@@ -483,31 +493,56 @@ export default function HomeScreen() {
               • Web: static Fourbuy Car Buying Co. logo on a solid brand
                 backdrop. Web video autoplay is unreliable across
                 browsers / power modes, and the client asked to fall
-                back to a clean logo lockup there. */}
-          <View style={styles.heroWrap}>
-            {Platform.OS === "web" ? (
-              <View style={styles.heroLogoBg}>
-                <Image
-                  source={BRAND.logo}
-                  style={styles.heroLogoImg}
-                  resizeMode="contain"
-                  accessibilityLabel="Fourbuy Car Buying Co."
+                back to a clean logo lockup there.
+              On wide screens (`isWide`) we wrap the panel in a two-
+              column row and dock the Advertising flip-tile to its
+              right — the ad used to sit orphaned at the bottom of the
+              Why-Fourbuy section which read as out-of-place, and this
+              is prime dealer real-estate anyway. */}
+          <View style={isWide && adsTile ? styles.heroRow : undefined}>
+            <View style={[styles.heroWrap, isWide && adsTile ? styles.heroWrapWithAd : null]}>
+              {Platform.OS === "web" ? (
+                <View style={styles.heroLogoBg}>
+                  <Image
+                    source={BRAND.logo}
+                    style={styles.heroLogoImg}
+                    resizeMode="contain"
+                    accessibilityLabel="Fourbuy Car Buying Co."
+                  />
+                </View>
+              ) : (
+                <>
+                  <Image source={HERO_POSTER} style={styles.heroPoster} resizeMode="cover" />
+                  <VideoView
+                    player={heroPlayer}
+                    style={styles.hero}
+                    contentFit="cover"
+                    nativeControls={false}
+                    allowsFullscreen={false}
+                    allowsPictureInPicture={false}
+                    accessibilityLabel="Fourbuy Car Buying Co. hero video"
+                  />
+                </>
+              )}
+            </View>
+            {isWide && adsTile ? (
+              <View style={styles.heroAdCol}>
+                <FlipTile
+                  tile={adsTile}
+                  styles={styles}
+                  colors={colors}
+                  // Keep the ads auto-rotating (5 s cadence) even in
+                  // this promoted position — the whole point of the
+                  // banner is a live rotation across configured
+                  // advertisers.
+                  autoRotateMs={5000}
+                  // Fill the column completely so the ad reads at
+                  // exactly the same visual weight as the Fourbuy
+                  // banner beside it (matching height / aspect).
+                  outerStyle={styles.heroAdOuter}
                 />
               </View>
-            ) : (
-              <>
-                <Image source={HERO_POSTER} style={styles.heroPoster} resizeMode="cover" />
-                <VideoView
-                  player={heroPlayer}
-                  style={styles.hero}
-                  contentFit="cover"
-                  nativeControls={false}
-                  allowsFullscreen={false}
-                  allowsPictureInPicture={false}
-                  accessibilityLabel="Fourbuy Car Buying Co. hero video"
-                />
-              </>
-            )}
+            ) : null}
           </View>
 
           {/* Quick-nav tiles — the primary secondary-destinations
@@ -701,7 +736,7 @@ export default function HomeScreen() {
 
           {/* Flip-tiles */}
           <View style={styles.cardsWrap}>
-            {tiles.map((t) => (
+            {tilesForGrid.map((t) => (
               <View
                 key={t.key}
                 style={[
@@ -717,14 +752,12 @@ export default function HomeScreen() {
                   tile={t}
                   styles={styles}
                   colors={colors}
-                  // Auto-rotate BOTH the Trade hero cycle and the Ads
-                  // carousel. Trade rotates a hair slower (6s) so
-                  // dealers have time to read the baked-in headline
-                  // and description; Ads keep the original 5s cadence.
-                  // Bullet-only tiles remain tap-only.
-                  autoRotateMs={
-                    t.key === "ads" ? 5000 : t.heroes ? 6000 : 0
-                  }
+                  // Auto-rotate only the Ads carousel (5 s). The Trade
+                  // hero cycle is now tap-only per the user's request —
+                  // auto-flipping under a dealer's mouse felt jumpy,
+                  // and hero pages have marketing copy that deserves
+                  // careful attention rather than a five-second skim.
+                  autoRotateMs={t.key === "ads" ? 5000 : 0}
                 />
               </View>
             ))}
@@ -989,9 +1022,13 @@ type FlipTileProps = {
   // tap resets the timer so users don't get skipped mid-read. Set to 0
   // (default) for tap-only tiles.
   autoRotateMs?: number;
+  // Optional style override applied to the outer Pressable. Used by the
+  // "promoted ad tile" in the hero row so it can stretch to fill its
+  // column instead of using the default fixed `TILE_HEIGHT`.
+  outerStyle?: any;
 };
 
-function FlipTile({ tile, styles, colors, autoRotateMs = 0 }: FlipTileProps) {
+function FlipTile({ tile, styles, colors, autoRotateMs = 0, outerStyle }: FlipTileProps) {
   // Total pages:
   //   * `heroes` tiles = one page per hero image (no front / no footer).
   //   * Bullet/ad tiles = 1 (front) + points/ads + optional footer.
@@ -1067,7 +1104,7 @@ function FlipTile({ tile, styles, colors, autoRotateMs = 0 }: FlipTileProps) {
   return (
     <Pressable
       onPress={onTap}
-      style={[styles.tileOuter, tile.heroes ? styles.tileOuterHero : null]}
+      style={[styles.tileOuter, tile.heroes ? styles.tileOuterHero : null, outerStyle]}
       accessibilityRole="button"
       accessibilityLabel={`${tile.title} card. Tap to see next.`}
     >
@@ -1262,6 +1299,16 @@ const makeStyles = (colors: Palette, isWide: boolean, windowWidth: number = 0) =
     },
 
     // Hero video ----------------------------------------------------------
+    // On wide screens the hero panel becomes a two-column row that
+    // docks the Advertising flip-tile to the right of the Fourbuy
+    // brand banner. The Fourbuy panel shrinks to ~62% width so both
+    // banners feel balanced (the ad panel needs a workable minimum
+    // width to render its full-bleed brand images legibly).
+    heroRow: {
+      flexDirection: "row",
+      gap: spacing.md,
+      alignItems: "stretch",
+    },
     heroWrap: {
       width: "100%",
       aspectRatio: 16 / 9,
@@ -1273,6 +1320,35 @@ const makeStyles = (colors: Palette, isWide: boolean, windowWidth: number = 0) =
         ios: { shadowColor: "#000", shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } },
         android: { elevation: 3 },
       }),
+    },
+    heroWrapWithAd: {
+      // 62% width leaves enough room for the ad tile (~35% + gap) and
+      // preserves the 16:9 aspect ratio so nothing gets stretched.
+      flex: 0.62,
+      width: undefined as any,
+      aspectRatio: undefined as any,
+      maxHeight: undefined,
+    },
+    heroAdCol: {
+      // Companion ad column — matches the shrunk hero's height via
+      // stretch alignment so the two panels are exactly the same
+      // vertical size regardless of content aspect.
+      flex: 0.38,
+      minHeight: 200,
+      // Cap the maximum height so the ad panel never dwarfs the
+      // Fourbuy banner on ultra-wide screens.
+      maxHeight: 360,
+      borderRadius: radius.lg,
+      overflow: "hidden",
+    },
+    // Applied to the promoted ad FlipTile's outer Pressable — strips
+    // the default `TILE_HEIGHT` fixed height and lets it fill the
+    // parent column, so the banner sits at exactly the same height
+    // as the neighbouring Fourbuy panel.
+    heroAdOuter: {
+      height: "100%",
+      width: "100%",
+      flex: 1,
     },
     hero: { width: "100%", height: "100%" },
     heroPoster: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, width: "100%", height: "100%" },
