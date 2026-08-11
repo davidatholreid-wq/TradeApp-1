@@ -4216,13 +4216,28 @@ export default function VehicleDetail() {
                     body: JSON.stringify({ price_zar: n }),
                   });
                   setCoverPriceInput("");
-                  await loadCoverMeta();
-                  Alert.alert(
-                    isUpdate ? "Cover updated" : "Cover placed",
-                    isUpdate
-                      ? `Your binding cover is now R${n.toLocaleString()}. No additional charge for updates.`
-                      : `Your binding cover of R${n.toLocaleString()} has been recorded. R${cost} was added to your next invoice.`,
-                  );
+                  if (isUpdate) {
+                    // Updates keep the user on the same page so they
+                    // can adjust and re-adjust freely. Refresh the
+                    // meta so the header pill shows the new amount.
+                    await loadCoverMeta();
+                    Alert.alert(
+                      "Cover updated",
+                      `Your binding cover is now R${n.toLocaleString()}. No additional charge for updates.`,
+                    );
+                  } else {
+                    // First-time placement — bounce back to the Cover
+                    // given tab of the Give Cover screen so the agent
+                    // doesn't linger on the (now-priced) submission
+                    // with an "Update price" bar. The Cover-given list
+                    // is where the new cover naturally lives, and the
+                    // agent's next action is usually to price the next
+                    // vehicle in the pipeline.
+                    router.replace({
+                      pathname: "/(app)/cover",
+                      params: { tab: "given" },
+                    });
+                  }
                 } catch (e: any) {
                   Alert.alert("Cover", e?.message || "Could not save cover.");
                 } finally {
