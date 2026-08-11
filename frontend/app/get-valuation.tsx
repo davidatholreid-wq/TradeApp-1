@@ -31,6 +31,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
+  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -41,8 +42,8 @@ import { TouchableOpacity } from "@/src/components/HapticButtons";
 import TurnstileWidget from "@/src/components/TurnstileWidget";
 import WheelPicker from "@/src/components/WheelPicker";
 import { decodeLicenseDisk } from "@/src/utils/licenseDisk";
-import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
-import { fonts } from "@/src/theme";
+import { useThemeColors, useTheme, type Palette } from "@/src/theme/ThemeContext";
+import { fonts, BRAND } from "@/src/theme";
 import * as ImageManipulator from "expo-image-manipulator";
 
 // ---------------------------------------------------------------------------
@@ -191,9 +192,15 @@ const TOTAL_STEPS = 6;
 // Main screen
 // ---------------------------------------------------------------------------
 export default function GetValuationScreen() {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const router = useRouter();
   const colors = useThemeColors();
+  const { mode } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  // Pick the correct logo variant for the current theme so it reads
+  // cleanly against the page background (dark logo on light bg, light
+  // logo on dark bg).
+  const brandLogo = mode === "light" ? BRAND.logoLight : BRAND.logo;
   const [step, setStep] = useState(1);
 
   // Seller
@@ -473,19 +480,26 @@ export default function GetValuationScreen() {
 
   // ---------- success ----------
   if (result) {
-    return <SuccessCard colors={colors} styles={styles} reference={result.reference} message={result.message} onDone={() => router.replace("/")} />;
+    return <SuccessCard colors={colors} styles={styles} brandLogo={brandLogo} reference={result.reference} message={result.message} />;
   }
 
   const progress = step / TOTAL_STEPS;
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
-      {/* STATIC HEADER — outside KeyboardAvoidingView so it never jumps
-          when the keyboard opens. Logo centered, no back button (Back
-          now lives next to Continue in the sticky footer). */}
+      {/* STATIC HEADER — pinned to the top of the viewport. On web we
+          add `position: sticky` so the mobile browser's shrinking /
+          growing address bar can't push the Fourbuy logo off-screen
+          (which was the "logo too high, cannot be seen" bug). Outside
+          the KeyboardAvoidingView so the wordmark never jumps when
+          the on-screen keyboard opens. */}
       <View style={styles.header}>
-        <Text style={styles.brand}>FOURBUY</Text>
-        <Text style={styles.brandSub}>CAR BUYING CO.</Text>
+        <Image
+          source={brandLogo}
+          style={styles.headerLogo}
+          resizeMode="contain"
+          accessibilityLabel="Fourbuy Car Buying Co."
+        />
       </View>
 
       {/* STATIC PROGRESS BAR — also outside the KeyboardAvoidingView. */}
@@ -973,26 +987,74 @@ function StepReview({ colors, styles, summary, onEditStep, turnstileSiteKey, tur
   );
 }
 
-function SuccessCard({ colors, styles, reference, message, onDone }: any) {
+function SuccessCard({ colors, styles, brandLogo, reference, message }: any) {
+  // Redirect the seller to the main Fourbuy marketing site. On web
+  // we prefer navigating the same tab (feels like a natural page
+  // transition after Done); on native we hand off to the system
+  // browser via `Linking.openURL`.
+  const goToFourbuy = () => {
+    const target = "https://www.fourbuy.co.za";
+    try {
+      if (Platform.OS === "web") {
+        const w = (globalThis as any).window;
+        if (w && w.location) {
+          w.location.href = target;
+          return;
+        }
+      }
+    } catch {
+      /* fall through to Linking */
+    }
+    Linking.openURL(target).catch(() => {});
+  };
+
   return (
     <SafeAreaView style={[styles.safe, { justifyContent: "center" }]} edges={["top", "bottom"]}>
-      <View style={styles.successWrap}>
-        <View style={styles.successCircle}>
-          <Ionicons name="checkmark" size={44} color={colors.onPrimary} />
-        </View>
-        <Text style={styles.successTitle}>Thank you!</Text>
-        <Text style={styles.successBody}>{message || "We'll be in touch within 24 hours."}</Text>
-        <View style={styles.refPill}>
-          <Text style={styles.refPillLabel}>Reference</Text>
-          <Text style={styles.refPillValue}>{reference}</Text>
-        </View>
-        <Text style={styles.successFooter}>
-          Save this reference — we{"\u2019"}ll quote it in our WhatsApp and email response.
-        </Text>
-        <TouchableOpacity style={styles.primaryBtn} onPress={onDone}>
-          <Text style={styles.primaryBtnText}>Done</Text>
-        </TouchableOpacity>
+      {/* Slim brand header on the success page too — keeps the
+          seller's mental context ("I'm still on Fourbuy's site") and
+          matches the wizard's chrome so the transition feels tidy. */}
+      <View style={styles.header}>
+        <Image
+          source={brandLogo}
+          style={styles.headerLogo}
+          resizeMode="contain"
+          accessibilityLabel="Fourbuy Car Buying Co."
+        />
       </View>
+      <ScrollView contentContainerStyle={styles.successScroll}>
+        <View style={styles.successWrap}>
+          <View style={styles.successCircle}>
+            <Ionicons name="checkmark" size={48} color={colors.onPrimary} />
+          </View>
+          <Text style={styles.successTitle}>Thank you!</Text>
+          <Text style={styles.successBody}>{message || "We'll be in touch within 24 hours."}</Text>
+          <View style={styles.refPill}>
+            <Text style={styles.refPillLabel}>Reference</Text>
+            <Text style={styles.refPillValue}>{reference}</Text>
+          </View>
+          <Text style={styles.successFooter}>
+            Save this reference — we{"\u2019"}ll quote it in our WhatsApp and email response.
+          </Text>
+
+          {/* Primary CTA — send the seller to the main Fourbuy site
+              to browse stock, read reviews, or contact the team while
+              they wait for the valuation to land. Wider button + arrow
+              icon reads as an outbound link rather than a form
+              dismissal. */}
+          <TouchableOpacity
+            style={styles.successPrimaryBtn}
+            onPress={goToFourbuy}
+            accessibilityRole="link"
+            accessibilityLabel="Visit fourbuy.co.za"
+          >
+            <Text style={styles.successPrimaryBtnText}>Visit fourbuy.co.za</Text>
+            <Ionicons name="arrow-forward" size={18} color={colors.onPrimary} />
+          </TouchableOpacity>
+          <Text style={styles.successHint}>
+            You can safely close this tab — your submission is saved.
+          </Text>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -1079,16 +1141,45 @@ function SummaryLine({ styles, label, value }: { styles: any; label: string; val
 // ---------------------------------------------------------------------------
 function makeStyles(colors: Palette) {
   return StyleSheet.create({
-    safe: { flex: 1, backgroundColor: colors.bg },
+    // Outer container — flex:1 fills the parent, but on web we ALSO
+    // clamp to 100dvh so the mobile browser's dynamic address bar
+    // can't inflate our height beyond the visible viewport (which was
+    // causing the "screen moves when scrolling" bug — the outer body
+    // was scrolling instead of the ScrollView). `100dvh` (dynamic
+    // viewport height) tracks the address-bar hide/show so our
+    // scroll container is always exactly one screen tall.
+    safe: {
+      flex: 1,
+      backgroundColor: colors.bg,
+      ...(Platform.OS === "web" ? ({ height: "100dvh", maxHeight: "100dvh" } as any) : {}),
+    },
     header: {
       paddingHorizontal: 16,
-      paddingTop: 8,
-      paddingBottom: 12,
+      paddingTop: 10,
+      paddingBottom: 10,
       alignItems: "center",           // center the brand horizontally
       justifyContent: "center",
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
       backgroundColor: colors.bg,
+      // On web pin the header to the top of the scroll container so
+      // mobile browsers can't push it off-screen when the address bar
+      // hides. `zIndex` keeps the sticky header above any scroll
+      // shadows.
+      ...(Platform.OS === "web" ? ({
+        position: "sticky" as any,
+        top: 0,
+        zIndex: 10,
+      } as any) : {}),
+    },
+    // Logo dimensions — the Fourbuy wordmark PNG is 617×215 (~2.87:1).
+    // 40px tall × 115 wide keeps it legible on the smallest supported
+    // phone browser (iPhone SE, 320px CSS width) without dominating
+    // the header. Increased from the previous text-only header for
+    // brand recognition on the public-facing page.
+    headerLogo: {
+      width: 130,
+      height: 46,
     },
     brand: {
       fontSize: 18,
@@ -1421,6 +1512,15 @@ function makeStyles(colors: Palette) {
       maxWidth: 480,
       alignSelf: "center",
     },
+    // ScrollView wrapper for the success screen so long content on
+    // small phone viewports (e.g. iPhone SE in landscape) never gets
+    // clipped by the sticky header + safe area insets.
+    successScroll: {
+      flexGrow: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingVertical: 24,
+    },
     successCircle: {
       width: 88, height: 88,
       borderRadius: 44,
@@ -1476,6 +1576,39 @@ function makeStyles(colors: Palette) {
       textAlign: "center",
       marginBottom: 20,
       paddingHorizontal: 20,
+    },
+    // Bigger, more inviting primary CTA on the success screen —
+    // full-width, elevated, arrow icon so it reads as an outbound
+    // link back to the main Fourbuy site.
+    successPrimaryBtn: {
+      backgroundColor: colors.primary,
+      paddingVertical: 16,
+      paddingHorizontal: 28,
+      borderRadius: 12,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 10,
+      minWidth: 240,
+      alignSelf: "stretch",
+      ...Platform.select({
+        ios: { shadowColor: "#000", shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 5 } },
+        android: { elevation: 4 },
+        default: {},
+      }),
+    },
+    successPrimaryBtnText: {
+      color: colors.onPrimary,
+      fontSize: 16,
+      fontWeight: "700",
+      letterSpacing: 0.4,
+    },
+    successHint: {
+      color: colors.textDisabled,
+      fontSize: 11,
+      textAlign: "center",
+      marginTop: 12,
+      fontStyle: "italic",
     },
   });
 }
