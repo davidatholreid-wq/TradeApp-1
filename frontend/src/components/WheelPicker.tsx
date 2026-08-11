@@ -44,8 +44,9 @@ export default function WheelPicker<T extends string | number>({
   const colors = useThemeColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const scrollRef = useRef<ScrollView>(null);
-  const webScrollRef = useRef<any>(null);          // underlying DOM node on web
+  const webScrollRef = useRef<any>(null);          // RN Web ScrollView instance
   const scrollDebounceRef = useRef<any>(null);
+  const lastScrollY = useRef<number>(0);           // tracked in onScroll for both platforms
   const [current, setCurrent] = useState<T | null>(value ?? options[0] ?? null);
 
   // Sync the wheel to the incoming value on open (BOTH platforms use
@@ -55,10 +56,11 @@ export default function WheelPicker<T extends string | number>({
     const idx = Math.max(0, options.findIndex((o) => o === value));
     const snapIndex = idx === -1 ? 0 : idx;
     setCurrent(options[snapIndex] ?? options[0] ?? null);
+    lastScrollY.current = snapIndex * ITEM_HEIGHT;
     const t = setTimeout(() => {
       if (Platform.OS === "web") {
         try {
-          webScrollRef.current?.scrollTo?.({ top: snapIndex * ITEM_HEIGHT, behavior: "auto" });
+          webScrollRef.current?.scrollTo?.({ y: snapIndex * ITEM_HEIGHT, animated: false });
         } catch {}
       } else {
         scrollRef.current?.scrollTo({ y: snapIndex * ITEM_HEIGHT, animated: false });
@@ -71,22 +73,22 @@ export default function WheelPicker<T extends string | number>({
   // Native — read scroll offset when momentum stops and snap to it.
   const onMomentumEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const y = e.nativeEvent.contentOffset.y;
+    lastScrollY.current = y;
     const idx = Math.max(0, Math.min(options.length - 1, Math.round(y / ITEM_HEIGHT)));
     setCurrent(options[idx]);
     scrollRef.current?.scrollTo({ y: idx * ITEM_HEIGHT, animated: true });
   };
 
-  // Web — debounced onScroll to detect the settled position. Fires
-  // 130ms after the last scroll event which is long enough for
-  // scroll-snap CSS to snap to the target row on both touch (iOS
-  // momentum) and mouse-wheel (desktop).
+  // Web — react-native-web ScrollView passes a synthetic event whose
+  // `nativeEvent.contentOffset.y` is populated (same shape as native).
+  // We track the latest y in a ref (survives the debounce) so `confirm`
+  // can commit the exact position the user landed on.
   const onWebScroll = useCallback(
-    (e: any) => {
-      const target = e?.currentTarget || e?.target;
-      if (!target) return;
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const y = e?.nativeEvent?.contentOffset?.y ?? 0;
+      lastScrollY.current = y;
       if (scrollDebounceRef.current) clearTimeout(scrollDebounceRef.current);
       scrollDebounceRef.current = setTimeout(() => {
-        const y = target.scrollTop || 0;
         const idx = Math.max(0, Math.min(options.length - 1, Math.round(y / ITEM_HEIGHT)));
         setCurrent(options[idx] ?? null);
       }, 130);
@@ -95,9 +97,10 @@ export default function WheelPicker<T extends string | number>({
   );
 
   const scrollToIndex = (i: number) => {
+    lastScrollY.current = i * ITEM_HEIGHT;
     if (Platform.OS === "web") {
       try {
-        webScrollRef.current?.scrollTo?.({ top: i * ITEM_HEIGHT, behavior: "smooth" });
+        webScrollRef.current?.scrollTo?.({ y: i * ITEM_HEIGHT, animated: true });
       } catch {}
     } else {
       scrollRef.current?.scrollTo({ y: i * ITEM_HEIGHT, animated: true });
@@ -106,16 +109,15 @@ export default function WheelPicker<T extends string | number>({
   };
 
   const confirm = () => {
-    // Belt-and-braces: on web, read the DOM scrollTop one last time
-    // before committing so we never commit a stale `current` (this
-    // catches the edge case where the user scrolls, taps DONE within
-    // the 130 ms debounce window).
-    let final: T | null = current;
-    if (Platform.OS === "web" && webScrollRef.current) {
-      const y = (webScrollRef.current as any).scrollTop || 0;
-      const idx = Math.max(0, Math.min(options.length - 1, Math.round(y / ITEM_HEIGHT)));
-      final = options[idx] ?? current;
-    }
+    // Read the tracked scroll offset (populated on every onScroll fire)
+    // instead of poking the DOM — RN Web's ScrollView ref exposes RN
+    // methods, not the underlying div's `scrollTop`, so DOM reads
+    // returned undefined → NaN → forced to top. This lets us commit
+    // the row the user actually landed on even if DONE was tapped
+    // inside the debounce window.
+    const y = lastScrollY.current || 0;
+    const idx = Math.max(0, Math.min(options.length - 1, Math.round(y / ITEM_HEIGHT)));
+    const final = options[idx] ?? current;
     if (final != null) onSelect(final);
     onClose();
   };
