@@ -135,6 +135,7 @@ type Submission = {
   factory_warranty?: boolean;
   factory_warranty_status?: "active" | "expired" | null;
   maintenance_plan_status?: "active" | "expired" | null;
+  service_plan_status?: "active" | "expired" | null;
   condition: number;
   // Legacy (may exist on older submissions)
   exterior_condition?: number;
@@ -2750,10 +2751,10 @@ export default function VehicleDetail() {
           </>
         ) : null}
 
-        {/* Warranty & Maintenance Plan — dealer answer at valuation stage */}
-        {!sub.unseen && (sub.factory_warranty_status || sub.maintenance_plan_status || sub.factory_warranty !== undefined) ? (
+        {/* Warranty, Maintenance Plan & Service Plan — dealer answer at valuation stage */}
+        {!sub.unseen && (sub.factory_warranty_status || sub.maintenance_plan_status || sub.service_plan_status || sub.factory_warranty !== undefined) ? (
           <>
-            <Text style={styles.sectionTitle}>Warranty &amp; Maintenance Plan</Text>
+            <Text style={styles.sectionTitle}>Warranty, Maintenance &amp; Service Plan</Text>
             <View style={styles.detailsList}>
               {(() => {
                 const fwStatus = sub.factory_warranty_status
@@ -2773,6 +2774,11 @@ export default function VehicleDetail() {
                       label="Maintenance Plan"
                       value={label(sub.maintenance_plan_status)}
                       valueColor={colour(sub.maintenance_plan_status)}
+                    />
+                    <DetailRow
+                      label="Service Plan"
+                      value={label(sub.service_plan_status)}
+                      valueColor={colour(sub.service_plan_status)}
                       last
                     />
                   </>

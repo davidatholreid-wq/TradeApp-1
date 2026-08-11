@@ -155,6 +155,7 @@ export default function SubmitVehicle() {
   type WarrantyStatus = "active" | "expired" | null;
   const [factoryWarrantyStatus, setFactoryWarrantyStatus] = useState<WarrantyStatus>(null);
   const [maintenancePlanStatus, setMaintenancePlanStatus] = useState<WarrantyStatus>(null);
+  const [servicePlanStatus, setServicePlanStatus] = useState<WarrantyStatus>(null);
 
   // Wheel state + option cache
   const [wheelField, setWheelField] = useState<WheelField | null>(null);
@@ -244,7 +245,8 @@ export default function SubmitVehicle() {
     recon_items: reconItems,
     factory_warranty_status: factoryWarrantyStatus,
     maintenance_plan_status: maintenancePlanStatus,
-  }), [make, fuelType, yearOfProduction, transmission, model, derivative, yearRegistered, licenseDisk, colour, vin, engineNo, mechanicalRating, cosmeticRating, interiorRating, historyRating, serviceHistory, lastServiceDate, lastServiceMileage, photos, mileage, paintEvidence, paintQuality, accidentDamage, accidentTypes, reconItems, factoryWarrantyStatus, maintenancePlanStatus]);
+    service_plan_status: servicePlanStatus,
+  }), [make, fuelType, yearOfProduction, transmission, model, derivative, yearRegistered, licenseDisk, colour, vin, engineNo, mechanicalRating, cosmeticRating, interiorRating, historyRating, serviceHistory, lastServiceDate, lastServiceMileage, photos, mileage, paintEvidence, paintQuality, accidentDamage, accidentTypes, reconItems, factoryWarrantyStatus, maintenancePlanStatus, servicePlanStatus]);
 
   /** Restore all form fields from a saved draft payload. */
   const applyDraft = useCallback((d: any) => {
@@ -313,6 +315,11 @@ export default function SubmitVehicle() {
     setMaintenancePlanStatus(
       d.maintenance_plan_status === "active" || d.maintenance_plan_status === "expired"
         ? d.maintenance_plan_status
+        : null,
+    );
+    setServicePlanStatus(
+      d.service_plan_status === "active" || d.service_plan_status === "expired"
+        ? d.service_plan_status
         : null,
     );
   }, []);
@@ -699,6 +706,7 @@ export default function SubmitVehicle() {
           // these unanswered so we don't record a guess for the AI.
           factory_warranty_status: unseen ? null : factoryWarrantyStatus,
           maintenance_plan_status: unseen ? null : maintenancePlanStatus,
+          service_plan_status: unseen ? null : servicePlanStatus,
           billing_accepted: true,
         }),
       });
@@ -1003,10 +1011,10 @@ export default function SubmitVehicle() {
             </View>
           </View>
 
-          {/* --- Factory Warranty & Maintenance Plan --- */}
-          <Text style={styles.sectionTitle}>WARRANTY &amp; MAINTENANCE PLAN</Text>
+          {/* --- Factory Warranty, Maintenance Plan & Service Plan --- */}
+          <Text style={styles.sectionTitle}>WARRANTY, MAINTENANCE &amp; SERVICE PLAN</Text>
           <Text style={styles.helpText}>
-            Is the vehicle under Factory Warranty and/or Maintenance Plan?
+            Is the vehicle under Factory Warranty, Maintenance Plan and/or Service Plan?
           </Text>
           <View style={styles.warrantyRow}>
             <Text style={styles.warrantyLabel}>Factory Warranty</Text>
@@ -1047,6 +1055,31 @@ export default function SubmitVehicle() {
                   >
                     <Ionicons
                       name={v === "active" ? "construct" : "close-circle"}
+                      size={14}
+                      color={on ? "#fff" : colors.textSecondary}
+                    />
+                    <Text style={[styles.segBtnText, on && styles.segBtnTextOn]}>
+                      {v === "active" ? "Active" : "Expired"}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+          <View style={styles.warrantyRow}>
+            <Text style={styles.warrantyLabel}>Service Plan</Text>
+            <View style={styles.segRow}>
+              {(["active", "expired"] as const).map((v) => {
+                const on = servicePlanStatus === v;
+                return (
+                  <TouchableOpacity
+                    key={v}
+                    testID={`sp-${v}`}
+                    style={[styles.segBtn, on && (v === "active" ? styles.segBtnOnActive : styles.segBtnOnExpired)]}
+                    onPress={() => setServicePlanStatus(on ? null : v)}
+                  >
+                    <Ionicons
+                      name={v === "active" ? "build" : "close-circle"}
                       size={14}
                       color={on ? "#fff" : colors.textSecondary}
                     />

@@ -835,6 +835,7 @@ class VehicleSubmission(BaseModel):
     # (legacy submissions).
     factory_warranty_status: Optional[Literal["active", "expired"]] = None
     maintenance_plan_status: Optional[Literal["active", "expired"]] = None
+    service_plan_status: Optional[Literal["active", "expired"]] = None
 
     # Compliance
     billing_accepted: bool = False
@@ -2002,6 +2003,7 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         # that still reads the bool keeps working.
         "factory_warranty_status": payload.factory_warranty_status,
         "maintenance_plan_status": payload.maintenance_plan_status,
+        "service_plan_status": payload.service_plan_status,
         "factory_warranty": (payload.factory_warranty_status == "active"),
         # Photos & mileage
         "mileage": payload.mileage,
@@ -3706,7 +3708,8 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
         # Warranty & Maintenance Plan status (dealer-declared at valuation).
         fw = sub.get("factory_warranty_status")
         mp = sub.get("maintenance_plan_status")
-        if fw or mp or sub.get("factory_warranty") is not None:
+        sp = sub.get("service_plan_status")
+        if fw or mp or sp or sub.get("factory_warranty") is not None:
             def _lbl(v: Optional[str], legacy_b: Optional[bool] = None) -> tuple:
                 if v == "active": return ("Active", OK)
                 if v == "expired": return ("Expired", DANGER)
@@ -3715,15 +3718,18 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
                 return ("Not answered", INK)
             fw_txt, fw_col = _lbl(fw, sub.get("factory_warranty"))
             mp_txt, mp_col = _lbl(mp, None)
+            sp_txt, sp_col = _lbl(sp, None)
             fw_style = ParagraphStyle("wfw", parent=val_style, textColor=fw_col, fontName="Helvetica-Bold")
             mp_style = ParagraphStyle("wmp", parent=val_style, textColor=mp_col, fontName="Helvetica-Bold")
+            sp_style = ParagraphStyle("wsp", parent=val_style, textColor=sp_col, fontName="Helvetica-Bold")
             warr_rows = [
                 ["Factory Warranty", Paragraph(fw_txt, fw_style)],
                 ["Maintenance Plan", Paragraph(mp_txt, mp_style)],
+                ["Service Plan", Paragraph(sp_txt, sp_style)],
             ]
             t_w = Table(warr_rows, colWidths=[42 * mm, 142 * mm])
             t_w.setStyle(_row_style())
-            hdr_w = Paragraph("WARRANTY &amp; MAINTENANCE PLAN", section_title)
+            hdr_w = Paragraph("WARRANTY, MAINTENANCE &amp; SERVICE PLAN", section_title)
             warr_table = Table(
                 [[hdr_w], [t_w]],
                 colWidths=[184 * mm],
@@ -5998,6 +6004,9 @@ def _market_analysis_context(sub: dict) -> str:
     )
     lines.append(
         f"- Maintenance plan: {_warranty_label(sub.get('maintenance_plan_status'), None)}"
+    )
+    lines.append(
+        f"- Service plan: {_warranty_label(sub.get('service_plan_status'), None)}"
     )
 
     # -- Service history (dealer-declared) --------------------------------
