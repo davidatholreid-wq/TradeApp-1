@@ -1,199 +1,189 @@
 // -----------------------------------------------------------------------------
-// WeBuyCars canonical make / model catalogue — curated top-30 SA brands.
+// WeBuyCars canonical make / model catalogue — full SA passenger-vehicle
+// coverage.
 //
-// Source: WeBuyCars.co.za `/buy-a-car` filter panel (Make + Model
-// facets), captured on 2026-08. WBC doesn't expose a public API for
-// their catalogue (it's Cloudflare + app-version-header protected), so
-// this static snapshot is the pragmatic fallback until we invest in a
-// backend proxy.
+// Source: Live capture of WeBuyCars.co.za `/buy-a-car` Make + Model filter
+// facets, scanned 2026-06 across every top passenger brand + adjacent
+// commercial / motorbike overlaps that WBC groups under the same make.
+// WBC doesn't expose a public API for their catalogue (Cloudflare + PoW
+// anti-bot header protected), so this static snapshot is the pragmatic
+// fallback until we invest in a backend proxy.
 //
 // USAGE
 // -----
-// - Keys are the WBC-canonical Make labels (already Title-Cased in
-//   their catalogue, with initialisms like `BMW` / `MINI` / `GWM`
-//   preserved).
-// - Each value is a sorted list of WBC-canonical Model labels for
-//   that make.
-// - When a Kredo make/model isn't found here we fall back to the
-//   auto-derived keyword logic in `WeBuyCarsListingsCard.tsx`.
+// - Keys are the WBC-canonical Make labels EXACTLY as they appear on the
+//   site's filter dropdown (e.g. `BMW`, `KIA`, `Mini`, `Mercedes-Benz`).
+//   The site's URL parser is CASE-SENSITIVE on the JSON-array make label
+//   (`Make=["KIA"]` returns hits, `Make=["Kia"]` returns none).
+// - Each value is a sorted list of WBC-canonical Model labels for that
+//   make. WBC's model names are often quirky (`A Class` with a SPACE,
+//   `X-Class` with a HYPHEN — inconsistent even inside one brand).
+//   Preserve the EXACT casing / spacing / punctuation we see on their
+//   filter panel.
+// - When a Kredo make/model can't be matched to a canonical entry here,
+//   the caller can fall back to the auto-derived keyword logic in
+//   `WeBuyCarsListingsCard.tsx` (kept as a safety net).
 //
 // UPDATING
 // --------
-// When WeBuyCars adds a new model, add the label EXACTLY as it appears
-// on their filter panel (case + spacing matter — their URL parser
-// treats `Corolla Cross` as a different value from `Corolla_Cross`).
-// Prefer canonical marketing names over chassis-code variants (skip
-// entries like `Corolla (E170)` unless there's ambiguity).
+// Re-run the scan documented in `/app/backend/scripts/wbc_scan.py`
+// (WIP). If a model shows on WBC but not here, add it as the label
+// appears on their filter panel (spaces vs hyphens matter). Prefer
+// canonical marketing names over chassis-code variants unless there's
+// ambiguity in the WBC UI itself.
+//
+// NOTE ON "A-CLASS" vs "A CLASS"
+// ------------------------------
+// WBC uses "A Class" (SPACE), NOT "A-Class" (HYPHEN). The whole
+// Mercedes-Benz class family is space-separated on their filter panel
+// (`B Class`, `C Class`, `E Class`, `G Class`, `M Class`, `S Class`,
+// `V Class`, `SL Class`, `SLK Class`, ...), with a single lonely
+// exception: `X-Class` (hyphenated). Getting this wrong is the #1
+// cause of "no matches" on the compare deep-link.
 // -----------------------------------------------------------------------------
 export const WEBUYCARS_CATALOGUE: Record<string, string[]> = {
-  Toyota: [
-    "4Runner", "86", "Agya", "Aygo", "Auris", "Avanza", "bZ4X", "C-HR", "Camry",
-    "Conquest", "Corolla", "Corolla Cross", "Corolla Hatch", "Corolla Quest",
-    "Cressida", "Etios", "FJ Cruiser", "Fortuner", "GR86", "GR Supra", "GR Yaris",
-    "Hiace", "Hilux", "Land Cruiser", "Prado", "Prius", "Quantum", "Rav4", "Rush",
-    "RunX", "Starlet", "Supra", "Tazz", "Urban Cruiser", "Vellfire", "Verso",
-    "Vios", "Yaris", "Yaris Cross",
-  ],
-  Volkswagen: [
-    "Amarok", "Beetle", "Caddy", "CrossFox", "Cross Polo", "Fox", "Golf",
-    "Golf GTI", "Jetta", "Kombi", "Polo", "Polo Cross", "Polo Vivo",
-    "Scirocco", "Sharan", "T-Cross", "T-Roc", "Tiguan", "Tiguan Allspace",
-    "Touareg", "Touran", "Transporter", "Up!",
-  ],
-  Ford: [
-    "B-Max", "Bantam", "Courier", "EcoSport", "Edge", "Escape", "Everest",
-    "Explorer", "F-150 Raptor", "Fiesta", "Figo", "Focus", "Fusion", "Kuga",
-    "Mustang", "Puma", "Ranger", "Ranger Raptor", "Territory", "Tourneo", "Transit",
-  ],
-  BMW: [
-    "1 Series", "2 Series", "3 Series", "4 Series", "5 Series", "6 Series",
-    "7 Series", "8 Series", "i3", "i4", "i7", "i8", "iX", "iX1", "iX3",
-    "M2", "M3", "M4", "M5", "M6", "M8", "X1", "X2", "X3", "X4", "X5", "X6",
-    "X7", "XM", "Z3", "Z4", "Z8",
-  ],
-  "Mercedes-Benz": [
-    "A-Class", "AMG GT", "B-Class", "C-Class", "CL-Class", "CLA-Class",
-    "CLK-Class", "CLS-Class", "E-Class", "EQC", "EQE", "EQS", "EQV",
-    "G-Class", "GL-Class", "GLA-Class", "GLB-Class", "GLC-Class", "GLE-Class",
-    "GLK-Class", "GLS-Class", "M-Class", "ML-Class", "R-Class", "S-Class",
-    "SL-Class", "SLC-Class", "SLK-Class", "Sprinter", "V-Class", "Viano",
-    "Vito", "X-Class",
-  ],
-  Audi: [
-    "A1", "A3", "A4", "A5", "A6", "A7", "A8", "e-tron", "e-tron GT",
-    "Q2", "Q3", "Q4 e-tron", "Q5", "Q7", "Q8", "R8", "RS3", "RS4", "RS5",
-    "RS6", "RS7", "RSQ3", "RSQ5", "RSQ7", "RSQ8", "S1", "S3", "S4", "S5",
-    "S6", "S7", "S8", "SQ2", "SQ5", "SQ7", "SQ8", "TT", "TT RS", "TTS",
-  ],
-  Nissan: [
-    "350Z", "370Z", "Almera", "Ariya", "GT-R", "Hardbody", "Juke", "Leaf",
-    "Livina", "Magnite", "Micra", "Micra Active", "Murano", "Navara", "NP200",
-    "NP300", "Pathfinder", "Patrol", "Pulsar", "Qashqai", "Sylphy", "Tiida",
-    "X-Trail",
-  ],
-  Hyundai: [
-    "Accent", "Atos", "Bayon", "Creta", "Elantra", "Getz", "Grand i10", "H-1",
-    "H100", "i10", "i20", "i30", "ix35", "Kona", "Palisade", "Santa Fe",
-    "Sonata", "Staria", "Tucson", "Veloster", "Venue",
-  ],
-  Kia: [
-    "Cerato", "EV6", "Grand Sedona", "K2500", "K2700", "Niro", "Optima",
-    "Picanto", "Pride", "Rio", "Sedona", "Seltos", "Sonet", "Sorento",
-    "Soul", "Sportage", "Stinger", "Stonic",
-  ],
-  Renault: [
-    "Captur", "Clio", "Duster", "Fluence", "Kadjar", "Kangoo", "Kiger",
-    "Koleos", "Kwid", "Megane", "Modus", "Sandero", "Sandero Stepway",
-    "Scenic", "Trafic", "Triber",
-  ],
-  "Land Rover": [
-    "Defender", "Defender 90", "Defender 110", "Discovery", "Discovery Sport",
-    "Freelander", "Range Rover", "Range Rover Evoque", "Range Rover Sport",
-    "Range Rover Velar",
-  ],
-  Jeep: [
-    "Cherokee", "Commander", "Compass", "Gladiator", "Grand Cherokee",
-    "Renegade", "Wrangler", "Wrangler Unlimited",
-  ],
-  MINI: [
-    "3-Door", "5-Door", "Clubman", "Convertible", "Cooper", "Cooper S",
-    "Countryman", "Coupe", "JCW", "One", "Paceman", "Roadster",
-  ],
-  Mahindra: [
-    "Bolero", "KUV100", "Pik-Up", "Scorpio", "Scorpio-N", "Thar", "TUV300",
-    "XUV300", "XUV500", "XUV700", "Xylo",
-  ],
-  Isuzu: ["D-Max", "KB", "mu-X"],
-  Suzuki: [
-    "Alto", "Baleno", "Celerio", "Ciaz", "Dzire", "Ertiga", "Fronx",
-    "Grand Vitara", "Ignis", "Jimny", "Kizashi", "S-Presso", "Splash",
-    "Swift", "SX4", "Vitara",
-  ],
-  Mazda: [
-    "2", "3", "5", "6", "BT-50", "CX-3", "CX-30", "CX-5", "CX-60", "CX-9",
-    "MX-30", "MX-5", "RX-8", "Tribute",
-  ],
-  Honda: [
-    "Accord", "Amaze", "BR-V", "Brio", "Civic", "City", "CR-V", "Elevate",
-    "Fit", "HR-V", "Jazz", "Odyssey", "S2000", "WR-V",
-  ],
-  Chevrolet: [
-    "Aveo", "Captiva", "Corsa", "Cruze", "Lumina", "Optra", "Orlando", "Sonic",
-    "Spark", "Trailblazer", "Utility",
-  ],
-  Opel: [
-    "Adam", "Astra", "Combo", "Corsa", "Corsa Utility", "Grandland", "Insignia",
-    "Kadett", "Meriva", "Mokka", "Vectra", "Zafira",
-  ],
-  Peugeot: [
-    "108", "2008", "206", "207", "208", "3008", "306", "307", "308", "407",
-    "5008", "508", "607", "Boxer", "Expert", "Landtrek", "Partner", "RCZ",
-    "Rifter", "Traveller",
-  ],
-  Citroen: [
-    "Aircross", "Berlingo", "C-Elysee", "C1", "C2", "C3", "C3 Aircross",
-    "C3 Picasso", "C4", "C4 Cactus", "C4 Picasso", "C5", "C5 Aircross",
-    "DS3", "DS4", "DS5", "Grand C4 Picasso", "Xsara",
-  ],
-  Fiat: [
-    "500", "500L", "500X", "Bravo", "Doblo", "Ducato", "Fiorino", "Fullback",
-    "Idea", "Linea", "Palio", "Panda", "Punto", "Qubo", "Siena", "Strada",
-    "Tipo", "Uno",
-  ],
-  Volvo: [
-    "C40", "EX30", "EX90", "S40", "S60", "S80", "S90", "V40", "V50", "V60",
-    "V90", "XC40", "XC60", "XC70", "XC90",
-  ],
-  Porsche: [
-    "718 Boxster", "718 Cayman", "911", "928", "944", "968", "Boxster",
-    "Cayenne", "Cayman", "Macan", "Panamera", "Taycan",
-  ],
-  Jaguar: [
-    "E-Pace", "F-Pace", "F-Type", "I-Pace", "S-Type", "X-Type", "XE", "XF",
-    "XJ", "XJ6", "XJS", "XK",
-  ],
-  GWM: [
-    "C10", "Florid", "H1", "H2", "H3", "H5", "H6", "Ora", "P-Series", "Steed",
-    "Steed 5", "Steed 6", "Tank 300", "Wingle", "X200", "X240",
-  ],
-  Haval: ["H1", "H2", "H2s", "H6", "H9", "Jolion"],
-  Chery: [
-    "Face", "J1", "J2", "J3", "Q22", "QQ", "QQ3", "Tiggo", "Tiggo 2",
-    "Tiggo 4", "Tiggo 4 Pro", "Tiggo 7", "Tiggo 7 Pro", "Tiggo 8", "Tiggo 8 Pro",
-  ],
+  Toyota: ["Agya", "Auris", "Avanza", "Avensis", "Aygo", "C-HR", "Camry", "Condor", "Conquest", "Corolla", "Corolla Cross", "Corolla Quest", "Cressida", "Dyna", "Etios", "Fortuner", "HI ACE", "Hilux", "Land Cruiser", "Land Cruiser 70 Series", "Prado", "Prius", "Quantam", "Quantum", "RAV 4", "Rumion", "Runx", "Rush", "Stallion", "Starlet", "Tazz", "Urban Cruiser", "Venture", "Verso", "Vitz", "Yaris"],
+  Volkswagen: ["Amarok", "Beetle", "CC", "Caddy", "Citi", "Crafter", "FOX", "Golf", "Golf 3", "Golf 4", "Golf 5", "Golf 6", "Golf 7", "Golf 8", "Golf Bakkies", "Golf SV", "Jetta", "Jetta 4", "Jetta 5", "Jetta 6", "Kombi AND Microbus", "Kombi D/cab", "Passat", "Polo", "Polo Classic", "Polo Playa", "Polo Vivo", "Scirocco", "T-Cross", "T-ROC", "T5", "T6", "Taigo", "Tiguan", "Touareg", "Touran", "Transporter", "UP", "Volksbus"],
+  Ford: ["4000", "B-MAX", "Bantam", "Courier", "Ecosport", "Escort", "Everest", "Fiesta", "Figo", "Focus", "Fusion", "Ikon", "KA", "Kuga", "Mustang", "Puma", "Ranger", "Territory", "Tourneo", "Tourneo Connect", "Transit"],
+  BMW: ["1 Series", "2 Series", "2 Series Active Tour", "2 Series Gran Coupe", "3 Series", "3 Series GT", "4 Series", "4 Series Gran Coupe", "5 Series", "6 Series", "7 Series", "C", "F Series", "G Series", "GT", "K Series", "M3", "M5", "M6", "R Series", "S Series", "X1", "X2", "X3", "X4", "X5", "X6", "X7", "Z4", "i3"],
+  "Mercedes-Benz": ["A Class", "A Class Sedan", "B Class", "C Class", "C Class Coupe", "C Class Estate", "C Class Sedan", "CL Class", "CLA", "CLC Coupe", "CLK Class Cabriolet", "CLK Class Coupe", "CLS Class", "CLS Shooting Brake", "E Class", "E Class Cabriolet", "E Class Coupe", "E Class Sedan", "G Class", "GL Class", "GLA", "GLB", "GLC", "GLE", "M Class", "S Class", "SL Class Cabriolet", "SLK", "SLK Class", "Sprinter", "V Class", "V250", "Viano", "Vito", "Vito BUS", "W115 Shape Sedan", "X-Class"],
+  Audi: ["A1", "A3", "A3 Sportback", "A4", "A4 Allroad", "A5", "A6", "A7", "A8", "Q2", "Q3", "Q5", "Q7", "Q8", "RS3", "RS4", "S3", "S4", "TT"],
+  Nissan: ["Almera", "Cabstar", "Grand Livina", "Hardbody", "Interstar", "Juke", "Livina", "Magnite", "Maxima", "Maxima QX", "Micra", "Murano", "NP200", "Navara", "Nv200", "Pathfinder", "Patrol", "Qashqai", "Sani", "Sentra", "Skyline", "Tiida", "X Trail"],
+  Hyundai: ["Accent", "Atos", "Atos/Atoz", "Creta", "EX-8", "Elantra", "Exter", "Getz", "Grand Creta", "H-1", "H1", "H100", "Kona", "Palisade", "Santa-FE", "Sonata", "Staria", "Terracan", "Tucson", "Veloster", "Venue", "i10", "i20", "i30", "iX35"],
+  KIA: ["Carnival", "Cerato", "K 2500", "K 2700", "Pegas", "Picanto", "Proceed", "RIO", "Sedona", "Seltos", "Shuma", "Sonet", "Sorento", "Soul", "Sportage", "Stinger"],
+  Renault: ["Captur", "Clio", "Clio III", "Clio IV", "Duster", "Kadjar", "Kangoo", "Kiger", "Koleos", "Kwid", "Laguna", "Megane", "Megane II", "Megane III", "Megane IV", "Megane RS", "Sandero", "Scenic", "Scenic III", "Trafic", "Triber", "Twingo"],
+  "Land Rover": ["Defender", "Defender 110", "Defender 90", "Discovery", "Discovery Sport", "Evoque", "Freelander", "Range Rover", "Range Rover Sport", "Velar"],
+  Jeep: ["Cherokee", "Compass", "Grand Cherokee", "Patriot", "Renegade", "Srt8", "Willys", "Wrangler"],
+  Mini: ["Clubman", "Cooper", "Cooper 5DR", "Cooper Clubman", "Cooper Convertible", "Cooper Countryman", "Cooper Paceman", "Cooper Roadster", "Mini ONE"],
+  Mahindra: ["Bolero", "Genio", "KUV 100", "PIK UP", "Scorpio", "Scorpio-N", "TUV", "Thar", "XUV", "XUV 700", "Xuv300", "Xuv3xo"],
+  Isuzu: ["D-MAX", "FSR", "FTR", "FVM", "KB", "MU-X", "N Series", "NLR", "NMR"],
+  Suzuki: ["AN", "Alto", "Baleno", "Boulevard", "Celerio", "Ciaz", "DL", "Eeco", "Ertiga", "Fronx", "GSR", "GSX", "GSX-R", "GSX-S", "Grand Vitara", "Ignis", "Jimny", "RMZ", "S-Presso", "SJ", "SX4", "Super Carry", "Swift", "UR", "VZ", "Vitara", "XL6"],
+  Mazda: ["323", "B Series", "BT 50 Series", "BT-50 Series", "CX-3", "CX-30", "CX-5", "CX-60", "CX-7", "Etude", "MX5", "MX6", "Mazda 2", "Mazda 3", "Mazda 5", "Mazda 6", "Rustler"],
+  Honda: ["ACE", "Accord", "Africa Twin", "Amaze", "BR-V", "Ballade", "Brio", "CB", "CBF", "CBR", "CR-V", "CRF", "CRV", "Civic", "Elevate", "FIT", "HR-V", "Jazz", "NC", "Nx500", "VFR", "WR-V", "XL", "XR", "XRL"],
+  Chevrolet: ["Aveo", "Captiva", "Cruze", "Lumina", "Optra", "Orlando", "Sonic", "Spark", "Trailblazer", "Utility"],
+  Opel: ["Adam", "Astra", "Combo", "Corsa", "Corsa Utility", "Crossland", "Crossland X", "Grandland X", "Meriva", "Mokka", "Zafira"],
+  Peugeot: ["107", "107 / 108", "2008", "206", "207", "208", "3008", "306", "307", "308", "407", "5008", "508", "Boxer", "Expert", "Landtrek", "Partner", "RCZ"],
+  Citroen: ["C1", "C2", "C3", "C4", "C5", "Dispatch", "Relay"],
+  Fiat: ["500", "500x", "Doblo", "Ducato", "Fiorino", "Fullback", "Grande Punto", "Palio", "Panda", "Qubo", "Tipo"],
+  Volvo: ["850", "C30", "FH", "S40", "S60", "S80", "S90", "V40", "V50", "V60", "V90", "XC 90", "Xc40", "Xc60", "Xc90"],
+  Porsche: ["Boxster", "Cayenne", "Cayenne Coupe", "Cayman", "Macan", "Panamera"],
+  Jaguar: ["E-Pace", "F-Pace", "F-Type", "S-Type", "X-Type", "XE", "XF", "XJ", "XKR"],
+  GWM: ["CB", "Florid", "H5", "H6", "M4", "P-Series", "P500", "Steed", "Steed 5", "Tank 300", "Tank 500"],
+  Haval: ["H1", "H2", "H6", "H7", "H9", "Jolion"],
+  Chery: ["Omoda", "Tiggo", "Tiggo 4", "Tiggo 7", "Tiggo 8 PRO"],
+  Lexus: ["ES", "GS", "IS", "LS", "LX", "NX", "RX", "UX"],
+  Subaru: ["Forester", "Impreza", "Legacy", "Outback", "XV"],
+  "Alfa Romeo": ["156", "Giulia", "Giulietta", "MiTO", "Tonale"],
+  Mitsubishi: ["ASX", "Colt", "Eclipse Cross", "Lancer", "Mirage", "Outlander", "Pajero", "Pajero Sport", "Triton", "Xpander"],
+  Abarth: ["500/695"],
+  BYD: ["Dolphin", "Shark"],
+  Baic: ["B30", "B40", "X25", "X55"],
+  Bentley: ["Continental"],
+  Chrysler: ["Grand Voyager"],
+  Daihatsu: ["Charade", "Copen", "Gran MAX", "Sirion", "Terios"],
+  Datsun: ["GO", "GO +"],
+  Dodge: ["Caliber", "Journey"],
+  FAW: ["V2"],
+  Foton: ["Truck Mate", "Tunland"],
+  Geely: ["CK", "LC"],
+  Hummer: ["H3"],
+  Ineos: ["Grenadier"],
+  Infiniti: ["EX", "FX/QX70", "M", "Q50"],
+  JAC: ["N56", "T6", "T8", "T9", "X200"],
+  Jaecoo: ["J7"],
+  Jetour: ["Dashing", "T1", "T2", "X70"],
+  LDV: ["T60"],
+  MG: ["MG6", "MGB", "TF"],
+  Maserati: ["Granturismo", "Quattroporte"],
+  Omoda: ["C5", "C9", "Omoda"],
+  Proton: ["GEN 2", "Saga", "X50", "X70", "X90"],
+  Smart: ["Coupe", "Forfour", "Fortwo"],
+  Ssangyong: ["Korando"],
+  Tata: ["Daewoo Novus", "Indica", "LPT", "Super ACE", "Tiago", "Xenon"],
 };
 
 /** Sorted list of WBC-canonical make labels (used by the dropdown). */
 export const WEBUYCARS_MAKES: string[] = Object.keys(WEBUYCARS_CATALOGUE).sort();
 
+// Normalise a string for loose comparison: lowercase, replace hyphens
+// with spaces, collapse repeated whitespace. Used to make our lookups
+// tolerant of Kredo/dealer-typed variants like "A-CLASS" vs "A Class",
+// "MERCEDES BENZ" vs "Mercedes-Benz", "SANTA FE" vs "Santa-FE".
+function normKey(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[-_/]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /**
- * Case-insensitive lookup for a make. Handles the common aliases used
- * by Kredo (`"LAND ROVER"` → `"Land Rover"`, `"VOLKSWAGEN"` →
- * `"Volkswagen"`, `"VW"` → `"Volkswagen"`, etc.).
+ * Case-insensitive lookup for a make. Handles common aliases used by
+ * Kredo (`"LAND ROVER"` → `"Land Rover"`, `"VOLKSWAGEN"` →
+ * `"Volkswagen"`, `"VW"` → `"Volkswagen"`, `"KIA"` → `"KIA"`,
+ * `"MINI"` → `"Mini"`, etc.).
+ *
+ * Returns the WBC-canonical make label so the URL filter resolves to
+ * the correct brand in their catalogue.
  */
 export function resolveWbcMake(raw?: string | null): string | null {
   if (!raw) return null;
   const s = String(raw).trim();
   if (!s) return null;
 
-  // Direct hit (respect the canonical casing).
+  // 1. Direct hit (respect the canonical casing).
   for (const key of WEBUYCARS_MAKES) {
     if (key.toLowerCase() === s.toLowerCase()) return key;
   }
-  // Common aliases.
+
+  // 2. Common aliases — cover Kredo's ALL-CAPS habits plus common typos
+  //    dealers enter free-text.
   const aliases: Record<string, string> = {
+    // Volkswagen family
     vw: "Volkswagen",
-    "vokswagen": "Volkswagen",
+    volkswagon: "Volkswagen",
+    vokswagen: "Volkswagen",
+    // Mercedes family — Kredo uses both "MERCEDES-BENZ" and
+    // "MERCEDES BENZ", plus dealers often just type "Mercedes".
     "mercedes benz": "Mercedes-Benz",
-    "mercedes": "Mercedes-Benz",
-    "landrover": "Land Rover",
+    "mercedes-benz": "Mercedes-Benz",
+    mercedes: "Mercedes-Benz",
+    // Land Rover / Range Rover (Kredo splits these; WBC groups both
+    // under "Land Rover").
+    landrover: "Land Rover",
+    "land-rover": "Land Rover",
     "range rover": "Land Rover",
+    "range-rover": "Land Rover",
+    // GWM / Great Wall Motors
     "great wall motors": "GWM",
-    "greatwall": "GWM",
-    "mini cooper": "MINI",
+    "great wall": "GWM",
+    greatwall: "GWM",
+    // Case variants for makes where WBC's canonical differs from
+    // TitleCase — MINI → Mini, KIA stays uppercase, Mercedes stays
+    // hyphenated. Map lower-case forms explicitly so free-text hits
+    // resolve.
+    mini: "Mini",
+    "mini cooper": "Mini",
+    kia: "KIA",
+    // Nissan alias
+    nissan: "Nissan",
+    // Emerging Chinese brands often appear in various casings
+    baic: "Baic",
+    "jac motors": "JAC",
+    jaecoo: "Jaecoo",
+    jetour: "Jetour",
+    omoda: "Omoda",
+    "alfa romeo": "Alfa Romeo",
+    alfaromeo: "Alfa Romeo",
   };
   const alias = aliases[s.toLowerCase()];
   if (alias) return alias;
+
+  // 3. Loose match — strip punctuation / whitespace and compare.
+  const target = normKey(s);
+  for (const key of WEBUYCARS_MAKES) {
+    if (normKey(key) === target) return key;
+  }
   return null;
 }
 
@@ -202,9 +192,11 @@ export function resolveWbcMake(raw?: string | null): string | null {
  * WBC-canonical model name in the given make's catalogue.
  *
  *  1. Exact case-insensitive match wins.
- *  2. Then longest-prefix-shared wins ("Defender 90" beats "Defender"
+ *  2. Then hyphen/space-normalised equality (`"A-CLASS"` matches
+ *     `"A Class"` — the primary reported bug).
+ *  3. Then longest-prefix-shared wins ("Defender 90" beats "Defender"
  *     when the derivative starts with "Defender 90 D240 SE").
- *  3. Then any WBC model where the first-word matches the first
+ *  4. Then any WBC model where the first-word matches the first
  *     meaningful token of the derivative.
  *
  * Returns `null` if nothing plausibly matches — the caller should
@@ -213,25 +205,41 @@ export function resolveWbcMake(raw?: string | null): string | null {
 export function guessWbcModel(make: string, keyword?: string | null): string | null {
   const catalogue = WEBUYCARS_CATALOGUE[make];
   if (!catalogue || !keyword) return null;
-  const kw = keyword.trim().toLowerCase();
-  if (!kw) return null;
+  const raw = keyword.trim();
+  if (!raw) return null;
+  const kw = raw.toLowerCase();
+  const kwNorm = normKey(raw);
 
-  // 1. Exact.
+  // 1. Exact case-insensitive.
   for (const m of catalogue) if (m.toLowerCase() === kw) return m;
 
-  // 2. Longest prefix — sort catalogue by length desc so the more
+  // 2. Hyphen/space-normalised equality. This is the fix for
+  //    Mercedes "A-CLASS" → "A Class", Hyundai "SANTA-FE" → "Santa-FE"
+  //    (idempotent), Toyota "RAV4" → "RAV 4" (space vs no-space).
+  for (const m of catalogue) if (normKey(m) === kwNorm) return m;
+
+  // 2b. Compact match — strip ALL whitespace + punctuation so "RAV4"
+  //     matches "RAV 4", "XC60" matches "XC 60", "iX35" matches
+  //     "iX35" (idempotent), etc.
+  const kwCompact = kwNorm.replace(/\s+/g, "");
+  for (const m of catalogue) {
+    if (normKey(m).replace(/\s+/g, "") === kwCompact) return m;
+  }
+
+  // 3. Longest prefix — sort catalogue by length desc so the more
   //    specific model wins ("Defender 90" > "Defender").
   const byLen = [...catalogue].sort((a, b) => b.length - a.length);
   for (const m of byLen) {
-    const ml = m.toLowerCase();
-    if (kw.startsWith(ml)) return m;
-    if (ml.startsWith(kw)) return m;
+    const mNorm = normKey(m);
+    if (kwNorm.startsWith(mNorm)) return m;
+    if (mNorm.startsWith(kwNorm) && kwNorm.length >= 2) return m;
   }
 
-  // 3. First-word overlap.
-  const first = kw.split(/\s+/)[0];
+  // 4. First-word overlap on the normalised strings.
+  const firstNorm = kwNorm.split(" ")[0];
   for (const m of catalogue) {
-    if (m.toLowerCase().split(/\s+/)[0] === first) return m;
+    const mFirst = normKey(m).split(" ")[0];
+    if (mFirst === firstNorm) return m;
   }
   return null;
 }

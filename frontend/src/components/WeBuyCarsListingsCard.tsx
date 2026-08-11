@@ -71,18 +71,26 @@ function toTitleCase(s: string): string {
     .join("");
 }
 
-// WeBuyCars-specific make normalisation. A few brands are stored with
-// non-obvious canonical names on their site (BMW / VW / MINI stay
-// uppercase; Land Rover / Mercedes-Benz keep the hyphen; etc.).
+// WeBuyCars-specific make normalisation. First try the curated
+// catalogue lookup (handles alias forms like "MERCEDES BENZ" and the
+// KIA/Mini casing quirks). If the make isn't in our curated list, fall
+// back to Title-Casing with a set of known initialisms preserved.
 function normaliseMake(raw?: string): string | null {
   if (!raw) return null;
   const cleaned = cleanText(raw);
   if (!cleaned) return null;
+
+  // First try the curated catalogue — it knows WBC's canonical labels
+  // exactly, including quirky ones (`KIA` uppercase, `Mini` TitleCase,
+  // `Mercedes-Benz` hyphenated).
+  const resolved = resolveWbcMake(cleaned);
+  if (resolved) return resolved;
+
+  // Fallback: preserve initialisms that WBC keeps uppercase.
   const upper = cleaned.toUpperCase();
-  // Preserve initialisms that WeBuyCars keeps uppercase.
   const upperSet = new Set([
-    "BMW", "VW", "MINI", "GWM", "SEAT", "MG", "JMC", "FAW",
-    "DFSK", "GAC", "BAIC", "JAC", "TATA", "UD", "MAN",
+    "BMW", "VW", "GWM", "SEAT", "MG", "JMC", "FAW",
+    "DFSK", "GAC", "BAIC", "JAC", "TATA", "UD", "MAN", "LDV", "KIA", "BYD",
   ]);
   if (upperSet.has(upper)) return upper;
   // "VOLKSWAGEN" → "Volkswagen"; "MERCEDES-BENZ" → "Mercedes-Benz".
