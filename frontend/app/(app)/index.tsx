@@ -1042,8 +1042,17 @@ function FlipTile({ tile, styles, colors, autoRotateMs = 0, outerStyle }: FlipTi
       ? tile.ads.length
       : 1 + (tile.points?.length ?? 0) + (tile.footer ? 1 : 0);
   const [idx, setIdx] = useState(0);
-  const rot = useSharedValue(0); // 0..1 flip progress
+  const rot = useSharedValue(0);       // 0..1 flip progress (bullet + hero tiles)
   const scale = useSharedValue(1);
+  // Ads tile uses a totally different transition: DISINTEGRATE +
+  // MATERIALIZE. `dissolve` sweeps 0 → 1 → 0 per cycle. At the peak
+  // (1) the current ad is fully invisible / scaled down / blurred out,
+  // and we swap `idx` to the next ad. The value then eases back to 0
+  // and the new ad materializes on the same face. See the styles
+  // below for the interpolation. On web we lean on CSS `filter: blur()`
+  // for the actual disintegration look; on native (where blur isn't
+  // free) the effect degrades gracefully to opacity + scale.
+  const dissolve = useSharedValue(0);
 
   const setNext = useCallback(() => {
     setIdx((prev) => (prev + 1) % totalPages);
@@ -1062,6 +1071,28 @@ function FlipTile({ tile, styles, colors, autoRotateMs = 0, outerStyle }: FlipTi
     );
   }, [rot, scale, setNext]);
 
+  // Disintegrate transition for the Ads tile. Total cycle ~1.0 s
+  // (450 ms fade-out + 550 ms fade-in) — deliberately longer than the
+  // 220/260 ms flip because the blur-and-scale motion needs breathing
+  // room to read as a disintegration rather than a jittery cross-fade.
+  const disintegrateToNext = useCallback(() => {
+    dissolve.value = withSequence(
+      withTiming(1, { duration: 450, easing: Easing.in(Easing.quad) }, () => {
+        runOnJS(setNext)();
+      }),
+      withTiming(0, { duration: 550, easing: Easing.out(Easing.quad) }),
+    );
+  }, [dissolve, setNext]);
+
+  // Advance strategy: ads → disintegrate; everything else → flip.
+  const advance = useCallback(() => {
+    if (tile.ads) {
+      disintegrateToNext();
+    } else {
+      flipToNext();
+    }
+  }, [tile.ads, disintegrateToNext, flipToNext]);
+
   // Auto-rotate: for the Advertising tile we cycle without requiring a
   // tap so dealers always see fresh advertisers even when idle. The timer
   // is reset on every manual tap (interaction wins over the automation
@@ -1075,15 +1106,15 @@ function FlipTile({ tile, styles, colors, autoRotateMs = 0, outerStyle }: FlipTi
       // If the user tapped recently, skip this tick — gives them a grace
       // window to keep reading whatever they just flipped to.
       if (Date.now() - lastTapAtRef.current < autoRotateMs) return;
-      flipToNext();
+      advance();
     }, autoRotateMs);
     return () => clearInterval(id);
-  }, [autoRotateMs, flipToNext, totalPages]);
+  }, [autoRotateMs, advance, totalPages]);
 
   const onTap = useCallback(() => {
     lastTapAtRef.current = Date.now();
-    flipToNext();
-  }, [flipToNext]);
+    advance();
+  }, [advance]);
 
   const faceStyle = useAnimatedStyle(() => {
     const deg = rot.value * 180;
@@ -1101,6 +1132,23 @@ function FlipTile({ tile, styles, colors, autoRotateMs = 0, outerStyle }: FlipTi
     };
   });
 
+  // Disintegrate face style — a single face (no back-face needed
+  // because we hard-swap idx at the peak). Interpolates opacity,
+  // scale, and (on web) a blur filter continuously from the dissolve
+  // shared value. At `dissolve = 0` the ad is crisp and fully opaque;
+  // at `dissolve = 1` it's blurred, faded, and shrunk — the moment
+  // right after the swap we run in reverse so the next ad
+  // materializes from the same "particle cloud".
+  const dissolveFaceStyle = useAnimatedStyle(() => {
+    const d = dissolve.value;
+    return {
+      opacity: 1 - d,
+      transform: [{ scale: 1 - d * 0.15 }],
+      // @ts-ignore web-only CSS filter passthrough
+      filter: Platform.OS === "web" ? `blur(${d * 12}px)` : undefined,
+    };
+  });
+
   // Current & next page content — pre-compute so both faces stay in sync
   // during the animation without stale-closure surprises.
   const nextIdx = (idx + 1) % totalPages;
@@ -1114,17 +1162,36 @@ function FlipTile({ tile, styles, colors, autoRotateMs = 0, outerStyle }: FlipTi
       accessibilityRole="button"
       accessibilityLabel={`${tile.title} card. Tap to see next.`}
     >
-      {/* Next face rendered first (below), starts fully hidden and only
-          fades in via nextFaceStyle when rot >= 0.5. This ordering + the
-          initial opacity: 0 stops a full-bleed ad from bleeding through
-          the front page on web where reanimated may apply its animated
-          style on the next paint frame. */}
-      <Animated.View style={[styles.tileFace, styles.tileFaceHiddenInitial, nextFaceStyle]} pointerEvents="none">
-        {NextContent}
-      </Animated.View>
-      <Animated.View style={[styles.tileFace, faceStyle]} pointerEvents="none">
-        {CurrentContent}
-      </Animated.View>
+      {tile.ads ? (
+        // ADS TILE — disintegrate/materialize transition on a single
+        // face. Both faces are rendered but the "next" one is only
+        // used as a pre-warm so the first swap doesn't flash a blank
+        // frame; it stays visually hidden underneath.
+        <>
+          <Animated.View style={[styles.tileFace, styles.tileFaceHiddenInitial]} pointerEvents="none">
+            {NextContent}
+          </Animated.View>
+          <Animated.View style={[styles.tileFace, dissolveFaceStyle]} pointerEvents="none">
+            {CurrentContent}
+          </Animated.View>
+        </>
+      ) : (
+        // Everything else — flip transition (two rotated faces).
+        <>
+          {/* Next face rendered first (below), starts fully hidden and
+              only fades in via nextFaceStyle when rot >= 0.5. This
+              ordering + the initial opacity: 0 stops a full-bleed ad
+              from bleeding through the front page on web where
+              reanimated may apply its animated style on the next
+              paint frame. */}
+          <Animated.View style={[styles.tileFace, styles.tileFaceHiddenInitial, nextFaceStyle]} pointerEvents="none">
+            {NextContent}
+          </Animated.View>
+          <Animated.View style={[styles.tileFace, faceStyle]} pointerEvents="none">
+            {CurrentContent}
+          </Animated.View>
+        </>
+      )}
 
       {/* Pagination dots removed at the user's request — the flip
           animation itself communicates that there's more content, and
