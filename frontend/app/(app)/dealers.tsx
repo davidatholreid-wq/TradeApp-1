@@ -1,6 +1,6 @@
 import { useCallback, useContext, useMemo, useState } from "react";
 import { TouchableOpacity } from "@/src/components/HapticButtons";
-import { View, Text, StyleSheet, SectionList, RefreshControl, ActivityIndicator, Alert, Modal, ScrollView, TextInput, Switch, Platform, Image } from "react-native";
+import { View, Text, StyleSheet, SectionList, RefreshControl, ActivityIndicator, Alert, Modal, ScrollView, TextInput, Switch, Platform, Image, KeyboardAvoidingView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -832,7 +832,11 @@ export default function Dealers() {
       {/* Add-user-to-existing-dealership modal (admin only). All users of a
           dealership are equal — they share submissions & billing. */}
       <Modal visible={!!invitingDealership} animationType="slide" transparent onRequestClose={() => setInvitingDealership(null)}>
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          keyboardVerticalOffset={0}
+        >
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add User to {invitingDealership?.name}</Text>
@@ -840,62 +844,69 @@ export default function Dealers() {
                 <Ionicons name="close" size={22} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
-            <Text style={styles.modalHint}>
-              This user will share this dealership&apos;s submissions and monthly billing.
-            </Text>
-            {[
-              ["First Name", "first_name"],
-              ["Last Name", "last_name"],
-              ["Phone", "phone"],
-              ["Job Title (optional)", "job_title"],
-              ["SA ID Number", "sa_id_number"],
-              ["Email", "email"],
-              ["Password (min 6 chars)", "password"],
-              ["Referred By (optional code)", "referred_by_code"],
-            ].map(([label, key]) => (
-              <View key={key} style={styles.modalField}>
-                <Text style={styles.modalLabel}>{label}</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  value={(inviteForm as any)[key]}
-                  onChangeText={(v) => setInviteForm((f) => ({ ...f, [key]: v }))}
-                  autoCapitalize={key === "email" || key === "referred_by_code" ? "characters" : key === "sa_id_number" ? "none" : "words"}
-                  keyboardType={key === "email" ? "email-address" : key === "phone" ? "phone-pad" : key === "sa_id_number" ? "number-pad" : "default"}
-                  secureTextEntry={key === "password"}
-                  maxLength={key === "sa_id_number" ? 13 : key === "referred_by_code" ? 6 : undefined}
-                  placeholder={key === "referred_by_code" ? "e.g. A7X9K2" : key === "sa_id_number" ? "13 digits" : label}
-                  placeholderTextColor={colors.textDisabled}
-                  testID={`invite-${key}`}
-                />
+            <ScrollView
+              contentContainerStyle={{ paddingBottom: spacing.lg }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={styles.modalHint}>
+                This user will share this dealership&apos;s submissions and monthly billing.
+              </Text>
+              {[
+                ["First Name", "first_name"],
+                ["Last Name", "last_name"],
+                ["Phone", "phone"],
+                ["Job Title (optional)", "job_title"],
+                ["SA ID Number", "sa_id_number"],
+                ["Email", "email"],
+                ["Password (min 6 chars)", "password"],
+                ["Referred By (optional code)", "referred_by_code"],
+              ].map(([label, key]) => (
+                <View key={key} style={styles.modalField}>
+                  <Text style={styles.modalLabel}>{label}</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    value={(inviteForm as any)[key]}
+                    onChangeText={(v) => setInviteForm((f) => ({ ...f, [key]: v }))}
+                    autoCapitalize={key === "email" || key === "referred_by_code" ? "characters" : key === "sa_id_number" ? "none" : "words"}
+                    keyboardType={key === "email" ? "email-address" : key === "phone" ? "phone-pad" : key === "sa_id_number" ? "number-pad" : "default"}
+                    secureTextEntry={key === "password"}
+                    maxLength={key === "sa_id_number" ? 13 : key === "referred_by_code" ? 6 : undefined}
+                    placeholder={key === "referred_by_code" ? "e.g. A7X9K2" : key === "sa_id_number" ? "13 digits" : label}
+                    placeholderTextColor={colors.textDisabled}
+                    testID={`invite-${key}`}
+                    returnKeyType="next"
+                  />
+                </View>
+              ))}
+              {inviteError ? <Text style={styles.modalError}>{inviteError}</Text> : null}
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.modalBtnGhost]}
+                  onPress={() => {
+                    setInvitingDealership(null);
+                    setInviteError(null);
+                  }}
+                  disabled={inviteSubmitting}
+                >
+                  <Text style={styles.modalBtnGhostText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  testID="invite-submit"
+                  style={[styles.modalBtn, styles.modalBtnPrimary]}
+                  onPress={submitInvite}
+                  disabled={inviteSubmitting}
+                >
+                  {inviteSubmitting ? (
+                    <ActivityIndicator color={colors.onPrimary} />
+                  ) : (
+                    <Text style={styles.modalBtnPrimaryText}>Add User</Text>
+                  )}
+                </TouchableOpacity>
               </View>
-            ))}
-            {inviteError ? <Text style={styles.modalError}>{inviteError}</Text> : null}
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={[styles.modalBtn, styles.modalBtnGhost]}
-                onPress={() => {
-                  setInvitingDealership(null);
-                  setInviteError(null);
-                }}
-                disabled={inviteSubmitting}
-              >
-                <Text style={styles.modalBtnGhostText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                testID="invite-submit"
-                style={[styles.modalBtn, styles.modalBtnPrimary]}
-                onPress={submitInvite}
-                disabled={inviteSubmitting}
-              >
-                {inviteSubmitting ? (
-                  <ActivityIndicator color={colors.onPrimary} />
-                ) : (
-                  <Text style={styles.modalBtnPrimaryText}>Add User</Text>
-                )}
-              </TouchableOpacity>
-            </View>
+            </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Create-new-dealership modal — admin-only quick onboarding. On success
@@ -908,7 +919,11 @@ export default function Dealers() {
         transparent
         onRequestClose={() => setCreatingDealership(false)}
       >
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          keyboardVerticalOffset={0}
+        >
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>New Dealership</Text>
@@ -916,53 +931,60 @@ export default function Dealers() {
                 <Ionicons name="close" size={22} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
-            <Text style={styles.modalHint}>
-              Create a new dealership record. You&apos;ll be prompted to add its first
-              user immediately after.
-            </Text>
-            {[
-              ["Dealership Name", "name", "e.g. Hatfield Ford Bryanston"],
-              ["Address (optional)", "address", "e.g. 123 Main Rd, Bryanston"],
-              ["Company Reg No (optional)", "company_reg_no", "e.g. 2020/123456/07"],
-              ["VAT No (optional)", "vat_no", "e.g. 4520123456"],
-            ].map(([label, key, placeholder]) => (
-              <View key={key} style={styles.modalField}>
-                <Text style={styles.modalLabel}>{label}</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  value={(newDealershipForm as any)[key]}
-                  onChangeText={(v) => setNewDealershipForm((f) => ({ ...f, [key]: v }))}
-                  autoCapitalize={key === "name" || key === "address" ? "words" : "characters"}
-                  placeholder={placeholder}
-                  placeholderTextColor={colors.textDisabled}
-                  testID={`new-dealership-${key}`}
-                />
+            <ScrollView
+              contentContainerStyle={{ paddingBottom: spacing.lg }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={styles.modalHint}>
+                Create a new dealership record. You&apos;ll be prompted to add its first
+                user immediately after.
+              </Text>
+              {[
+                ["Dealership Name", "name", "e.g. Hatfield Ford Bryanston"],
+                ["Address (optional)", "address", "e.g. 123 Main Rd, Bryanston"],
+                ["Company Reg No (optional)", "company_reg_no", "e.g. 2020/123456/07"],
+                ["VAT No (optional)", "vat_no", "e.g. 4520123456"],
+              ].map(([label, key, placeholder]) => (
+                <View key={key} style={styles.modalField}>
+                  <Text style={styles.modalLabel}>{label}</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    value={(newDealershipForm as any)[key]}
+                    onChangeText={(v) => setNewDealershipForm((f) => ({ ...f, [key]: v }))}
+                    autoCapitalize={key === "name" || key === "address" ? "words" : "characters"}
+                    placeholder={placeholder}
+                    placeholderTextColor={colors.textDisabled}
+                    testID={`new-dealership-${key}`}
+                    returnKeyType="next"
+                  />
+                </View>
+              ))}
+              {newDealershipError ? <Text style={styles.modalError}>{newDealershipError}</Text> : null}
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.modalBtnGhost]}
+                  onPress={() => setCreatingDealership(false)}
+                  disabled={newDealershipSubmitting}
+                >
+                  <Text style={styles.modalBtnGhostText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  testID="new-dealership-submit"
+                  style={[styles.modalBtn, styles.modalBtnPrimary]}
+                  onPress={submitCreateDealership}
+                  disabled={newDealershipSubmitting}
+                >
+                  {newDealershipSubmitting ? (
+                    <ActivityIndicator color={colors.onPrimary} />
+                  ) : (
+                    <Text style={styles.modalBtnPrimaryText}>Create &amp; Add User</Text>
+                  )}
+                </TouchableOpacity>
               </View>
-            ))}
-            {newDealershipError ? <Text style={styles.modalError}>{newDealershipError}</Text> : null}
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={[styles.modalBtn, styles.modalBtnGhost]}
-                onPress={() => setCreatingDealership(false)}
-                disabled={newDealershipSubmitting}
-              >
-                <Text style={styles.modalBtnGhostText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                testID="new-dealership-submit"
-                style={[styles.modalBtn, styles.modalBtnPrimary]}
-                onPress={submitCreateDealership}
-                disabled={newDealershipSubmitting}
-              >
-                {newDealershipSubmitting ? (
-                  <ActivityIndicator color={colors.onPrimary} />
-                ) : (
-                  <Text style={styles.modalBtnPrimaryText}>Create &amp; Add User</Text>
-                )}
-              </TouchableOpacity>
-            </View>
+            </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <DealerPhotosModal
@@ -1058,7 +1080,11 @@ function EditDealerModal({
 
   return (
     <Modal visible={!!dealer} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.modalBackdrop}>
+      <KeyboardAvoidingView
+        style={styles.modalBackdrop}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={0}
+      >
         <View style={styles.modalCard}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Edit Dealer</Text>
@@ -1067,7 +1093,7 @@ function EditDealerModal({
             </TouchableOpacity>
           </View>
 
-          <ScrollView contentContainerStyle={{ padding: spacing.md, gap: spacing.md }}>
+          <ScrollView contentContainerStyle={{ padding: spacing.md, gap: spacing.md }} keyboardShouldPersistTaps="handled">
             <Field label="First name" value={firstName} onChangeText={setFirstName} testID="edit-first-name" />
             <Field label="Last name" value={lastName} onChangeText={setLastName} testID="edit-last-name" />
             <Field label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" testID="edit-phone" />
@@ -1099,7 +1125,7 @@ function EditDealerModal({
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
