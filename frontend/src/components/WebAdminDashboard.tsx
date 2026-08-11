@@ -307,6 +307,9 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
   // they land on the cockpit. Border-color + shadow modulate together.
   const incomingPulse = useRef(new Animated.Value(0)).current;
   const incomingSweep = useRef(new Animated.Value(0)).current;
+  // Intermittent horizontal wobble — see the attention-effect
+  // useEffect below for the full choreography.
+  const incomingWobble = useRef(new Animated.Value(0)).current;
   const [loading, setLoading] = useState(true);
   const [bucket, setBucket] = useState<Bucket>("incoming");
   const [search, setSearch] = useState("");
@@ -671,43 +674,72 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
   // miss a fresh submission from either channel.
   const incomingTotal = pendingCount + publicPendingCount;
 
-  // Kick the INCOMING card pulse whenever there is ANY pending work
-  // (dealer OR public). Two independent animations combine into a
-  // "lighthouse" effect:
-  //   1. `incomingPulse`  — the bright halo breathing in/out
-  //   2. `incomingSweep`  — the beam of light rotating around the card
+  // Attention effect for the INCOMING tile when there's ANY pending
+  // work (dealer OR public). Replaced the previous "lighthouse"
+  // rotating-beam animation with a fresh 3-layer scheme the user
+  // liked better in review:
+  //
+  //   1. `incomingPulse` (0→1→0, ~900 ms each way)
+  //        → drives a neon breathing border/glow whose colour ALSO
+  //          shifts between amber (`colors.warning`) and hot pink
+  //          (`colors.danger`) as the pulse peaks. The two-tone glow
+  //          reads as more "alarm" than a pure amber halo without
+  //          being jarring, and photographs / screencasts well.
+  //
+  //   2. `incomingSweep` (0→1 loop, 2.0 s)
+  //        → drives a translucent HIGHLIGHT BAR that sweeps
+  //          left-to-right across the tile (think Windows-loading
+  //          shimmer) so the eye is drawn horizontally through the
+  //          number even when peripheral vision is elsewhere on the
+  //          page. Not a rotating beam — a linear scan.
+  //
+  //   3. `incomingWobble` (0→1→0 nudged every 4 s)
+  //        → drives a tiny 3-frame horizontal wobble that runs once
+  //          every four seconds so the tile has an intermittent
+  //          "surprise" motion cue in addition to the continuous
+  //          breathing. On accessible/reduced-motion browsers this
+  //          layer is effectively invisible.
   useEffect(() => {
     if (incomingTotal < 1) {
       incomingPulse.setValue(0);
       incomingSweep.setValue(0);
+      incomingWobble.setValue(0);
       return;
     }
     const pulse = Animated.loop(
       Animated.sequence([
-        Animated.timing(incomingPulse, {
-          toValue: 1, duration: 850, useNativeDriver: false,
-        }),
-        Animated.timing(incomingPulse, {
-          toValue: 0, duration: 850, useNativeDriver: false,
-        }),
+        Animated.timing(incomingPulse, { toValue: 1, duration: 900, useNativeDriver: false }),
+        Animated.timing(incomingPulse, { toValue: 0, duration: 900, useNativeDriver: false }),
       ]),
     );
-    // The sweep runs continuously (0 → 1 in 2.4 s, then resets). We
-    // interpolate the value to `0deg → 360deg` for the CSS rotation on
-    // web. On native it feeds a subtle rotate on the halo overlay.
     const sweep = Animated.loop(
       Animated.timing(incomingSweep, {
-        toValue: 1, duration: 2400, useNativeDriver: false, isInteraction: false,
+        toValue: 1, duration: 2000, useNativeDriver: false, isInteraction: false,
       }),
+    );
+    // Wobble: rest for 3.2 s, then a two-cycle shake (-1 → +1 → 0),
+    // then loop. Uses composite Animated.sequence rather than raw
+    // setInterval so it lives inside the RN animation scheduler.
+    const wobble = Animated.loop(
+      Animated.sequence([
+        Animated.delay(3200),
+        Animated.timing(incomingWobble, { toValue: -1, duration: 80, useNativeDriver: false }),
+        Animated.timing(incomingWobble, { toValue: 1, duration: 120, useNativeDriver: false }),
+        Animated.timing(incomingWobble, { toValue: -0.6, duration: 100, useNativeDriver: false }),
+        Animated.timing(incomingWobble, { toValue: 0, duration: 120, useNativeDriver: false }),
+      ]),
     );
     pulse.start();
     sweep.start();
+    wobble.start();
     return () => {
       pulse.stop();
       sweep.stop();
+      wobble.stop();
       incomingSweep.setValue(0);
+      incomingWobble.setValue(0);
     };
-  }, [incomingTotal, incomingPulse, incomingSweep]);
+  }, [incomingTotal, incomingPulse, incomingSweep, incomingWobble]);
 
   // -------- Month-to-date roll-up for the Cockpit Home landing --------
   // Fetched from /api/admin/stats/home-mtd. Loaded once when the Home view
@@ -947,42 +979,17 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
             </Text>
           </View>
           <View style={styles.homeStatsRow}>
-            {/* -------------------- INCOMING (lighthouse) -------------------- */}
+            {/* -------------------- INCOMING (attention beacon) -------------------- */}
             {incomingTotal >= 1 ? (
               <View
                 testID="cockpit-home-incoming-card"
-                style={[styles.homeStatCard, { position: "relative", overflow: "visible", padding: 0 }]}
+                style={[styles.homeStatCard, { position: "relative", overflow: "hidden", padding: 0 }]}
               >
-                {/* Rotating light beam (web-only via conic-gradient). On
-                    native this layer stays hidden — the halo + border
-                    pulse are the primary attention cue. */}
-                {Platform.OS === "web" ? (
-                  <Animated.View
-                    pointerEvents="none"
-                    style={{
-                      position: "absolute",
-                      left: -12, right: -12, top: -12, bottom: -12,
-                      borderRadius: 22,
-                      opacity: 0.95,
-                      // @ts-ignore — DOM-only style. Brighter conic
-                      // gradient with a warmer amber for maximum
-                      // "lighthouse" visibility.
-                      backgroundImage: `conic-gradient(from 0deg, transparent 0deg, ${colors.warning}88 30deg, ${colors.warning}55 90deg, transparent 160deg, transparent 200deg, ${colors.warning}66 260deg, ${colors.warning}22 320deg, transparent 360deg)`,
-                      transform: [
-                        {
-                          rotate: incomingSweep.interpolate({
-                            inputRange: [0, 1], outputRange: ["0deg", "360deg"],
-                          }),
-                        },
-                      ],
-                    } as any}
-                  />
-                ) : null}
-                {/* Bright pulsing halo (works on all platforms). The
-                    box-shadow spread was doubled from the original
-                    24/48px to 40/80px so the tile now genuinely
-                    "lights up" — the user asked for a luminous
-                    flashing border they can't miss. */}
+                {/* Layer 1 — neon breathing border + glow. Colour
+                    interpolates between amber (warning) and hot pink
+                    (danger) as the pulse peaks, so the tile has a
+                    two-tone "alert" cadence rather than a single
+                    monotone halo. */}
                 <Animated.View
                   pointerEvents="none"
                   style={{
@@ -991,25 +998,68 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                     borderRadius: 16,
                     borderWidth: 3,
                     borderColor: incomingPulse.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [colors.warning + "AA", colors.warning],
+                      inputRange: [0, 0.5, 1],
+                      outputRange: [colors.warning, "#FF3D8B", colors.warning],
                     }),
-                    shadowColor: colors.warning,
+                    shadowColor: incomingPulse.interpolate({
+                      inputRange: [0, 1], outputRange: [colors.warning, "#FF3D8B"],
+                    }),
                     shadowOpacity: incomingPulse.interpolate({
-                      inputRange: [0, 1], outputRange: [0.55, 1],
+                      inputRange: [0, 1], outputRange: [0.55, 1.0],
                     }),
                     shadowRadius: incomingPulse.interpolate({
-                      inputRange: [0, 1], outputRange: [24, 48],
+                      inputRange: [0, 1], outputRange: [22, 44],
                     }),
                     shadowOffset: { width: 0, height: 0 },
-                    // Web-only extras — outer + inner luminous glow.
                     // @ts-ignore
                     boxShadow: Platform.OS === "web"
-                      ? `0 0 40px ${colors.warning}CC, 0 0 80px ${colors.warning}77, inset 0 0 0 2px ${colors.warning}`
+                      ? `0 0 32px ${colors.warning}CC, 0 0 68px #FF3D8B99, inset 0 0 0 2px ${colors.warning}`
                       : undefined,
+                    zIndex: 3,
                   } as any}
                 />
-                {/* Card body — sits above the beam layer */}
+
+                {/* Layer 2 — left-to-right SHIMMER BAR. A narrow
+                    translucent highlight (~30% tile width) scans
+                    across the tile every 2 s, drawing the eye
+                    horizontally through the count. Rendered as a
+                    hard-cropped overlay so it never leaks outside the
+                    rounded corners. */}
+                <Animated.View
+                  pointerEvents="none"
+                  style={{
+                    position: "absolute",
+                    top: 0, bottom: 0, width: "50%",
+                    borderRadius: 16,
+                    // @ts-ignore
+                    backgroundImage: `linear-gradient(90deg, transparent 0%, ${colors.warning}33 30%, ${colors.warning}FF 50%, ${colors.warning}33 70%, transparent 100%)`,
+                    opacity: 0.55,
+                    zIndex: 2,
+                    // Translate from -100% (fully off left edge) to
+                    // 200% (fully off right edge) so the bar sweeps
+                    // in AND out of the tile bounds smoothly.
+                    transform: [
+                      {
+                        translateX: incomingSweep.interpolate({
+                          inputRange: [0, 1],
+                          // Native RN doesn't support `%` on transform
+                          // values; we approximate 200% of the tile
+                          // width with a big enough pixel value that
+                          // covers the widest cockpit column.
+                          outputRange: Platform.OS === "web"
+                            ? (["-100%", "200%"] as any)
+                            : [-260, 520],
+                        }),
+                      },
+                    ],
+                  } as any}
+                />
+
+                {/* Layer 3 — card body. Sits above the shimmer +
+                    below the border. Composes both the breathing
+                    scale pulse and the intermittent wobble so the
+                    tile has continuous motion PLUS a periodic
+                    "surprise" nudge. */}
                 <Animated.View
                   style={{
                     padding: spacing.md,
@@ -1019,7 +1069,12 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                     transform: [
                       {
                         scale: incomingPulse.interpolate({
-                          inputRange: [0, 1], outputRange: [1, 1.05],
+                          inputRange: [0, 1], outputRange: [1, 1.04],
+                        }),
+                      },
+                      {
+                        translateX: incomingWobble.interpolate({
+                          inputRange: [-1, 0, 1], outputRange: [-4, 0, 4],
                         }),
                       },
                     ],
@@ -1029,13 +1084,17 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                     <Text style={[styles.homeStatLabel, { color: colors.warning, fontWeight: "800", letterSpacing: 1.5 }]}>
                       INCOMING
                     </Text>
-                    {/* "NEW" badge */}
+                    {/* "NEW" badge — pulses opacity in sync with the
+                        breathing border for a unified rhythm. */}
                     <Animated.View
                       style={{
                         paddingHorizontal: 6,
                         paddingVertical: 2,
                         borderRadius: 4,
-                        backgroundColor: colors.warning,
+                        backgroundColor: incomingPulse.interpolate({
+                          inputRange: [0, 0.5, 1],
+                          outputRange: [colors.warning, "#FF3D8B", colors.warning],
+                        }),
                         opacity: incomingPulse.interpolate({
                           inputRange: [0, 1], outputRange: [0.75, 1],
                         }),
@@ -1054,11 +1113,9 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                   >
                     {incomingTotal}
                   </Text>
-                  {/* Breakdown line — separates dealer submissions from
-                      Public-leads Pending so the admin knows where to
-                      look next. Rendered as two dot-separated chips
-                      when BOTH channels have work; falls back to a
-                      single line when only one channel does. */}
+                  {/* Breakdown line — separates dealer submissions
+                      from Public-leads Pending so the admin knows
+                      where to look next. */}
                   {publicPendingCount > 0 && pendingCount > 0 ? (
                     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
                       <Text style={{ color: colors.warning, fontSize: 11, letterSpacing: 0.3, fontWeight: "700" }}>
