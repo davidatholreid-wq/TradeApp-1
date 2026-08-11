@@ -5,13 +5,37 @@
 // We don't scrape or store anything — we simply hand off to the live
 // site so users can eyeball the cheapest example on the market for
 // context during the valuation.
+//
+// URL SCHEMES
+// -----------
+// AutoTrader supports two search entry points:
+//   1. Model page:  /cars-for-sale/{make}/{model}?year=&fueltype=&transmission=
+//   2. Make page:   /cars-for-sale/{make}?keyword=X&keyword=Y&year=...
+// The model page is far more accurate — AT's own catalogue redirect
+// picks up variants like "A200", "A45 AMG" under `a-class`. Keyword
+// search misses these when the derivative token doesn't happen to
+// appear in the listing text (which is why dealers report cars
+// "not being picked up just on the keywords").
+//
+// When the dealer picks a catalogue model from the WBC-style dropdown
+// we now hit the /model page directly and use `keyword=` only for
+// TRIM-level narrowing (e.g. "AMG Line", "Style Line").
+// Falls back to the legacy keyword-only URL when there's no catalogue
+// match for the make/model pair.
 // -----------------------------------------------------------------------------
-import { useMemo } from "react";
-import { View, Text, StyleSheet, Linking, Platform, Image } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { View, Text, StyleSheet, Linking, Platform, Image, TextInput, ScrollView } from "react-native";
 import { TouchableOpacity } from "@/src/components/HapticButtons";
 import { Ionicons } from "@expo/vector-icons";
 import { spacing, radius, fonts } from "@/src/theme";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
+import {
+  AUTOTRADER_MAKES,
+  AUTOTRADER_CATALOGUE,
+  resolveAtMake,
+  guessAtModel,
+  atSlug,
+} from "@/src/data/autotraderCatalogue";
 
 // Brand logo image bundled with the app. Kept in assets/images/logos
 // so it ships with the JS bundle (no network round-trip needed).
@@ -44,13 +68,6 @@ type Props = {
 // trailing punctuation.
 function cleanText(s?: string): string {
   return (s || "").replace(/\([^)]*\)/g, "").replace(/\s{2,}/g, " ").trim();
-}
-
-// Slugify for AutoTrader path segments: lowercase, hyphenated, URL-safe.
-function slugAT(s: string): string {
-  return encodeURIComponent(
-    s.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "")
-  );
 }
 
 // Split the derivative into meaningful search keywords for AutoTrader.
@@ -86,17 +103,34 @@ function derivativeKeywords(derivative?: string, model?: string): string[] {
     .filter((t) => t && !stripPatterns.some((re) => re.test(t)));
 }
 
-// Build the AutoTrader `keyword=` query value — a space-separated list
-// of the filtered derivative tokens.
-function searchKeyword(model?: string, derivative?: string): string {
-  return derivativeKeywords(derivative, model).join(" ");
+// Once a MODEL is selected from the picker we don't want the derivative
+// keywords to also include the model-name tokens (that would just
+// double-search for `keyword=A&keyword=Class` on top of `/a-class`).
+// Strip any token whose normalised form appears in the resolved
+// model — keep everything else (trim, spec, sport suffix).
+function trimKeywords(
+  derivative: string | undefined,
+  model: string | undefined,
+  resolvedModel: string | null,
+): string[] {
+  const all = derivativeKeywords(derivative, model);
+  if (!resolvedModel) return all;
+  const modelTokens = new Set(
+    resolvedModel
+      .toLowerCase()
+      .split(/[-\s]+/)
+      .filter(Boolean),
+  );
+  return all.filter((t) => {
+    const tl = t.toLowerCase();
+    if (modelTokens.has(tl)) return false;
+    // Also drop pure-numeric tokens that match the model (e.g. "3"
+    // when model is "3 Series").
+    return true;
+  });
 }
 
 // Resolve the year range to feed into AutoTrader's `year=X-to-Y` filter.
-// Uses the Kredo variant manufacture range when available (so the search
-// covers the whole production run of that derivative, matching the
-// verification we already do on year-registered vs year-manufactured),
-// otherwise falls back to the single `year` prop.
 function resolveYearRange(p: Props): { from: number; to: number } | null {
   const from = p.yearFrom != null ? Number(p.yearFrom) : null;
   const to = p.yearTo != null ? Number(p.yearTo) : null;
@@ -143,44 +177,72 @@ function normaliseTransmission(raw?: string | null): string | null {
   return "Automatic";
 }
 
-// AutoTrader.co.za deep link: land on the make page (which is guaranteed
-// to exist on their catalogue for every brand) with year + fuel +
-// transmission filters applied, and each derivative token as its own
-// `keyword=` pill so AutoTrader AND-matches them individually (as seen
-// in their Filter Search UI where each pill narrows results further).
-// We also pre-apply `dealerrating=3` so buyers only see listings from
-// dealers with an AutoTrader star rating of 3 or more — protects the
-// dealer from time-wasters and low-quality sellers when comparing
-// against a valuation.
-//   /cars-for-sale/gwm?keyword=Tank&keyword=300&keyword=Super
-//     &keyword=Luxury&year=2024-to-2026&fueltype=Hybrid
-//     &transmission=Automatic&dealerrating=3
-function buildAutoTraderUrl(p: Props): string | null {
-  const make = cleanText(p.make);
-  if (!make) return null;
-  const kws = derivativeKeywords(p.derivative, p.model);
+// Legacy free-text slugifier — used when the make isn't in the AT
+// catalogue (rare, but possible for niche imports). Falls back to the
+// same lowercase-hyphenate transformation the catalogue slugger uses.
+function slugFallback(s: string): string {
+  return encodeURIComponent(
+    s.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "")
+  );
+}
+
+// Build the AutoTrader deep link. Two paths:
+//
+//  A. Catalogue path (preferred) — when the dealer selected a WBC-
+//     catalogue model from the dropdown, hit the make/model page
+//     directly. AutoTrader's own catalogue redirect handles A-Class
+//     variants like A200, A45 AMG, etc. correctly.
+//       /cars-for-sale/mercedes-benz/a-class?year=2015-to-2019
+//         &fueltype=Petrol&transmission=Automatic&dealerrating=3
+//         [&keyword=AMG&keyword=Line]  <-- trim tokens only
+//
+//  B. Fallback (legacy) — when there's no catalogue match, land on the
+//     make page with every derivative token as its own keyword pill.
+//       /cars-for-sale/gwm?keyword=Tank&keyword=300&keyword=Super
+//         &keyword=Luxury&year=2024-to-2026&fueltype=Hybrid
+//         &transmission=Automatic&dealerrating=3
+function buildAutoTraderUrl(
+  p: Props,
+  overrides?: { make?: string | null; model?: string | null },
+): string | null {
+  const canonicalMake = overrides?.make ?? null;
+  const canonicalModel = overrides?.model ?? null;
+
+  const makeRaw = cleanText(p.make);
+  if (!makeRaw && !canonicalMake) return null;
+
   const range = resolveYearRange(p);
   const fuel = normaliseFuel(p.fuelType);
   const trans = normaliseTransmission(p.transmission);
+
   const qs = new URLSearchParams();
-  // One separate `keyword=` entry per token — AutoTrader treats each as
-  // an individual filter pill rather than one long phrase.
-  for (const k of kws) qs.append("keyword", k);
   if (range) qs.set("year", `${range.from}-to-${range.to}`);
   if (fuel) qs.set("fueltype", fuel);
   if (trans) qs.set("transmission", trans);
-  // Dealer Rating filter — AutoTrader exposes this as the lowercase
-  // `dealerrating` query key (values 1..4). We always pin it to 3+ so
-  // dealers using Fourbuy never end up comparing their guaranteed
-  // Cover Price against listings from low-rated sellers.
   qs.set("dealerrating", "3");
-  const suffix = qs.toString();
-  return `https://www.autotrader.co.za/cars-for-sale/${slugAT(make)}${suffix ? `?${suffix}` : ""}`;
+
+  // Path A: catalogue-driven make/model.
+  if (canonicalMake && canonicalModel) {
+    const trimTokens = trimKeywords(p.derivative, p.model, canonicalModel);
+    for (const k of trimTokens) qs.append("keyword", k);
+    const path = `${atSlug(canonicalMake)}/${atSlug(canonicalModel)}`;
+    return `https://www.autotrader.co.za/cars-for-sale/${path}?${qs.toString()}`;
+  }
+
+  // Path B: catalogue-make but no model chosen — still an improvement
+  // over the legacy path because we can shed the model-name tokens
+  // from the keyword pills once we know the make officially.
+  const kws = derivativeKeywords(p.derivative, p.model);
+  for (const k of kws) qs.append("keyword", k);
+  const makeSlug = canonicalMake ? atSlug(canonicalMake) : slugFallback(makeRaw);
+  return `https://www.autotrader.co.za/cars-for-sale/${makeSlug}?${qs.toString()}`;
 }
 
-function searchLabel(p: Props): string {
+function searchLabel(p: Props, model: string | null): string {
   const make = cleanText(p.make);
-  const kw = searchKeyword(p.model, p.derivative);
+  const kw = model
+    ? model
+    : derivativeKeywords(p.derivative, p.model).join(" ");
   return [make, kw].filter(Boolean).join(" ");
 }
 
@@ -205,7 +267,67 @@ export default function ComparableListingsCard(props: Props) {
   const colors = useThemeColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  const autoTrader = useMemo(() => buildAutoTraderUrl(props), [props]);
+  // Auto-derive the initial AT make/model from Kredo data, then let the
+  // dealer pin the model via a dropdown. AT's catalogue naming can differ
+  // from Kredo (e.g. Kredo `A-CLASS` vs AT `A-Class`), and the dropdown
+  // ensures we send the exact string the AT URL router expects.
+  const atMakeResolved = useMemo(
+    () => resolveAtMake(props.make),
+    [props.make],
+  );
+  const catalogueModels = useMemo(
+    () => (atMakeResolved ? AUTOTRADER_CATALOGUE[atMakeResolved] : null),
+    [atMakeResolved],
+  );
+  const initialGuess = useMemo(() => {
+    if (!atMakeResolved) return "";
+    // Try both the raw model AND the first-derivative token as guess
+    // sources. Whichever yields a catalogue match wins.
+    const modelClean = cleanText(props.model);
+    const der = cleanText(props.derivative);
+    const guesses = [modelClean, der].filter(Boolean);
+    for (const g of guesses) {
+      const hit = guessAtModel(atMakeResolved, g);
+      if (hit) return hit;
+      // Try just the first 1-2 tokens (e.g. "3 SERIES 320i" -> "3 SERIES")
+      const tokens = g.split(/\s+/);
+      for (let n = Math.min(3, tokens.length); n >= 1; n--) {
+        const slice = tokens.slice(0, n).join(" ");
+        const hit2 = guessAtModel(atMakeResolved, slice);
+        if (hit2) return hit2;
+      }
+    }
+    return "";
+  }, [atMakeResolved, props.model, props.derivative]);
+
+  const [selectedModel, setSelectedModel] = useState<string>(initialGuess);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  // Refresh the selection if the underlying vehicle changes.
+  useEffect(() => {
+    setSelectedModel(initialGuess);
+    setSearch("");
+  }, [initialGuess]);
+
+  const filteredModels = useMemo(() => {
+    if (!catalogueModels) return [];
+    if (!search.trim()) return catalogueModels;
+    const q = search.trim().toLowerCase();
+    return catalogueModels.filter((m) => m.toLowerCase().includes(q));
+  }, [catalogueModels, search]);
+
+  const effectiveMake = atMakeResolved || cleanText(props.make) || "";
+  const effectiveModel = atMakeResolved ? selectedModel : "";
+
+  const autoTrader = useMemo(
+    () =>
+      buildAutoTraderUrl(props, {
+        make: atMakeResolved,
+        model: effectiveModel || null,
+      }),
+    [props, atMakeResolved, effectiveModel],
+  );
   if (!autoTrader) return null;
 
   const range = resolveYearRange(props);
@@ -214,21 +336,21 @@ export default function ComparableListingsCard(props: Props) {
       ? String(range.from)
       : `${range.from} – ${range.to}`
     : "any year";
-  const searchLbl = searchLabel(props);
+  const searchLbl = searchLabel(props, effectiveModel || null);
   const fuel = normaliseFuel(props.fuelType);
   const trans = normaliseTransmission(props.transmission);
 
-  // Compact "chips" that describe what's pre-applied. Each derivative
-  // keyword becomes its own chip so dealers can see exactly which words
-  // are being searched — e.g. Tank · 300 · Super · Luxury.
-  const kwTokens = derivativeKeywords(props.derivative, props.model);
-  const chips: string[] = [...kwTokens];
+  // Compact chips describing what's pre-applied.
+  const kwTokens = effectiveModel
+    ? trimKeywords(props.derivative, props.model, effectiveModel)
+    : derivativeKeywords(props.derivative, props.model);
+  const chips: string[] = [];
+  if (effectiveMake) chips.push(effectiveMake);
+  if (effectiveModel) chips.push(effectiveModel);
+  chips.push(...kwTokens);
   if (range) chips.push(range.from === range.to ? `${range.from}` : `${range.from}–${range.to}`);
   if (fuel) chips.push(fuel);
   if (trans) chips.push(trans);
-  // Every generated URL pins `dealerrating=3` so buyers only see listings
-  // from AutoTrader-rated 3-star-plus dealers — surface it as a chip so
-  // dealers know why some listings won't appear.
   chips.push("3★+ dealers");
 
   return (
@@ -268,6 +390,113 @@ export default function ComparableListingsCard(props: Props) {
         , so you can eyeball the cheapest live example on the market.
       </Text>
 
+      {/* AT-catalogue model picker — visible only when the make is in
+          our curated brand list. Otherwise we fall back silently to
+          the keyword-only URL (kept invisible to avoid clutter). */}
+      {catalogueModels ? (
+        <View style={styles.pickerBlock}>
+          <View style={styles.pickerHeader}>
+            <Text style={styles.pickerLabel}>AutoTrader Model</Text>
+            <Text style={styles.pickerHint}>
+              {AUTOTRADER_MAKES.includes(effectiveMake) ? effectiveMake : "—"}
+            </Text>
+          </View>
+          <TouchableOpacity
+            testID="at-model-picker"
+            style={styles.pickerButton}
+            onPress={() => setPickerOpen((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel="Change AutoTrader model"
+          >
+            <Text style={styles.pickerButtonText} numberOfLines={1}>
+              {selectedModel || "Pick a model…"}
+            </Text>
+            <Ionicons
+              name={pickerOpen ? "chevron-up" : "chevron-down"}
+              size={16}
+              color={colors.textSecondary}
+            />
+          </TouchableOpacity>
+          {pickerOpen ? (
+            <View style={styles.pickerDropdown}>
+              <View style={styles.pickerSearchRow}>
+                <Ionicons name="search" size={14} color={colors.textSecondary} />
+                <TextInput
+                  testID="at-model-search"
+                  style={styles.pickerSearchInput}
+                  value={search}
+                  onChangeText={setSearch}
+                  placeholder={`Search ${catalogueModels.length} ${effectiveMake} models…`}
+                  placeholderTextColor={colors.textDisabled}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                />
+                {search ? (
+                  <TouchableOpacity onPress={() => setSearch("")} accessibilityRole="button">
+                    <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+              <ScrollView
+                style={styles.pickerList}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+              >
+                {filteredModels.length === 0 ? (
+                  <Text style={styles.pickerEmpty}>
+                    No matches. Try a broader keyword or clear the search.
+                  </Text>
+                ) : (
+                  filteredModels.map((m) => {
+                    const isActive = m === selectedModel;
+                    return (
+                      <TouchableOpacity
+                        key={m}
+                        style={[styles.pickerRow, isActive && styles.pickerRowActive]}
+                        onPress={() => {
+                          setSelectedModel(m);
+                          setPickerOpen(false);
+                          setSearch("");
+                        }}
+                        accessibilityRole="button"
+                      >
+                        <Text
+                          style={[
+                            styles.pickerRowText,
+                            isActive && styles.pickerRowTextActive,
+                          ]}
+                        >
+                          {m}
+                        </Text>
+                        {isActive ? (
+                          <Ionicons name="checkmark" size={16} color={colors.primary} />
+                        ) : null}
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+              </ScrollView>
+              {selectedModel ? (
+                <TouchableOpacity
+                  style={styles.pickerClearRow}
+                  onPress={() => {
+                    setSelectedModel("");
+                    setPickerOpen(false);
+                    setSearch("");
+                  }}
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="refresh" size={14} color={colors.textSecondary} />
+                  <Text style={styles.pickerClearText}>
+                    Clear — search by keywords only
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
       {chips.length ? (
         <View style={styles.chipRow}>
           {chips.map((c) => (
@@ -289,7 +518,8 @@ export default function ComparableListingsCard(props: Props) {
           <Text style={styles.btnTitle}>Open AutoTrader.co.za</Text>
           <Text style={styles.btnSub} numberOfLines={2}>
             {[
-              kwTokens.length ? kwTokens.join(" · ") : null,
+              [effectiveMake, effectiveModel].filter(Boolean).join(" ") ||
+                (kwTokens.length ? kwTokens.join(" · ") : null),
               range ? (range.from === range.to ? `Year ${range.from}` : `Years ${range.from}–${range.to}`) : null,
               fuel,
               trans,
@@ -370,6 +600,90 @@ function makeStyles(colors: Palette) {
       backgroundColor: colors.card,
     },
     chipTxt: { color: colors.text, fontSize: 11, fontWeight: "700", letterSpacing: 0.4 },
+
+    // AT model picker (dropdown + search) — mirrors the WBC card so
+    // the two comparison cards feel like matching destinations.
+    pickerBlock: {
+      marginTop: 4,
+      gap: 6,
+      zIndex: 5,
+      ...(Platform.OS === "web" ? { position: "relative" as const } : {}),
+    },
+    pickerHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+    pickerLabel: { color: colors.textSecondary, fontSize: 11, letterSpacing: 0.4, fontWeight: "700" },
+    pickerHint: { color: colors.textSecondary, fontSize: 11, fontStyle: "italic" },
+    pickerButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+    },
+    pickerButtonText: { color: colors.text, fontSize: 13, fontWeight: "600", flex: 1, marginRight: 8 },
+    pickerDropdown: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.card,
+      overflow: "hidden",
+      zIndex: 6,
+      elevation: 4,
+    },
+    pickerSearchRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    pickerSearchInput: {
+      flex: 1,
+      color: colors.text,
+      fontSize: 12,
+      paddingVertical: 2,
+      outlineStyle: "none" as any,
+    },
+    pickerList: { maxHeight: 220 },
+    pickerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    pickerRowActive: { backgroundColor: colors.primary + "18" },
+    pickerRowText: { color: colors.text, fontSize: 12 },
+    pickerRowTextActive: { color: colors.primary, fontWeight: "700" },
+    pickerEmpty: {
+      color: colors.textSecondary,
+      fontSize: 11,
+      textAlign: "center",
+      paddingVertical: 12,
+      fontStyle: "italic",
+    },
+    pickerClearRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      backgroundColor: colors.paper,
+    },
+    pickerClearText: {
+      color: colors.textSecondary,
+      fontSize: 11,
+      fontStyle: "italic",
+    },
 
     actionBtn: {
       flexDirection: "row",
