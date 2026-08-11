@@ -609,14 +609,16 @@ export default function GiveCoverScreen() {
                     <View style={styles.gridRefBadge}>
                       <Text style={styles.gridRefBadgeText}>{s.reference || s.id.slice(0, 8)}</Text>
                     </View>
-                    {covered ? (
-                      <View style={[styles.gridStatusBadge, { backgroundColor: colors.success }]}>
-                        <Ionicons name="shield-checkmark" size={11} color="#fff" />
-                        <Text style={styles.gridStatusBadgeText}>
-                          Cover · R{s.my_cover!.price_zar.toLocaleString()}
-                        </Text>
-                      </View>
-                    ) : isDeclinedTab ? (
+                    {/* We used to overlay a "Cover · R{amount}" pill in
+                        the top-right corner too, but the price is
+                        already stated (much more legibly) in the
+                        `YOUR COVER` row below the image, and the
+                        overlay clashed with the dark thumbnails in
+                        night mode. Skipping the duplicate. The
+                        `Declined` state still gets an overlay pill
+                        because the row below doesn't otherwise
+                        signal the archived status. */}
+                    {!covered && isDeclinedTab ? (
                       <View style={[styles.gridStatusBadge, { backgroundColor: colors.danger }]}>
                         <Ionicons name="archive" size={11} color="#fff" />
                         <Text style={styles.gridStatusBadgeText}>Declined</Text>
