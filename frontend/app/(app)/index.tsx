@@ -40,7 +40,30 @@ const AD_SWIFT = require("../../assets/brands/ad_swift.jpeg");
 const AD_MERCEDES = require("../../assets/brands/ad_mercedes.jpeg");
 
 // Lifestyle image for the "Trade with Confidence" hero tile front page.
+// Kept for reference — the current implementation uses the full 5-page
+// hero cycle (`HERO_TRADE_PAGES` below) instead of this single lifestyle
+// still, but we leave the import in place in case we ever revert to
+// the older static-image + bullet-points layout.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const HERO_TILE_LIFESTYLE = require("../../assets/brands/hero_lifestyle.jpg");
+
+// Trade-with-Confidence 5-page hero cycle. Each image is a fully
+// designed 2:1 landscape composition (dark cinematic photography with
+// baked-in title + description on the left, and a UI preview mock on
+// the right). We do NOT overlay any text on top of these — the images
+// are the whole story. The cycle order matches the customer journey:
+//   1. Verified Dealer Network (who's trading)
+//   2. Trade with Confidence   (the brand promise)
+//   3. Real Market Intelligence (the data)
+//   4. Get More Cover          (multi-dealer offers)
+//   5. Know the Vehicle        (VIN-linked reports)
+const HERO_TRADE_PAGES: number[] = [
+  require("../../assets/brands/hero_tiles/hero_verified_dealer_network.png"),
+  require("../../assets/brands/hero_tiles/hero_trade_with_confidence.png"),
+  require("../../assets/brands/hero_tiles/hero_real_market_intelligence.png"),
+  require("../../assets/brands/hero_tiles/hero_get_more_cover.png"),
+  require("../../assets/brands/hero_tiles/hero_know_the_vehicle.png"),
+];
 // Note: the "Earn Rewards" flip banner was removed at the user's request
 // (the rewards content now lives only on the /rewards module). The
 // rewards_lifestyle.jpg asset is kept in the repo but no longer imported.
@@ -48,9 +71,10 @@ const HERO_TILE_LIFESTYLE = require("../../assets/brands/hero_lifestyle.jpg");
 type PagePoint = { icon?: keyof typeof Ionicons.glyphMap; text: string };
 type PageAd = { image: number | { uri: string }; label?: string };
 
-// A tile has ONE front page + N interior pages. Front = title/icon/CTA.
-// Interior pages are either bullet points (Trade with Confidence + Earn
-// Rewards) or a full-bleed ad image (Advertising slot).
+// A tile has ONE front page + N interior pages OR a `heroes` array
+// where every page is a full-bleed hero image (no overlay, no
+// front/footer). Bullet points and ad-carousel patterns remain
+// supported for backwards compatibility with other tiles.
 type Tile = {
   key: "trade" | "rewards" | "ads";
   icon: keyof typeof Ionicons.glyphMap;
@@ -59,6 +83,10 @@ type Tile = {
   footer?: string; // Trailing italic line after last bullet
   points?: PagePoint[];
   ads?: PageAd[];
+  // Full-bleed hero pages (each image is its own page in the flip cycle).
+  // When set, the tile skips the front/footer/points/ads pipeline
+  // entirely — the images ARE the tile.
+  heroes?: number[];
   frontImage?: number; // Optional lifestyle image behind the front page.
 };
 
@@ -68,14 +96,8 @@ const BASE_TILES: Tile[] = [
     icon: "shield-checkmark",
     title: "Trade with Confidence",
     subtitle: "Reduce your risks — tap to see how",
-    footer: "Reduce your risks",
-    frontImage: HERO_TILE_LIFESTYLE,
-    points: [
-      { icon: "flash", text: "Submit a vehicle for a Confirmed Cover Price in under 90 Seconds" },
-      { icon: "shield-checkmark", text: "Fourbuy Car Buying Co, will issue you a guarantee (Subject to final inspection)" },
-      { icon: "business", text: "Backed by the Fourbuy Group so you can commit to your customer TODAY!" },
-      { icon: "cash", text: "One Flat Submission Fee — Cover Price holds for 30-Days" },
-    ],
+    // Full-bleed cinematic hero cycle. See HERO_TRADE_PAGES above.
+    heroes: HERO_TRADE_PAGES,
   },
   {
     key: "ads",
@@ -96,7 +118,7 @@ export default function HomeScreen() {
   // Above this, we switch to a website-style layout: constrained max width,
   // three-column tile grid, quick-actions row across the top.
   const isWide = width >= 900;
-  const styles = useMemo(() => makeStyles(colors, isWide), [colors, isWide]);
+  const styles = useMemo(() => makeStyles(colors, isWide, width), [colors, isWide, width]);
   const insets = useBottomTabBarHeight();
   const router = useRouter();
   const { user } = useAuth();
@@ -680,12 +702,29 @@ export default function HomeScreen() {
           {/* Flip-tiles */}
           <View style={styles.cardsWrap}>
             {tiles.map((t) => (
-              <View key={t.key} style={styles.tileCol}>
+              <View
+                key={t.key}
+                style={[
+                  styles.tileCol,
+                  // Hero tiles get their own full-width layout so the
+                  // 2:1 cinematic images can breathe — a tile jammed
+                  // into a 1/3 grid cell crops off the right-hand
+                  // product-mock preview.
+                  t.heroes ? styles.tileColHero : null,
+                ]}
+              >
                 <FlipTile
                   tile={t}
                   styles={styles}
                   colors={colors}
-                  autoRotateMs={t.key === "ads" ? 5000 : 0}
+                  // Auto-rotate BOTH the Trade hero cycle and the Ads
+                  // carousel. Trade rotates a hair slower (6s) so
+                  // dealers have time to read the baked-in headline
+                  // and description; Ads keep the original 5s cadence.
+                  // Bullet-only tiles remain tap-only.
+                  autoRotateMs={
+                    t.key === "ads" ? 5000 : t.heroes ? 6000 : 0
+                  }
                 />
               </View>
             ))}
@@ -953,8 +992,12 @@ type FlipTileProps = {
 };
 
 function FlipTile({ tile, styles, colors, autoRotateMs = 0 }: FlipTileProps) {
-  // Total pages = 1 (front) + points/ads + optional footer.
-  const totalPages = 1 + (tile.points?.length ?? tile.ads?.length ?? 0) + (tile.footer ? 1 : 0);
+  // Total pages:
+  //   * `heroes` tiles = one page per hero image (no front / no footer).
+  //   * Bullet/ad tiles = 1 (front) + points/ads + optional footer.
+  const totalPages = tile.heroes
+    ? tile.heroes.length
+    : 1 + (tile.points?.length ?? tile.ads?.length ?? 0) + (tile.footer ? 1 : 0);
   const [idx, setIdx] = useState(0);
   const rot = useSharedValue(0); // 0..1 flip progress
   const scale = useSharedValue(1);
@@ -1022,7 +1065,12 @@ function FlipTile({ tile, styles, colors, autoRotateMs = 0 }: FlipTileProps) {
   const NextContent = <TilePage tile={tile} pageIdx={nextIdx} styles={styles} colors={colors} />;
 
   return (
-    <Pressable onPress={onTap} style={styles.tileOuter} accessibilityRole="button" accessibilityLabel={`${tile.title} card. Tap to see next.`}>
+    <Pressable
+      onPress={onTap}
+      style={[styles.tileOuter, tile.heroes ? styles.tileOuterHero : null]}
+      accessibilityRole="button"
+      accessibilityLabel={`${tile.title} card. Tap to see next.`}
+    >
       {/* Next face rendered first (below), starts fully hidden and only
           fades in via nextFaceStyle when rot >= 0.5. This ordering + the
           initial opacity: 0 stops a full-bleed ad from bleeding through
@@ -1035,12 +1083,12 @@ function FlipTile({ tile, styles, colors, autoRotateMs = 0 }: FlipTileProps) {
         {CurrentContent}
       </Animated.View>
 
-      {/* Pagination dots — always show, help dealers know they're mid-tour. */}
-      <View style={styles.dots} pointerEvents="none">
-        {Array.from({ length: totalPages }).map((_, i) => (
-          <View key={i} style={[styles.dot, i === idx && styles.dotActive]} />
-        ))}
-      </View>
+      {/* Pagination dots removed at the user's request — the flip
+          animation itself communicates that there's more content, and
+          the white progress-bar dots weren't reading well against the
+          new full-bleed cinematic hero imagery (or in night mode over
+          dark advertisements). Auto-rotate + tap-to-advance both
+          remain intact. */}
     </Pressable>
   );
 }
@@ -1050,6 +1098,22 @@ function FlipTile({ tile, styles, colors, autoRotateMs = 0 }: FlipTileProps) {
 // pageIdx 0 = front (title/subtitle). 1..N = point/ad. Last = footer text.
 // ---------------------------------------------------------------------------
 function TilePage({ tile, pageIdx, styles, colors }: { tile: Tile; pageIdx: number; styles: ReturnType<typeof makeStyles>; colors: Palette }) {
+  // Hero-cycle tile — full-bleed image, no overlay. `resizeMode="contain"`
+  // gives us pixel-accurate framing at any tile aspect (mobile portrait
+  // included) without ever cropping off the baked-in title text or UI
+  // preview mock. The images already sit on a solid #000 background so
+  // any letterbox strip is completely invisible against the tile's
+  // matching black backdrop.
+  if (tile.heroes) {
+    const src = tile.heroes[pageIdx];
+    if (!src) return null;
+    return (
+      <View style={styles.pageHero}>
+        <Image source={src} style={styles.heroImg} resizeMode="contain" />
+      </View>
+    );
+  }
+
   // Front page
   if (pageIdx === 0) {
     // Lifestyle-image front (currently only the "Trade with Confidence" tile).
@@ -1145,8 +1209,15 @@ const TILE_HEIGHT_MOBILE = 220;
 const TILE_HEIGHT_WIDE = 260;
 const PAGE_MAX_WIDTH = 1200;
 
-const makeStyles = (colors: Palette, isWide: boolean) => {
+const makeStyles = (colors: Palette, isWide: boolean, windowWidth: number = 0) => {
   const TILE_HEIGHT = isWide ? TILE_HEIGHT_WIDE : TILE_HEIGHT_MOBILE;
+  // Mobile hero tile height = (viewport width - horizontal page padding) / 2
+  // so the 2:1 hero images render at their intended aspect ratio without
+  // side-cropping the baked-in headline text. Falls back to a sensible
+  // default when window width isn't available yet.
+  const heroMobileHeight = windowWidth
+    ? Math.round((windowWidth - spacing.md * 2) / 2)
+    : 180;
   return StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.bg },
     scroll: {
@@ -1599,15 +1670,33 @@ const makeStyles = (colors: Palette, isWide: boolean) => {
     },
     tileCol: isWide
       ? {
-          // 3-up on wide screens (each ~1/3 minus gap).
+          // 3-up on wide screens (each ~1/3 minus gap). `flexGrow: 0`
+          // stops the last tile in a row from stretching to fill the
+          // whole remaining width — important now that the hero tile
+          // occupies its own full-width row and the Advertising tile
+          // otherwise ended up spread across ~1200px, dwarfing its
+          // partner logo.
           flexBasis: `${(100 - 2 * 2) / 3}%`,
-          flexGrow: 1,
+          flexGrow: 0,
+          maxWidth: `${(100 - 2 * 2) / 3}%`,
           minWidth: 280,
         }
       : {
           // On phones the wrap is column-oriented — full-width per tile.
           width: "100%",
         },
+    // Hero tile override — always full-row-width with a strict 2:1
+    // aspect ratio so the cinematic hero images (which have important
+    // marketing copy on the left AND a UI-preview mock on the right)
+    // render at their intended proportions. On wide screens this
+    // pushes any sibling tiles below to a new row; on mobile it
+    // behaves like the default full-width column.
+    tileColHero: {
+      flexBasis: "100%",
+      width: "100%",
+      minWidth: "100%",
+      flexGrow: 0,
+    },
 
     tileOuter: {
       height: TILE_HEIGHT,
@@ -1620,6 +1709,22 @@ const makeStyles = (colors: Palette, isWide: boolean) => {
         ios: { shadowColor: "#000", shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
         android: { elevation: 3 },
       }),
+    },
+    // Hero flip-tile — swap the compact fixed height for an explicit
+    // large one that matches the 2:1 aspect ratio of the hero images
+    // at typical viewport widths. On wide (≤1200px inner column, 3-col
+    // grid × 3 = ~1168px wide when spanning full row) we render at
+    // ~560px tall — comfortably matches the 2:1 image without
+    // dominating the screen. On phones the tile shrinks proportionally
+    // to keep the whole image visible above the fold.
+    //
+    // `aspectRatio: 2` alone doesn't fully control layout on
+    // react-native-web when the parent has row constraints, so we
+    // provide a min/max height as a safety net.
+    tileOuterHero: {
+      height: isWide ? 480 : heroMobileHeight,
+      backgroundColor: "#000",
+      borderColor: "transparent",
     },
     tileFace: {
       position: "absolute",
@@ -1678,6 +1783,23 @@ const makeStyles = (colors: Palette, isWide: boolean) => {
       textAlign: "center",
       lineHeight: 24,
     },
+
+    // Full-bleed hero page — used by the "Trade with Confidence" 5-page
+    // cinematic cycle. Extends past the tile's inner padding so the
+    // image fills the entire card (matching the ad page's bleed logic).
+    // Rounded corners are inherited from the parent `tileFace` clip.
+    pageHero: {
+      position: "absolute",
+      top: -spacing.md,
+      left: -spacing.md,
+      right: -spacing.md,
+      bottom: -spacing.md,
+      overflow: "hidden",
+      backgroundColor: "#000",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    heroImg: { width: "100%", height: "100%" },
 
     // Ad page — full-bleed image with a small "ADVERTISING" pill top-left.
     // Uses `resizeMode="contain"` (see TilePage) so the advertiser's whole
