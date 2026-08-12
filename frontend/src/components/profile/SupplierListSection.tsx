@@ -27,6 +27,7 @@ import { TouchableOpacity } from "@/src/components/HapticButtons";
 import { Ionicons } from "@expo/vector-icons";
 import { spacing, radius, fonts } from "@/src/theme";
 import { apiFetch } from "@/src/api";
+import { confirmAsync } from "@/src/utils/vehicle-detail";
 import type { Palette } from "@/src/theme/ThemeContext";
 
 export type Supplier = {
@@ -66,26 +67,22 @@ export default function SupplierListSection({ colors }: SupplierListSectionProps
 
   const closeModal = () => { setEditing(null); setAdding(false); };
 
-  const handleDelete = (s: Supplier) => {
-    Alert.alert(
+  const handleDelete = async (s: Supplier) => {
+    // Alert.alert with 3 buttons silently drops on RN Web — use the
+    // cross-platform confirmAsync helper so the dustbin actually works
+    // in the web preview and native builds alike.
+    const proceed = await confirmAsync(
       "Delete supplier?",
       `Remove "${s.name}" from your supplier list? Suppliers already assigned to a submission's recon lines stay on those PDFs.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await apiFetch(`/api/suppliers/${s.id}`, { method: "DELETE" });
-              setItems((prev) => prev.filter((x) => x.id !== s.id));
-            } catch (e: any) {
-              Alert.alert("Delete", e?.message || "Could not delete supplier");
-            }
-          },
-        },
-      ],
+      "Delete",
     );
+    if (!proceed) return;
+    try {
+      await apiFetch(`/api/suppliers/${s.id}`, { method: "DELETE" });
+      setItems((prev) => prev.filter((x) => x.id !== s.id));
+    } catch (e: any) {
+      Alert.alert("Delete", e?.message || "Could not delete supplier");
+    }
   };
 
   return (
