@@ -15,6 +15,7 @@ import { spacing, fonts } from "@/src/theme";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { useAuth } from "@/src/context/AuthContext";
 import SupplierListSection from "@/src/components/profile/SupplierListSection";
+import ScreenBackButton from "@/src/components/ScreenBackButton";
 
 export default function SuppliersScreen() {
   const colors = useThemeColors();
@@ -28,16 +29,8 @@ export default function SuppliersScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
+      <ScreenBackButton />
       <View style={styles.header}>
-        <TouchableOpacity
-          testID="suppliers-back"
-          onPress={() => router.back()}
-          style={styles.backBtn}
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-        >
-          <Ionicons name="chevron-back" size={22} color={colors.text} />
-        </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.eyebrow}>DEALERSHIP CATALOG</Text>
           <Text style={styles.title}>Recon Suppliers</Text>
