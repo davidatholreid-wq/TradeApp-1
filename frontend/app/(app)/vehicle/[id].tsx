@@ -44,6 +44,8 @@ import CollapsibleSection from "@/src/components/vehicle/CollapsibleSection";
 import DetailRow from "@/src/components/vehicle/DetailRow";
 import HeroPill from "@/src/components/vehicle/HeroPill";
 import ReportResultBody from "@/src/components/vehicle/ReportResultBody";
+import { ConfirmReportModal, ViewReportModal } from "@/src/components/vehicle/modals/ReportModals";
+import { PriceModal, DeclineModal } from "@/src/components/vehicle/modals/PriceDeclineModals";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { apiFetch } from "@/src/api";
 import { storage } from "@/src/utils/storage";
@@ -4038,176 +4040,6 @@ export default function VehicleDetail() {
         </View>
       ) : null}
 
-      {/* Price modal */}
-      <Modal visible={priceModal} transparent animationType="slide" onRequestClose={() => setPriceModal(false)}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.modalOverlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setPriceModal(false)} />
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {sub.status === "priced" ? "Update Price" : "Offer Price"}
-              </Text>
-              <TouchableOpacity testID="price-modal-close" onPress={() => setPriceModal(false)}>
-                <Ionicons name="close" size={22} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.modalHint}>
-              {sub.year} {sub.make_name} {sub.derivative_name || sub.model_name}
-            </Text>
-            {sub.status === "priced" && sub.price != null ? (
-              <Text style={[styles.modalHint, { marginTop: 2 }]}>
-                Previous offer: <Text style={{ color: colors.text, fontWeight: "700" }}>{formatZAR(sub.price)}</Text>
-              </Text>
-            ) : null}
-            <Text style={styles.label}>Price (ZAR)</Text>
-            <TextInput
-              testID="price-input"
-              style={styles.priceInput}
-              value={priceInput}
-              onChangeText={(t) => setPriceInput(formatMoneyString(t))}
-              placeholder="0"
-              placeholderTextColor={colors.textDisabled}
-              keyboardType="numeric"
-              autoFocus
-            />
-            <Text style={styles.label}>Notes (optional, shown to dealer)</Text>
-            <TextInput
-              testID="notes-input"
-              style={[styles.priceInput, { height: 60 }]}
-              value={notesInput}
-              onChangeText={setNotesInput}
-              placeholder="e.g. Trade price offer valid 7 days"
-              placeholderTextColor={colors.textDisabled}
-              multiline
-            />
-            <Text style={styles.label}>
-              {sub.status === "priced" ? (
-                <>
-                  Reason for the price change{" "}
-                  <Text style={{ color: "#B3261E", fontWeight: "800" }}>*</Text>
-                </>
-              ) : (
-                <>Change comment (optional — reason for this offer)</>
-              )}
-            </Text>
-            <TextInput
-              testID="change-comment-input"
-              style={[styles.priceInput, { height: 60 }]}
-              value={changeCommentInput}
-              onChangeText={setChangeCommentInput}
-              placeholder={
-                sub.status === "priced"
-                  ? "e.g. Adjusted for higher mileage; matched new market comps"
-                  : "e.g. Initial offer based on average trade condition"
-              }
-              placeholderTextColor={colors.textDisabled}
-              multiline
-            />
-            {sub.status === "priced" ? (
-              <Text style={{ color: colors.textSecondary, fontSize: 11, marginTop: 4, fontStyle: "italic" }}>
-                A reason is required and will be logged in the price history.
-              </Text>
-            ) : null}
-            <TouchableOpacity
-              testID="confirm-price-button"
-              style={[
-                styles.confirmBtn,
-                (submittingPrice ||
-                  (sub.status === "priced" && changeCommentInput.trim().length < 3)) && {
-                  opacity: 0.5,
-                },
-              ]}
-              onPress={handleOfferPrice}
-              disabled={
-                submittingPrice ||
-                (sub.status === "priced" && changeCommentInput.trim().length < 3)
-              }
-            >
-              {submittingPrice ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.confirmBtnText}>
-                  {sub.status === "priced" ? "Confirm Update" : "Confirm Price"}
-                </Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* Decline confirmation modal — admin cannot offer on this vehicle */}
-      <Modal
-        visible={declineModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => (declining ? null : setDeclineModal(false))}
-      >
-        <View style={styles.reportModalBackdrop}>
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={() => (declining ? null : setDeclineModal(false))}
-          />
-          <View style={styles.reportModalCard}>
-            <View style={styles.reportModalHeader}>
-              <Ionicons name="close-circle-outline" size={22} color={colors.text} />
-              <Text style={styles.reportModalTitle}>Cannot Offer</Text>
-            </View>
-            <Text style={styles.reportModalReport}>
-              {sub.year} {sub.make_name} {sub.derivative_name || sub.model_name}
-            </Text>
-            <Text style={[styles.reportModalBody, { marginTop: spacing.sm }]}>
-              This dealer will be notified:
-            </Text>
-            <View style={styles.declineQuote}>
-              <Text style={styles.declineQuoteText}>
-                “We unfortunately are not able to make an offer on this vehicle,
-                you will not be charged for the valuation.”
-              </Text>
-            </View>
-            <Text style={styles.reportModalBodySmall}>
-              The dealer will not be charged the R{50} valuation fee for this submission.
-            </Text>
-
-            <Text style={styles.label}>Internal note (optional — not shown to dealer)</Text>
-            <TextInput
-              testID="decline-note-input"
-              style={[styles.priceInput, { minHeight: 64, textAlignVertical: "top" }]}
-              value={declineNote}
-              onChangeText={setDeclineNote}
-              placeholder="e.g. VIN mismatch, out-of-scope model, etc."
-              placeholderTextColor={colors.textDisabled}
-              multiline
-            />
-
-            <View style={styles.reportModalActions}>
-              <TouchableOpacity
-                testID="decline-cancel"
-                style={styles.reportModalCancel}
-                onPress={() => setDeclineModal(false)}
-                disabled={declining}
-              >
-                <Text style={styles.reportModalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                testID="decline-confirm"
-                style={[
-                  styles.reportModalConfirm,
-                  declining && styles.docBtnDisabled,
-                ]}
-                onPress={handleDeclineOffer}
-                disabled={declining}
-              >
-                {declining ? (
-                  <ActivityIndicator color={colors.onPrimary} />
-                ) : (
-                  <Text style={styles.reportModalConfirmText}>Confirm Decline</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
       {/* Fullscreen photo carousel */}
       <PhotoCarousel
         photos={carouselPhotos}
@@ -4222,130 +4054,58 @@ export default function VehicleDetail() {
         onClose={() => setConditionInfoOpen(false)}
       />
 
-      {/* Report order confirmation modal */}
-      <Modal
-        visible={confirmReport !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => (orderingReportType ? null : setConfirmReport(null))}
-      >
-        <View style={styles.reportModalBackdrop}>
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={() => (orderingReportType ? null : setConfirmReport(null))}
-          />
-          <View style={styles.reportModalCard}>
-            <View style={styles.reportModalHeader}>
-              <Ionicons name="receipt-outline" size={22} color={colors.text} />
-              <Text style={styles.reportModalTitle}>Confirm Charge</Text>
-            </View>
-            <Text style={styles.reportModalReport}>{confirmReport?.name}</Text>
-            <Text style={styles.reportModalPrice}>
-              R{confirmReport?.cost_zar?.toFixed(0) ?? "0"}
-            </Text>
-            <Text style={styles.reportModalBody}>
-              By continuing, you accept the charge of R{confirmReport?.cost_zar?.toFixed(0) ?? "0"}.
-              This amount will be added to your next Fourbuy invoice alongside the R50 valuation fee.
-            </Text>
-            <Text style={styles.reportModalBodySmall}>
-              The report will be run against VIN {sub?.vin || "—"}.
-            </Text>
+      {/* Admin price / update-price modal */}
+      <PriceModal
+        visible={priceModal}
+        sub={sub}
+        priceInput={priceInput}
+        notesInput={notesInput}
+        changeCommentInput={changeCommentInput}
+        submitting={submittingPrice}
+        onPriceInputChange={setPriceInput}
+        onNotesInputChange={setNotesInput}
+        onChangeCommentInputChange={setChangeCommentInput}
+        onClose={() => setPriceModal(false)}
+        onSubmit={handleOfferPrice}
+        formatZAR={formatZAR}
+        formatMoneyString={formatMoneyString}
+        colors={colors}
+        styles={styles}
+      />
 
-            <View style={styles.reportModalActions}>
-              <TouchableOpacity
-                testID="cancel-report-order"
-                style={styles.reportModalCancel}
-                onPress={() => setConfirmReport(null)}
-                disabled={!!orderingReportType}
-              >
-                <Text style={styles.reportModalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                testID="confirm-report-order"
-                style={[
-                  styles.reportModalConfirm,
-                  !!orderingReportType && styles.docBtnDisabled,
-                ]}
-                onPress={submitReportOrder}
-                disabled={!!orderingReportType}
-              >
-                {orderingReportType ? (
-                  <ActivityIndicator color={colors.onPrimary} />
-                ) : (
-                  <Text style={styles.reportModalConfirmText}>
-                    Accept & Order
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      {/* Admin decline modal */}
+      <DeclineModal
+        visible={declineModalOpen}
+        sub={sub}
+        declineNote={declineNote}
+        declining={declining}
+        onNoteChange={setDeclineNote}
+        onCancel={() => { setDeclineModalOpen(false); setDeclineNote(""); }}
+        onConfirm={handleConfirmDecline}
+        colors={colors}
+        styles={styles}
+      />
+
+      {/* Report order confirmation modal */}
+      <ConfirmReportModal
+        visible={confirmReport !== null}
+        report={confirmReport}
+        vin={sub?.vin}
+        ordering={!!orderingReportType}
+        onCancel={() => setConfirmReport(null)}
+        onConfirm={submitReportOrder}
+        colors={colors}
+        styles={styles}
+      />
 
       {/* Report result viewer modal */}
-      <Modal
-        visible={viewingReport !== null}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setViewingReport(null)}
-      >
-        <View style={styles.reportModalBackdrop}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setViewingReport(null)} />
-          <View style={styles.viewReportCard}>
-            <View style={styles.viewReportHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.viewReportKicker}>
-                  {viewingReport?.status?.toUpperCase() || "REPORT"}
-                </Text>
-                <Text style={styles.viewReportTitle}>{viewingReport?.name}</Text>
-                <Text style={styles.viewReportMeta}>
-                  VIN {viewingReport?.vin} · Delivered {(viewingReport?.delivered_at || viewingReport?.ordered_at || "").slice(0, 10)}
-                </Text>
-              </View>
-              <TouchableOpacity onPress={() => setViewingReport(null)} testID="close-report-viewer">
-                <Ionicons name="close" size={26} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={{ maxHeight: 480 }} contentContainerStyle={{ paddingBottom: spacing.md }}>
-              {viewingReport?.result_data ? (
-                <ReportResultBody data={viewingReport.result_data} />
-              ) : (
-                <Text style={styles.viewReportBody}>
-                  This report was ordered but no result payload is attached yet.
-                </Text>
-              )}
-              {/* Legacy Lightstone / Car Vertical integrations are still
-                  fixture-backed; show the MOCK DATA note only for those.
-                  JLR OSH, BMW Options, Kredo VIN accident history and
-                  Kredo CarTrust are all live provider integrations. */}
-              {viewingReport && (
-                viewingReport.type === "lightstone_verification"
-                || viewingReport.type === "lightstone_repair"
-                || viewingReport.type === "car_vertical"
-              ) ? (
-                <View style={styles.mockBanner}>
-                  <Ionicons name="information-circle-outline" size={16} color={colors.textDisabled} />
-                  <Text style={styles.mockBannerText}>
-                    MOCK DATA — real provider APIs will replace this content once integrated.
-                  </Text>
-                </View>
-              ) : null}
-            </ScrollView>
-
-            {viewingReport?.status === "delivered" ? (
-              <TouchableOpacity
-                testID="open-report-pdf"
-                style={styles.reportPdfBtn}
-                onPress={() => viewingReport && handleOpenReportPdf(viewingReport.type)}
-              >
-                <Ionicons name="document-text-outline" size={18} color={colors.onPrimary} />
-                <Text style={styles.reportPdfBtnText}>Open Full Report PDF</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-        </View>
-      </Modal>
+      <ViewReportModal
+        report={viewingReport}
+        onClose={() => setViewingReport(null)}
+        onOpenPdf={handleOpenReportPdf}
+        colors={colors}
+        styles={styles}
+      />
     </SafeAreaView>
   );
 }
