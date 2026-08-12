@@ -14,9 +14,10 @@
  */
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
+  View, Text, StyleSheet, ScrollView, ActivityIndicator,
   Image, RefreshControl, Platform, useWindowDimensions,
 } from "react-native";
+import { TouchableOpacity } from "@/src/components/HapticButtons";
 import { Swipeable } from "react-native-gesture-handler";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";

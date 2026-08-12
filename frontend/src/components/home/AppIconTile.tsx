@@ -21,11 +21,13 @@ import { View, Text, StyleSheet, Platform } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
+  withSequence,
   withSpring,
-  runOnJS,
+  withTiming,
 } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import { TouchableOpacity } from "@/src/components/HapticButtons";
 import { spacing, fonts } from "@/src/theme";
 import type { Palette } from "@/src/theme/ThemeContext";
 
@@ -57,26 +59,31 @@ export default function AppIconTile({
     transform: [{ scale: scale.value }],
   }));
 
+  // Fire the navigation IMMEDIATELY on tap so the screen transition
+  // starts without waiting for the pop-back spring to settle. The scale
+  // "pulse" animation runs in the background purely as tactile feedback
+  // and never blocks router.push. Haptic tick is provided by the
+  // `TouchableOpacity` wrapper from HapticButtons.
   const handleTap = useCallback(() => {
-    scale.value = withSpring(0.92, { damping: 12, stiffness: 260 }, () => {
-      scale.value = withSpring(1, { damping: 14, stiffness: 220 });
-      runOnJS(onPress)();
-    });
+    scale.value = withSequence(
+      withTiming(0.92, { duration: 60 }),
+      withSpring(1, { damping: 14, stiffness: 220 }),
+    );
+    onPress();
   }, [onPress, scale]);
 
   return (
     <View style={styles.wrap} testID={testID}>
-      <Animated.View style={[styles.iconWrap, animStyle]}>
-        {/* Squircle icon — gradient tinted, drop-shadowed, white icon */}
-        <View
-          style={styles.squircle}
-          onStartShouldSetResponder={() => true}
-          onResponderRelease={handleTap}
-          // web fallback so cursor + click work
-          {...(Platform.OS === "web"
-            ? { onClick: handleTap, style: [styles.squircle, { cursor: "pointer" } as any] }
-            : {})}
-        >
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onPress={handleTap}
+        style={styles.iconWrap}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+      >
+        <Animated.View style={[styles.iconWrap, animStyle]}>
+          {/* Squircle icon — gradient tinted, drop-shadowed, white icon */}
+          <View style={styles.squircle}>
           <LinearGradient
             colors={[shade(tint, 1.2), tint, shade(tint, 0.85)]}
             start={{ x: 0, y: 0 }}
@@ -99,7 +106,8 @@ export default function AppIconTile({
             </View>
           ) : null}
         </View>
-      </Animated.View>
+        </Animated.View>
+      </TouchableOpacity>
       <Text style={styles.label} numberOfLines={2}>{label}</Text>
       {hint ? (
         <Text style={styles.hint} numberOfLines={2}>{hint}</Text>
