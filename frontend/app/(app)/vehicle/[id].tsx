@@ -53,6 +53,7 @@ import TyreEstimateCard from "@/src/components/vehicle/TyreEstimateCard";
 import CoverOffersReceivedCard from "@/src/components/vehicle/CoverOffersReceivedCard";
 import DealerOfferCard from "@/src/components/vehicle/DealerOfferCard";
 import CoverPlacementBar from "@/src/components/vehicle/CoverPlacementBar";
+import MileageIndicator from "@/src/components/vehicle/MileageIndicator";
 import { ConfirmReportModal, ViewReportModal } from "@/src/components/vehicle/modals/ReportModals";
 import { PriceModal, DeclineModal } from "@/src/components/vehicle/modals/PriceDeclineModals";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
@@ -1848,6 +1849,17 @@ export default function VehicleDetail() {
             last
           />
         </View>
+
+        {/* Mileage indicator — km-per-year band (very low → very high) computed
+            from the model year (Jan 1) to the submission date. */}
+        {sub.year && sub.mileage != null ? (
+          <MileageIndicator
+            year={sub.year}
+            mileageKm={sub.mileage}
+            submittedAt={sub.created_at}
+            colors={colors}
+          />
+        ) : null}
 
         {/* Photos */}
         <Text style={styles.sectionTitle}>Photos</Text>
