@@ -1199,7 +1199,7 @@ export default function VehicleDetail() {
         // billing row.
         try {
           const fresh = await apiFetch(`/api/submissions/${id}`);
-          setSub(fresh);
+          setSub(fresh.submission ?? fresh);
         } catch { /* non-fatal */ }
       } finally {
         setOrderingReportType(null);
