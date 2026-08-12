@@ -44,6 +44,9 @@ import CollapsibleSection from "@/src/components/vehicle/CollapsibleSection";
 import DetailRow from "@/src/components/vehicle/DetailRow";
 import HeroPill from "@/src/components/vehicle/HeroPill";
 import ReportResultBody from "@/src/components/vehicle/ReportResultBody";
+import MarketAnalysisCard from "@/src/components/vehicle/MarketAnalysisCard";
+import VinLinkedReportsCard from "@/src/components/vehicle/VinLinkedReportsCard";
+import DealTrackingCard from "@/src/components/vehicle/DealTrackingCard";
 import { ConfirmReportModal, ViewReportModal } from "@/src/components/vehicle/modals/ReportModals";
 import { PriceModal, DeclineModal } from "@/src/components/vehicle/modals/PriceDeclineModals";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
@@ -2570,165 +2573,16 @@ export default function VehicleDetail() {
           </>
         ) : null}
 
-        {/* AI Market Analysis — collapsed by default. The section
-            header ships a "Refresh"/"Analyse" action on the right, and
-            a one-line summary chip when collapsed so dealers can see
-            at a glance whether an analysis has been generated. */}
-        <CollapsibleSection
-          title="AI Market Analysis"
+        {/* AI Market Analysis — collapsed by default. See MarketAnalysisCard. */}
+        <MarketAnalysisCard
+          analysis={sub.market_analysis}
           open={isOpen("ai")}
           onToggle={() => toggleSection("ai")}
-          summary={
-            sub.market_analysis?.analysis?.estimated_market_range_zar
-              ? `R ${sub.market_analysis.analysis.estimated_market_range_zar.low.toLocaleString()} — R ${sub.market_analysis.analysis.estimated_market_range_zar.high.toLocaleString()}`
-              : (sub.market_analysis?.generated_at ? "Analysis ready" : "Not yet analysed")
-          }
-          right={
-            <TouchableOpacity
-              testID="market-analysis-button"
-              style={[styles.analysisBtn, analysing && { opacity: 0.6 }]}
-              onPress={(e) => { e.stopPropagation?.(); handleMarketAnalysis(); }}
-              disabled={analysing}
-            >
-              {analysing ? (
-                <ActivityIndicator color={colors.primary} size="small" />
-              ) : (
-                <>
-                  <Ionicons name="sparkles" size={14} color={colors.primary} />
-                  <Text style={styles.analysisBtnText}>
-                    {sub.market_analysis ? "Refresh" : "Analyse"}
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
-          }
+          analysing={analysing}
+          onAnalyse={handleMarketAnalysis}
           colors={colors}
           styles={styles}
-          testID="ai-market-analysis"
-        >
-          {sub.market_analysis?.generated_at ? (
-            <Text style={[styles.analysisTs, { marginBottom: spacing.sm }]}>
-              Generated {new Date(sub.market_analysis.generated_at).toLocaleString()}
-            </Text>
-          ) : null}
-
-          {sub.market_analysis?.analysis ? (
-          <View style={styles.analysisCard} testID="market-analysis-card">
-            {sub.market_analysis.analysis.estimated_market_range_zar ? (
-              <View style={styles.rangeBox}>
-                <View style={styles.rangeCol}>
-                  <Text style={styles.rangeLabel}>LOW</Text>
-                  <Text style={styles.rangeValue}>
-                    R {sub.market_analysis.analysis.estimated_market_range_zar.low.toLocaleString()}
-                  </Text>
-                </View>
-                <View style={[styles.rangeCol, styles.rangeColMid]}>
-                  <Text style={styles.rangeLabel}>TYPICAL</Text>
-                  <Text style={styles.rangeValue}>
-                    R {sub.market_analysis.analysis.estimated_market_range_zar.typical.toLocaleString()}
-                  </Text>
-                </View>
-                <View style={styles.rangeCol}>
-                  <Text style={styles.rangeLabel}>HIGH</Text>
-                  <Text style={styles.rangeValue}>
-                    R {sub.market_analysis.analysis.estimated_market_range_zar.high.toLocaleString()}
-                  </Text>
-                </View>
-              </View>
-            ) : null}
-
-            <View style={styles.tradeRow}>
-              {sub.market_analysis.analysis.trade_price_estimate_zar ? (
-                <View style={styles.tradeCol}>
-                  <Text style={styles.tradeLabel}>Trade Estimate</Text>
-                  <Text style={styles.tradeValue}>
-                    R {sub.market_analysis.analysis.trade_price_estimate_zar.toLocaleString()}
-                  </Text>
-                </View>
-              ) : null}
-              {sub.market_analysis.analysis.retail_price_estimate_zar ? (
-                <View style={styles.tradeCol}>
-                  <Text style={styles.tradeLabel}>Retail Estimate</Text>
-                  <Text style={styles.tradeValue}>
-                    R {sub.market_analysis.analysis.retail_price_estimate_zar.toLocaleString()}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-
-            {sub.market_analysis.analysis.year_positioning ? (
-              <View style={styles.factorsBox}>
-                <Text style={styles.factorsTitle}>YEAR POSITIONING</Text>
-                <Text style={styles.factorText}>
-                  {sub.market_analysis.analysis.year_positioning}
-                </Text>
-              </View>
-            ) : null}
-
-            {sub.market_analysis.analysis.mileage_positioning ? (
-              <View style={styles.factorsBox}>
-                <Text style={styles.factorsTitle}>MILEAGE POSITIONING</Text>
-                <Text style={styles.factorText}>
-                  {sub.market_analysis.analysis.mileage_positioning}
-                </Text>
-              </View>
-            ) : null}
-
-            {sub.market_analysis.analysis.listings_summary ? (
-              <Text style={styles.summary}>{sub.market_analysis.analysis.listings_summary}</Text>
-            ) : null}
-
-            {sub.market_analysis.analysis.key_factors?.length ? (
-              <View style={styles.factorsBox}>
-                <Text style={styles.factorsTitle}>KEY FACTORS</Text>
-                {sub.market_analysis.analysis.key_factors.map((f, i) => (
-                  <View key={i} style={styles.factorRow}>
-                    <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
-                    <Text style={styles.factorText}>{f}</Text>
-                  </View>
-                ))}
-              </View>
-            ) : null}
-
-            {sub.market_analysis.analysis.kredo_alignment ? (
-              <View style={styles.factorsBox}>
-                <Text style={styles.factorsTitle}>KREDO ALIGNMENT</Text>
-                <Text style={styles.factorText}>
-                  {sub.market_analysis.analysis.kredo_alignment}
-                </Text>
-              </View>
-            ) : null}
-
-            {sub.market_analysis.analysis.recon_impact_zar ? (
-              <Text style={styles.confidence}>
-                Recon adjustment: −R {sub.market_analysis.analysis.recon_impact_zar.toLocaleString()}
-              </Text>
-            ) : null}
-
-            {sub.market_analysis.analysis.confidence ? (
-              <Text style={styles.confidence}>
-                Confidence: {sub.market_analysis.analysis.confidence.toUpperCase()}
-              </Text>
-            ) : null}
-
-            {sub.market_analysis.analysis.raw ? (
-              <Text style={styles.summary}>{sub.market_analysis.analysis.raw}</Text>
-            ) : null}
-
-            {sub.market_analysis.analysis.disclaimer ? (
-              <Text style={styles.disclaimer}>{sub.market_analysis.analysis.disclaimer}</Text>
-            ) : null}
-          </View>
-        ) : (
-          <View style={styles.analysisEmpty}>
-            <Ionicons name="analytics-outline" size={20} color={colors.textSecondary} />
-            <Text style={styles.analysisEmptyText}>
-              Tap Analyse for a GPT-5.2 market overview comparing this car against typical
-              autotrader.co.za and cars.co.za listings.
-            </Text>
-          </View>
-        )}
-        </CollapsibleSection>
+        />
 
         {/* Compare Live Listings — deep-links into AutoTrader AND
             WeBuyCars search results pre-filtered to comparable stock.
@@ -2923,278 +2777,30 @@ export default function VehicleDetail() {
           </>
         ) : null}
 
-        {/* VIN-linked Reports — order or view. Collapsible; opens by
-            default because ordering is a primary dealer action.
-            IMPORTANT: this section is available REGARDLESS of the
-            submission's pricing status. Business rule (2026-08-10):
-            the owning dealer must be able to spend on VIN reports
-            the instant they've loaded the car; Fourbuy's pricing
-            turnaround shouldn't block dealer workflow. */}
-        {true ? (
-          <CollapsibleSection
-            title={isAdmin || isCoverMode ? "VIN-Linked Reports" : "Order a VIN-Linked Report"}
-            open={isOpen("reports")}
-            onToggle={() => toggleSection("reports")}
-            summary={
-              (sub.report_orders || []).filter((r) => r.type !== "cover_offer").length > 0
-                ? `${(sub.report_orders || []).filter((r) => r.type !== "cover_offer").length} report${(sub.report_orders || []).filter((r) => r.type !== "cover_offer").length === 1 ? "" : "s"} ordered`
-                : ((isAdmin || isCoverMode) ? "No reports ordered yet" : "Tap to view available reports")
-            }
-            colors={colors}
-            styles={styles}
-            testID="reports-section"
-          >
-        {/* VIN-linked report ordering — only when a VIN was entered/scanned.
-                Admins never see the "Order" buttons: they can only view reports
-                the dealer has already ordered. */}
-            {sub.vin && sub.vin.trim() && sub.vin.toUpperCase() !== "TBC" ? (
-              <>
-                {isAdmin || isCoverMode ? (
-                  // Admin / cover-mode: no ordering UI. Show reports the
-                  // owning dealer has already purchased, or a small hint
-                  // that none have been ordered yet.
-                  (sub.report_orders || []).length > 0 ? (
-                    <>
-                      <Text style={styles.reportsSubhead}>
-                        {isCoverMode ? "VIN reports ordered by the seller" : "VIN reports ordered by dealer"}
-                      </Text>
-                      <Text style={styles.reportsHelp}>
-                        Verified against VIN {sub.vin}.
-                        {isCoverMode
-                          ? " Pricing agents can view results but cannot order new reports."
-                          : " Admins can view results but cannot order reports on behalf of a dealer."}
-                      </Text>
-                    </>
-                  ) : (
-                    <View style={styles.adminNoReports}>
-                      <Ionicons name="lock-closed-outline" size={16} color={colors.textDisabled} />
-                      <Text style={styles.adminNoReportsText}>
-                        {isCoverMode
-                          ? "The seller has not purchased any VIN-linked reports yet."
-                          : "VIN reports can only be ordered by the dealer. None purchased yet."}
-                      </Text>
-                    </View>
-                  )
-                ) : (
-                  <>
-                    <Text style={styles.reportsSubhead}>Order a VIN-linked report</Text>
-                    <Text style={styles.reportsHelp}>
-                      Reports are verified against VIN {sub.vin}. The charge will be added to your next invoice.
-                    </Text>
-                  </>
-                )}
-
-                {((): ReportOrder["type"][] => {
-                    const baseTypes: ReportOrder["type"][] = [
-                      "lightstone_verification",
-                      "lightstone_repair",
-                      "car_vertical",
-                    ];
-                    // BMW factory options is BMW-group only — filter on the
-                    // submission's make so it never appears on other brands.
-                    if (isBimmerSupported) baseTypes.push("bmw_options");
-                    // JLR OSH service history is JLR-only.
-                    if (isLandroverSupported) baseTypes.push("landrover_osh");
-                    // Kredo accident / claim history — available for every
-                    // VIN. Included in this unified list so ordering, cost
-                    // display and viewing behave identically to every
-                    // other VIN-linked report.
-                    if (sub.vin && sub.vin.trim() && sub.vin.toUpperCase() !== "TBC") {
-                      baseTypes.push("kredo_vin_history");
-                    }
-                    return baseTypes;
-                  })()
-                  .filter((t) => (!isAdmin && !isCoverMode) || orderedReportTypes.has(t))
-                  .map((t) => {
-                    const meta = REPORT_CATALOG[t];
-                    const alreadyOrdered = orderedReportTypes.has(t);
-                    const existing = (sub.report_orders || []).find((r) => r.type === t);
-                    const busy = orderingReportType === t;
-                    const isDelivered = existing?.status === "delivered";
-                    return (
-                      <View key={t} style={styles.reportCard}>
-                        <View style={{ flex: 1, marginRight: spacing.sm }}>
-                          <Text style={styles.reportName}>{meta.name}</Text>
-                          <Text style={styles.reportCost}>R{meta.cost_zar.toFixed(0)}</Text>
-                          {alreadyOrdered ? (
-                            <View style={styles.reportStatusRow}>
-                              <View
-                                style={[
-                                  styles.statusPill,
-                                  isDelivered ? styles.statusPillOk : styles.statusPillPending,
-                                ]}
-                              >
-                                <Text
-                                  style={[
-                                    styles.statusPillText,
-                                    isDelivered
-                                      ? { color: colors.success }
-                                      : { color: colors.warning },
-                                  ]}
-                                >
-                                  {(existing?.status || "pending").toUpperCase()}
-                                </Text>
-                              </View>
-                              {!isDelivered ? (
-                                <Text style={styles.reportPendingNote} numberOfLines={2}>
-                                  {existing?.note ||
-                                    "Awaiting API integration — result will appear here once the provider responds."}
-                                </Text>
-                              ) : null}
-                            </View>
-                          ) : null}
-                        </View>
-                        {alreadyOrdered ? (
-                          isDelivered ? (
-                            <TouchableOpacity
-                              testID={`view-report-${t}`}
-                              style={styles.viewReportBtn}
-                              onPress={() => setViewingReport(existing || null)}
-                            >
-                              <Ionicons name="eye-outline" size={16} color={colors.onPrimary} />
-                              <Text style={styles.viewReportBtnText}>View</Text>
-                            </TouchableOpacity>
-                          ) : (
-                            <View style={styles.reportOrderedBadge}>
-                              <Ionicons name="checkmark" size={16} color={colors.text} />
-                              <Text style={styles.reportOrderedBadgeText}>Ordered</Text>
-                            </View>
-                          )
-                        ) : (
-                          <TouchableOpacity
-                            testID={`order-report-${t}`}
-                            style={[styles.orderBtn, busy && styles.docBtnDisabled]}
-                            onPress={() =>
-                              setConfirmReport({ type: t, name: meta.name, cost_zar: meta.cost_zar })
-                            }
-                            disabled={busy}
-                          >
-                            {busy ? (
-                              <ActivityIndicator color={colors.onPrimary} size="small" />
-                            ) : (
-                              <Text style={styles.orderBtnText}>Order</Text>
-                            )}
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    );
-                  })}
-
-                {/* Kredo CarTrust report — treated like any other VIN-linked
-                    report, but with its own async pending/completed flow
-                    (see orderCartrust / cartrust state above). Admins see
-                    the card only when the dealer has already ordered it —
-                    admins cannot order CarTrust on behalf of a dealer. */}
-                {((!isAdmin && !isCoverMode) || cartrust) ? (
-                  <View style={styles.reportCard} testID="cartrust-card">
-                    <View style={{ flex: 1, marginRight: spacing.sm }}>
-                      <Text style={styles.reportName}>{REPORT_CATALOG.kredo_cartrust.name}</Text>
-                      <Text style={styles.reportCost}>R{REPORT_CATALOG.kredo_cartrust.cost_zar.toFixed(0)}</Text>
-                      {cartrust ? (
-                        <View style={styles.reportStatusRow}>
-                          <View
-                            style={[
-                              styles.statusPill,
-                              cartrust.status === "completed"
-                                ? styles.statusPillOk
-                                : styles.statusPillPending,
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.statusPillText,
-                                cartrust.status === "completed"
-                                  ? styles.statusPillTextOk
-                                  : styles.statusPillTextPending,
-                              ]}
-                            >
-                              {cartrust.status.toUpperCase()}
-                            </Text>
-                          </View>
-                          <Text style={styles.reportStatusMeta}>
-                            {cartrust.status === "pending"
-                              ? "Kredo is preparing your report…"
-                              : cartrust.status === "completed"
-                              ? "Ready to view"
-                              : (cartrust.error || "Please try again")}
-                          </Text>
-                        </View>
-                      ) : null}
-                    </View>
-                    {cartrust?.status === "completed" ? (
-                      <TouchableOpacity
-                        testID="cartrust-view-btn"
-                        style={styles.viewReportBtn}
-                        onPress={openCartrust}
-                      >
-                        <Ionicons name="eye-outline" size={16} color={colors.onPrimary} />
-                        <Text style={styles.viewReportBtnText}>View</Text>
-                      </TouchableOpacity>
-                    ) : cartrust?.status === "pending" ? (
-                      <View style={styles.reportOrderedBadge}>
-                        <ActivityIndicator color={colors.text} size="small" />
-                        <Text style={styles.reportOrderedBadgeText}>Ordered</Text>
-                      </View>
-                    ) : !isAdmin && !isCoverMode ? (
-                      // Order button — dealer only. Admins never see this
-                      // (the card as a whole is hidden until the dealer
-                      // has an active/completed order).
-                      <TouchableOpacity
-                        testID="cartrust-order-btn"
-                        style={[styles.orderBtn, cartrustLoading && styles.docBtnDisabled]}
-                        onPress={() =>
-                          setConfirmReport({
-                            type: "kredo_cartrust" as ReportOrder["type"],
-                            name: REPORT_CATALOG.kredo_cartrust.name,
-                            cost_zar: REPORT_CATALOG.kredo_cartrust.cost_zar,
-                          })
-                        }
-                        disabled={cartrustLoading}
-                      >
-                        {cartrustLoading ? (
-                          <ActivityIndicator color={colors.onPrimary} size="small" />
-                        ) : (
-                          <Text style={styles.orderBtnText}>Order</Text>
-                        )}
-                      </TouchableOpacity>
-                    ) : null}
-                  </View>
-                ) : null}
-              </>
-            ) : (
-              // No VIN → the dealer hasn't scanned the license disk yet.
-              // VIN-linked reports (Lightstone, Kredo, CarTrust, JLR OSH,
-              // BMW options, CarVertical) all require a VIN, so surface a
-              // clear explainer with a shortcut back to the scan flow.
-              <View style={styles.vinRequiredBox} testID="vin-required-notice">
-                <Ionicons name="scan-outline" size={20} color={colors.textSecondary} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.vinRequiredTitle}>License disk required</Text>
-                  <Text style={styles.vinRequiredHint}>
-                    The VIN-Linked report requires you to capture the license
-                    disk. Scan it to unlock Lightstone, Kredo accident history,
-                    CarTrust and factory-option reports. Won&apos;t create a
-                    new billable valuation.
-                  </Text>
-                  {!isAdmin && !isCoverMode ? (
-                    <TouchableOpacity
-                      testID="scan-license-disk-cta"
-                      style={styles.vinRequiredBtn}
-                      onPress={() => router.push({
-                        pathname: "/(app)/scan",
-                        params: { returnPath: "attachDisk", submissionId: sub.id },
-                      } as any)}
-                      accessibilityRole="button"
-                    >
-                      <Ionicons name="scan" size={14} color={colors.onPrimary} />
-                      <Text style={styles.vinRequiredBtnText}>Capture license disk</Text>
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
-              </View>
-            )}
-          </CollapsibleSection>
-        ) : null}
+        {/* VIN-Linked Reports — see VinLinkedReportsCard for full markup. */}
+        <VinLinkedReportsCard
+          sub={sub}
+          isAdmin={isAdmin}
+          isCoverMode={isCoverMode}
+          isBimmerSupported={isBimmerSupported}
+          isLandroverSupported={isLandroverSupported}
+          reportCatalog={REPORT_CATALOG}
+          orderedReportTypes={orderedReportTypes}
+          orderingReportType={orderingReportType}
+          cartrust={cartrust}
+          cartrustLoading={cartrustLoading}
+          open={isOpen("reports")}
+          onToggle={() => toggleSection("reports")}
+          onViewReport={(order) => setViewingReport(order)}
+          onConfirmOrder={(choice) => setConfirmReport(choice as any)}
+          onOpenCartrust={openCartrust}
+          onScanLicenseDisk={() => router.push({
+            pathname: "/(app)/scan",
+            params: { returnPath: "attachDisk", submissionId: sub.id },
+          } as any)}
+          colors={colors}
+          styles={styles}
+        />
 
         {/* CarTrust PDF ordering is now rendered inline in the "Order a
             VIN-Linked Report" section above — the standalone card was
@@ -3503,20 +3109,10 @@ export default function VehicleDetail() {
         ) : null}
 
         {/* ==================== DEAL TRACKING ====================
-            Access rules:
-              • Visible to any user on the OWNING dealership (all
-                colleagues can watch progress) AND to admins.
-              • Visible ONLY after a dealer offer has been captured
-                (the standalone "Dealer Offer" card above). Until then
-                Deal Tracking is completely hidden — no empty prompts.
-              • Only `is_pricing_agent` users on that dealership can
-                EDIT — this toggle is the managerial-access marker.
-                Everyone else sees the section read-only.
-              • Defaults to "Pending" outcome; the managerial user
-                confirms deal done / not done and completes the
-                profit analysis as before.
-            Hidden in cover-mode and while the vehicle is still pending.
-        */}
+            Visible to any user on the OWNING dealership + admins, after
+            a dealer offer has been captured. Only `is_pricing_agent`
+            users on that dealership can edit; everyone else sees it
+            read-only. Hidden in cover-mode and while pending. */}
         {!isCoverMode &&
         sub.status !== "pending" &&
         (isAdmin || isOwningDealer) &&
@@ -3524,366 +3120,35 @@ export default function VehicleDetail() {
           (() => {
             const deal = (sub as any).deal as DealInfo | null | undefined;
             const profit = ((sub as any).deal_profit as DealProfit | null) || null;
-            const done = dealDoneChoice === "yes";  // local live state
-            const sold = dealSoldChoice === "yes";
-            // Only a `is_pricing_agent` dealer on the owning dealership
-            // can edit; every other viewer (colleague + admin) sees it
-            // read-only. `isAdmin` stays read-only for oversight.
             const canEdit = !isAdmin && isOwningDealer && !!((user as any)?.is_pricing_agent);
             const readOnly = !canEdit;
-            const canDownloadPdf = profit?.profit_zar != null;
-            // Outcome pill mirrors the LIVE choice so it updates
-            // instantly when the dealer taps a pill, before hitting
-            // save.
-            const outcome: "pending" | "deal_done" | "no_deal" =
-              dealDoneChoice === "yes"
-                ? "deal_done"
-                : dealDoneChoice === "no"
-                  ? "no_deal"
-                  : "pending";
-            const outcomeLabel =
-              outcome === "deal_done"
-                ? "DEAL DONE"
-                : outcome === "no_deal"
-                  ? "NO DEAL DONE"
-                  : "PENDING OUTCOME";
-            const outcomeStyle =
-              outcome === "deal_done"
-                ? styles.dealOutcomeOk
-                : outcome === "no_deal"
-                  ? styles.dealOutcomeNo
-                  : styles.dealOutcomePending;
-            const outcomeIcon: "checkmark-circle" | "close-circle" | "hourglass-outline" =
-              outcome === "deal_done"
-                ? "checkmark-circle"
-                : outcome === "no_deal"
-                  ? "close-circle"
-                  : "hourglass-outline";
             return (
-              <View style={styles.dealBox} testID="deal-tracking">
-                <View style={styles.dealHeader}>
-                  <Ionicons name="briefcase-outline" size={18} color={colors.primary} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.dealTitle}>Deal Tracking &amp; Profit Analysis</Text>
-                    <Text style={styles.dealSub}>
-                      Private to your dealership and Fourbuy admin. Pricing
-                      agents never see this.
-                    </Text>
-                  </View>
-                  {readOnly ? (
-                    <View style={styles.dealBadge}>
-                      <Ionicons name="lock-closed" size={11} color={colors.textSecondary} />
-                      <Text style={styles.dealBadgeText}>ADMIN VIEW</Text>
-                    </View>
-                  ) : null}
-                </View>
-
-                {/* Outcome status pill — surfaces the tri-state at a
-                    glance for both the dealer AND admin. Will be shown
-                    against this submission on the home-screen deal-
-                    outcome report the user asked for. */}
-                <View style={[styles.dealOutcomePill, outcomeStyle]} testID="deal-outcome">
-                  <Ionicons name={outcomeIcon} size={14} color="#fff" />
-                  <Text style={styles.dealOutcomePillText}>{outcomeLabel}</Text>
-                </View>
-
-                {/* ------ Stage 1: Purchase ------ */}
-                <View style={styles.dealStage} testID="deal-stage-1">
-                  <View style={styles.dealStageHeader}>
-                    <View style={styles.dealStagePill}>
-                      <Text style={styles.dealStagePillText}>1</Text>
-                    </View>
-                    <Text style={styles.dealStageTitle}>Did you do the deal?</Text>
-                  </View>
-                  <View style={styles.dealChoiceRow}>
-                    <TouchableOpacity
-                      testID="deal-done-pending"
-                      disabled={readOnly || dealSaving}
-                      style={[
-                        styles.dealChoiceBtn,
-                        dealDoneChoice === "pending" && styles.dealChoiceBtnPending,
-                      ]}
-                      onPress={() => setDealDoneChoice("pending")}
-                    >
-                      <Ionicons
-                        name="hourglass-outline"
-                        size={16}
-                        color={dealDoneChoice === "pending" ? "#fff" : colors.textSecondary}
-                      />
-                      <Text
-                        style={[
-                          styles.dealChoiceBtnText,
-                          dealDoneChoice === "pending" && styles.dealChoiceBtnTextActive,
-                        ]}
-                      >
-                        Pending
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      testID="deal-done-yes"
-                      disabled={readOnly || dealSaving}
-                      style={[styles.dealChoiceBtn, done && styles.dealChoiceBtnYes]}
-                      onPress={() => setDealDoneChoice("yes")}
-                    >
-                      <Ionicons name="checkmark-circle" size={16}
-                        color={done ? "#fff" : colors.textSecondary} />
-                      <Text style={[styles.dealChoiceBtnText, done && styles.dealChoiceBtnTextActive]}>Yes</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      testID="deal-done-no"
-                      disabled={readOnly || dealSaving}
-                      style={[styles.dealChoiceBtn, dealDoneChoice === "no" && styles.dealChoiceBtnNo]}
-                      onPress={() => setDealDoneChoice("no")}
-                    >
-                      <Ionicons name="close-circle" size={16}
-                        color={dealDoneChoice === "no" ? "#fff" : colors.textSecondary} />
-                      <Text style={[styles.dealChoiceBtnText, dealDoneChoice === "no" && styles.dealChoiceBtnTextActive]}>No</Text>
-                    </TouchableOpacity>
-                  </View>
-                  {done ? (
-                    <View style={styles.dealField}>
-                      <Text style={styles.dealFieldLabel}>Purchase price</Text>
-                      <View style={styles.dealInputWrap}>
-                        <Text style={styles.dealInputPrefix}>R</Text>
-                        <TextInput
-                          testID="deal-purchase-input"
-                          style={styles.dealInput}
-                          value={dealPurchaseInput}
-                          onChangeText={(t) => setDealPurchaseInput(formatMoneyString(t))}
-                          placeholder="0"
-                          placeholderTextColor={colors.textDisabled}
-                          keyboardType="numeric"
-                          editable={!readOnly && !dealSaving}
-                        />
-                      </View>
-                      {deal?.purchased_at ? (
-                        <Text style={styles.dealMeta}>
-                          Recorded {new Date(deal.purchased_at).toLocaleDateString()}
-                        </Text>
-                      ) : null}
-                    </View>
-                  ) : null}
-                </View>
-
-                {/* Reconditioning Requirement Sheet — the workshop
-                    handoff. Placed just above Stage 2 (Have you sold
-                    the car?) because reconditioning is done BEFORE
-                    the sale — the dealer downloads this the moment
-                    they've committed to buying the car, hands it to
-                    their reconditioner, and only then answers Stage 2. */}
-                {done ? (
-                  <TouchableOpacity
-                    testID="deal-download-recon-pdf"
-                    disabled={downloadingRecon}
-                    style={[styles.dealPdfBtn, styles.dealReconBtn]}
-                    onPress={handleDownloadReconditioningPdf}
-                  >
-                    {downloadingRecon ? (
-                      <ActivityIndicator size="small" color={colors.text} />
-                    ) : (
-                      <>
-                        <Ionicons name="construct-outline" size={16} color={colors.text} />
-                        <Text style={[styles.dealPdfBtnText, { color: colors.text }]}>
-                          Download Reconditioning Sheet
-                        </Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                ) : null}
-
-                {/* ------ Stage 2: Sale (unlocked after Stage 1 = Yes) ------ */}
-                {done ? (
-                  <View style={styles.dealStage} testID="deal-stage-2">
-                    <View style={styles.dealStageHeader}>
-                      <View style={styles.dealStagePill}>
-                        <Text style={styles.dealStagePillText}>2</Text>
-                      </View>
-                      <Text style={styles.dealStageTitle}>Have you sold the car?</Text>
-                    </View>
-                    <View style={styles.dealChoiceRow}>
-                      <TouchableOpacity
-                        testID="deal-sold-yes"
-                        disabled={readOnly || dealSaving}
-                        style={[styles.dealChoiceBtn, sold && styles.dealChoiceBtnYes]}
-                        onPress={() => setDealSoldChoice("yes")}
-                      >
-                        <Ionicons name="checkmark-circle" size={16}
-                          color={sold ? "#fff" : colors.textSecondary} />
-                        <Text style={[styles.dealChoiceBtnText, sold && styles.dealChoiceBtnTextActive]}>Yes</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        testID="deal-sold-no"
-                        disabled={readOnly || dealSaving}
-                        style={[styles.dealChoiceBtn, dealSoldChoice === "no" && styles.dealChoiceBtnNo]}
-                        onPress={() => setDealSoldChoice("no")}
-                      >
-                        <Ionicons name="close-circle" size={16}
-                          color={dealSoldChoice === "no" ? "#fff" : colors.textSecondary} />
-                        <Text style={[styles.dealChoiceBtnText, dealSoldChoice === "no" && styles.dealChoiceBtnTextActive]}>Not yet</Text>
-                      </TouchableOpacity>
-                    </View>
-                    {sold ? (
-                      <>
-                        <View style={styles.dealField}>
-                          <Text style={styles.dealFieldLabel}>Reconditioning costs</Text>
-                          <View style={styles.dealInputWrap}>
-                            <Text style={styles.dealInputPrefix}>R</Text>
-                            <TextInput
-                              testID="deal-recon-input"
-                              style={styles.dealInput}
-                              value={dealReconInput}
-                              onChangeText={(t) => setDealReconInput(formatMoneyString(t))}
-                              placeholder="0"
-                              placeholderTextColor={colors.textDisabled}
-                              keyboardType="numeric"
-                              editable={!readOnly && !dealSaving}
-                            />
-                          </View>
-                        </View>
-                        <View style={styles.dealField}>
-                          <Text style={styles.dealFieldLabel}>Sale price</Text>
-                          <View style={styles.dealInputWrap}>
-                            <Text style={styles.dealInputPrefix}>R</Text>
-                            <TextInput
-                              testID="deal-sale-input"
-                              style={styles.dealInput}
-                              value={dealSaleInput}
-                              onChangeText={(t) => setDealSaleInput(formatMoneyString(t))}
-                              placeholder="0"
-                              placeholderTextColor={colors.textDisabled}
-                              keyboardType="numeric"
-                              editable={!readOnly && !dealSaving}
-                            />
-                          </View>
-                          {deal?.sold_at ? (
-                            <Text style={styles.dealMeta}>
-                              Sold on {new Date(deal.sold_at).toLocaleDateString()}
-                            </Text>
-                          ) : null}
-                        </View>
-                      </>
-                    ) : null}
-                  </View>
-                ) : null}
-
-                {/* ------ Explicit Save button (dealer-editable path) ------
-                    Always visible when the vehicle is priced and the
-                    viewer is the owning dealer (not admin). Enabled
-                    only when there are unsaved changes to any of the
-                    outcome pills OR numeric fields. Committing here
-                    also refreshes the Home-screen Deal Outcomes tile
-                    on next focus. */}
-                {!readOnly ? (
-                  <TouchableOpacity
-                    testID="deal-save-button"
-                    style={[
-                      styles.dealSaveBtn,
-                      dealFinancialsDirty
-                        ? styles.dealSaveBtnPrimary
-                        : styles.dealSaveBtnSaved,
-                    ]}
-                    disabled={!dealFinancialsDirty || dealSaving}
-                    onPress={saveDealFinancials}
-                    accessibilityLabel="Save deal tracking details"
-                  >
-                    {dealSaving ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : dealFinancialsDirty ? (
-                      <>
-                        <Ionicons name="save-outline" size={16} color="#fff" />
-                        <Text style={styles.dealSaveBtnText}>
-                          Save Deal Tracking
-                        </Text>
-                      </>
-                    ) : (
-                      <>
-                        <Ionicons
-                          name="checkmark-circle"
-                          size={16}
-                          color={colors.textSecondary}
-                        />
-                        <Text
-                          style={[
-                            styles.dealSaveBtnText,
-                            { color: colors.textSecondary },
-                          ]}
-                        >
-                          Saved
-                        </Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                ) : null}
-
-                {/* ------ Live P&L callout + PDF ------ */}
-                {profit && profit.cost_basis_zar != null ? (
-                  <View
-                    style={[
-                      styles.dealPnl,
-                      profit.profit_zar != null && profit.profit_zar >= 0
-                        ? styles.dealPnlOk
-                        : profit.profit_zar != null
-                          ? styles.dealPnlLoss
-                          : styles.dealPnlNeutral,
-                    ]}
-                    testID="deal-pnl"
-                  >
-                    <View style={styles.dealPnlRow}>
-                      <Text style={styles.dealPnlLbl}>Purchase</Text>
-                      <Text style={styles.dealPnlVal}>{fmtZar(profit.purchase_price_zar)}</Text>
-                    </View>
-                    <View style={styles.dealPnlRow}>
-                      <Text style={styles.dealPnlLbl}>Recon</Text>
-                      <Text style={styles.dealPnlVal}>{fmtZar(profit.recon_cost_zar)}</Text>
-                    </View>
-                    <View style={[styles.dealPnlRow, styles.dealPnlDivider]}>
-                      <Text style={styles.dealPnlLbl}>Cost basis</Text>
-                      <Text style={styles.dealPnlVal}>{fmtZar(profit.cost_basis_zar)}</Text>
-                    </View>
-                    <View style={styles.dealPnlRow}>
-                      <Text style={styles.dealPnlLbl}>Sale</Text>
-                      <Text style={styles.dealPnlVal}>{fmtZar(profit.sale_price_zar)}</Text>
-                    </View>
-                    <View style={[styles.dealPnlRow, styles.dealPnlProfitRow]}>
-                      <Text style={styles.dealPnlProfitLbl}>
-                        {profit.profit_zar != null && profit.profit_zar < 0 ? "Loss" : "Gross profit"}
-                      </Text>
-                      <View style={{ alignItems: "flex-end" }}>
-                        <Text
-                          style={[
-                            styles.dealPnlProfitVal,
-                            profit.profit_zar != null && profit.profit_zar < 0 && styles.dealPnlProfitValLoss,
-                          ]}
-                        >
-                          {fmtZar(profit.profit_zar)}
-                        </Text>
-                        {profit.margin_pct != null ? (
-                          <Text style={styles.dealPnlMargin}>{profit.margin_pct}% margin</Text>
-                        ) : null}
-                      </View>
-                    </View>
-                    {canDownloadPdf ? (
-                      <TouchableOpacity
-                        testID="deal-download-pdf"
-                        disabled={dealPdfDownloading}
-                        style={styles.dealPdfBtn}
-                        onPress={handleDownloadProfitPdf}
-                      >
-                        {dealPdfDownloading ? (
-                          <ActivityIndicator size="small" color="#fff" />
-                        ) : (
-                          <>
-                            <Ionicons name="download-outline" size={16} color="#fff" />
-                            <Text style={styles.dealPdfBtnText}>Download Profit Analysis PDF</Text>
-                          </>
-                        )}
-                      </TouchableOpacity>
-                    ) : null}
-                    {/* Reconditioning Sheet button moved above Stage 2
-                        so it sits inline with the pre-sale workflow. */}
-                  </View>
-                ) : null}
-              </View>
+              <DealTrackingCard
+                deal={deal}
+                profit={profit}
+                readOnly={readOnly}
+                dealDoneChoice={dealDoneChoice}
+                onDoneChoice={setDealDoneChoice}
+                dealPurchaseInput={dealPurchaseInput}
+                onPurchaseInputChange={setDealPurchaseInput}
+                dealSoldChoice={dealSoldChoice}
+                onSoldChoice={setDealSoldChoice}
+                dealReconInput={dealReconInput}
+                onReconInputChange={setDealReconInput}
+                dealSaleInput={dealSaleInput}
+                onSaleInputChange={setDealSaleInput}
+                dealFinancialsDirty={dealFinancialsDirty}
+                dealSaving={dealSaving}
+                onSave={saveDealFinancials}
+                downloadingRecon={downloadingRecon}
+                onDownloadReconPdf={handleDownloadReconditioningPdf}
+                dealPdfDownloading={dealPdfDownloading}
+                onDownloadProfitPdf={handleDownloadProfitPdf}
+                formatMoneyString={formatMoneyString}
+                fmtZar={fmtZar}
+                colors={colors}
+                styles={styles}
+              />
             );
           })()
         ) : null}
