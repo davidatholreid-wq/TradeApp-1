@@ -819,6 +819,30 @@ export const makeStyles = (colors: Palette) => StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  // Assign Suppliers pill — outlined primary-tinted button that lives
+  // directly above the Reconditioning Sheet download so the dealer sees
+  // it as the natural pre-flight step (pick who does the work → download
+  // the sheet). Compact width so it doesn't compete visually with the
+  // full-width PDF buttons below it.
+  assignSuppliersPill: {
+    marginTop: spacing.sm,
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.primary + "55",
+    backgroundColor: colors.primary + "18",
+  },
+  assignSuppliersPillText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: "800" as const,
+    letterSpacing: 0.3,
+  },
   // "Update Profit Analysis" save button — replaces the on-blur autosave
   // so the dealer explicitly commits their edits.
   dealSaveBtn: {

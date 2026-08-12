@@ -54,6 +54,7 @@ import CoverOffersReceivedCard from "@/src/components/vehicle/CoverOffersReceive
 import DealerOfferCard from "@/src/components/vehicle/DealerOfferCard";
 import CoverPlacementBar from "@/src/components/vehicle/CoverPlacementBar";
 import MileageIndicator from "@/src/components/vehicle/MileageIndicator";
+import AssignSuppliersModal from "@/src/components/vehicle/modals/AssignSuppliersModal";
 import { ConfirmReportModal, ViewReportModal } from "@/src/components/vehicle/modals/ReportModals";
 import { PriceModal, DeclineModal } from "@/src/components/vehicle/modals/PriceDeclineModals";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
@@ -334,6 +335,9 @@ export default function VehicleDetail() {
   // matters day-to-day; history is a "look under the hood" gesture.
   const [dealerOfferHistoryOpen, setDealerOfferHistoryOpen] = useState(false);
   const [dealPdfDownloading, setDealPdfDownloading] = useState(false);
+  // Assign-Suppliers modal (managerial-only). The modal loads the
+  // dealership's supplier catalog itself; we just gate visibility here.
+  const [assignSuppliersOpen, setAssignSuppliersOpen] = useState(false);
   // Whenever the server-side `sub.deal` changes, mirror BOTH the tri-
   // state choices and the numeric fields into the local form state so
   // the UI reflects persisted values on load.
@@ -2553,6 +2557,14 @@ export default function VehicleDetail() {
                 onSave={saveDealFinancials}
                 downloadingRecon={downloadingRecon}
                 onDownloadReconPdf={handleDownloadReconditioningPdf}
+                canAssignSuppliers={canEdit}
+                supplierAssignmentSummary={{
+                  total: (sub as any)?.reconditioning_items?.length || 0,
+                  assigned: ((sub as any)?.reconditioning_items || []).filter(
+                    (r: any) => r?.supplier?.id,
+                  ).length,
+                }}
+                onAssignSuppliers={() => setAssignSuppliersOpen(true)}
                 dealPdfDownloading={dealPdfDownloading}
                 onDownloadProfitPdf={handleDownloadProfitPdf}
                 formatMoneyString={formatMoneyString}
@@ -2710,6 +2722,34 @@ export default function VehicleDetail() {
         onOpenPdf={handleOpenReportPdf}
         colors={colors}
         styles={styles}
+      />
+
+      {/* Assign Suppliers modal — managerial users assigning suppliers
+          to reconditioning line items. Refreshes `sub` on any change so
+          the pill button's assigned/total counter updates instantly and
+          the recon PDF picks up the new supplier snapshot. */}
+      <AssignSuppliersModal
+        visible={assignSuppliersOpen}
+        onClose={() => setAssignSuppliersOpen(false)}
+        submissionId={sub?.id || ""}
+        reconItems={((sub as any)?.reconditioning_items || []).map(
+          (r: any, i: number) => ({
+            index: i,
+            category: r?.category,
+            label: r?.label,
+            amount_zar: r?.amount_zar,
+            supplier: r?.supplier || null,
+          }),
+        )}
+        colors={colors}
+        onAssignmentsChanged={async () => {
+          try {
+            const fresh = await apiFetch(`/api/submissions/${sub!.id}`);
+            setSub(fresh.submission ?? fresh);
+          } catch {
+            /* non-fatal */
+          }
+        }}
       />
     </SafeAreaView>
   );

@@ -4890,7 +4890,36 @@ async def _build_reconditioning_pdf(sub: dict) -> bytes:
                 ("TOPPADDING", (0, 0), (-1, -1), 4),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
             ]))
-            grouping: list = [head_row]
+            # Supplier row: rendered directly beneath the heading. Uses the
+            # snapshot captured on the recon item at assignment time (`item.supplier`)
+            # so PDFs remain stable even if the supplier is later edited or
+            # deleted from the dealership's list.
+            supplier = r.get("supplier") or None
+            if supplier and supplier.get("name"):
+                parts = [f'<b>Supplier:</b> {supplier.get("name") or "—"}']
+                if supplier.get("contact_name"):
+                    parts.append(supplier["contact_name"])
+                if supplier.get("contact_phone"):
+                    parts.append(supplier["contact_phone"])
+                supplier_line = " · ".join(parts)
+                supplier_para = Paragraph(supplier_line, body)
+            else:
+                supplier_para = Paragraph(
+                    '<font color="#888888"><i>No supplier has been selected to carry out this work.</i></font>',
+                    body,
+                )
+            supplier_row = Table(
+                [[supplier_para]],
+                colWidths=[186 * mm],
+            )
+            supplier_row.setStyle(TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]))
+            grouping: list = [head_row, supplier_row]
             if photo_row_widget is not None:
                 grouping.append(photo_row_widget)
             grouping.append(Spacer(1, 6))
@@ -7370,12 +7399,14 @@ from routes.cover import (  # noqa: F401 — _sanitise_sub_for_pricing_agent use
 )
 from routes.auth import router as auth_router
 from routes.public_valuation import router as public_valuation_router
+from routes.suppliers import router as suppliers_router
 api_router.include_router(ads_router)
 api_router.include_router(rewards_router)
 api_router.include_router(kredo_router)
 api_router.include_router(cover_router)
 api_router.include_router(auth_router)
 api_router.include_router(public_valuation_router)
+api_router.include_router(suppliers_router)
 
 
 app.include_router(api_router)

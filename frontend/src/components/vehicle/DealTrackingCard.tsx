@@ -40,6 +40,13 @@ export type DealTrackingCardProps = {
   // PDFs
   downloadingRecon: boolean;
   onDownloadReconPdf: () => void;
+  // Supplier assignment (managerial only)
+  canAssignSuppliers?: boolean;
+  supplierAssignmentSummary?: {
+    total: number;
+    assigned: number;
+  };
+  onAssignSuppliers?: () => void;
   dealPdfDownloading: boolean;
   onDownloadProfitPdf: () => void;
   // Helpers
@@ -68,6 +75,9 @@ export function DealTrackingCard({
   onSave,
   downloadingRecon,
   onDownloadReconPdf,
+  canAssignSuppliers,
+  supplierAssignmentSummary,
+  onAssignSuppliers,
   dealPdfDownloading,
   onDownloadProfitPdf,
   formatMoneyString,
@@ -206,6 +216,25 @@ export function DealTrackingCard({
           </View>
         ) : null}
       </View>
+
+      {/* Assign Suppliers pill — visible only for managerial users on the
+          owning dealership once the deal is done. Sits above the
+          Reconditioning Sheet download so it's a clear pre-flight step. */}
+      {done && canAssignSuppliers && onAssignSuppliers ? (
+        <TouchableOpacity
+          testID="deal-assign-suppliers-pill"
+          onPress={onAssignSuppliers}
+          style={styles.assignSuppliersPill}
+          accessibilityRole="button"
+        >
+          <Ionicons name="people-outline" size={14} color={colors.primary} />
+          <Text style={styles.assignSuppliersPillText}>
+            {supplierAssignmentSummary && supplierAssignmentSummary.total > 0
+              ? `Assign Suppliers · ${supplierAssignmentSummary.assigned}/${supplierAssignmentSummary.total}`
+              : "Assign Suppliers"}
+          </Text>
+        </TouchableOpacity>
+      ) : null}
 
       {/* Reconditioning Requirement Sheet button (Stage 1 → Yes) */}
       {done ? (

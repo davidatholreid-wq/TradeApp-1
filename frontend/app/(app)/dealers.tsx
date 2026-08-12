@@ -304,7 +304,7 @@ export default function Dealers() {
       });
       setDealers((prev) => prev.map((d) => (d.id === dealer.id ? { ...d, is_pricing_agent: next } : d)));
     } catch (e: any) {
-      showError(e.message || "Could not update pricing agent status");
+      showError(e.message || "Could not update managerial access");
     } finally {
       setSavingPricingAgentId(null);
     }
@@ -588,7 +588,7 @@ export default function Dealers() {
               </View>
               <View style={styles.activeCol}>
                 <Text style={styles.activeLabel}>
-                  {item.is_pricing_agent ? "COVER AGENT" : "NOT AGENT"}
+                  {item.is_pricing_agent ? "MANAGERIAL" : "STANDARD"}
                 </Text>
                 {savingPricingAgentId === item.id ? (
                   <ActivityIndicator size="small" color={colors.primary} />
