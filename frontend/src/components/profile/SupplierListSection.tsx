@@ -49,6 +49,10 @@ export default function SupplierListSection({ colors }: SupplierListSectionProps
   const [categoryEnum, setCategoryEnum] = useState<string[]>([]);
   const [editing, setEditing] = useState<Supplier | null>(null);
   const [adding, setAdding] = useState(false);
+  // Collapsible: closed by default so the section stays compact on
+  // profiles with lots of suppliers. Tapping anywhere in the header
+  // (except the Add button) toggles.
+  const [open, setOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -87,9 +91,28 @@ export default function SupplierListSection({ colors }: SupplierListSectionProps
 
   return (
     <View style={styles.section}>
-      <View style={styles.sectionHeader}>
+      <TouchableOpacity
+        testID="supplier-section-toggle"
+        activeOpacity={0.7}
+        onPress={() => setOpen((v) => !v)}
+        style={styles.sectionHeader}
+        accessibilityRole="button"
+        accessibilityLabel={open ? "Collapse Recon Suppliers" : "Expand Recon Suppliers"}
+      >
         <View style={{ flex: 1 }}>
-          <Text style={styles.sectionTitle}>Recon Suppliers</Text>
+          <View style={styles.titleRow}>
+            <Ionicons
+              name={open ? "chevron-up" : "chevron-down"}
+              size={16}
+              color={colors.textSecondary}
+            />
+            <Text style={styles.sectionTitle}>Recon Suppliers</Text>
+            {items.length > 0 ? (
+              <View style={styles.countBadge}>
+                <Text style={styles.countBadgeText}>{items.length}</Text>
+              </View>
+            ) : null}
+          </View>
           <Text style={styles.sectionSub}>
             Shared across your dealership. Assign a supplier to each reconditioning
             line item on any submission after the deal is done — the printed
@@ -99,69 +122,77 @@ export default function SupplierListSection({ colors }: SupplierListSectionProps
         <TouchableOpacity
           testID="add-supplier-btn"
           style={styles.addBtn}
-          onPress={() => setAdding(true)}
+          // stopPropagation so tapping Add doesn't also toggle the collapse
+          onPress={(e: any) => {
+            e?.stopPropagation?.();
+            // Ensure the section is open so the newly-added row is visible.
+            setOpen(true);
+            setAdding(true);
+          }}
           accessibilityRole="button"
         >
           <Ionicons name="add" size={16} color={colors.onPrimary} />
           <Text style={styles.addBtnText}>Add</Text>
         </TouchableOpacity>
-      </View>
+      </TouchableOpacity>
 
-      {loading ? (
-        <View style={styles.loadingBox}>
-          <ActivityIndicator color={colors.textSecondary} size="small" />
-        </View>
-      ) : items.length === 0 ? (
-        <View style={styles.emptyBox}>
-          <Ionicons name="briefcase-outline" size={22} color={colors.textDisabled} />
-          <Text style={styles.emptyText}>
-            No suppliers yet. Add your workshops so you can assign them per
-            recon line on future deals.
-          </Text>
-        </View>
-      ) : (
-        items.map((s, idx) => (
-          <View
-            key={s.id}
-            style={[styles.row, idx === items.length - 1 && { borderBottomWidth: 0 }]}
-            testID={`supplier-row-${s.id}`}
-          >
-            <View style={{ flex: 1, minWidth: 0, marginRight: spacing.sm }}>
-              <Text style={styles.rowName} numberOfLines={1}>{s.name}</Text>
-              {s.contact_name || s.contact_phone ? (
-                <Text style={styles.rowMeta} numberOfLines={1}>
-                  {[s.contact_name, s.contact_phone].filter(Boolean).join(" · ")}
-                </Text>
-              ) : null}
-              {s.categories?.length ? (
-                <View style={styles.chipRow}>
-                  {s.categories.map((c) => (
-                    <View key={c} style={styles.chip}>
-                      <Text style={styles.chipText}>{c}</Text>
-                    </View>
-                  ))}
-                </View>
-              ) : (
-                <Text style={[styles.rowMeta, { fontStyle: "italic" }]}>No categories set</Text>
-              )}
-            </View>
-            <TouchableOpacity
-              testID={`supplier-edit-${s.id}`}
-              onPress={() => setEditing(s)}
-              style={styles.iconBtn}
-            >
-              <Ionicons name="pencil" size={16} color={colors.primary} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              testID={`supplier-delete-${s.id}`}
-              onPress={() => handleDelete(s)}
-              style={styles.iconBtn}
-            >
-              <Ionicons name="trash-outline" size={16} color={colors.danger} />
-            </TouchableOpacity>
+      {open ? (
+        loading ? (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator color={colors.textSecondary} size="small" />
           </View>
-        ))
-      )}
+        ) : items.length === 0 ? (
+          <View style={styles.emptyBox}>
+            <Ionicons name="briefcase-outline" size={22} color={colors.textDisabled} />
+            <Text style={styles.emptyText}>
+              No suppliers yet. Add your workshops so you can assign them per
+              recon line on future deals.
+            </Text>
+          </View>
+        ) : (
+          items.map((s, idx) => (
+            <View
+              key={s.id}
+              style={[styles.row, idx === items.length - 1 && { borderBottomWidth: 0 }]}
+              testID={`supplier-row-${s.id}`}
+            >
+              <View style={{ flex: 1, minWidth: 0, marginRight: spacing.sm }}>
+                <Text style={styles.rowName} numberOfLines={1}>{s.name}</Text>
+                {s.contact_name || s.contact_phone ? (
+                  <Text style={styles.rowMeta} numberOfLines={1}>
+                    {[s.contact_name, s.contact_phone].filter(Boolean).join(" · ")}
+                  </Text>
+                ) : null}
+                {s.categories?.length ? (
+                  <View style={styles.chipRow}>
+                    {s.categories.map((c) => (
+                      <View key={c} style={styles.chip}>
+                        <Text style={styles.chipText}>{c}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={[styles.rowMeta, { fontStyle: "italic" }]}>No categories set</Text>
+                )}
+              </View>
+              <TouchableOpacity
+                testID={`supplier-edit-${s.id}`}
+                onPress={() => setEditing(s)}
+                style={styles.iconBtn}
+              >
+                <Ionicons name="pencil" size={16} color={colors.primary} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID={`supplier-delete-${s.id}`}
+                onPress={() => handleDelete(s)}
+                style={styles.iconBtn}
+              >
+                <Ionicons name="trash-outline" size={16} color={colors.danger} />
+              </TouchableOpacity>
+            </View>
+          ))
+        )
+      ) : null}
 
       {/* Add / Edit modal */}
       <SupplierFormModal
@@ -348,12 +379,31 @@ function makeStyles(colors: Palette) {
       alignItems: "flex-start" as const,
       marginBottom: spacing.md,
     },
+    titleRow: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 6,
+      marginBottom: 4,
+    },
+    countBadge: {
+      backgroundColor: colors.bg,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 7,
+      paddingVertical: 1,
+      borderRadius: 999,
+    },
+    countBadgeText: {
+      color: colors.textSecondary,
+      fontSize: 10,
+      fontWeight: "800" as const,
+      letterSpacing: 0.4,
+    },
     sectionTitle: {
       color: colors.text,
       fontSize: 16,
       fontWeight: "700" as const,
       fontFamily: fonts.heading,
-      marginBottom: 4,
     },
     sectionSub: {
       color: colors.textSecondary,
