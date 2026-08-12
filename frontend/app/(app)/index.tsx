@@ -15,6 +15,7 @@ import Animated, {
 import { Ionicons } from "@expo/vector-icons";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { LinearGradient } from "expo-linear-gradient";
+import AppIconTile from "@/src/components/home/AppIconTile";
 import { useFocusEffect, useRouter } from "expo-router";
 
 import { spacing, radius, fonts, BRAND } from "@/src/theme";
@@ -421,7 +422,7 @@ export default function HomeScreen() {
         // Routes to /submit so the dealer can submit a vehicle and get
         // a Fourbuy cover in <90 seconds. Uses the brand primary tint
         // so it visibly reads as the primary CTA on the home page.
-        { key: "get-cover", label: "Get Cover", hint: "Submit a vehicle · confirmed cover in 90 s", icon: "flash" as const, to: "/(app)/submit", tint: colors.primary },
+        { key: "get-cover", label: "Get Cover", hint: "Submit a vehicle · confirmed cover in 90 s", icon: "flash" as const, to: "/(app)/submit", tint: "#14B8A6" },
         ...(isPricingAgent
           ? [{
               key: "cover",
@@ -552,54 +553,40 @@ export default function HomeScreen() {
 
           {/* Quick-nav tiles — the primary secondary-destinations
               (Billing, History, Rewards, Dealers, Kredo, Give Cover…).
-              Rendered on every viewport so this replaces most of what
-              used to sit in the bottom tab bar. Tapping a tile briefly
-              flips it before navigating, giving the tap a satisfying
-              feel and a clear affordance that this is a portal into
-              another section of the app. */}
-          <View style={styles.quickGrid}>
+              Redesigned 2026-08 as iOS-inspired app-icon "squircles" so
+              the grid stays clean on both mobile and web and reads at
+              a glance. Rewards uses the same app-icon look, with the
+              live points balance surfaced as the icon badge. */}
+          <View style={styles.appIconGrid}>
             {quickActions.map((qa) => (
               <View
                 key={qa.key}
-                style={[
-                  styles.quickCardCol,
-                  // The Rewards tile is the 4th item in a 3-column
-                  // desktop grid — without `flexGrow: 0` it stretches to
-                  // fill the entire second row on its own. Constrain it
-                  // to the same 32% basis as its siblings so it looks
-                  // like a peer, not a hero banner.
-                  qa.key === "rewards" ? styles.quickCardColRewards : null,
-                ]}
+                style={isWide ? styles.appIconCellWide : styles.appIconCell}
               >
-                {qa.key === "rewards" ? (
-                  <TakealotRewardsTile
-                    onNavigate={() => router.push(qa.to as never)}
-                    styles={styles}
-                    colors={colors}
-                    rewards={rewards}
-                  />
-                ) : (
-                  <NavFlipTile
-                    label={qa.label}
-                    hint={qa.hint}
-                    icon={qa.icon}
-                    tint={qa.tint}
-                    badge={qa.badge}
-                    onNavigate={() => {
-                      // Suspension guard: Get Cover (submit valuations)
-                      // and Give Cover (place cover offers) both require
-                      // an active account. Other tiles are informational
-                      // (Billing, History, Rewards…) and remain open.
-                      if (qa.key === "get-cover" || qa.key === "cover") {
-                        handleGuardedNavigate(qa.to, qa.label);
-                        return;
-                      }
-                      router.push(qa.to as never);
-                    }}
-                    styles={styles}
-                    colors={colors}
-                  />
-                )}
+                <AppIconTile
+                  label={qa.label}
+                  hint={qa.hint}
+                  icon={qa.icon}
+                  tint={qa.tint}
+                  badge={
+                    qa.key === "rewards" && rewards?.balance
+                      ? String(rewards.balance)
+                      : qa.badge
+                  }
+                  onPress={() => {
+                    // Suspension guard: Get Cover (submit valuations)
+                    // and Give Cover (place cover offers) both require
+                    // an active account. Other tiles are informational
+                    // (Billing, History, Rewards…) and remain open.
+                    if (qa.key === "get-cover" || qa.key === "cover") {
+                      handleGuardedNavigate(qa.to, qa.label);
+                      return;
+                    }
+                    router.push(qa.to as never);
+                  }}
+                  colors={colors}
+                  testID={`app-icon-tile-${qa.key}`}
+                />
               </View>
             ))}
           </View>
@@ -738,6 +725,11 @@ export default function HomeScreen() {
               <Text style={styles.sectionTitle}>Everything you need to trade with confidence</Text>
             </View>
           ) : null}
+
+          {/* Compact iOS-style app-icon grid for quick-nav tiles. Renders
+              4-up on phones and 6-up on wide screens. Sits above the
+              marketing/hero tiles so the primary destinations are the
+              first thing the eye lands on. */}
 
           {/* Flip-tiles */}
           <View style={styles.cardsWrap}>
@@ -1819,6 +1811,33 @@ const makeStyles = (colors: Palette, isWide: boolean, windowWidth: number = 0) =
     },
 
     // Tile grid ----------------------------------------------------------
+    // Compact iOS-style app-icon grid for the quick-nav tiles. Sizing
+    // follows a strict n-columns × 100% width per row using CSS Grid on
+    // web / flex-basis on native. The gap keeps the tiles from touching
+    // even at very narrow widths.
+    appIconGrid: {
+      flexDirection: "row" as const,
+      flexWrap: "wrap" as const,
+      gap: spacing.md,
+      marginBottom: spacing.lg,
+    },
+    // Phones: 3 tiles per row so each icon is ~30% width (~110px on a
+    // 390px viewport), giving them enough presence to read as app icons.
+    appIconCell: {
+      flexBasis: "30%" as any,
+      flexGrow: 0,
+      flexShrink: 1,
+      maxWidth: "32%" as any,
+    },
+    // Wide screens: 6 tiles per row so the icons stay app-icon-sized
+    // (~110-140px squares) instead of ballooning into small posters.
+    appIconCellWide: {
+      flexBasis: "14%" as any,
+      flexGrow: 0,
+      flexShrink: 1,
+      maxWidth: "15%" as any,
+    },
+
     cardsWrap: {
       flexDirection: isWide ? "row" : "column",
       flexWrap: "wrap",
