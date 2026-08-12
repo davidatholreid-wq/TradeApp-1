@@ -115,7 +115,7 @@ export default function AssignSuppliersModal({
         <View style={styles.card}>
           <View style={styles.header}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.title}>Assign Suppliers</Text>
+              <Text style={styles.title}>Allocate Suppliers to Recon</Text>
               <Text style={styles.subtitle}>
                 Pick who will carry out each reconditioning line. Suppliers
                 are managed on your Profile screen.
@@ -143,10 +143,6 @@ export default function AssignSuppliersModal({
                 const eligible = suppliers.filter(
                   (s) => !item.category || s.categories.includes(item.category),
                 );
-                // If there are suppliers whose category doesn't match this
-                // line, keep them accessible via a "Show all" toggle so the
-                // dealer isn't blocked by category mismatches.
-                const nonEligibleCount = suppliers.length - eligible.length;
                 const isOpen = pickerOpenFor === item.index;
                 const assigned = item.supplier || null;
                 return (
@@ -212,17 +208,14 @@ export default function AssignSuppliersModal({
 
                     {isOpen ? (
                       <View style={styles.picker}>
-                        {eligible.length === 0 && nonEligibleCount === 0 ? (
+                        {eligible.length === 0 ? (
                           <Text style={styles.pickerEmpty}>
-                            No suppliers yet. Add some on your Profile screen.
-                          </Text>
-                        ) : eligible.length === 0 ? (
-                          <Text style={styles.pickerEmpty}>
-                            No suppliers for &ldquo;{item.category || "this category"}&rdquo;.
-                            Showing your entire catalog below.
+                            {suppliers.length === 0
+                              ? "No suppliers yet. Add some on your Profile screen."
+                              : `No suppliers have been set up for "${item.category || "this category"}". Add or edit a supplier on your Profile screen so it covers this category.`}
                           </Text>
                         ) : null}
-                        {(eligible.length ? eligible : suppliers).map((s) => {
+                        {eligible.map((s) => {
                           const isSelected = assigned?.id === s.id;
                           return (
                             <TouchableOpacity

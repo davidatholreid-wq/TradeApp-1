@@ -230,8 +230,8 @@ export function DealTrackingCard({
           <Ionicons name="people-outline" size={14} color={colors.primary} />
           <Text style={styles.assignSuppliersPillText}>
             {supplierAssignmentSummary && supplierAssignmentSummary.total > 0
-              ? `Assign Suppliers · ${supplierAssignmentSummary.assigned}/${supplierAssignmentSummary.total}`
-              : "Assign Suppliers"}
+              ? `Allocate Suppliers to Recon · ${supplierAssignmentSummary.assigned}/${supplierAssignmentSummary.total}`
+              : "Allocate Suppliers to Recon"}
           </Text>
         </TouchableOpacity>
       ) : null}
