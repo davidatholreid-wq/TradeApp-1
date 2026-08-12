@@ -7,6 +7,7 @@ import { useAuth } from "@/src/context/AuthContext";
 import { spacing, radius, fonts, BRAND } from "@/src/theme";
 import { useThemeColors, useTheme, type Palette } from "@/src/theme/ThemeContext";
 import BrandLogo from "@/src/components/BrandLogo";
+import NotificationPreferencesSection from "@/src/components/profile/NotificationPreferencesSection";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
@@ -311,6 +312,13 @@ export default function Profile() {
             </View>
           </View>
         </View>
+
+        {/* Push notification preferences — per-type opt-in toggles.
+            Only useful for dealers (admins have their own console);
+            hide from admin to keep the screen focused. */}
+        {user?.role !== "admin" ? (
+          <NotificationPreferencesSection colors={colors} />
+        ) : null}
 
         <TouchableOpacity
           testID="logout-button"

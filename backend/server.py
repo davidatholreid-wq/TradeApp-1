@@ -14,7 +14,7 @@ import jwt as pyjwt
 import httpx
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
-from typing import Any, List, Optional, Literal
+from typing import Any, List, Optional, Literal, Dict
 from datetime import datetime, timezone, timedelta
 
 from emergentintegrations.llm.chat import LlmChat, UserMessage
@@ -640,6 +640,62 @@ async def send_push(recipients: List[str], data: dict) -> None:
         logger.warning(f"Push send error: {e}")
 
 
+# Notification preference keys. Each user document stores an optional
+# `notification_preferences` sub-doc — default is opted-IN for every
+# key (i.e. missing key or key=True → send; explicit False → skip).
+# Keep this list authoritative — the /notifications/preferences
+# endpoint returns exactly these keys with sensible labels.
+NOTIFICATION_PREF_KEYS = {
+    "vehicle_priced": {
+        "label": "Vehicle priced",
+        "description": "When a Fourbuy admin prices one of your submissions.",
+        "roles": ["dealer"],
+    },
+    "cover_offer_received": {
+        "label": "New cover offer",
+        "description": "When a pricing agent places a binding cover on your vehicle.",
+        "roles": ["dealer"],
+    },
+}
+
+
+async def filter_recipients_by_pref(user_ids: List[str], pref_key: str) -> List[str]:
+    """Return the subset of user_ids that are opted-IN for `pref_key`.
+
+    Defaults to opted-IN when the user has no explicit preference set
+    (either the field is missing or the specific key is missing). Only
+    an explicit `False` opts a user out. Non-existent users are dropped.
+    """
+    if not user_ids:
+        return []
+    users = await db.users.find(
+        {"id": {"$in": list(set(user_ids))}},
+        {"_id": 0, "id": 1, "notification_preferences": 1},
+    ).to_list(len(user_ids) + 10)
+    keep: List[str] = []
+    for u in users:
+        prefs = u.get("notification_preferences") or {}
+        # Opt-out only when explicitly False. Missing / None / True → send.
+        if prefs.get(pref_key) is False:
+            continue
+        keep.append(u["id"])
+    return keep
+
+
+async def send_push_gated(user_ids: List[str], pref_key: str, data: dict) -> None:
+    """Convenience wrapper: filter by preference, then send. Non-blocking
+    on preference-lookup errors — if the filter query fails we fall back
+    to the raw send so a DB hiccup never silently kills notifications."""
+    try:
+        allowed = await filter_recipients_by_pref(user_ids, pref_key)
+    except Exception as e:
+        logger.warning(f"Push preference lookup failed for '{pref_key}': {e}")
+        allowed = user_ids
+    if not allowed:
+        return
+    await send_push(allowed, data)
+
+
 async def next_reference_number() -> str:
     """Generate an auto-incrementing FB-000001 reference."""
     result = await db.counters.find_one_and_update(
@@ -1263,6 +1319,51 @@ async def register_push(body: RegisterPushBody, current: dict = Depends(get_curr
     except Exception as e:
         logger.warning(f"register-push relay error: {e}")
     return {"status": "registered"}
+
+
+@api_router.get("/notifications/preferences")
+async def get_notification_preferences(current: dict = Depends(get_current_user)):
+    """Return the caller's per-type push notification preferences.
+
+    Missing keys default to True (opted-IN). The response always
+    contains every key in NOTIFICATION_PREF_KEYS so the client can
+    render the full toggle list without knowing the taxonomy.
+    """
+    stored = current.get("notification_preferences") or {}
+    prefs = {}
+    for key in NOTIFICATION_PREF_KEYS.keys():
+        # Default = True when missing / None; only explicit False opts out.
+        val = stored.get(key)
+        prefs[key] = False if val is False else True
+    return {
+        "preferences": prefs,
+        "catalog": NOTIFICATION_PREF_KEYS,
+    }
+
+
+class NotificationPreferencesUpdate(BaseModel):
+    preferences: Dict[str, bool]
+
+
+@api_router.put("/notifications/preferences")
+async def update_notification_preferences(
+    body: NotificationPreferencesUpdate,
+    current: dict = Depends(get_current_user),
+):
+    """Replace the caller's push notification preferences.
+
+    Unknown keys are silently ignored (forward-compat with older clients
+    once new pref keys ship). Only bool values are accepted.
+    """
+    clean: Dict[str, bool] = {}
+    for k, v in (body.preferences or {}).items():
+        if k in NOTIFICATION_PREF_KEYS and isinstance(v, bool):
+            clean[k] = v
+    await db.users.update_one(
+        {"id": current["id"]},
+        {"$set": {"notification_preferences": clean}},
+    )
+    return {"preferences": clean}
 
 
 # ============ Vehicle DB (seeded) ============
@@ -2589,8 +2690,9 @@ async def admin_price(sub_id: str, offer: PriceOffer, current: dict = Depends(re
             logger.warning("Reward point award failed (non-blocking): %s", e)
     try:
         push_title = "Price Updated" if is_update else "Price Offer Received"
-        await send_push(
-            recipients=[sub["dealer_id"]],
+        await send_push_gated(
+            [sub["dealer_id"]],
+            "vehicle_priced",
             data={
                 "title": push_title,
                 "message": f"Your {sub['year']} {sub['make_name']} {sub['model_name']} has been priced at R{offer.price:,.0f}",

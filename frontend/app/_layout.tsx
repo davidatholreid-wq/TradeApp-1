@@ -1,9 +1,10 @@
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
-import { LogBox, Platform } from "react-native";
+import { Alert, LogBox, Platform } from "react-native";
 import * as Notifications from "expo-notifications";
 import * as Linking from "expo-linking";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -114,6 +115,42 @@ export default function RootLayout() {
         }
       }
     });
+
+    // Denied-permission weekly nudge — when the user has denied push
+    // permission and can no longer be re-prompted (`canAskAgain === false`),
+    // once per week show a dialog with an "Open Settings" CTA that deep-
+    // links to the OS settings so they can flip the toggle back on.
+    (async () => {
+      try {
+        const { status, canAskAgain } = await Notifications.getPermissionsAsync();
+        if (status !== "denied" || canAskAgain) return;
+        const lastNudge = await AsyncStorage.getItem("pushNudgeAt");
+        const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
+        if (lastNudge && Date.now() - Number(lastNudge) <= oneWeekMs) return;
+        Alert.alert(
+          "Enable notifications",
+          "Turn on push notifications to get instant alerts when your vehicles are priced and when Cover offers land — you can pick which types in Profile.",
+          [
+            {
+              text: "Later",
+              style: "cancel",
+              onPress: () => {
+                AsyncStorage.setItem("pushNudgeAt", String(Date.now())).catch(() => {});
+              },
+            },
+            {
+              text: "Open Settings",
+              onPress: () => {
+                AsyncStorage.setItem("pushNudgeAt", String(Date.now())).catch(() => {});
+                Linking.openSettings().catch(() => {});
+              },
+            },
+          ],
+        );
+      } catch {
+        /* non-fatal */
+      }
+    })();
 
     return () => {
       tapSub.remove();

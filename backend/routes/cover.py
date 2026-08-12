@@ -41,6 +41,7 @@ from server import (
     get_current_user,
     require_admin,
     now_utc,
+    send_push_gated,
 )
 
 
@@ -412,6 +413,28 @@ async def place_cover_offer(
     })
     # Return the fresh cover doc so the UI can refresh without re-fetching.
     fresh = await db.cover_offers.find_one({"id": cover_id}, {"_id": 0})
+    # Notify the owning dealer that a new binding cover has landed on
+    # their submission. Only fires on first-time placement (update path
+    # returned early above). Recipient = the dealer who owns the sub;
+    # gated by the `cover_offer_received` per-user preference.
+    try:
+        agent_info = current.get("dealer_info") or {}
+        agent_first = agent_info.get("first_name") or "A pricing agent"
+        company = current.get("company_info") or {}
+        agent_company = company.get("company_name") or ""
+        agent_label = f"{agent_first}" + (f" · {agent_company}" if agent_company else "")
+        await send_push_gated(
+            [sub.get("dealer_id")] if sub.get("dealer_id") else [],
+            "cover_offer_received",
+            data={
+                "title": "New Cover Offer",
+                "message": f"{agent_label} placed a cover of R{price:,} on {sub.get('reference') or 'your submission'}",
+                "action_url": f"/vehicle/{sub_id}",
+            },
+        )
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Cover push failed (non-blocking): {e}")
     return {"ok": True, "cover": fresh, "billed_zar": COVER_OFFER_COST_ZAR}
 
 
