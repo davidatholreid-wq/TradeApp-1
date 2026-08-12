@@ -47,6 +47,12 @@ import ReportResultBody from "@/src/components/vehicle/ReportResultBody";
 import MarketAnalysisCard from "@/src/components/vehicle/MarketAnalysisCard";
 import VinLinkedReportsCard from "@/src/components/vehicle/VinLinkedReportsCard";
 import DealTrackingCard from "@/src/components/vehicle/DealTrackingCard";
+import ConditionSection from "@/src/components/vehicle/ConditionSection";
+import IdentityLicenseSection from "@/src/components/vehicle/IdentityLicenseSection";
+import TyreEstimateCard from "@/src/components/vehicle/TyreEstimateCard";
+import CoverOffersReceivedCard from "@/src/components/vehicle/CoverOffersReceivedCard";
+import DealerOfferCard from "@/src/components/vehicle/DealerOfferCard";
+import CoverPlacementBar from "@/src/components/vehicle/CoverPlacementBar";
 import { ConfirmReportModal, ViewReportModal } from "@/src/components/vehicle/modals/ReportModals";
 import { PriceModal, DeclineModal } from "@/src/components/vehicle/modals/PriceDeclineModals";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
@@ -2006,154 +2012,16 @@ export default function VehicleDetail() {
           </View>
         )}
 
-        {/* Cover Offers Received — binding offers placed by Pricing Agents
-            on this submission. Visible to the owning dealer + admins only
-            (the backend simply returns [] to everyone else). Each row
-            shows the agent's name, dealership, cover price, and a
-            WhatsApp CTA that opens a chat pre-filled with the vehicle
-            reference. Sorted by price desc by the backend.
-
-            The panel is collapsible so it doesn't hog the top of the
-            page — closed by default. When closed, we still show a peek
-            of the HIGHEST cover so the dealer knows the top of the
-            market at a glance without opening the panel. */}
-        {coverOffers.length > 0 && !isCoverMode ? (
-          <View style={styles.coverOffersBox} testID="cover-offers-received">
-            <TouchableOpacity
-              testID="cover-offers-toggle"
-              style={styles.coverOffersHeader}
-              onPress={() => setCoverOffersOpen((v) => !v)}
-              accessibilityRole="button"
-              accessibilityLabel={
-                coverOffersOpen ? "Collapse cover offers" : "Expand cover offers"
-              }
-            >
-              <Ionicons name="shield-checkmark" size={18} color={colors.primary} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.coverOffersTitle}>
-                  Cover Offers Received ({coverOffers.length})
-                </Text>
-                {!coverOffersOpen && coverOffers[0] ? (
-                  // Backend already sorts DESC by price so `[0]` is
-                  // the highest. Render it as a compact single-line
-                  // "peek" — dealer opens the panel for the full list.
-                  <Text style={styles.coverOffersPeek} numberOfLines={1}>
-                    Top: <Text style={{ color: colors.text, fontWeight: "800" }}>
-                      R{coverOffers[0].price_zar.toLocaleString()}
-                    </Text>
-                    {coverOffers[0].agent_name
-                      ? ` · ${coverOffers[0].agent_name}`
-                      : ""}
-                    {coverOffers[0].agent_dealership_name
-                      ? ` · ${coverOffers[0].agent_dealership_name}`
-                      : ""}
-                  </Text>
-                ) : null}
-              </View>
-              <Ionicons
-                name={coverOffersOpen ? "chevron-up" : "chevron-down"}
-                size={18}
-                color={colors.textSecondary}
-              />
-            </TouchableOpacity>
-            {coverOffersOpen ? (
-              <>
-                <Text style={styles.coverOffersSub}>
-                  Binding Cover from Registered Dealer · subject to physical inspection.
-                </Text>
-                {coverOffers.map((c, idx) => {
-                  const phoneDigits = (c.agent_phone || "").replace(/[^0-9]/g, "");
-                  // South-African local numbers → E.164 for wa.me (drop leading 0, add 27).
-                  const waNumber =
-                    phoneDigits.startsWith("27")
-                      ? phoneDigits
-                      : phoneDigits.startsWith("0")
-                        ? "27" + phoneDigits.slice(1)
-                        : phoneDigits;
-                  const waMessage = encodeURIComponent(
-                    `Hi ${c.agent_name || "there"}, this is regarding your cover of R${c.price_zar.toLocaleString()} on ${sub.reference || "our vehicle"} (${[sub.make_name, sub.derivative_name || sub.model_name].filter(Boolean).join(" ")}).`
-                  );
-                  const waUrl = waNumber ? `https://wa.me/${waNumber}?text=${waMessage}` : null;
-                  return (
-                    <View
-                      key={c.id}
-                      style={[
-                        styles.coverOfferRow,
-                        idx === coverOffers.length - 1 && { borderBottomWidth: 0 },
-                      ]}
-                      testID={`cover-offer-${c.id}`}
-                    >
-                      {/* Round profile photo (or fallback initial disc) so
-                          the dealer instantly recognises the pricing
-                          agent placing the cover. */}
-                      {c.agent_profile_pic ? (
-                        <Image
-                          source={{ uri: c.agent_profile_pic }}
-                          style={styles.coverOfferAvatar}
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <View style={styles.coverOfferAvatarFallback}>
-                          <Text style={styles.coverOfferAvatarInitial}>
-                            {(c.agent_name || "?").trim().charAt(0).toUpperCase()}
-                          </Text>
-                        </View>
-                      )}
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text style={styles.coverOfferPrice}>
-                          R{c.price_zar.toLocaleString()}
-                        </Text>
-                        <Text style={styles.coverOfferAgent} numberOfLines={1}>
-                          {c.agent_name || "Pricing agent"}
-                          {c.agent_dealership_name ? ` · ${c.agent_dealership_name}` : ""}
-                        </Text>
-                        <Text style={styles.coverOfferDate}>
-                          {new Date(c.created_at).toLocaleString()}
-                        </Text>
-                        {c.note ? (
-                          <Text style={styles.coverOfferNote}>{c.note}</Text>
-                        ) : null}
-                      </View>
-                      {waUrl ? (
-                        <TouchableOpacity
-                          testID={`cover-offer-whatsapp-${c.id}`}
-                          style={styles.whatsappBtn}
-                          onPress={() => {
-                            if (Platform.OS === "web") {
-                              (globalThis as any).window?.open?.(waUrl, "_blank");
-                            } else {
-                              Linking.openURL(waUrl).catch(() => {});
-                            }
-                          }}
-                        >
-                          <Ionicons name="logo-whatsapp" size={18} color="#fff" />
-                          <Text style={styles.whatsappBtnText}>WhatsApp</Text>
-                        </TouchableOpacity>
-                      ) : c.agent_phone ? (
-                        <Text style={styles.coverOfferPhone}>{c.agent_phone}</Text>
-                      ) : null}
-                    </View>
-                  );
-                })}
-                {/* Legal / trust disclaimer — reinforces to the dealer
-                    that the cover is subject to a physical inspection
-                    and that they should confirm directly with the
-                    registered dealer before finalising the deal. */}
-                <View style={styles.coverOffersDisclaimer} testID="cover-offers-disclaimer">
-                  <Ionicons
-                    name="information-circle"
-                    size={14}
-                    color={colors.textSecondary}
-                    style={{ marginTop: 1 }}
-                  />
-                  <Text style={styles.coverOffersDisclaimerText}>
-                    All Cover Prices are subject to a physical inspection of the vehicle to ensure the vehicle is as per the valuation — please always confirm the cover with the dealer prior to going ahead with the deal.
-                  </Text>
-                </View>
-              </>
-            ) : null}
-          </View>
-        ) : null}
+        {/* Cover Offers Received — see CoverOffersReceivedCard */}
+        <CoverOffersReceivedCard
+          sub={sub}
+          coverOffers={coverOffers}
+          isCoverMode={isCoverMode}
+          open={coverOffersOpen}
+          onToggle={() => setCoverOffersOpen((v) => !v)}
+          colors={colors}
+          styles={styles}
+        />
 
         {/* Deal Tracking has been moved to the very bottom of the scroll
             content — see below, after Market Values. */}
@@ -2195,239 +2063,17 @@ export default function VehicleDetail() {
           </View>
         ) : null}
 
-        {/* Identity */}
-        <Text style={styles.sectionTitle}>Identity</Text>
-        <View style={styles.detailsList}>
-          <DetailRow label="VIN" value={sub.vin || "TBC"} mono />
-          <DetailRow label="Engine No" value={sub.engine_number || "TBC"} mono last />
-        </View>
+        {/* Identity + License disk — see IdentityLicenseSection */}
+        <IdentityLicenseSection sub={sub} colors={colors} styles={styles} />
 
-        {/* License disk */}
-        {sub.license_disk_data ? (
-          <>
-            <Text style={styles.sectionTitle}>License Disk Data</Text>
-            {(() => {
-              const info = decodeLicenseDisk(sub.license_disk_data!);
-              const hasFields =
-                info.vin ||
-                info.make ||
-                info.model ||
-                info.licenceNo ||
-                info.vehicleRegisterNo ||
-                info.engineNo ||
-                info.expiryDate ||
-                info.licenceDiscNo;
-              if (!hasFields) {
-                return (
-                  <View style={styles.diskBox}>
-                    <Text style={styles.diskText}>{sub.license_disk_data}</Text>
-                  </View>
-                );
-              }
-              const rows: [string, string | undefined][] = [
-                ["Licence No", info.licenceNo],
-                ["Register No", info.vehicleRegisterNo],
-                ["Make", info.make],
-                ["Model", info.model],
-                ["Colour", info.colour],
-                ["Description", info.vehicleDescription],
-                ["VIN", info.vin],
-                ["Engine No", info.engineNo],
-                ["Date of Test", info.dateOfTest],
-                ["Expires", info.expiryDate],
-                ["Disc No", info.licenceDiscNo],
-              ];
-              // Ownership signal derived from the disc's Date of Test:
-              //   • blank test date → 1-Owner from new (car has never
-              //     been re-registered, so no roadworthy test needed).
-              //   • present test date → approx. ownership duration
-              //     between last roadworthy test and this valuation.
-              // Both variants are highlighted with a strong badge so
-              // the indicator stands out from the rest of the disc data.
-              const submittedAtIso = sub.created_at || new Date().toISOString();
-              let ownership: { text: string; oneOwner: boolean } | null = null;
-              if (!info.dateOfTest) {
-                ownership = { text: "1-Owner from new", oneOwner: true };
-              } else {
-                try {
-                  const test = new Date(info.dateOfTest);
-                  const now = new Date(submittedAtIso);
-                  let months =
-                    (now.getFullYear() - test.getFullYear()) * 12 +
-                    (now.getMonth() - test.getMonth());
-                  if (now.getDate() < test.getDate()) months -= 1;
-                  if (months < 0) months = 0;
-                  const yrs = Math.floor(months / 12);
-                  const mos = months % 12;
-                  const parts: string[] = [];
-                  if (yrs > 0) parts.push(`${yrs} ${yrs === 1 ? "year" : "years"}`);
-                  if (mos > 0 || yrs === 0) parts.push(`${mos} ${mos === 1 ? "month" : "months"}`);
-                  ownership = { text: `Owned approx. ${parts.join(" ")}`, oneOwner: false };
-                } catch {
-                  ownership = null;
-                }
-              }
-              return (
-                <View style={styles.diskDecodedBox}>
-                  {ownership ? (
-                    <View
-                      style={[
-                        styles.ownershipBadge,
-                        ownership.oneOwner ? styles.ownershipBadgeOne : styles.ownershipBadgeMulti,
-                      ]}
-                      testID="license-disk-ownership-badge"
-                    >
-                      <Ionicons
-                        name={ownership.oneOwner ? "ribbon" : "time-outline"}
-                        size={16}
-                        color={ownership.oneOwner ? "#065F46" : colors.text}
-                      />
-                      <Text
-                        style={[
-                          styles.ownershipBadgeText,
-                          ownership.oneOwner
-                            ? styles.ownershipBadgeTextOne
-                            : styles.ownershipBadgeTextMulti,
-                        ]}
-                      >
-                        {ownership.text}
-                      </Text>
-                    </View>
-                  ) : null}
-                  {rows
-                    .filter(([, v]) => !!v)
-                    .map(([label, value]) => (
-                      <View key={label} style={styles.diskDecodedRow}>
-                        <Text style={styles.diskDecodedLabel}>{label}</Text>
-                        <Text style={styles.diskDecodedValue}>{value}</Text>
-                      </View>
-                    ))}
-                </View>
-              );
-            })()}
-          </>
-        ) : null}
-
-        {/* Condition breakdown — 4 pillars for new submissions, legacy 3 fallback.
-            HIDDEN entirely when the submission is flagged as "unseen"
-            (dealer requested a desktop valuation without physical
-            inspection). We still render a special 10/10 "Subject to
-            View — Less to Spend" hero below so the valuation makes
-            clear it is priced as-if-perfect. */}
-        {!sub.unseen ? (
-        <>
-        <Text style={styles.sectionTitle}>Condition</Text>
-        <View style={styles.detailsList}>
-          {typeof sub.mechanical_condition === "number" ? (
-            <>
-              <DetailRow label="Mechanical Health" value={`${sub.mechanical_condition} / 10`} />
-              <DetailRow label="Cosmetic Appearance" value={`${sub.cosmetic_condition} / 10`} />
-              <DetailRow label="Interior Condition" value={`${sub.interior_condition} / 10`} />
-              <DetailRow label="General Condition" value={`${sub.history_condition} / 10`} />
-            </>
-          ) : (
-            <>
-              <DetailRow label="Exterior" value={sub.exterior_condition ? `${sub.exterior_condition} / 10` : "—"} />
-              <DetailRow label="Interior" value={sub.interior_condition ? `${sub.interior_condition} / 10` : "—"} />
-              <DetailRow label="Tyres" value={sub.tyre_condition ? `${sub.tyre_condition} / 10` : "—"} />
-            </>
-          )}
-          <DetailRow
-            label="Previous Accident Damage"
-            value={sub.accident_damage ? "Yes" : "None"}
-            valueColor={sub.accident_damage ? colors.danger : colors.text}
-          />
-          {sub.accident_damage && sub.accident_damage_types && sub.accident_damage_types.length > 0 ? (
-            <DetailRow
-              label="Damage Types"
-              value={sub.accident_damage_types.join(", ")}
-              valueColor={colors.danger}
-            />
-          ) : null}
-          <DetailRow
-            label="Paint Evidence"
-            value={sub.paint_evidence ? "Yes" : "No"}
-            valueColor={sub.paint_evidence ? colors.danger : colors.text}
-            last={!(sub.paint_evidence && sub.paint_quality)}
-          />
-          {sub.paint_evidence && sub.paint_quality ? (
-            <DetailRow label="Paint Repair Quality" value={sub.paint_quality} last />
-          ) : null}
-        </View>
-
-        {/* Overall condition hero — sits directly under the Condition
-            breakdown per updated valuation layout. Tap to open the Condition
-            Rating Guide modal. */}
-        {averageRating !== null ? (
-          <TouchableOpacity
-            testID="avg-rating-hero"
-            style={styles.heroBox}
-            activeOpacity={0.85}
-            onPress={() => setConditionInfoOpen(true)}
-            accessibilityLabel="Tap to view condition rating guide"
-          >
-            <View style={styles.heroTopRow}>
-              <Text style={styles.heroLabel}>OVERALL CONDITION</Text>
-              <View style={styles.heroInfoBtn}>
-                <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
-                <Text style={styles.heroInfoText}>Guide</Text>
-              </View>
-            </View>
-            <View style={styles.heroRow}>
-              <Text style={styles.heroValue}>{averageRating.toFixed(1)}</Text>
-              <Text style={styles.heroOutOf}>/ 10</Text>
-            </View>
-            <View style={styles.heroBar}>
-              <View style={[styles.heroBarFill, { width: `${(averageRating / 10) * 100}%` }]} />
-            </View>
-            <View style={styles.heroBreakdown}>
-              {typeof sub.mechanical_condition === "number" ? (
-                <>
-                  <HeroPill label="MECH" value={sub.mechanical_condition} />
-                  <HeroPill label="COSM" value={sub.cosmetic_condition} />
-                  <HeroPill label="INT" value={sub.interior_condition} />
-                  <HeroPill label="GEN" value={sub.history_condition} />
-                </>
-              ) : (
-                <>
-                  <HeroPill label="EXT" value={sub.exterior_condition} />
-                  <HeroPill label="INT" value={sub.interior_condition} />
-                  <HeroPill label="TYRES" value={sub.tyre_condition} />
-                </>
-              )}
-            </View>
-          </TouchableOpacity>
-        ) : null}
-        </>
-        ) : null}
-        {/* --- end !sub.unseen : Condition section --- */}
-
-        {/* Subject-to-View condition hero — replaces the normal Condition
-            widget when the vehicle was submitted unseen. Displays a
-            constant 10.0 / 10 to communicate "priced as-if-perfect
-            condition" (dealer hasn't inspected the car), with a soft
-            "Subject to View — Less to Spend" caption. */}
-        {sub.unseen ? (
-          <View style={styles.heroBox} testID="unseen-condition-hero">
-            <View style={styles.heroTopRow}>
-              <Text style={styles.heroLabel}>OVERALL CONDITION</Text>
-              <View style={styles.heroInfoBtn}>
-                <Ionicons name="eye-off-outline" size={13} color={colors.textSecondary} />
-                <Text style={styles.heroInfoText}>Subject to View</Text>
-              </View>
-            </View>
-            <View style={styles.heroRow}>
-              <Text style={styles.heroValue}>10.0</Text>
-              <Text style={styles.heroOutOf}>/ 10</Text>
-            </View>
-            <View style={styles.heroBar}>
-              <View style={[styles.heroBarFill, { width: "100%" }]} />
-            </View>
-            <Text style={styles.unseenHeroCaption}>
-              Subject to View — Less to Spend · Priced as-if-perfect condition. Adjusts on physical inspection.
-            </Text>
-          </View>
-        ) : null}
+        {/* Condition breakdown + Overall condition hero + Subject-to-View — see ConditionSection */}
+        <ConditionSection
+          sub={sub}
+          averageRating={averageRating}
+          onOpenRatingGuide={() => setConditionInfoOpen(true)}
+          colors={colors}
+          styles={styles}
+        />
 
         {/* Reconditioning */}
         {!sub.unseen && sub.reconditioning_items && sub.reconditioning_items.length > 0 ? (
@@ -2642,139 +2288,15 @@ export default function VehicleDetail() {
           </View>
         </CollapsibleSection>
 
-        {/* Tyre Replacement Estimate — admin-only */}
+        {/* Tyre Replacement Estimate — admin-only, see TyreEstimateCard */}
         {isAdmin ? (
-          <>
-            <View style={styles.analysisHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.sectionTitle}>Tyre Replacement Estimate</Text>
-                {sub.tyre_estimate?.generated_at ? (
-                  <Text style={styles.analysisTs}>
-                    Generated {new Date(sub.tyre_estimate.generated_at).toLocaleString()}
-                  </Text>
-                ) : null}
-              </View>
-              <TouchableOpacity
-                testID="tyre-estimate-button"
-                style={[styles.analysisBtn, estimatingTyres && { opacity: 0.6 }]}
-                onPress={handleTyreEstimate}
-                disabled={estimatingTyres}
-              >
-                {estimatingTyres ? (
-                  <ActivityIndicator color={colors.primary} size="small" />
-                ) : (
-                  <>
-                    <Ionicons name="disc-outline" size={14} color={colors.primary} />
-                    <Text style={styles.analysisBtnText}>
-                      {sub.tyre_estimate ? "Refresh" : "Estimate"}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            {sub.tyre_estimate?.estimate ? (
-              <View style={styles.analysisCard} testID="tyre-estimate-card">
-                <View style={styles.tyreHeaderRow}>
-                  <View style={styles.tyreSpecBadge}>
-                    <Ionicons name="disc" size={14} color="#fff" />
-                    <Text style={styles.tyreSpecText}>
-                      {sub.tyre_estimate.estimate.tyre_spec ?? "—"}
-                    </Text>
-                  </View>
-                </View>
-
-                {sub.tyre_estimate.estimate.total_replacement_estimate_zar ? (
-                  <View style={styles.tyreTotalBox}>
-                    <Text style={styles.tyreTotalLabel}>Total 4-tyre replacement</Text>
-                    <Text style={styles.tyreTotalValue}>
-                      R {sub.tyre_estimate.estimate.total_replacement_estimate_zar.toLocaleString()}
-                    </Text>
-                  </View>
-                ) : null}
-
-                {sub.tyre_estimate.estimate.set_of_four_zar ? (
-                  <View style={styles.rangeBox}>
-                    <View style={styles.rangeCol}>
-                      <Text style={styles.rangeLabel}>SET LOW</Text>
-                      <Text style={styles.rangeValue}>
-                        R {sub.tyre_estimate.estimate.set_of_four_zar.low.toLocaleString()}
-                      </Text>
-                    </View>
-                    <View style={[styles.rangeCol, styles.rangeColMid]}>
-                      <Text style={styles.rangeLabel}>TYPICAL</Text>
-                      <Text style={styles.rangeValue}>
-                        R {sub.tyre_estimate.estimate.set_of_four_zar.typical.toLocaleString()}
-                      </Text>
-                    </View>
-                    <View style={styles.rangeCol}>
-                      <Text style={styles.rangeLabel}>SET HIGH</Text>
-                      <Text style={styles.rangeValue}>
-                        R {sub.tyre_estimate.estimate.set_of_four_zar.high.toLocaleString()}
-                      </Text>
-                    </View>
-                  </View>
-                ) : null}
-
-                <View style={styles.tradeRow}>
-                  {sub.tyre_estimate.estimate.per_tyre_range_zar ? (
-                    <View style={styles.tradeCol}>
-                      <Text style={styles.tradeLabel}>Per tyre (typical)</Text>
-                      <Text style={styles.tradeValue}>
-                        R {sub.tyre_estimate.estimate.per_tyre_range_zar.typical.toLocaleString()}
-                      </Text>
-                    </View>
-                  ) : null}
-                  {sub.tyre_estimate.estimate.fitment_and_balance_zar ? (
-                    <View style={styles.tradeCol}>
-                      <Text style={styles.tradeLabel}>Fitment & balance</Text>
-                      <Text style={styles.tradeValue}>
-                        R {sub.tyre_estimate.estimate.fitment_and_balance_zar.toLocaleString()}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-
-                {sub.tyre_estimate.estimate.recommended_brands?.length ? (
-                  <View style={styles.factorsBox}>
-                    <Text style={styles.factorsTitle}>RECOMMENDED BRANDS</Text>
-                    {sub.tyre_estimate.estimate.recommended_brands.map((b, i) => (
-                      <View key={i} style={styles.factorRow}>
-                        <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
-                        <Text style={styles.factorText}>{b}</Text>
-                      </View>
-                    ))}
-                  </View>
-                ) : null}
-
-                {sub.tyre_estimate.estimate.notes ? (
-                  <Text style={styles.summary}>{sub.tyre_estimate.estimate.notes}</Text>
-                ) : null}
-
-                {sub.tyre_estimate.estimate.confidence ? (
-                  <Text style={styles.confidence}>
-                    Confidence: {sub.tyre_estimate.estimate.confidence.toUpperCase()}
-                  </Text>
-                ) : null}
-
-                {sub.tyre_estimate.estimate.raw ? (
-                  <Text style={styles.summary}>{sub.tyre_estimate.estimate.raw}</Text>
-                ) : null}
-
-                {sub.tyre_estimate.estimate.disclaimer ? (
-                  <Text style={styles.disclaimer}>{sub.tyre_estimate.estimate.disclaimer}</Text>
-                ) : null}
-              </View>
-            ) : (
-              <View style={styles.analysisEmpty}>
-                <Ionicons name="disc-outline" size={20} color={colors.textSecondary} />
-                <Text style={styles.analysisEmptyText}>
-                  Tap Estimate for a GPT-5.2 tyre-replacement price based on this vehicle&apos;s
-                  OEM tyre spec and current SA aftermarket pricing.
-                </Text>
-              </View>
-            )}
-          </>
+          <TyreEstimateCard
+            tyreEstimate={sub.tyre_estimate}
+            estimating={estimatingTyres}
+            onEstimate={handleTyreEstimate}
+            colors={colors}
+            styles={styles}
+          />
         ) : null}
 
         {/* VIN-Linked Reports — see VinLinkedReportsCard for full markup. */}
@@ -2959,151 +2481,28 @@ export default function VehicleDetail() {
           </>
         ) : null}
 
-        {/* ==================== DEALER OFFER CARD ====================
-            Standalone card visible to every user on the owning
-            dealership (and to admins). Displays the current dealer
-            offer for the vehicle. Only managerial (`is_pricing_agent`)
-            users can enter / update it. Once an offer is captured,
-            the Deal Tracking section below unlocks.
-
-            Hidden in cover-mode (pricing agents inspecting other
-            dealerships' submissions must never see the local dealer
-            offer). Now VISIBLE while the vehicle is still pending —
-            business rule (2026-08-10): the owning dealership must
-            be able to commit their own offer the moment the car is
-            loaded, without waiting on Fourbuy's pricing turnaround.
-        */}
+        {/* ==================== DEALER OFFER CARD ==================== see DealerOfferCard */}
         {!isCoverMode && (isAdmin || isOwningDealer) ? (
           (() => {
             const deal = (sub as any).deal as DealInfo | null | undefined;
-            const savedOffer = deal?.dealer_offer_zar ?? null;
             const canEditOffer = !isAdmin && isOwningDealer && !!((user as any)?.is_pricing_agent);
-            const parsed = parseMoneyInput(dealOfferInput);
-            const isDirty = parsed !== savedOffer && parsed != null;
-            const offerHistory = ((deal?.dealer_offer_history || []) as {
-              price_zar: number;
-              at: string;
-              by_name?: string;
-            }[]).slice().reverse(); // newest first
             return (
-              <View style={styles.dealerOfferCard} testID="dealer-offer-card">
-                <View style={styles.dealerOfferHeader}>
-                  <Ionicons name="cash-outline" size={16} color={colors.text} />
-                  <Text style={styles.dealerOfferTitle}>{isAdmin ? "Dealer Offer" : "My Offer"}</Text>
-                  {savedOffer != null ? (
-                    <View style={styles.dealerOfferPill} testID="dealer-offer-set-pill">
-                      <Ionicons name="checkmark-circle" size={11} color="#fff" />
-                      <Text style={styles.dealerOfferPillText}>OFFER SET</Text>
-                    </View>
-                  ) : (
-                    <View style={[styles.dealerOfferPill, { backgroundColor: colors.textDisabled }]}>
-                      <Text style={styles.dealerOfferPillText}>NOT SET</Text>
-                    </View>
-                  )}
-                </View>
-                {savedOffer != null ? (
-                  <Text style={styles.dealerOfferBigNumber} testID="dealer-offer-amount">
-                    {fmtZar(savedOffer)}
-                  </Text>
-                ) : null}
-                {savedOffer != null && deal?.dealer_offer_at ? (
-                  <Text style={styles.dealerOfferMeta}>
-                    Recorded {new Date(deal.dealer_offer_at).toLocaleDateString()}
-                  </Text>
-                ) : null}
-                <Text style={styles.dealerOfferHelp}>
-                  {canEditOffer
-                    ? "Your dealership's own offer to the seller. Save this to unlock the Deal Tracking section below."
-                    : savedOffer != null
-                      ? (isAdmin
-                          ? "This is the offer the dealership's manager has recorded for the seller."
-                          : "This is the offer your dealership's manager has recorded for the seller.")
-                      : (isAdmin
-                          ? "Waiting on the dealership's manager to record the offer."
-                          : "Waiting on your dealership's manager to record the offer.")}
-                </Text>
-                {canEditOffer ? (
-                  <View style={styles.dealerOfferInputRow}>
-                    <TextInput
-                      testID="dealer-offer-input"
-                      value={dealOfferInput}
-                      onChangeText={(v) => setDealOfferInput(formatMoneyString(v))}
-                      placeholder="e.g. 380,000"
-                      placeholderTextColor={colors.textDisabled}
-                      keyboardType="numeric"
-                      editable={!dealSaving}
-                      style={[styles.dealerOfferInput, { flex: 1 }]}
-                    />
-                    <TouchableOpacity
-                      testID="dealer-offer-save"
-                      disabled={dealSaving || !isDirty}
-                      style={[
-                        styles.dealerOfferSaveBtn,
-                        (!isDirty || dealSaving) && { opacity: 0.5 },
-                      ]}
-                      onPress={() => patchDeal({ dealer_offer_zar: parsed })}
-                    >
-                      {dealSaving ? (
-                        <ActivityIndicator size="small" color="#fff" />
-                      ) : (
-                        <Text style={styles.dealerOfferSaveBtnText}>
-                          {savedOffer != null ? "Update" : "Save Offer"}
-                        </Text>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                ) : null}
-
-                {/* Collapsible offer history — only shown when there
-                    are at least 2 recorded amounts (i.e. the offer has
-                    changed at least once). Ordered newest-first with
-                    the current amount highlighted. */}
-                {offerHistory.length >= 2 ? (
-                  <TouchableOpacity
-                    testID="dealer-offer-history-toggle"
-                    onPress={() => setDealerOfferHistoryOpen((v) => !v)}
-                    style={styles.dealerOfferHistoryToggle}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons
-                      name={dealerOfferHistoryOpen ? "chevron-up" : "chevron-down"}
-                      size={13}
-                      color={colors.textSecondary}
-                    />
-                    <Text style={styles.dealerOfferHistoryToggleText}>
-                      {dealerOfferHistoryOpen ? "Hide" : "Show"} offer history · {offerHistory.length} update{offerHistory.length === 1 ? "" : "s"}
-                    </Text>
-                  </TouchableOpacity>
-                ) : null}
-                {offerHistory.length >= 2 && dealerOfferHistoryOpen ? (
-                  <View style={styles.dealerOfferHistoryList} testID="dealer-offer-history-list">
-                    {offerHistory.map((h, idx) => {
-                      const isCurrent = idx === 0;
-                      return (
-                        <View
-                          key={`${h.at}-${idx}`}
-                          style={[
-                            styles.dealerOfferHistoryRow,
-                            isCurrent && { borderColor: colors.primary + "88" },
-                          ]}
-                        >
-                          <View style={{ flex: 1, minWidth: 0 }}>
-                            <Text style={styles.dealerOfferHistoryAmount}>
-                              {fmtZar(h.price_zar)}
-                              {isCurrent ? (
-                                <Text style={{ color: colors.primary, fontWeight: "800" }}>  · Current</Text>
-                              ) : null}
-                            </Text>
-                            <Text style={styles.dealerOfferHistoryMeta}>
-                              {new Date(h.at).toLocaleString()} · {h.by_name || "—"}
-                            </Text>
-                          </View>
-                        </View>
-                      );
-                    })}
-                  </View>
-                ) : null}
-              </View>
+              <DealerOfferCard
+                deal={deal}
+                isAdmin={isAdmin}
+                canEditOffer={canEditOffer}
+                dealOfferInput={dealOfferInput}
+                onOfferInputChange={setDealOfferInput}
+                dealSaving={dealSaving}
+                onSaveOffer={(parsed) => patchDeal({ dealer_offer_zar: parsed })}
+                parseMoneyInput={parseMoneyInput}
+                formatMoneyString={formatMoneyString}
+                fmtZar={fmtZar}
+                dealerOfferHistoryOpen={dealerOfferHistoryOpen}
+                onToggleHistory={() => setDealerOfferHistoryOpen((v) => !v)}
+                colors={colors}
+                styles={styles}
+              />
             );
           })()
         ) : null}
@@ -3159,150 +2558,79 @@ export default function VehicleDetail() {
       {/* Floating footer removed — pricing is now inline at the bottom
           of the scroll content. */}
 
-      {/* Cover-placement bottom bar — visible only when the pricing
-          agent is inspecting a submission via /vehicle/[id]?cover=1.
-          Locked to the bottom of the viewport so the agent can enter a
-          cover price while continuing to scroll the vehicle detail. */}
+      {/* Cover-placement bottom bar — see CoverPlacementBar (visible only in cover mode). */}
       {isCoverMode && coverMeta ? (
-        <View style={[styles.coverPlaceBar, { bottom: kbHeight }]} testID="cover-place-bar">
-          <View style={{ flex: 1 }}>
-            {coverMeta.my_cover ? (
-              <>
-                <Text style={styles.coverPlacedTitle} testID="cover-placed-summary">
-                  Cover placed · R{coverMeta.my_cover.price_zar.toLocaleString()}
-                </Text>
-                <Text style={styles.coverPlacedSub}>
-                  Binding subject to inspection. Updates are free — the R{coverMeta.cover_cost_zar} fee was already charged on the initial cover.
-                </Text>
-              </>
-            ) : null}
-            <TextInput
-              testID="cover-price-input"
-              value={coverPriceInput}
-              onChangeText={(t) => setCoverPriceInput(formatMoneyString(t))}
-              placeholder={coverMeta.my_cover ? "Update cover (R)" : "Enter your cover (R)"}
-              placeholderTextColor={colors.textDisabled}
-              keyboardType="numeric"
-              style={[styles.coverInput, coverMeta.my_cover && { marginTop: 6 }]}
-            />
-            <Text style={styles.coverBillNote}>
-              {coverMeta.my_cover
-                ? "Updates are free. Binding subject to inspection."
-                : `R${coverMeta.cover_cost_zar} billed on submit. Binding subject to inspection.`}
-            </Text>
-          </View>
-          <View style={styles.coverBtnRow}>
-            {/* Decline — bail out and move this submission into the
-                dealer's Declined silo so it never surfaces on the
-                Available tab again (unless they Restore it). We only
-                show the Decline button when the agent hasn't placed a
-                cover yet — no point declining after having covered. */}
-            {!coverMeta.my_cover ? (
-              <TouchableOpacity
-                testID="cover-decline-btn"
-                style={[styles.coverDeclineBtn, decliningCover && { opacity: 0.6 }]}
-                disabled={placingCover || decliningCover}
-                onPress={async () => {
-                  const proceed = await confirmAsync(
-                    "Decline this cover?",
-                    "You won't see this submission on your Available list again. You can restore it later from the Declined silo.",
-                    "Decline",
-                  );
-                  if (!proceed) return;
-                  setDecliningCover(true);
-                  try {
-                    await apiFetch(`/api/cover/submissions/${sub!.id}/decline`, {
-                      method: "POST",
-                    });
-                    // Return to the Give Cover Available silo. Using
-                    // replace so the vehicle detail is removed from
-                    // the back stack — the agent shouldn't be able
-                    // to swipe back into a submission they just
-                    // declined.
-                    router.replace("/(app)/cover?tab=available" as never);
-                  } catch (e: any) {
-                    Alert.alert("Decline", e?.message || "Could not decline this cover.");
-                  } finally {
-                    setDecliningCover(false);
-                  }
-                }}
-              >
-                {decliningCover ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <>
-                    <Ionicons name="close-circle" size={16} color="#fff" />
-                    <Text style={styles.coverDeclineBtnText}>Decline</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            ) : null}
-            <TouchableOpacity
-              testID="cover-submit-btn"
-              style={[styles.coverBtn, placingCover && { opacity: 0.6 }]}
-              onPress={async () => {
-                const n = parseInt(coverPriceInput.replace(/[^0-9]/g, ""), 10);
-                if (!n || n <= 0) {
-                  Alert.alert("Enter a valid amount", "Please enter your cover price in Rand.");
-                  return;
-                }
-                const cost = coverMeta.cover_cost_zar;
-                const isUpdate = !!coverMeta.my_cover;
-                const proceed = await confirmAsync(
-                  isUpdate ? "Confirm cover update" : "Confirm binding cover",
-                  isUpdate
-                    ? `Update your binding cover to R${n.toLocaleString()}. This update is free — the R${cost} cover fee was charged on the initial placement. Cover remains binding subject to physical inspection.`
-                    : `Cover of R${n.toLocaleString()}. You'll be billed R${cost} to your next invoice. Cover is binding subject to physical inspection and confirmation that all submission details are accurate.`,
-                  "Confirm",
+        <CoverPlacementBar
+          coverMeta={coverMeta}
+          coverPriceInput={coverPriceInput}
+          onCoverPriceChange={setCoverPriceInput}
+          formatMoneyString={formatMoneyString}
+          placingCover={placingCover}
+          decliningCover={decliningCover}
+          onDecline={async () => {
+            const proceed = await confirmAsync(
+              "Decline this cover?",
+              "You won't see this submission on your Available list again. You can restore it later from the Declined silo.",
+              "Decline",
+            );
+            if (!proceed) return;
+            setDecliningCover(true);
+            try {
+              await apiFetch(`/api/cover/submissions/${sub!.id}/decline`, {
+                method: "POST",
+              });
+              router.replace("/(app)/cover?tab=available" as never);
+            } catch (e: any) {
+              Alert.alert("Decline", e?.message || "Could not decline this cover.");
+            } finally {
+              setDecliningCover(false);
+            }
+          }}
+          onSubmitCover={async () => {
+            const n = parseInt(coverPriceInput.replace(/[^0-9]/g, ""), 10);
+            if (!n || n <= 0) {
+              Alert.alert("Enter a valid amount", "Please enter your cover price in Rand.");
+              return;
+            }
+            const cost = coverMeta.cover_cost_zar;
+            const isUpdate = !!coverMeta.my_cover;
+            const proceed = await confirmAsync(
+              isUpdate ? "Confirm cover update" : "Confirm binding cover",
+              isUpdate
+                ? `Update your binding cover to R${n.toLocaleString()}. This update is free — the R${cost} cover fee was charged on the initial placement. Cover remains binding subject to physical inspection.`
+                : `Cover of R${n.toLocaleString()}. You'll be billed R${cost} to your next invoice. Cover is binding subject to physical inspection and confirmation that all submission details are accurate.`,
+              "Confirm",
+            );
+            if (!proceed) return;
+            setPlacingCover(true);
+            try {
+              await apiFetch(`/api/submissions/${sub!.id}/covers`, {
+                method: "POST",
+                body: JSON.stringify({ price_zar: n }),
+              });
+              setCoverPriceInput("");
+              if (isUpdate) {
+                await loadCoverMeta();
+                Alert.alert(
+                  "Cover updated",
+                  `Your binding cover is now R${n.toLocaleString()}. No additional charge for updates.`,
                 );
-                if (!proceed) return;
-                setPlacingCover(true);
-                try {
-                  await apiFetch(`/api/submissions/${sub!.id}/covers`, {
-                    method: "POST",
-                    body: JSON.stringify({ price_zar: n }),
-                  });
-                  setCoverPriceInput("");
-                  if (isUpdate) {
-                    // Updates keep the user on the same page so they
-                    // can adjust and re-adjust freely. Refresh the
-                    // meta so the header pill shows the new amount.
-                    await loadCoverMeta();
-                    Alert.alert(
-                      "Cover updated",
-                      `Your binding cover is now R${n.toLocaleString()}. No additional charge for updates.`,
-                    );
-                  } else {
-                    // First-time placement — bounce back to the Cover
-                    // given tab of the Give Cover screen so the agent
-                    // doesn't linger on the (now-priced) submission
-                    // with an "Update price" bar. The Cover-given list
-                    // is where the new cover naturally lives, and the
-                    // agent's next action is usually to price the next
-                    // vehicle in the pipeline.
-                    router.replace({
-                      pathname: "/(app)/cover",
-                      params: { tab: "given" },
-                    });
-                  }
-                } catch (e: any) {
-                  Alert.alert("Cover", e?.message || "Could not save cover.");
-                } finally {
-                  setPlacingCover(false);
-                }
-              }}
-              disabled={placingCover || decliningCover}
-            >
-              {placingCover ? (
-                <ActivityIndicator color={colors.onPrimary} />
-              ) : (
-                <Text style={styles.coverBtnText}>
-                  {coverMeta.my_cover ? "Update" : "Place Cover"}
-                </Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
+              } else {
+                router.replace({
+                  pathname: "/(app)/cover",
+                  params: { tab: "given" },
+                });
+              }
+            } catch (e: any) {
+              Alert.alert("Cover", e?.message || "Could not save cover.");
+            } finally {
+              setPlacingCover(false);
+            }
+          }}
+          kbHeight={kbHeight}
+          colors={colors}
+          styles={styles}
+        />
       ) : null}
 
       {/* Fullscreen photo carousel */}
