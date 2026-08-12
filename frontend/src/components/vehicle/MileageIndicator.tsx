@@ -151,11 +151,14 @@ export default function MileageIndicator({
 
   return (
     <View style={styles.container} testID="mileage-indicator">
+      <Text style={styles.eyebrow}>MILEAGE INDICATOR</Text>
       <View style={styles.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Mileage Indicator</Text>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={styles.hero} numberOfLines={1} testID="mileage-hero-value">
+            {mileageKm.toLocaleString()} <Text style={styles.heroUnit}>km</Text>
+          </Text>
           <Text style={styles.subtitle}>
-            {mileageKm.toLocaleString()} km on a {year} model
+            on a {year} model
             {" · "}
             {assessment.kmPerYear >= 1000
               ? `${Math.round(assessment.kmPerYear).toLocaleString()} km/yr`
@@ -168,7 +171,10 @@ export default function MileageIndicator({
         </View>
       </View>
 
-      {/* 5-segment gauge — taller so the marker has more room to breathe */}
+      {/* 5-segment gauge with a clean line-and-dot position marker.
+          The label pill was intentionally removed so the odometer hero
+          number stays the primary read — the marker just points to
+          where the car sits on the km/yr scale. */}
       <View style={styles.gaugeWrap}>
         <View style={styles.gaugeRow} accessibilityLabel={`Mileage band: ${assessment.label}`}>
           {BAND_META.map((m) => {
@@ -189,28 +195,14 @@ export default function MileageIndicator({
           })}
         </View>
 
-        {/* Prominent position marker — pill above + vertical line + big
-            ringed dot at the intersection. Rendered as an absolutely-
-            positioned overlay so the gauge segments underneath stay
-            perfectly rectangular. */}
+        {/* Position marker — vertical line piercing the gauge + big
+            ringed dot at the centreline. No pill; the odometer hero
+            number above is where the exact reading lives. */}
         <View
           pointerEvents="none"
           style={[styles.markerAnchor, { left: `${assessment.gaugePosition * 100}%` }]}
         >
-          {/* Label pill hovering ABOVE the gauge — always readable, never
-              overlaps the coloured band. Colour matches the current band. */}
-          <View style={[styles.markerPill, { backgroundColor: assessment.color }]} testID="mileage-marker-pill">
-            <Ionicons name="speedometer" size={11} color="#fff" />
-            <Text style={styles.markerPillText} numberOfLines={1}>
-              {Math.round(assessment.kmPerYear).toLocaleString()} km/y
-            </Text>
-          </View>
-          {/* Tick from the pill down to the top of the gauge */}
-          <View style={[styles.markerTick, { backgroundColor: assessment.color }]} />
-          {/* Vertical line piercing the entire gauge height for pixel-
-              precise readability of position. */}
           <View style={[styles.markerLine, { backgroundColor: assessment.color }]} />
-          {/* Big ringed dot at the intersection with the gauge midline */}
           <View style={[styles.markerDot, { backgroundColor: assessment.color, borderColor: colors.card }]}>
             <View style={[styles.markerDotInner, { backgroundColor: "#fff" }]} />
           </View>
@@ -264,6 +256,27 @@ function makeStyles(colors: Palette) {
       alignItems: "flex-start" as const,
       marginBottom: spacing.sm,
     },
+    eyebrow: {
+      color: colors.textSecondary,
+      fontSize: 10,
+      fontWeight: "800" as const,
+      letterSpacing: 1.2,
+      marginBottom: 2,
+    },
+    hero: {
+      color: colors.text,
+      fontSize: 28,
+      fontWeight: "800" as const,
+      fontFamily: fonts.heading,
+      lineHeight: 32,
+      letterSpacing: -0.5,
+    },
+    heroUnit: {
+      color: colors.textSecondary,
+      fontSize: 16,
+      fontWeight: "700" as const,
+      letterSpacing: 0,
+    },
     title: {
       color: colors.text,
       fontSize: 14,
@@ -275,6 +288,7 @@ function makeStyles(colors: Palette) {
       color: colors.textSecondary,
       fontSize: 12,
       lineHeight: 16,
+      marginTop: 2,
     },
     badge: {
       flexDirection: "row" as const,
@@ -292,9 +306,9 @@ function makeStyles(colors: Palette) {
     },
     gaugeWrap: {
       position: "relative" as const,
-      // Enough top padding for the label pill + tick above the gauge.
-      paddingTop: 34,
-      marginTop: spacing.sm,
+      // Slight top padding so the marker dot's shadow has room to breathe.
+      paddingTop: 8,
+      marginTop: spacing.md,
       marginBottom: 6,
     },
     gaugeRow: {
@@ -308,7 +322,7 @@ function makeStyles(colors: Palette) {
       height: "100%",
       marginHorizontal: 0.5,
     },
-    /* --- Prominent position marker (pill + tick + line + dot) --- */
+    /* --- Clean position marker (vertical line + big ringed dot) --- */
     markerAnchor: {
       position: "absolute" as const,
       top: 0,
@@ -318,59 +332,31 @@ function makeStyles(colors: Palette) {
       width: 0,
       alignItems: "center" as const,
     },
-    markerPill: {
-      flexDirection: "row" as const,
-      alignItems: "center" as const,
-      gap: 4,
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-      borderRadius: 999,
-      // Prevent RN flex-wrapping the pill contents to a second line when
-      // the anchor width is 0 — force everything to stay on one row.
-      flexWrap: "nowrap" as const,
-      alignSelf: "center" as const,
-      minWidth: 96,
-      justifyContent: "center" as const,
-      // Soft elevation so the pill floats above the gauge on light bg too.
-      shadowColor: "#000",
-      shadowOpacity: 0.25,
-      shadowRadius: 4,
-      shadowOffset: { width: 0, height: 2 },
-      elevation: 3,
-    },
-    markerPillText: {
-      color: "#fff",
-      fontSize: 11,
-      fontWeight: "800" as const,
-      letterSpacing: 0.3,
-    },
-    markerTick: {
-      width: 2,
-      height: 6,
-      marginTop: 1,
-    },
     markerLine: {
       position: "absolute" as const,
-      top: 34, // start at top of gauge (gaugeWrap.paddingTop)
+      // Start at top of gauge (matches gaugeWrap paddingTop)
+      top: 8,
       width: 3,
       height: 16, // matches gauge height
-      opacity: 0.9,
+      opacity: 0.95,
+      borderRadius: 1.5,
     },
     markerDot: {
       position: "absolute" as const,
-      top: 34 + 16 / 2 - 9, // centre vertically on the 16px-tall gauge
-      width: 18,
-      height: 18,
-      borderRadius: 9,
+      // Centre vertically on the 16px-tall gauge (top-of-gauge + half - half-of-dot)
+      top: 8 + 16 / 2 - 10,
+      width: 20,
+      height: 20,
+      borderRadius: 10,
       borderWidth: 3,
       alignItems: "center" as const,
       justifyContent: "center" as const,
       // Elevation so the dot pops off both the gauge and the card bg
       shadowColor: "#000",
-      shadowOpacity: 0.35,
-      shadowRadius: 3,
-      shadowOffset: { width: 0, height: 1 },
-      elevation: 4,
+      shadowOpacity: 0.4,
+      shadowRadius: 4,
+      shadowOffset: { width: 0, height: 2 },
+      elevation: 5,
     },
     markerDotInner: {
       width: 6,
