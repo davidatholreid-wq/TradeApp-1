@@ -4075,13 +4075,13 @@ export default function VehicleDetail() {
 
       {/* Admin decline modal */}
       <DeclineModal
-        visible={declineModalOpen}
+        visible={declineModal}
         sub={sub}
         declineNote={declineNote}
         declining={declining}
         onNoteChange={setDeclineNote}
-        onCancel={() => { setDeclineModalOpen(false); setDeclineNote(""); }}
-        onConfirm={handleConfirmDecline}
+        onCancel={() => { setDeclineModal(false); setDeclineNote(""); }}
+        onConfirm={handleDeclineOffer}
         colors={colors}
         styles={styles}
       />
