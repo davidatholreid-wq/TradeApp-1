@@ -458,15 +458,13 @@ export default function HomeScreen() {
 
   const tiles: Tile[] = dynamicTiles;
 
-  // Split out the Ads tile so we can promote it into the hero row on
-  // wide screens (side-by-side with the Fourbuy brand banner) — the
-  // user requested it there because it was reading as an out-of-place
-  // orphan tile all the way at the bottom of the "Why Fourbuy" section.
-  // On phones the ad stays where it is (the hero row stacks anyway and
-  // there's no horizontal real-estate to spare next to the video).
+  // Split out the Ads + hero (trade) tiles so we can render them
+  // side-by-side in a dedicated 2-column row on wide screens. On phones
+  // both tiles remain in the main tile grid (stacked full-width).
   const adsTile = tiles.find((t) => t.key === "ads") || null;
-  const nonAdsTiles = tiles.filter((t) => t.key !== "ads");
-  const tilesForGrid = isWide ? nonAdsTiles : tiles;
+  const tradeTile = tiles.find((t) => t.key === "trade") || null;
+  const otherTiles = tiles.filter((t) => t.key !== "ads" && t.key !== "trade");
+  const tilesForGrid = isWide ? otherTiles : tiles;
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
@@ -733,47 +731,55 @@ export default function HomeScreen() {
                   tile={t}
                   styles={styles}
                   colors={colors}
-                  // Auto-rotate only the Ads carousel (5 s). The Trade
-                  // hero cycle is now tap-only per the user's request —
-                  // auto-flipping under a dealer's mouse felt jumpy,
-                  // and hero pages have marketing copy that deserves
-                  // careful attention rather than a five-second skim.
                   autoRotateMs={t.key === "ads" ? 5000 : 0}
                 />
               </View>
             ))}
           </View>
 
+          {/* Wide-screen only: Trade heroes tile + Advertising tile
+              side-by-side in ONE row. Both share the same total width
+              as every other section on the page (welcome header, hero
+              logo panel, app-icon row, live cover-value banner) so the
+              layout reads as a coherent centred column. On phones the
+              two tiles fall through the flip-tile grid above (stacked
+              full-width) so this row is wide-only.
+              The heroes tile keeps a wider column (58%) than ads (42%)
+              because the baked-in 2:1 cinematic images carry marketing
+              copy on the left AND a UI preview mock on the right — a
+              50/50 split cropped the mock. Both tiles are the SAME
+              vertical height so the row reads as balanced. */}
+          {isWide && (tradeTile || adsTile) ? (
+            <View style={styles.heroAdRow}>
+              {tradeTile ? (
+                <View style={styles.heroAdLeftCol}>
+                  <FlipTile
+                    tile={tradeTile}
+                    styles={styles}
+                    colors={colors}
+                    autoRotateMs={0}
+                    outerStyle={styles.heroAdTileOuter}
+                  />
+                </View>
+              ) : null}
+              {adsTile ? (
+                <View style={styles.heroAdRightCol}>
+                  <FlipTile
+                    tile={adsTile}
+                    styles={styles}
+                    colors={colors}
+                    autoRotateMs={5000}
+                    outerStyle={styles.heroAdTileOuter}
+                  />
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+
           <View style={styles.hintRow}>
             <Ionicons name="finger-print-outline" size={14} color={colors.textSecondary} />
             <Text style={styles.hintText}>Tap any card to flip through — one point at a time.</Text>
           </View>
-
-          {/* Dedicated Advertising banner at the bottom of the page.
-              On wide screens the ads tile is filtered out of the main
-              tile grid above (via `nonAdsTiles`) so featured partner
-              brands get their own full-width stage down here rather
-              than being an awkward 1/3-column orphan in the marketing
-              row. On phones the ads still render inline within
-              `tilesForGrid`, so this bottom slot is wide-only to avoid
-              duplication. */}
-          {isWide && adsTile ? (
-            <View style={styles.bottomAdsWrap} testID="bottom-ads-tile">
-              <View style={styles.bottomAdsHead}>
-                <Text style={styles.sectionEyebrow}>ADVERTISING</Text>
-                <Text style={styles.bottomAdsTitle}>Featured partners</Text>
-              </View>
-              <View style={styles.bottomAdsTile}>
-                <FlipTile
-                  tile={adsTile}
-                  styles={styles}
-                  colors={colors}
-                  autoRotateMs={5000}
-                  outerStyle={{ height: "100%", width: "100%" }}
-                />
-              </View>
-            </View>
-          ) : null}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -1826,11 +1832,12 @@ const makeStyles = (colors: Palette, isWide: boolean, windowWidth: number = 0) =
     // web / flex-basis on native. The gap keeps the tiles from touching
     // even at very narrow widths.
     //
-    // On wide screens (web) the row is centred and capped to roughly
-    // match the width of the Fourbuy logo above (≈ 640 px), so the
-    // squircle tiles read as a coherent block beneath the brand banner
-    // instead of stretching across the full 1200 px page column and
-    // getting visually detached from the hero.
+    // On wide screens (web) the row spans the SAME full width as every
+    // other section on the page (welcome header, hero logo panel,
+    // live-covers banner, etc.) so the layout reads as a coherent
+    // centred column. Tiles keep their app-icon size (~120 px squares)
+    // and use `justifyContent: "space-between"` to spread evenly across
+    // the whole row rather than clumping at the left.
     appIconGrid: {
       flexDirection: "row" as const,
       flexWrap: "wrap" as const,
@@ -1839,9 +1846,7 @@ const makeStyles = (colors: Palette, isWide: boolean, windowWidth: number = 0) =
       ...(isWide
         ? {
             width: "100%" as const,
-            maxWidth: 640,
-            alignSelf: "center" as const,
-            justifyContent: "center" as const,
+            justifyContent: "space-between" as const,
           }
         : null),
     },
@@ -1853,14 +1858,14 @@ const makeStyles = (colors: Palette, isWide: boolean, windowWidth: number = 0) =
       flexShrink: 1,
       maxWidth: "32%" as any,
     },
-    // Wide screens: distribute evenly within the logo-width row.
-    // We render at most 6 tiles per row (dealer max is 6 with the
-    // pricing-agent "Give Cover" tile visible). With 6 icons of ~80 px
-    // each and 5×16 px gaps this comes to ~560 px — the row is a hair
-    // narrower than the 640 px cap so it sits centred beneath the logo.
+    // Wide screens: fixed tile width around ~120 px so each squircle
+    // reads at a proper app-icon size (not the tiny 80 px we had while
+    // constraining to the logo width). With `justifyContent:
+    // space-between` on the grid the tiles spread evenly across the
+    // full page-column width, matching the rest of the layout.
     appIconCellWide: {
-      width: 80,
-      flexBasis: 80 as any,
+      width: 120,
+      flexBasis: 120 as any,
       flexGrow: 0,
       flexShrink: 0,
     },
@@ -2092,12 +2097,43 @@ const makeStyles = (colors: Palette, isWide: boolean, windowWidth: number = 0) =
     hintRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: spacing.sm, opacity: 0.85 },
     hintText: { ...fonts.small, color: colors.textSecondary, fontSize: 12 },
 
-    // Bottom Advertising banner -------------------------------------------
-    // On wide screens the Advertising flip-tile is filtered out of the
-    // marketing tile grid and re-rendered here at the bottom of the
-    // page so featured partner brands get their own full-width stage.
-    // Sits below the "Tap any card to flip through" hint so the eye
-    // has already been drawn to the primary content first.
+    // 2-column row on wide: Verified Dealer Network (heroes) + Advertising.
+    // Both tiles share the same total width as every other section on
+    // the page and the SAME vertical height so the row reads as
+    // balanced. On mobile the two tiles fall through the flip-tile
+    // grid above (stacked full-width) so this row is wide-only.
+    heroAdRow: {
+      flexDirection: "row" as const,
+      gap: spacing.md,
+      alignItems: "stretch" as const,
+      width: "100%" as const,
+    },
+    // Heroes column — a hair wider than the ads column because the
+    // baked-in 2:1 cinematic images carry marketing copy on the left
+    // AND a UI preview mock on the right. A 50/50 split cropped the
+    // mock; 58/42 gives the mock enough headroom to render legibly.
+    heroAdLeftCol: {
+      flex: 0.58,
+      minHeight: 360,
+    },
+    heroAdRightCol: {
+      flex: 0.42,
+      minHeight: 360,
+      gap: spacing.xs,
+    },
+    // Applied to both FlipTile outer Pressables in the row so they
+    // stretch to fill their column height (matching each other) rather
+    // than using the default fixed TILE_HEIGHT.
+    heroAdTileOuter: {
+      height: 360,
+      width: "100%" as const,
+      flex: 1,
+    },
+
+    // Bottom Advertising banner (LEGACY — kept for the section-eyebrow
+    // heading typography used in the heroAdRow right column). No
+    // longer rendered as a standalone bottom banner now that the ads
+    // tile sits beside the trade heroes on wide.
     bottomAdsWrap: {
       marginTop: spacing.xl,
       gap: spacing.sm,
@@ -2112,10 +2148,6 @@ const makeStyles = (colors: Palette, isWide: boolean, windowWidth: number = 0) =
       fontWeight: "800" as const,
       letterSpacing: -0.3,
     },
-    // The tile itself — full-width row on wide, generous height so the
-    // baked-in brand images breathe. Uses aspectRatio so the banner
-    // scales cleanly across viewport widths without cropping the
-    // partner artwork.
     bottomAdsTile: {
       width: "100%" as const,
       height: isWide ? 260 : TILE_HEIGHT,
