@@ -448,6 +448,11 @@ export default function HomeScreen() {
         { key: "billing", label: "Billing", hint: "Invoices & report charges", icon: "cash" as const, to: "/(app)/billing", tint: "#22C55E" },
         { key: "history", label: "History", hint: "Priced & archived vehicles", icon: "time" as const, to: "/(app)/history", tint: "#A78BFA" },
         { key: "rewards", label: "Rewards", hint: "Earn points & vouchers", icon: "gift" as const, to: "/(app)/rewards", tint: "#F97316" },
+        // "Suppliers" — dealership-scoped Recon Suppliers catalog. Every
+        // dealer at the dealership can view it; only managerial users can
+        // add / edit / delete (enforced on both frontend and backend).
+        // Placed after Rewards so it reads as a management/settings tile.
+        { key: "suppliers", label: "Suppliers", hint: "Recon suppliers · dealership catalog", icon: "briefcase" as const, to: "/(app)/suppliers", tint: "#0EA5E9" },
       ];
 
   const tiles: Tile[] = dynamicTiles;

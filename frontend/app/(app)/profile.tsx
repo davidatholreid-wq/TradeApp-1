@@ -8,7 +8,6 @@ import { spacing, radius, fonts, BRAND } from "@/src/theme";
 import { useThemeColors, useTheme, type Palette } from "@/src/theme/ThemeContext";
 import BrandLogo from "@/src/components/BrandLogo";
 import NotificationPreferencesSection from "@/src/components/profile/NotificationPreferencesSection";
-import SupplierListSection from "@/src/components/profile/SupplierListSection";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
@@ -319,14 +318,6 @@ export default function Profile() {
             hide from admin to keep the screen focused. */}
         {user?.role !== "admin" ? (
           <NotificationPreferencesSection colors={colors} />
-        ) : null}
-
-        {/* Recon Suppliers — dealership-scoped supplier catalog. Only
-            managerial users (backend flag `is_pricing_agent`) can
-            add / edit / delete; the section is hidden entirely for
-            everyone else. */}
-        {user?.role !== "admin" && (user as any)?.is_pricing_agent ? (
-          <SupplierListSection colors={colors} />
         ) : null}
 
         <TouchableOpacity

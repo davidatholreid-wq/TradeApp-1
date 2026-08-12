@@ -40,19 +40,26 @@ export type Supplier = {
 
 export type SupplierListSectionProps = {
   colors: Palette;
+  // Show / hide the add/edit/delete affordances. False = read-only mode
+  // for non-managerial users on the same dealership.
+  canEdit?: boolean;
+  // When rendered on its own screen (Home → Suppliers) the outer wrapper
+  // already provides padding, and we want the list ALWAYS expanded
+  // instead of collapsible. Set `mode="page"` to switch behaviour.
+  mode?: "profile" | "page";
 };
 
-export default function SupplierListSection({ colors }: SupplierListSectionProps) {
+export default function SupplierListSection({ colors, canEdit = true, mode = "profile" }: SupplierListSectionProps) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const isPageMode = mode === "page";
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<Supplier[]>([]);
   const [categoryEnum, setCategoryEnum] = useState<string[]>([]);
   const [editing, setEditing] = useState<Supplier | null>(null);
   const [adding, setAdding] = useState(false);
-  // Collapsible: closed by default so the section stays compact on
-  // profiles with lots of suppliers. Tapping anywhere in the header
-  // (except the Add button) toggles.
-  const [open, setOpen] = useState(false);
+  // Collapsible: closed by default on the Profile screen; always open
+  // when rendered as its own page (Home → Suppliers).
+  const [open, setOpen] = useState(isPageMode);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -91,50 +98,81 @@ export default function SupplierListSection({ colors }: SupplierListSectionProps
 
   return (
     <View style={styles.section}>
-      <TouchableOpacity
-        testID="supplier-section-toggle"
-        activeOpacity={0.7}
-        onPress={() => setOpen((v) => !v)}
-        style={styles.sectionHeader}
-        accessibilityRole="button"
-        accessibilityLabel={open ? "Collapse Recon Suppliers" : "Expand Recon Suppliers"}
-      >
-        <View style={{ flex: 1 }}>
-          <View style={styles.titleRow}>
-            <Ionicons
-              name={open ? "chevron-up" : "chevron-down"}
-              size={16}
-              color={colors.textSecondary}
-            />
-            <Text style={styles.sectionTitle}>Recon Suppliers</Text>
-            {items.length > 0 ? (
-              <View style={styles.countBadge}>
-                <Text style={styles.countBadgeText}>{items.length}</Text>
-              </View>
-            ) : null}
+      {isPageMode ? (
+        <View style={styles.sectionHeader}>
+          <View style={{ flex: 1 }}>
+            <View style={styles.titleRow}>
+              <Text style={styles.sectionTitle}>Recon Suppliers</Text>
+              {items.length > 0 ? (
+                <View style={styles.countBadge}>
+                  <Text style={styles.countBadgeText}>{items.length}</Text>
+                </View>
+              ) : null}
+            </View>
+            <Text style={styles.sectionSub}>
+              {canEdit
+                ? "Shared across your dealership. Assign one per reconditioning line item after a deal is done — the printed Reconditioning Sheet shows who's doing the work."
+                : "Your dealership's supplier catalog (read-only). Only managerial users can add, edit or remove entries."}
+            </Text>
           </View>
-          <Text style={styles.sectionSub}>
-            Shared across your dealership. Assign a supplier to each reconditioning
-            line item on any submission after the deal is done — the printed
-            Reconditioning Sheet will show who&apos;s doing the work.
-          </Text>
+          {canEdit ? (
+            <TouchableOpacity
+              testID="add-supplier-btn"
+              style={styles.addBtn}
+              onPress={() => setAdding(true)}
+              accessibilityRole="button"
+            >
+              <Ionicons name="add" size={16} color={colors.onPrimary} />
+              <Text style={styles.addBtnText}>Add</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
+      ) : (
         <TouchableOpacity
-          testID="add-supplier-btn"
-          style={styles.addBtn}
-          // stopPropagation so tapping Add doesn't also toggle the collapse
-          onPress={(e: any) => {
-            e?.stopPropagation?.();
-            // Ensure the section is open so the newly-added row is visible.
-            setOpen(true);
-            setAdding(true);
-          }}
+          testID="supplier-section-toggle"
+          activeOpacity={0.7}
+          onPress={() => setOpen((v) => !v)}
+          style={styles.sectionHeader}
           accessibilityRole="button"
+          accessibilityLabel={open ? "Collapse Recon Suppliers" : "Expand Recon Suppliers"}
         >
-          <Ionicons name="add" size={16} color={colors.onPrimary} />
-          <Text style={styles.addBtnText}>Add</Text>
+          <View style={{ flex: 1 }}>
+            <View style={styles.titleRow}>
+              <Ionicons
+                name={open ? "chevron-up" : "chevron-down"}
+                size={16}
+                color={colors.textSecondary}
+              />
+              <Text style={styles.sectionTitle}>Recon Suppliers</Text>
+              {items.length > 0 ? (
+                <View style={styles.countBadge}>
+                  <Text style={styles.countBadgeText}>{items.length}</Text>
+                </View>
+              ) : null}
+            </View>
+            <Text style={styles.sectionSub}>
+              Shared across your dealership. Assign a supplier to each reconditioning
+              line item on any submission after the deal is done — the printed
+              Reconditioning Sheet will show who&apos;s doing the work.
+            </Text>
+          </View>
+          {canEdit ? (
+            <TouchableOpacity
+              testID="add-supplier-btn"
+              style={styles.addBtn}
+              onPress={(e: any) => {
+                e?.stopPropagation?.();
+                setOpen(true);
+                setAdding(true);
+              }}
+              accessibilityRole="button"
+            >
+              <Ionicons name="add" size={16} color={colors.onPrimary} />
+              <Text style={styles.addBtnText}>Add</Text>
+            </TouchableOpacity>
+          ) : null}
         </TouchableOpacity>
-      </TouchableOpacity>
+      )}
 
       {open ? (
         loading ? (
@@ -145,8 +183,9 @@ export default function SupplierListSection({ colors }: SupplierListSectionProps
           <View style={styles.emptyBox}>
             <Ionicons name="briefcase-outline" size={22} color={colors.textDisabled} />
             <Text style={styles.emptyText}>
-              No suppliers yet. Add your workshops so you can assign them per
-              recon line on future deals.
+              {canEdit
+                ? "No suppliers yet. Add your workshops so you can assign them per recon line on future deals."
+                : "No suppliers yet. Ask a managerial user at your dealership to add your regular workshops."}
             </Text>
           </View>
         ) : (
@@ -175,20 +214,24 @@ export default function SupplierListSection({ colors }: SupplierListSectionProps
                   <Text style={[styles.rowMeta, { fontStyle: "italic" }]}>No categories set</Text>
                 )}
               </View>
-              <TouchableOpacity
-                testID={`supplier-edit-${s.id}`}
-                onPress={() => setEditing(s)}
-                style={styles.iconBtn}
-              >
-                <Ionicons name="pencil" size={16} color={colors.primary} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                testID={`supplier-delete-${s.id}`}
-                onPress={() => handleDelete(s)}
-                style={styles.iconBtn}
-              >
-                <Ionicons name="trash-outline" size={16} color={colors.danger} />
-              </TouchableOpacity>
+              {canEdit ? (
+                <>
+                  <TouchableOpacity
+                    testID={`supplier-edit-${s.id}`}
+                    onPress={() => setEditing(s)}
+                    style={styles.iconBtn}
+                  >
+                    <Ionicons name="pencil" size={16} color={colors.primary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    testID={`supplier-delete-${s.id}`}
+                    onPress={() => handleDelete(s)}
+                    style={styles.iconBtn}
+                  >
+                    <Ionicons name="trash-outline" size={16} color={colors.danger} />
+                  </TouchableOpacity>
+                </>
+              ) : null}
             </View>
           ))
         )
