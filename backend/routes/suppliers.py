@@ -50,7 +50,15 @@ router = APIRouter()
 # Categories intentionally mirror the RECON_CATEGORIES enum on the
 # frontend (`/app/frontend/app/(app)/submit.tsx`). Kept in sync manually
 # for now — a change on the frontend must also be reflected here.
-RECON_CATEGORIES = ["Tyres", "Windscreen", "Body Panels", "Interior", "Mechanical"]
+RECON_CATEGORIES = [
+    "Bodywork",
+    "Interior / Trim",
+    "Mechanical",
+    "Rims",
+    "Tyres",
+    "Valet",
+    "Windscreen",
+]
 
 
 def _require_managerial(current: dict) -> None:

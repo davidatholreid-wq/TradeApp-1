@@ -52,11 +52,13 @@ type AccidentDamageType = typeof ACCIDENT_DAMAGE_OPTIONS[number];
 // condition-rating field) because chipped/cracked screens are always a
 // spend line, never just a rating.
 const RECON_CATEGORIES = [
-  "Tyres",
-  "Windscreen",
-  "Body Panels",
-  "Interior",
+  "Bodywork",
+  "Interior / Trim",
   "Mechanical",
+  "Rims",
+  "Tyres",
+  "Valet",
+  "Windscreen",
 ] as const;
 type ReconCategory = typeof RECON_CATEGORIES[number];
 // Max photos a dealer can attach per recon line item.
