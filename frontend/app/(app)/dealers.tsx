@@ -3,6 +3,7 @@ import { TouchableOpacity } from "@/src/components/HapticButtons";
 import { View, Text, StyleSheet, SectionList, RefreshControl, ActivityIndicator, Alert, Modal, ScrollView, TextInput, Switch, Platform, Image, KeyboardAvoidingView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
+import ScreenBackButton from "@/src/components/ScreenBackButton";
 import { Ionicons } from "@expo/vector-icons";
 import { BottomTabBarHeightContext } from "@react-navigation/bottom-tabs";
 import { spacing, radius, fonts } from "@/src/theme";
@@ -675,6 +676,7 @@ export default function Dealers() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
+      <ScreenBackButton />
       <View style={styles.header}>
         <View style={styles.headerRow}>
           <View style={{ flex: 1 }}>

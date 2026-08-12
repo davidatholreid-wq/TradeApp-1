@@ -16,6 +16,7 @@ import { apiFetch } from "@/src/api";
 import { useAuth } from "@/src/context/AuthContext";
 import { spacing, radius, fonts } from "@/src/theme";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
+import ScreenBackButton from "@/src/components/ScreenBackButton";
 import { Redirect } from "expo-router";
 
 type ValueResult = {
@@ -129,6 +130,7 @@ export default function KredoTest() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
+      <ScreenBackButton />
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.h1}>Kredo Vehicle Values · Test</Text>
         <Text style={styles.sub}>Live end-to-end against api.kredo.co.za.</Text>

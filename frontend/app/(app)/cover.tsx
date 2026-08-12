@@ -20,6 +20,7 @@ import {
 import { TouchableOpacity } from "@/src/components/HapticButtons";
 import { Swipeable } from "react-native-gesture-handler";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
+import ScreenBackButton from "@/src/components/ScreenBackButton";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/src/context/AuthContext";
@@ -970,6 +971,7 @@ export default function GiveCoverScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <ScreenBackButton />
       {scrollContent}
       {undoBar}
     </View>

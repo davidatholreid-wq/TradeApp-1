@@ -11,6 +11,7 @@ import { spacing, radius, fonts } from "@/src/theme";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { TakealotVoucherCard } from "@/src/components/TakealotVoucherCard";
 import BrandLogo from "@/src/components/BrandLogo";
+import ScreenBackButton from "@/src/components/ScreenBackButton";
 
 type Redemption = {
   id: string;
@@ -128,6 +129,7 @@ export default function RewardsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
+      <ScreenBackButton />
       {/* Home-link brand strip */}
       <View style={styles.brandStrip}>
         <BrandLogo size="xs" linkToHome />

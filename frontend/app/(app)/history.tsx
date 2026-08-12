@@ -10,6 +10,7 @@ import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { apiFetch } from "@/src/api";
 import { useAuth } from "@/src/context/AuthContext";
 import { formatZAR } from "@/src/utils/format";
+import ScreenBackButton from "@/src/components/ScreenBackButton";
 import BrandLogo from "@/src/components/BrandLogo";
 
 /**
@@ -268,6 +269,7 @@ export default function HistoryScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
+      <ScreenBackButton />
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>History</Text>
