@@ -1108,15 +1108,32 @@ async def kredo_cartrust_pdf(
     submission_id: str,
     current: dict = Depends(get_current_user),
 ):
-    """Stream the stored CarTrust PDF back to authorised callers.
+    """Stream a full CarTrust PDF back to authorised callers.
+
+    History: Kredo delivers a *compact* PDF that only surfaces a subset
+    of the fields the CarTrust API actually returns. Dealers reviewing
+    reports on FB-000154 flagged that the on-screen JSON contained
+    Ownership, Technical, Microdot, Financial-interest and Generic-
+    spec sections that never appeared in the downloadable PDF.
+    Aug 2026: switched to a locally-rendered PDF built from the full
+    ``pdf_sections`` payload in the callback JSON so every table
+    Kredo ships is visible to the dealer. The original Kredo PDF is
+    still kept on the record (``pdf_b64``) as a backup — we fall
+    back to it if the JSON is missing for some reason.
 
     Dealers may only read their own dealership's PDFs; admins may read
-    any. The PDF bytes are stored inline (base64) on the submission's
-    report record — see `_fetch_and_host_cartrust_pdf` for why.
+    any.
     """
     sub = await db.submissions.find_one(
         {"id": submission_id},
-        {"_id": 0, "dealership_id": 1, "reports.kredo_cartrust": 1, "reference": 1},
+        {
+            "_id": 0,
+            "dealership_id": 1,
+            "reference": 1,
+            "make_name": 1, "model_name": 1, "derivative_name": 1,
+            "year": 1, "mileage": 1, "vin": 1, "colour": 1,
+            "reports.kredo_cartrust": 1,
+        },
     )
     if not sub:
         raise HTTPException(404, "Submission not found")
@@ -1127,14 +1144,29 @@ async def kredo_cartrust_pdf(
     if not report or report.get("status") != "completed":
         raise HTTPException(404, "No completed CarTrust report for this submission")
 
-    pdf_b64 = report.get("pdf_b64")
-    if not pdf_b64:
-        raise HTTPException(404, "PDF bytes missing — report may have been ordered before PDF hosting was enabled. Please re-order.")
+    # Prefer the locally-rendered "full" PDF built from pdf_sections.
+    ct_raw = ((report.get("callback_payload") or {}).get("cartrust_json"))
+    pdf_bytes: Optional[bytes] = None
+    if ct_raw:
+        try:
+            pdf_bytes = _render_cartrust_pdf_from_json(ct_raw, sub)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("cartrust: local PDF render failed, falling back to Kredo PDF: %s", exc)
+            pdf_bytes = None
 
-    try:
-        pdf_bytes = _base64.b64decode(pdf_b64)
-    except Exception:
-        raise HTTPException(500, "Stored PDF is corrupt") from None
+    # Fallback to the Kredo-supplied PDF if the JSON isn't available
+    # or the local render blew up.
+    if pdf_bytes is None:
+        pdf_b64 = report.get("pdf_b64")
+        if not pdf_b64:
+            raise HTTPException(
+                404,
+                "PDF bytes missing — report may have been ordered before PDF hosting was enabled. Please re-order.",
+            )
+        try:
+            pdf_bytes = _base64.b64decode(pdf_b64)
+        except Exception:
+            raise HTTPException(500, "Stored PDF is corrupt") from None
 
     filename = f"cartrust_{sub.get('reference') or submission_id}.pdf"
     return Response(
@@ -1147,6 +1179,154 @@ async def kredo_cartrust_pdf(
     )
 
 
+# =============================================================================
+# CarTrust — full PDF renderer
+# =============================================================================
+#
+# Kredo's own PDF is compact; dealers need to see every field. This
+# helper stitches together the eight pre-structured tables inside the
+# callback JSON (``pdf_sections``) into a single monochrome A4
+# document using reportlab (already vendored in for the valuation
+# PDFs elsewhere in the codebase).
+#
+# Layout: brand header (submission reference + vehicle summary) →
+# per-section title → data table. Empty tables render a friendly
+# "No records" line rather than a naked empty grid.
+# =============================================================================
+def _render_cartrust_pdf_from_json(cartrust_json: str, sub: dict) -> bytes:
+    """Build an A4 CarTrust PDF from the rich JSON payload."""
+    import io
+    import json as _json
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors as rl_colors
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak,
+    )
+
+    try:
+        payload = _json.loads(cartrust_json) if isinstance(cartrust_json, str) else cartrust_json
+    except Exception:
+        raise ValueError("cartrust_json is not valid JSON")
+
+    ss = getSampleStyleSheet()
+    body = ParagraphStyle(
+        name="body", parent=ss["BodyText"],
+        fontName="Helvetica", fontSize=9, leading=12, textColor=rl_colors.HexColor("#111111"),
+    )
+    small = ParagraphStyle(
+        name="small", parent=body, fontSize=8, leading=10, textColor=rl_colors.HexColor("#555555"),
+    )
+    h1 = ParagraphStyle(
+        name="h1", parent=ss["Heading1"],
+        fontName="Helvetica-Bold", fontSize=18, leading=22, textColor=rl_colors.HexColor("#000000"),
+        spaceAfter=4,
+    )
+    h2 = ParagraphStyle(
+        name="h2", parent=ss["Heading2"],
+        fontName="Helvetica-Bold", fontSize=12, leading=16, textColor=rl_colors.HexColor("#000000"),
+        spaceBefore=10, spaceAfter=4,
+    )
+    label = ParagraphStyle(
+        name="label", parent=body, fontName="Helvetica-Bold", fontSize=9, textColor=rl_colors.HexColor("#333333"),
+    )
+    value = ParagraphStyle(
+        name="value", parent=body, fontName="Helvetica", fontSize=9, textColor=rl_colors.HexColor("#111111"),
+    )
+    section_head = ParagraphStyle(
+        name="sh", parent=body, fontName="Helvetica-Bold", fontSize=8, textColor=rl_colors.HexColor("#FFFFFF"),
+        alignment=0,
+    )
+
+    story = []
+
+    # --- Header --------------------------------------------------------
+    ref = sub.get("reference") or ""
+    veh_line = " ".join(str(x) for x in [
+        sub.get("year"), sub.get("make_name"), sub.get("derivative_name") or sub.get("model_name")
+    ] if x)
+    story.append(Paragraph(f"CarTrust Report", h1))
+    story.append(Paragraph(f"{ref} · {veh_line}".strip(" ·"), small))
+    if sub.get("vin"):
+        story.append(Paragraph(f"VIN: {sub['vin']}", small))
+    story.append(Spacer(1, 8))
+
+    # --- Sections ------------------------------------------------------
+    sections = payload.get("pdf_sections") or {}
+    if not sections:
+        story.append(Paragraph("No structured CarTrust sections were returned for this vehicle.", body))
+    else:
+        # A4 content width ≈ 180 mm (with 15 mm margins each side).
+        CONTENT_W_MM = 180
+
+        for name, sec in sections.items():
+            if not isinstance(sec, dict):
+                continue
+            cols = sec.get("columns") or []
+            rows = sec.get("rows") or []
+            heading = sec.get("heading") or name
+            story.append(Paragraph(str(heading), h2))
+
+            if not cols:
+                story.append(Paragraph(str(rows), body))
+                story.append(Spacer(1, 4))
+                continue
+
+            # Build the header row + data rows.
+            data = [[Paragraph(str(c), section_head) for c in cols]]
+            if rows:
+                for r in rows:
+                    if isinstance(r, dict):
+                        data.append([Paragraph(str(r.get(c, "")), value) for c in cols])
+                    elif isinstance(r, list):
+                        data.append([Paragraph(str(x), value) for x in r])
+            else:
+                # Placeholder row so an empty section still renders a
+                # coherent block instead of a stray table header.
+                data.append([Paragraph("No records", small)] + [Paragraph("", value)] * (len(cols) - 1))
+
+            # Equal-width columns.
+            col_w = (CONTENT_W_MM / max(1, len(cols))) * mm
+            t = Table(data, colWidths=[col_w] * len(cols), repeatRows=1)
+            t.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), rl_colors.HexColor("#111111")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), rl_colors.HexColor("#FFFFFF")),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, 0), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+                ("TOPPADDING", (0, 0), (-1, 0), 5),
+                ("BOTTOMPADDING", (0, 1), (-1, -1), 4),
+                ("TOPPADDING", (0, 1), (-1, -1), 4),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("GRID", (0, 0), (-1, -1), 0.25, rl_colors.HexColor("#CCCCCC")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1),
+                 [rl_colors.HexColor("#FFFFFF"), rl_colors.HexColor("#F8F8F8")]),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]))
+            story.append(t)
+            story.append(Spacer(1, 6))
+
+    # Footer note.
+    story.append(Spacer(1, 12))
+    story.append(Paragraph(
+        "Source: Kredo CarTrust. Fourbuy renders every field the CarTrust "
+        "callback delivers — please contact your Fourbuy administrator if "
+        "any expected data is missing.",
+        small,
+    ))
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=15 * mm, rightMargin=15 * mm,
+        topMargin=15 * mm, bottomMargin=15 * mm,
+        title=f"CarTrust {sub.get('reference') or ''}".strip(),
+        author="Fourbuy Car Buying Co.",
+    )
+    doc.build(story)
+    return buf.getvalue()
 
 
 __all__ = ["router"]
