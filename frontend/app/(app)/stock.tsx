@@ -692,9 +692,9 @@ function StockRow({
                 testID={`stock-target-save-${row.id}`}
               >
                 {savingTarget ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
                 ) : (
-                  <Text style={{ color: "#fff", fontSize: 11, fontWeight: "800" }}>Save</Text>
+                  <Text style={{ color: colors.onPrimary, fontSize: 11, fontWeight: "800" }}>Save</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -741,8 +741,8 @@ function StockRow({
             activeOpacity={0.85}
             testID={`stock-mark-sold-${row.id}`}
           >
-            <Ionicons name="cash-outline" size={14} color="#fff" />
-            <Text style={styles.actionBtnPrimaryTxt}>Mark Sold</Text>
+            <Ionicons name="cash-outline" size={14} color={colors.onPrimary} />
+            <Text style={[styles.actionBtnPrimaryTxt, { color: colors.onPrimary }]}>Mark Sold</Text>
           </TouchableOpacity>
         </View>
       ) : null}
@@ -932,9 +932,9 @@ function MarkSoldModal({
               testID="sold-submit-btn"
             >
               {saving ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={colors.onPrimary} />
               ) : (
-                <Text style={styles.saveBtnTxt}>Mark sold</Text>
+                <Text style={[styles.saveBtnTxt, { color: colors.onPrimary }]}>Mark sold</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -1314,7 +1314,7 @@ const makeStyles = (colors: Palette) =>
       paddingVertical: 7,
       borderRadius: radius.md,
     },
-    actionBtnPrimaryTxt: { color: "#fff", fontSize: 12, fontWeight: "800" },
+    actionBtnPrimaryTxt: { color: colors.onPrimary, fontSize: 12, fontWeight: "800" },
   });
 
 const makeSoldStyles = (colors: Palette) =>
@@ -1409,5 +1409,5 @@ const makeSoldStyles = (colors: Palette) =>
       minWidth: 120,
       alignItems: "center",
     },
-    saveBtnTxt: { color: "#fff", fontWeight: "800", fontSize: 13 },
+    saveBtnTxt: { color: colors.onPrimary, fontWeight: "800", fontSize: 13 },
   });

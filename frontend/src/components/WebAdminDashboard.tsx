@@ -3696,7 +3696,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
   rowActive: { backgroundColor: colors.card, borderLeftWidth: 3, borderLeftColor: colors.neon },
   rowHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  rowRef: { color: "#fff", fontSize: 15, fontWeight: "800", fontFamily: fonts.mono, letterSpacing: 0.5 },
+  rowRef: { color: colors.text, fontSize: 15, fontWeight: "800", fontFamily: fonts.mono, letterSpacing: 0.5 },
   rowBody: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   rowThumb: {
     width: 76,
@@ -3892,7 +3892,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     alignItems: "flex-start",
     marginBottom: spacing.md,
   },
-  detailRef: { color: "#fff", fontFamily: fonts.mono, fontSize: 16, fontWeight: "800", letterSpacing: 0.8 },
+  detailRef: { color: colors.text, fontFamily: fonts.mono, fontSize: 16, fontWeight: "800", letterSpacing: 0.8 },
   detailTitle: { color: colors.text, fontSize: 28, fontWeight: "800", fontFamily: fonts.heading, marginTop: 6, letterSpacing: 0.3 },
   detailSub: { color: colors.textSecondary, fontSize: 15, marginTop: 4, letterSpacing: 0.1 },
   adminSubmittedBy: {
@@ -3907,7 +3907,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     borderRadius: radius.sm,
   },
   adminSubmittedByText: { color: colors.textSecondary, fontSize: 12 },
-  adminSubmittedByBold: { color: "#fff", fontWeight: "700" },
+  adminSubmittedByBold: { color: colors.text, fontWeight: "700" },
   deleteBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -4103,7 +4103,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     paddingVertical: 10,
     paddingTop: 14,
   },
-  reconTotal: { color: "#fff", fontFamily: fonts.number, fontVariant: ["tabular-nums"], fontWeight: "800", fontSize: 20, letterSpacing: -0.2 },
+  reconTotal: { color: colors.text, fontFamily: fonts.number, fontVariant: ["tabular-nums"], fontWeight: "800", fontSize: 20, letterSpacing: -0.2 },
   reconThumbWrap: {
     width: 56,
     height: 56,
@@ -4841,5 +4841,5 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     alignItems: "center",
   },
   tyreTotalLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: "700", letterSpacing: 0.5 },
-  tyreTotalValue: { color: "#fff", fontSize: 28, fontWeight: "800", fontFamily: fonts.number, fontVariant: ["tabular-nums"], letterSpacing: -0.3, marginTop: 4 },
+  tyreTotalValue: { color: colors.text, fontSize: 28, fontWeight: "800", fontFamily: fonts.number, fontVariant: ["tabular-nums"], letterSpacing: -0.3, marginTop: 4 },
 });

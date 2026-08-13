@@ -118,8 +118,8 @@ export function TransferToStockCard({
             ]}
             activeOpacity={0.85}
           >
-            <Ionicons name="arrow-forward-circle" size={18} color="#fff" />
-            <Text style={styles.primaryBtnTxt}>Transfer to Stock</Text>
+            <Ionicons name="arrow-forward-circle" size={18} color={colors.onPrimary} />
+            <Text style={[styles.primaryBtnTxt, { color: colors.onPrimary }]}>Transfer to Stock</Text>
           </TouchableOpacity>
           {!canTransfer && isFullyValued ? (
             <Text style={styles.hintTxt}>
@@ -273,7 +273,7 @@ const makeStyles = (colors: any) =>
       opacity: 0.4,
     },
     primaryBtnTxt: {
-      color: "#fff",
+      color: colors.onPrimary,
       fontSize: 14,
       fontWeight: "800",
       letterSpacing: 0.2,

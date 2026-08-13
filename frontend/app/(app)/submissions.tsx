@@ -934,7 +934,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
   thumb: { width: "100%", height: "100%" },
   thumbPlaceholder: { flex: 1, alignItems: "center", justifyContent: "center" },
-  cardRef: { color: "#fff", fontSize: 14, fontWeight: "800", letterSpacing: 0.6, fontFamily: fonts.mono, marginBottom: 6 },
+  cardRef: { color: colors.text, fontSize: 14, fontWeight: "800", letterSpacing: 0.6, fontFamily: fonts.mono, marginBottom: 6 },
   cardTitle: { color: colors.text, fontSize: 17, fontWeight: "700", letterSpacing: 0.1 },
   // Lighter subtitle sitting directly under the bold title. Renders
   // the derivative (or model, when no derivative). Keeps every list

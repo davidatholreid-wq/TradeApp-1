@@ -1301,7 +1301,11 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   gridBtnText: {
-    color: "#fff",
+    // Neutral mid-grey — readable on both dark and light page bgs when
+    // used inside a transparent/ghost ‘Restore' button. Explicit overrides
+    // (`colors.onPrimary`, `colors.danger`) at the call-site handle the
+    // Place-Cover and Decline variants.
+    color: "#9CA3AF",
     fontSize: 13,
     fontWeight: "800",
     letterSpacing: 0.2,

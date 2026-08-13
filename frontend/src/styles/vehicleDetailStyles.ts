@@ -1592,7 +1592,7 @@ export const makeStyles = (colors: Palette) => StyleSheet.create({
   reconAmount: { color: colors.text, fontSize: 14, fontWeight: "700", fontFamily: fonts.number, fontVariant: ["tabular-nums"] },
   reconTotalRow: { flexDirection: "row", justifyContent: "space-between", paddingTop: spacing.sm, marginTop: 4 },
   reconTotalLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: "700", letterSpacing: 0.5 },
-  reconTotalValue: { color: "#fff", fontSize: 18, fontWeight: "800", fontFamily: fonts.number, fontVariant: ["tabular-nums"], letterSpacing: -0.2 },
+  reconTotalValue: { color: colors.text, fontSize: 18, fontWeight: "800", fontFamily: fonts.number, fontVariant: ["tabular-nums"], letterSpacing: -0.2 },
 
   photoGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   photoSlot: {
@@ -1774,7 +1774,7 @@ export const makeStyles = (colors: Palette) => StyleSheet.create({
     alignItems: "center",
   },
   tyreTotalLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: "700", letterSpacing: 0.5 },
-  tyreTotalValue: { color: "#fff", fontSize: 28, fontWeight: "800", fontFamily: fonts.number, fontVariant: ["tabular-nums"], letterSpacing: -0.3, marginTop: 4 },
+  tyreTotalValue: { color: colors.text, fontSize: 28, fontWeight: "800", fontFamily: fonts.number, fontVariant: ["tabular-nums"], letterSpacing: -0.3, marginTop: 4 },
 
   dealerBox: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
   dealerName: { color: colors.text, fontSize: 15, fontWeight: "700" },

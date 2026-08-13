@@ -201,7 +201,10 @@ function makeStyles(colors: Palette) {
       paddingHorizontal: 6,
       backgroundColor: "#EF4444", // red-500 (iOS-style unread badge)
       borderWidth: 2,
-      borderColor: "#fff",
+      // Border matches the page background so the badge visually
+      // "cuts out" of the tile — WHITE would be correct on dark mode
+      // but invisible in light mode, so we bind to the theme paper.
+      borderColor: colors.paper,
       alignItems: "center" as const,
       justifyContent: "center" as const,
     },

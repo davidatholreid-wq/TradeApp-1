@@ -758,7 +758,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   modalBtnPrimary: { backgroundColor: colors.primary },
   modalBtnPrimaryText: { color: colors.onPrimary, fontWeight: "800", letterSpacing: 1 },
   modalBtnDanger: { backgroundColor: colors.danger },
-  modalBtnDangerText: { color: "#fff", fontWeight: "800", letterSpacing: 1 },
+  modalBtnDangerText: { color: colors.onDanger, fontWeight: "800", letterSpacing: 1 },
 
   // Grant modal specifics
   userList: {

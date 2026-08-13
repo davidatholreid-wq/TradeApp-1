@@ -178,11 +178,11 @@ export function TransferToStockModal({
               testID="transfer-modal-submit"
             >
               {saving ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={colors.onPrimary} />
               ) : (
                 <>
-                  <Ionicons name="arrow-forward-circle" size={16} color="#fff" />
-                  <Text style={styles.submitBtnTxt}>Transfer</Text>
+                  <Ionicons name="arrow-forward-circle" size={16} color={colors.onPrimary} />
+                  <Text style={[styles.submitBtnTxt, { color: colors.onPrimary }]}>Transfer</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -328,7 +328,7 @@ const makeStyles = (colors: any) =>
       minWidth: 130,
     },
     submitBtnTxt: {
-      color: "#fff",
+      color: colors.onPrimary,
       fontSize: 13,
       fontWeight: "800",
     },

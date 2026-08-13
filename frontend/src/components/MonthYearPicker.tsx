@@ -231,7 +231,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
   title: { color: colors.text, fontSize: 15, fontWeight: "700", letterSpacing: 0.3 },
   cancel: { color: colors.textSecondary, fontSize: 15, fontWeight: "500" },
-  done: { color: "#fff", fontSize: 15, fontWeight: "800" },
+  done: { color: colors.primary, fontSize: 15, fontWeight: "800" },
   wheels: {
     flexDirection: "row",
     height: PICKER_HEIGHT,
