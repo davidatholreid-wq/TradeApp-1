@@ -4685,7 +4685,40 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
             )
 
     doc.build(story, canvasmaker=NumberedCanvas)
-    return buf.getvalue()
+    pdf_bytes = buf.getvalue()
+
+    # ---- Append Kredo's original CarTrust PDF -------------------------
+    # The JSON-based CarTrust section that reportlab renders above only
+    # exposes the fields Kredo puts in the callback JSON — which
+    # notoriously leaves the "Ownership History Only" and full owner-
+    # history table EMPTY (`ownership: No Record Found`).
+    # Those tables are exclusive to the standalone Kredo PDF stored on
+    # the submission (`reports.kredo_cartrust.pdf_b64`).  To restore the
+    # dealer's full picture inside the combined Valuation PDF we merge
+    # Kredo's original PDF pages onto the end using pypdf.  This is a
+    # no-op when the CarTrust report hasn't been ordered.
+    try:
+        _ct_b64 = (kct or {}).get("pdf_b64") if isinstance(kct, dict) else None
+        if _ct_b64:
+            import base64 as _b64
+            from io import BytesIO as _BIO
+            from pypdf import PdfReader as _PR, PdfWriter as _PW
+            valuation_r = _PR(_BIO(pdf_bytes))
+            cartrust_r = _PR(_BIO(_b64.b64decode(_ct_b64)))
+            writer = _PW()
+            for pg in valuation_r.pages:
+                writer.add_page(pg)
+            for pg in cartrust_r.pages:
+                writer.add_page(pg)
+            out = _BIO()
+            writer.write(out)
+            pdf_bytes = out.getvalue()
+    except Exception:
+        # Best-effort merge — never let a corrupt CarTrust PDF break
+        # the whole valuation download.
+        logger.exception("Failed to append Kredo CarTrust PDF to valuation")
+
+    return pdf_bytes
 
 
 async def _build_reconditioning_pdf(sub: dict) -> bytes:
