@@ -53,7 +53,18 @@ from server import (
     now_utc,
     logger,
     _can_access_submission,
+    # Cloudinary is initialised in server.py's module scope so both the
+    # server route file and the extracted route modules must import
+    # these two symbols rather than referring to bare module-level
+    # names. Prior to Aug 2026 this file referenced `CLOUDINARY_ENABLED`
+    # and `cloudinary` directly, which raised NameError inside the
+    # CarTrust callback and stranded the freshly downloaded PDFs with
+    # `fetch_error: NameError: name 'CLOUDINARY_ENABLED' is not
+    # defined` on FB-000154.
+    CLOUDINARY_ENABLED,
 )
+import cloudinary
+import cloudinary.uploader
 
 
 router = APIRouter()
