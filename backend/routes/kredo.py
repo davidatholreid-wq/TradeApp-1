@@ -861,6 +861,19 @@ async def kredo_cartrust_order(
             mileage=int(sub.get("mileage") or 0),
             vehicle_condition=condition_label,
             service_history=str(sub.get("service_history") or ""),
+            # Extra vehicle-confirmation hints — previously CarTrust
+            # reports showed "NOT SUPPLIED" for Manufacturer, Model
+            # Description, Variant, Engine Number, Colour and Year of
+            # Registration because we only ever sent VIN + reg. Now
+            # we also forward everything the submission knows so the
+            # report shows Fourbuy's values in the "Information
+            # Supplied" column and a proper MATCH/mismatch verdict.
+            manufacturer=str(sub.get("make_name") or ""),
+            model=str(sub.get("model_name") or ""),
+            variant=str(sub.get("derivative_name") or ""),
+            engine_number=str(sub.get("engine_number") or ""),
+            colour=str(sub.get("colour") or ""),
+            year_of_registration=str(sub.get("year") or ""),
         )
     except KredoAPIError as e:
         raise _kredo_502(e) from e

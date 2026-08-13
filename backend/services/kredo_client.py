@@ -302,6 +302,24 @@ class KredoClient:
         mileage: int,
         vehicle_condition: str,
         service_history: str = "",
+        # Extra vehicle-confirmation fields — Kredo previously received
+        # only VIN + Registration + Mileage and echoed everything else
+        # as "NOT SUPPLIED" in the Vehicle Confirmation table. Passing
+        # the make/model/variant/engine/colour/year we already know
+        # from the submission means the returned report shows our data
+        # in the "Information Supplied" column and a MATCH/mismatch in
+        # "Information Verified". All optional so old callers keep
+        # working. Field names duplicated in snake_case + PascalCase
+        # variants because Kredo's schema mixes both (e.g. `vin` but
+        # `RegistrationNumber`) and we don't have an authoritative
+        # spec — sending both is a no-op if the API silently drops
+        # unknown keys.
+        manufacturer: str = "",
+        model: str = "",
+        variant: str = "",
+        engine_number: str = "",
+        colour: str = "",
+        year_of_registration: str = "",
     ) -> dict[str, Any]:
         """Order a CarTrust vehicle-history PDF report.
 
@@ -310,21 +328,34 @@ class KredoClient:
         URL when the PDF is ready, with a 15-min presigned `download_url`
         the server must fetch before it expires.
         """
-        return await self._post(
-            "/public/cartrust_pdf",
-            {
-                "client_guid": self._guid(),
-                "requester_name": requester_name,
-                "requester_surname": requester_surname,
-                "requester_email": requester_email,
-                "requester_phone": requester_phone,
-                "vin": vin,
-                "RegistrationNumber": registration_number,
-                "mileage": str(mileage),
-                "vehicle_condition": vehicle_condition,
-                "serviceHistory": service_history or "",
-            },
-        )
+        payload: dict[str, Any] = {
+            "client_guid": self._guid(),
+            "requester_name": requester_name,
+            "requester_surname": requester_surname,
+            "requester_email": requester_email,
+            "requester_phone": requester_phone,
+            "vin": vin,
+            "RegistrationNumber": registration_number,
+            "mileage": str(mileage),
+            "vehicle_condition": vehicle_condition,
+            "serviceHistory": service_history or "",
+        }
+        # Attach the extra vehicle-confirmation hints when we have
+        # them. Empty strings are stripped so the callback JSON
+        # `user_input` block only echoes real values back.
+        extras = {
+            "manufacturer": manufacturer, "Manufacturer": manufacturer,
+            "model": model, "Model": model,
+            "variant": variant, "Variant": variant,
+            "engine_number": engine_number, "EngineNumber": engine_number,
+            "colour": colour, "Colour": colour, "color": colour,
+            "year_of_registration": year_of_registration,
+            "YearOfRegistration": year_of_registration,
+        }
+        for k, v in extras.items():
+            if v:
+                payload[k] = str(v)
+        return await self._post("/public/cartrust_pdf", payload)
 
     async def aclose(self) -> None:
         await self._http.aclose()
