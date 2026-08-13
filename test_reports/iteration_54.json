@@ -1,0 +1,34 @@
+{
+  "summary": "Comprehensive test of the new Stock Management module. Backend: created /app/backend/tests/test_stock_module.py with 11 pytest cases covering auth-guard on GET /api/stock, response shape (summary+buckets+item keys), dealership scoping (minitest returns 0 items), PATCH /api/stock/{sid}/target-price (set + clear + 400 on non-stock item + 404 on bad id), POST /api/stock/{sid}/mark-sold (403 for non-managerial dealer, admin success + item disappears + deal fields persisted incl. buyer_name, buyer_notes, days_to_sell), and GET /api/stock/export.csv (content-type text/csv, filename stock-YYYYMMDD.csv, header columns incl. admin-only Dealership column). All 11 tests PASS. Frontend: mobile-viewport (390x844) smoke test as minitest@example.com — Home Stock tile appears, /stock route reachable, header/Export/Summary strip (UNITS/CAPITAL/AVG AGE/60+ DAYS)/Aging chart/search/sort pills/empty-state all present, sort pill click updates state, search input fills, aging bar click toggles filter, mark-sold and target-edit buttons correctly HIDDEN for non-managerial dealer, and bottom nav has NO 'Stock' tab.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_stock_module.py",
+    "/app/test_reports/pytest/iteration_54_stock.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routes/stock.py cleanly reuses server.py helpers (_get_user_dealership_id, _valid_front_photo, _sanitise_deal_int) — no duplication.",
+    "Stock is a derived view: no new collection, uses existing submissions.deal fields. Access rules match spec (admin roll-up, dealership-scoped for dealers, managerial-only mark-sold).",
+    "Capital falls back to my_offer_zar per spec (never Fourbuy cover price) — verified via code review.",
+    "Aging calculated from deal.purchased_at, not submission created_at — matches spec.",
+    "CSV export streams synchronously into StringIO; fine for expected stock sizes but could be a memory concern at very large scale — non-blocking for MVP."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_stock_module.py (NEW)"
+  ],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "100% (all smoke checks pass)"},
+  "seed_data_creation": "None. Existing preview data already contained deal_done+not_sold submissions accessible to admin; minitest correctly had 0 stock.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Stock module is fully working. Base URL used for backend: EXPO_PUBLIC_BACKEND_URL from /app/frontend/.env. Test file /app/backend/tests/test_stock_module.py is reusable. On the preview DB the mark_sold happy-path test WILL consume the oldest deal-done submission each run (marks it sold). If you need to rerun full mark-sold flow repeatedly, seed a fresh deal-done submission first via the pricing-agent flow described in the review request.",
+  "rca_of_issue": "N/A — no bugs found."
+}

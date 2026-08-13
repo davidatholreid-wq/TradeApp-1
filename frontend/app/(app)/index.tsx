@@ -449,6 +449,12 @@ export default function HomeScreen() {
         { key: "billing", label: "Billing", hint: "Invoices & report charges", icon: "cash" as const, to: "/(app)/billing", tint: "#22C55E" },
         { key: "history", label: "History", hint: "Priced & archived vehicles", icon: "time" as const, to: "/(app)/history", tint: "#A78BFA" },
         { key: "rewards", label: "Rewards", hint: "Earn points & vouchers", icon: "gift" as const, to: "/(app)/rewards", tint: "#F97316" },
+        // "Stock" — dealership stock list, sourced from submissions where
+        // deal.done=true AND deal.sold != true. Age is measured from the
+        // deal-done timestamp so the list acts like a live floor-plan
+        // report. Managerial users can set target sell prices and mark
+        // vehicles sold from here.
+        { key: "stock", label: "Stock", hint: "Vehicles in stock · aging & pricing", icon: "car-sport" as const, to: "/(app)/stock", tint: "#8B5CF6" },
         // "Suppliers" — dealership-scoped Recon Suppliers catalog. Every
         // dealer at the dealership can view it; only managerial users can
         // add / edit / delete (enforced on both frontend and backend).

@@ -7400,6 +7400,7 @@ from routes.cover import (  # noqa: F401 — _sanitise_sub_for_pricing_agent use
 from routes.auth import router as auth_router
 from routes.public_valuation import router as public_valuation_router
 from routes.suppliers import router as suppliers_router
+from routes.stock import router as stock_router
 api_router.include_router(ads_router)
 api_router.include_router(rewards_router)
 api_router.include_router(kredo_router)
@@ -7407,6 +7408,7 @@ api_router.include_router(cover_router)
 api_router.include_router(auth_router)
 api_router.include_router(public_valuation_router)
 api_router.include_router(suppliers_router)
+api_router.include_router(stock_router)
 
 
 app.include_router(api_router)
