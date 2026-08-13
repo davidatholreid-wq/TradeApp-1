@@ -1320,7 +1320,21 @@ export default function VehicleDetail() {
         `${confirmReport.name} has been ordered. The charge of R${confirmReport.cost_zar.toFixed(0)} will be added to your next invoice. Results will populate once the provider responds.`
       );
     } catch (e: any) {
-      Alert.alert("Order failed", e.message || "Could not place the report order");
+      // 404 means the vendor reported "no data for this VIN" (not our
+      // fault, not a system error, not billed). Show a soft "no data
+      // available" info alert instead of a red "Order failed" — this is
+      // very common for grey-imports and brand-new models.
+      if (e?.status === 404) {
+        Alert.alert(
+          "No factory data available",
+          e?.message ||
+            "The vehicle spec provider has no data on file for this VIN yet. " +
+            "Not all models are in their dataset — please try again in a few weeks. " +
+            "You have NOT been charged for this attempt.",
+        );
+      } else {
+        Alert.alert("Order failed", e.message || "Could not place the report order");
+      }
     } finally {
       setOrderingReportType(null);
     }

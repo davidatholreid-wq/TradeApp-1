@@ -119,43 +119,93 @@ def is_outvin_supported_make(make: str | None) -> bool:
 
 
 async def _fetch_raw(vin: str) -> dict[str, Any]:
-    """GET the raw Outvin payload. Never leaks the password into logs."""
+    """GET the raw Outvin payload. Never leaks the password into logs.
+
+    Retries once on transient upstream errors (502/504/read timeout) —
+    Outvin's origin sits behind Cloudflare and periodically 502s while
+    the origin cold-starts. A single retry with a short backoff usually
+    clears it. Repeated 5xx after retry is surfaced as ``not_found`` so
+    the dealer sees the friendly "no data available" toast instead of
+    a scary error (no charge either way; caller decides).
+    """
     if not (OUTVIN_USERNAME and OUTVIN_PASSWORD):
         raise RuntimeError(
             "outvin: OUTVIN_USERNAME / OUTVIN_PASSWORD not configured."
         )
-    # httpx handles Basic auth natively — but we build the header ourselves
-    # so we can be sure the exact scheme documented on the vendor site
-    # is used.
     creds = f"{OUTVIN_USERNAME}:{OUTVIN_PASSWORD}".encode("utf-8")
     auth_hdr = "Basic " + base64.b64encode(creds).decode("ascii")
     url = f"{OUTVIN_API_BASE}/vehicle/{vin}"
-    async with httpx.AsyncClient(timeout=30.0) as h:
-        r = await h.get(url, headers={"Authorization": auth_hdr, "Accept": "application/json"})
-    if r.status_code in (401, 403):
-        raise RuntimeError(
-            f"outvin auth error {r.status_code} — check OUTVIN_USERNAME/PASSWORD. "
-            f"body={r.text[:200]!r}"
-        )
-    if r.status_code == 404:
-        return {"__outvin_status__": "not_found"}
-    if r.status_code == 429:
-        # Outvin quota exhaustion (undocumented but plausible response).
-        raise RuntimeError(
-            "outvin: quota exhausted — top up your Outvin account or wait for reset."
-        )
-    if r.status_code >= 500:
-        raise RuntimeError(
-            f"outvin upstream error {r.status_code}: {r.text[:200]!r}"
-        )
-    if r.status_code != 200:
-        raise RuntimeError(
-            f"outvin unexpected status {r.status_code}: {r.text[:200]!r}"
-        )
-    try:
-        return r.json()
-    except Exception as e:
-        raise RuntimeError(f"outvin returned non-JSON body: {e} — {r.text[:200]!r}")
+    headers = {"Authorization": auth_hdr, "Accept": "application/json"}
+
+    last_status: int | None = None
+    last_body: str = ""
+    import asyncio as _asyncio
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient(timeout=25.0) as h:
+                r = await h.get(url, headers=headers)
+            last_status = r.status_code
+            last_body = r.text[:400] if r.text else ""
+
+            if r.status_code == 200:
+                try:
+                    return r.json()
+                except Exception as e:
+                    raise RuntimeError(f"outvin returned non-JSON body: {e} — {r.text[:200]!r}")
+
+            if r.status_code in (401, 403):
+                raise RuntimeError(
+                    f"outvin auth error {r.status_code} — check OUTVIN_USERNAME/PASSWORD."
+                )
+            if r.status_code == 404:
+                return {"__outvin_status__": "not_found"}
+            if r.status_code == 429:
+                raise RuntimeError(
+                    "outvin: quota exhausted — top up your Outvin account or wait for reset."
+                )
+            if 500 <= r.status_code < 600:
+                # Transient origin/gateway error. Retry once, then give up
+                # gracefully with a "not_found"-like signal so the caller
+                # renders "no data available for this VIN" instead of a
+                # red error.
+                logger.warning(
+                    "outvin: transient upstream %s on attempt %d (body head=%r)",
+                    r.status_code, attempt + 1, last_body[:120],
+                )
+                if attempt == 0:
+                    await _asyncio.sleep(1.5)
+                    continue
+                return {
+                    "__outvin_status__": "not_found",
+                    "__outvin_transient__": True,
+                    "__upstream_status__": r.status_code,
+                }
+            # Any other non-2xx we haven't classified.
+            raise RuntimeError(
+                f"outvin unexpected status {r.status_code}: {r.text[:200]!r}"
+            )
+        except (httpx.TimeoutException, httpx.NetworkError) as e:
+            last_status = -1
+            last_body = f"{type(e).__name__}: {e}"
+            logger.warning("outvin: %s on attempt %d", type(e).__name__, attempt + 1)
+            if attempt == 0:
+                await _asyncio.sleep(1.5)
+                continue
+            # Repeated network failure — treat like transient upstream,
+            # surface as "not_found" so the dealer isn't blocked by a
+            # red error and isn't charged.
+            return {
+                "__outvin_status__": "not_found",
+                "__outvin_transient__": True,
+                "__upstream_status__": -1,
+            }
+
+    # Should never reach here — the loop always returns or raises.
+    return {
+        "__outvin_status__": "not_found",
+        "__outvin_transient__": True,
+        "__upstream_status__": last_status or -1,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -313,12 +363,26 @@ async def fetch_outvin_spec(vin: str) -> dict[str, Any]:
         return {"status": "error", "error": str(e)}
 
     if raw.get("__outvin_status__") == "not_found":
+        # Distinguish a genuine "no data on file" from a transient
+        # upstream failure that we downgraded to not_found on retry
+        # exhaustion — helps the app show a slightly better message
+        # ("try again shortly" vs "not in dataset yet").
+        if raw.get("__outvin_transient__"):
+            us = raw.get("__upstream_status__") or "network"
+            return {
+                "status": "not_found",
+                "error": (
+                    "No factory data available for this vehicle right now "
+                    f"(vendor upstream returned {us}). Please try again in "
+                    "a few minutes — no charge has been applied."
+                ),
+            }
         return {
             "status": "not_found",
             "error": (
-                "Outvin has no data on file for this VIN. If this vehicle "
-                "should be covered, please try again in a few days — their "
-                "coverage expands weekly."
+                "No factory data available for this VIN on Outvin's "
+                "dataset. Not all models are covered — please try again "
+                "in a few weeks. No charge has been applied."
             ),
         }
 

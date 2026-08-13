@@ -3147,10 +3147,19 @@ async def order_submission_report(
     elif payload.type == "mb_options":
         # Mercedes-family VIN-linked report — LIVE mbtools.com lookup.
         # Same "on-failure don't bill" contract as bmw_options / landrover_osh:
-        # errors bubble up as 502 and no order row is inserted.
+        # errors bubble up and no order row is inserted.
+        #   - not_found → 404 with a friendly "no data available" message
+        #     so the mobile app renders a soft toast, not a red error.
+        #   - error     → 502 for auth / network / vendor failures.
         from services.mbtools_client import fetch_mb_datacard
 
         spec = await fetch_mb_datacard(vin)
+        if spec.get("status") == "not_found":
+            raise HTTPException(
+                404,
+                spec.get("error")
+                or "No Mercedes factory data available for this VIN on mbtools yet.",
+            )
         if spec.get("status") != "ok":
             raise HTTPException(
                 502,
@@ -3170,10 +3179,28 @@ async def order_submission_report(
     elif payload.type == "outvin_spec":
         # Multi-make Outvin datacard (30+ manufacturers). Same
         # on-failure-don't-bill contract as bmw_options / mb_options —
-        # errors bubble as 502 and no order row is inserted.
+        # errors bubble up and no order row is inserted.
+        #
+        # Two distinct failure modes matter here:
+        #   1. "not_found" — Outvin has no data on file for this VIN
+        #      (very common for grey imports, brand-new models, or VINs
+        #      Outvin's dataset hasn't picked up yet). We surface this
+        #      as a 404 with a friendly "no data available for this
+        #      model" message so the mobile app can render a soft toast
+        #      instead of a red error banner. NO CHARGE incurred.
+        #   2. "error" — auth / network / rate-limit / vendor 5xx.
+        #      Surface as 502 so the mobile app knows to prompt "try
+        #      again later". NO CHARGE incurred.
         from services.outvin_client import fetch_outvin_spec
 
         spec = await fetch_outvin_spec(vin)
+        if spec.get("status") == "not_found":
+            raise HTTPException(
+                404,
+                spec.get("error")
+                or "No factory data available for this VIN on Outvin. "
+                "Not all models are in their dataset yet — please try again in a few weeks.",
+            )
         if spec.get("status") != "ok":
             raise HTTPException(
                 502,
