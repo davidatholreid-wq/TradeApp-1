@@ -41,7 +41,9 @@ OUTPUT = Path("/app/backend/vehicle_specs_kredo.json")
 
 # Skip anything older than this many years — keeps the picker useful
 # and drops obsolete entries dealers rarely appraise.
-MAX_AGE_YEARS = 9
+# Aug 2026: bumped from 9 → 10 per product request so the app accepts
+# vehicles from 2016 onwards (previously 2017+).
+MAX_AGE_YEARS = 10
 MIN_YEAR = date.today().year - MAX_AGE_YEARS
 
 # Kredo VehicleType codes we accept:
