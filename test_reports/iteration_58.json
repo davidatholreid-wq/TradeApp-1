@@ -1,0 +1,56 @@
+{
+  "summary": "Outvin multi-make Factory Options integration verified end-to-end. Backend: 7/7 pytest cases green — VW FB-000155 outvin_spec persisted (make=Volkswagen, model='Tiguan 1.4actCLBMTFR 110TSID6F', 190/190 options with description, production_date 2018-03-05); BMW FB-000116 newly ordered (make=BMW, model='X4 M40i', series='X4', generation='G02', engine_code='B58D', power_kw=285, 71/71 options) — coexists with existing bimmer_spec; Mercedes FB-000156 newly ordered (make='Mercedes-Benz', model='Mercedes-AMG C 43 4MATIC Sedan', 148/148 named options) — coexists with existing mb_spec; Chery FB-000128 rejected with 400 as non-supported make; duplicate VW re-order returns 409; quota log line 'outvin: decoded VIN=... make=... options=n/n (14 requests remaining)' verified in /var/log/supervisor/backend.err.log for all three VINs (Outvin apparently doesn't decrement the counter on cached-VIN repeats — still shows 14 remaining after 3 lookups). Frontend (Expo mobile, 390x844, dealer dave@fourbuy.co.za): FB-000155 shows a dynamic row labelled 'Volkswagen Factory Options' with R20, a DELIVERED pill, and a VIEW button. Tapping VIEW opens a modal with the rich caption '190 factory-fitted options · VIN WVGZZZ5NZJW402485 · Volkswagen · Tiguan 1.4actCLBMTFR 110TSID6F · Built 2018-03-05 · CZEA 4-cylinder SI engine 1.4 l TSI, 110 kW · 1.40L · 110kW · Petrol · Colour Pure White... · Interior Titanium Black...' followed by ~190 OPT option pills (verified pe0a Warning triangle, pk8g Hatchback, etc.). BMW FB-000116 shows TWO rows both labelled 'BMW Factory Options' (bmw_options + outvin_spec) — UX collision confirmed but functionally both are orderable/viewable. Mercedes FB-000156 shows 'Mercedes Factory Options' (mb_options catalog name) AND 'Mercedes-Benz Factory Options' (outvin dynamic label) — different labels so no collision. Chery FB-000128 correctly hides the outvin_spec row. Light theme toggle still renders the Volkswagen row correctly. Password for dealer dave@fourbuy.co.za was reset via admin API during the run (previous value invalidated by rebuild).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/admin/dealers/{id}/password", "issue": "dave@fourbuy.co.za password (per test_credentials.md) was invalid on the current preview DB — reset to Dave1234! via admin API to unblock testing. Same as iteration_56; consider seeding on startup."},
+      {"endpoint": "outvin quota", "issue": "Outvin API returned 'available_requests=14' for all 3 successful lookups (VW+BMW+Merc) — either Outvin does not bill cached-VIN repeats or the counter refreshes on a schedule. Not a bug in our code; just note that the log-based quota alerting will not fire unless a genuine new VIN burns a credit."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "VinLinkedReportsCard row for BMW", "issue": "Two rows on BMW submissions are both labelled 'BMW Factory Options' (one from static bmw_options catalog, one from the dynamic outvin_spec label). Both priced at R20 so no discriminator visible to the dealer. Not a functional bug — both are orderable and viewable — but a UX ambiguity that was flagged in the PR itself. Suggest suffixing the outvin_spec row with e.g. '(Outvin)' when the make already has a native provider, or renaming Bimmervin's static label to 'BMW Factory Options (SA codes)' vs Outvin's 'BMW Factory Options (Datacard)'.", "testID": "n/a", "priority": "P2"},
+      {"component": "ReportResultBody modal header for outvin_spec", "issue": "The modal title/header still reads the generic 'Factory Options' catalog name (e.g. on VW it says 'Factory Options', not 'Volkswagen Factory Options'). The dynamic '<Make> Factory Options' label is only applied to the row and to the confirm-order sheet, not to the delivered-report modal header. Minor cosmetic inconsistency.", "testID": "n/a", "priority": "P3"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "FB-000155 (VW) vehicle detail", "issues": ["Regression unrelated to Outvin: 'Market Values' card shows 'Could not fetch market values. Kredo has no model matching TIGUAN / TAYRON for VOLKSWAGEN.' — Kredo model lookup fails for the Tiguan; suggest investigating Kredo model mapping. Does not affect outvin_spec rendering."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_outvin_spec.py",
+    "/app/test_reports/pytest/iteration_58_outvin.xml",
+    "/app/test_reports/screenshots/iter58_vw_reports.png",
+    "/app/test_reports/screenshots/iter58_vw_modal2.png",
+    "/app/test_reports/screenshots/iter58_bmw_reports.png",
+    "/app/test_reports/screenshots/iter58_mb_reports.png",
+    "/app/test_reports/screenshots/iter58_chery_reports.png",
+    "/app/test_reports/screenshots/iter58_vw_light.png"
+  ],
+  "action_items": [
+    "(P2 UX) Disambiguate the two BMW rows on BMW submissions — both say 'BMW Factory Options' and both cost R20. Either suffix the outvin_spec label with '(Datacard)' or the bmw_options static catalog name with '(SA codes)' so dealers know they're distinct products.",
+    "(P3) Also apply the '<Make> Factory Options' dynamic label to the ReportResultBody modal header (currently only the row and confirm-sheet use the dynamic label; the delivered-report modal header still shows the generic 'Factory Options').",
+    "(Unrelated regression) Kredo model lookup fails for FB-000155 VW Tiguan — 'no model matching TIGUAN / TAYRON for VOLKSWAGEN'. Suggest a separate ticket for Kredo model mapping.",
+    "(Housekeeping) Persist dave@fourbuy.co.za password across preview rebuilds — third iteration in a row that has been reset.",
+    "(Optional) Consider a client-side check to warn the dealer that Outvin has NOT decremented available_requests despite multiple lookups (may indicate their metering is cached — worth confirming with the vendor)."
+  ],
+  "critical_code_review_comments": [
+    "REPORT_CATALOG['outvin_spec']['name'] = 'Factory Options' is intentionally generic — the dynamic label is applied client-side only. This means any surface that pulls straight from the catalog (e.g. the delivered-report modal header, admin CSV exports, invoice line items) will show 'Factory Options' instead of the make-prefixed variant. Consider a helper `resolve_report_label(catalog_entry, submission)` reused across all surfaces.",
+    "outvin_client._normalise_datacard puts the entire raw payload under normalised['raw'] and mirrors that onto sub.outvin_spec. Payload can be large (Merc had 148 options each with translation objects). Consider trimming the raw before persisting to avoid bloating the submissions document.",
+    "The make-guard uses REPORT_CATALOG['outvin_spec']['supported_makes'] on the server AND a duplicate 42-entry list in the mobile useMemo — two sources of truth. Serve the supported list from an /api endpoint or embed it into the catalog GET response so the client cannot drift out of sync.",
+    "power_kw is inferred from `system_power` as int(float(pw_raw)). Mercedes stream returned kW-less strings (kW=None in the persisted spec) whereas BMW returned 285 (int). Consider normalising or documenting that power may be None on some marques."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_outvin_spec.py (new)",
+    "/app/test_reports/pytest/iteration_58_outvin.xml (new)",
+    "/app/test_reports/iteration_58.json (this file)",
+    "Dealer password reset via /api/admin/dealers/.../password (dave@fourbuy.co.za → Dave1234!)"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% (all critical flows pass; 1 P2 UX flag + 1 P3 cosmetic)"},
+  "seed_data_creation": "Ordered outvin_spec for FB-000116 (BMW) and FB-000156 (Mercedes) — each burned one Outvin credit (but the vendor's 'available_requests=14' didn't decrement, apparently cached). FB-000155 outvin_spec was pre-ordered during dev. Dealer password reset (no data changes).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "VW FB-000155 (sub id a18787ac-b4ea-41f6-ae03-90bc41322559, VIN WVGZZZ5NZJW402485, dealer dave@fourbuy.co.za/Dave1234!) — outvin_spec ordered, re-order returns 409. BMW FB-000116 (2d25bdf7-378c-4bdf-9c96-fa3fa89541be, WBA42DT0909N56153) — has BOTH bimmer_spec AND outvin_spec now; UI shows two rows both labelled 'BMW Factory Options'. Mercedes FB-000156 (38b860ee-fb00-4784-a7a0-987031de2325, W1K2060872R185836) — has BOTH mb_spec AND outvin_spec; UI shows 'Mercedes Factory Options' + 'Mercedes-Benz Factory Options'. Chery FB-000128 (e8e52bfb-8b04-48bd-b198-171d135439c9, LVVDB21B0RD740988) — outvin_spec correctly blocked (400) and row correctly hidden. Non-Outvin makes present in DB: Chery, Ferrari, GWM. Backend logs: grep 'outvin: decoded' /var/log/supervisor/backend.err.log for quota-monitor line. Dealer login: dave@fourbuy.co.za / Dave1234! (reset during this run).",
+  "rca_of_issue": "No blocking bugs. Two UX polish items surfaced: (1) the dynamic '<Make> Factory Options' label collides with the static 'BMW Factory Options' catalog name on BMW submissions — both surfaces render the same string; (2) the delivered-report modal header still uses the generic 'Factory Options' name because the dynamic label rewrite is applied only in VinLinkedReportsCard row + confirm sheet, not in ReportResultBody's header block."
+}

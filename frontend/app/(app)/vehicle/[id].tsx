@@ -250,6 +250,39 @@ export default function VehicleDetail() {
     );
   }, [sub?.make_name]);
 
+  // Outvin multi-make VIN datacard — 30+ marques covered. Row is
+  // labelled dynamically as "<Make> Factory Options" (e.g.
+  // "Volkswagen Factory Options"). Mirrors backend
+  // `is_outvin_supported_make()`; comparison is punctuation & case
+  // insensitive so "Alfa Romeo" / "ALFA" / "Land Rover" / "LANDROVER"
+  // all resolve correctly.
+  const isOutvinSupported = useMemo(() => {
+    const raw = (sub?.make_name || (sub as any)?.make || "").toString();
+    if (!raw) return false;
+    const norm = raw.toUpperCase().replace(/[\s\-_]+/g, "");
+    const OUTVIN_MAKES = new Set([
+      "MERCEDESBENZ","MERCEDES","MERCEDESAMG","MERCEDESMAYBACH","MAYBACH",
+      "BMW","MINI","LEXUS","TOYOTA","VOLVO","OPEL","AUDI","VOLKSWAGEN","VW",
+      "SKODA","RENAULT","DACIA","LANCIA","LANDROVER","RANGEROVER","JAGUAR",
+      "SEAT","POLESTAR","PEUGEOT","NISSAN","CITROEN","KIA","HYUNDAI","MAZDA",
+      "DS","FORD","CHRYSLER","DODGE","JEEP","FIAT","ALFA","ALFAROMEO","SMART",
+      "CHEVROLET","CHEVY","GMC","CADILLAC","BUICK","HUMMER","TESLA",
+    ]);
+    return OUTVIN_MAKES.has(norm);
+  }, [sub?.make_name]);
+
+  // Dynamic label for the Outvin row — "<Make> Factory Options (OEM
+  // Datacard)". The trailing "(OEM Datacard)" suffix disambiguates it
+  // from the make-specific decoder rows on submissions where both
+  // apply — e.g. a BMW carries an existing Bimmervin row whose static
+  // label is ALSO "BMW Factory Options", so without the suffix a
+  // dealer sees two identical-looking rows.
+  const outvinReportLabel = useMemo(() => {
+    const raw = (sub?.make_name || (sub as any)?.make || "").toString().trim();
+    if (!raw) return "Factory Options (OEM Datacard)";
+    return `${raw} Factory Options (OEM Datacard)`;
+  }, [sub?.make_name]);
+
   const fetchBimmerSpec = async () => {
     if (!id || bimmerLoading) return;
     setBimmerLoading(true);
@@ -1221,6 +1254,12 @@ export default function VehicleDetail() {
     // Mercedes factory options — live mbtools.com lookup, offered on
     // any Mercedes-family vehicle (Mercedes-Benz, AMG, Maybach, Smart).
     mb_options: { name: "Mercedes Factory Options", cost_zar: 20 },
+    // Outvin multi-make datacard — R20/lookup, covers 30+ manufacturers.
+    // The display name is REWRITTEN per-submission by VinLinkedReportsCard
+    // to the actual make name (e.g. "Volkswagen Factory Options") — the
+    // generic label below only shows up for orders on submissions where
+    // the make couldn't be resolved.
+    outvin_spec: { name: "Factory Options", cost_zar: 20 },
     // JLR Online Service History — live osh.landrover.com scrape, only
     // offered on Land Rover / Range Rover / Jaguar vehicles.
     landrover_osh: { name: "Land Rover / Jaguar Service History", cost_zar: 20 },
@@ -2435,6 +2474,8 @@ export default function VehicleDetail() {
           isCoverMode={isCoverMode}
           isBimmerSupported={isBimmerSupported}
           isMbSupported={isMbSupported}
+          isOutvinSupported={isOutvinSupported}
+          outvinReportLabel={outvinReportLabel}
           isLandroverSupported={isLandroverSupported}
           reportCatalog={REPORT_CATALOG}
           orderedReportTypes={orderedReportTypes}

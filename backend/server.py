@@ -208,14 +208,37 @@ REPORT_CATALOG = {
     "mb_options": {
         "name": "Mercedes Factory Options",
         "cost_zar": 20.0,
-        # Broad make list handled defensively by `is_mb_supported_make()`
-        # at the branch site, but we duplicate the friendly list here so
-        # the front-end can filter on the exact strings.
         "supported_makes": [
             "Mercedes-Benz", "Mercedes Benz", "Mercedes",
             "Mercedes-AMG", "Mercedes AMG", "AMG",
             "Mercedes-Maybach", "Mercedes Maybach", "Maybach",
             "Smart",
+        ],
+    },
+    # Outvin multi-make VIN datacard — R20/lookup, supports 30+ makes
+    # (Mercedes-Benz, BMW, Mini, Lexus, Toyota, Volvo, Opel, Audi,
+    # Volkswagen, Skoda, Renault, Dacia, Lancia, Land Rover, Jaguar,
+    # Seat, Polestar, Peugeot, Nissan, Citroen, Kia, Hyundai, Mazda,
+    # DS, Ford, Chrysler, Dodge, Jeep, Fiat, Alfa Romeo, Smart,
+    # Chevrolet, GMC, Cadillac, Buick, Hummer, Tesla). Coexists with
+    # bmw_options and mb_options on Mercedes/BMW vehicles because the
+    # data is complementary (Outvin has readable model names & richer
+    # metadata; Bimmervin/mbtools have specialist SA-code libraries).
+    # The DISPLAY NAME is not static — the frontend rewrites it to
+    # "<Make> Factory Options" per-submission (e.g. "Volkswagen Factory
+    # Options"). Keep this catalog name generic as a defensive fallback
+    # for any UI that doesn't know the rewrite trick.
+    "outvin_spec": {
+        "name": "Factory Options",
+        "cost_zar": 20.0,
+        "supported_makes": [
+            "Mercedes-Benz", "BMW", "Mini", "MINI", "Lexus", "Toyota",
+            "Volvo", "Opel", "Audi", "Volkswagen", "VW", "Skoda", "Renault",
+            "Dacia", "Lancia", "Land Rover", "LAND ROVER", "Range Rover",
+            "Jaguar", "Seat", "Polestar", "Peugeot", "Nissan", "Citroen",
+            "Kia", "Hyundai", "Mazda", "DS", "Ford", "Chrysler", "Dodge",
+            "Jeep", "Fiat", "Alfa", "Alfa Romeo", "Smart", "Chevrolet",
+            "GMC", "Cadillac", "Buick", "Hummer", "Tesla",
         ],
     },
     # JLR Online Service History — Land Rover / Range Rover / Jaguar.
@@ -952,7 +975,7 @@ class DealerPhotoUpload(BaseModel):
 
 
 class ReportOrderCreate(BaseModel):
-    type: Literal["lightstone_verification", "lightstone_repair", "car_vertical", "bmw_options", "mb_options", "landrover_osh"]
+    type: Literal["lightstone_verification", "lightstone_repair", "car_vertical", "bmw_options", "mb_options", "outvin_spec", "landrover_osh"]
     accepted_charge: bool = False
 
 
@@ -3144,6 +3167,30 @@ async def order_submission_report(
         result_data = spec
         note = "Sourced live from mbtools.com (Mercedes-Benz factory build data)."
         mocked = False
+    elif payload.type == "outvin_spec":
+        # Multi-make Outvin datacard (30+ manufacturers). Same
+        # on-failure-don't-bill contract as bmw_options / mb_options —
+        # errors bubble as 502 and no order row is inserted.
+        from services.outvin_client import fetch_outvin_spec
+
+        spec = await fetch_outvin_spec(vin)
+        if spec.get("status") != "ok":
+            raise HTTPException(
+                502,
+                spec.get("error") or "Could not fetch Outvin vehicle specification — please try again.",
+            )
+
+        # Mirror onto the submission so the valuation PDF and the mobile
+        # "Factory Fitted Options" card can find the payload without
+        # needing to walk the report_orders collection.
+        await db.submissions.update_one(
+            {"id": sub_id},
+            {"$set": {"outvin_spec": spec}},
+        )
+        result_data = spec
+        mkname = (spec.get("make") or sub.get("make_name") or "Vehicle").strip()
+        note = f"Sourced live from Outvin ({mkname} OEM VIN datacard)."
+        mocked = False
     elif payload.type == "landrover_osh":
         # Live JLR Online Service History scrape. Same "on-failure don't
         # bill" contract as bmw_options — errors bubble up as 502 and
@@ -4193,6 +4240,86 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
         else:
             story.append(Paragraph("No factory options returned for this VIN.", small))
 
+    # ============ OUTVIN OEM VEHICLE SPEC (any of 30+ makes) ============
+    # Third factory-options renderer — the Outvin multi-make datacard.
+    # Coexists with the BMW/MB blocks above because the data is
+    # complementary: Outvin has cleaner readable model names + richer
+    # engineering fields (production date, engine code, kW, colour name,
+    # interior trim name), while Bimmervin/mbtools carry mature SA-code
+    # description libraries. If a submission has both, we render both.
+    # Section title is dynamic — "VOLKSWAGEN FACTORY OPTIONS", etc.
+    os_ = sub.get("outvin_spec") or {}
+    if isinstance(os_, dict) and os_.get("status") == "ok":
+        _mk_upper = (os_.get("make") or sub.get("make_name") or "VEHICLE").upper()
+        story.append(Paragraph(f"{_mk_upper} FACTORY OPTIONS", section_title))
+        cap_bits: list[str] = []
+        if os_.get("vin"):
+            cap_bits.append(f"VIN {os_['vin']}")
+        if os_.get("model"):
+            cap_bits.append(str(os_["model"]))
+        if os_.get("production_date"):
+            cap_bits.append(f"Built {os_['production_date']}")
+        eng_bits: list[str] = []
+        if os_.get("engine_code"):  eng_bits.append(f"Engine {os_['engine_code']}")
+        if os_.get("displacement"): eng_bits.append(f"{os_['displacement']}L")
+        if os_.get("power_kw"):     eng_bits.append(f"{os_['power_kw']}kW")
+        if os_.get("fuel_type"):    eng_bits.append(str(os_["fuel_type"]))
+        if os_.get("transmission"): eng_bits.append(str(os_["transmission"]))
+        if os_.get("drive_type"):   eng_bits.append(str(os_["drive_type"]).upper())
+        if eng_bits:
+            cap_bits.append(" · ".join(eng_bits))
+        trim_bits: list[str] = []
+        if os_.get("colour"):   trim_bits.append(f"Colour {os_['colour']}")
+        if os_.get("interior"): trim_bits.append(f"Interior {os_['interior']}")
+        if trim_bits:
+            cap_bits.append(" · ".join(trim_bits))
+        total_n = int(os_.get("options_total") or 0)
+        with_desc = int(os_.get("options_with_desc") or 0)
+        if total_n:
+            cap_bits.append(f"{total_n} options ({with_desc} named)")
+        story.append(Paragraph(
+            '<font name="Helvetica" size="8" color="#6B6B6B">' +
+            " · ".join(cap_bits) +
+            "</font>",
+            small,
+        ))
+
+        opts = os_.get("options") or []
+        if opts:
+            # Named first, then coded-only alphabetically.
+            sorted_opts = sorted(
+                opts,
+                key=lambda x: (0 if x.get("description") else 1, x.get("code") or ""),
+            )
+            opt_rows: list[list[Any]] = [["Kind", "Code", "Description"]]
+            for o in sorted_opts:
+                kind = o.get("kind") or "OPT"
+                code = o.get("code") or ""
+                desc = o.get("description") or "—"
+                opt_rows.append([
+                    Paragraph(
+                        f'<font name="Helvetica-Bold" size="8">{kind}</font>',
+                        ParagraphStyle("ov_opt_kind", parent=small, leading=10, alignment=1),
+                    ),
+                    Paragraph(
+                        f'<font name="Courier-Bold" size="8">{code}</font>',
+                        ParagraphStyle("ov_opt_code", parent=small, leading=10),
+                    ),
+                    _P(desc),
+                ])
+            t_opts = Table(opt_rows, colWidths=[14 * mm, 26 * mm, 146 * mm], repeatRows=1)
+            ts_opts = _row_style()
+            ts_opts.add("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 8)
+            ts_opts.add("BACKGROUND", (0, 0), (-1, 0), PAPER)
+            ts_opts.add("BACKGROUND", (0, 1), (0, -1), rl_colors.HexColor("#F7F7F5"))
+            ts_opts.add("ALIGN", (0, 0), (0, -1), "CENTER")
+            ts_opts.add("TOPPADDING", (0, 1), (-1, -1), 3)
+            ts_opts.add("BOTTOMPADDING", (0, 1), (-1, -1), 3)
+            t_opts.setStyle(ts_opts)
+            story.append(t_opts)
+        else:
+            story.append(Paragraph("No factory options returned for this VIN.", small))
+
     # ============ AI MARKET ANALYSIS ============
     # The analysis payload lives at `sub.market_analysis.analysis.*`
     # (the outer object also carries `generated_at` + `model`). Historic
@@ -4366,12 +4493,13 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
             # section. The report is still listed in the "ORDERED VIN
             # REPORTS" summary table above so the dealer can see it was
             # delivered — we just don't re-print the same 52 rows.
-            if r.get("type") in ("bmw_options", "mb_options"):
-                # Same rationale for mb_options as bmw_options: the full
-                # factory-option list is already rendered above in the
-                # "FACTORY FITTED VEHICLE OPTIONS" section (sourced from
-                # the submission's cached `bimmer_spec` / `mb_spec`).
-                # Skipping avoids a duplicate, half-broken page.
+            if r.get("type") in ("bmw_options", "mb_options", "outvin_spec"):
+                # Same rationale for all three factory-option report types:
+                # the full option list is already rendered above in the
+                # dedicated "FACTORY FITTED VEHICLE OPTIONS" section
+                # (sourced from `bimmer_spec` / `mb_spec` / `outvin_spec`
+                # mirrored onto the submission). Skipping avoids a
+                # duplicate, half-broken page for each report.
                 continue
             story.append(PageBreak())
             story.append(Paragraph(
@@ -5404,6 +5532,49 @@ async def _build_report_pdf(sub: dict, order: dict) -> bytes:
                 hu_bits.append(f"Navi region: {hu['navi_region']}")
             if hu_bits:
                 story.append(Paragraph(" · ".join(hu_bits), body))
+
+        opts = data.get("options") or []
+        if opts:
+            with_desc = sum(1 for o in opts if o.get("description"))
+            story.append(Paragraph(
+                f"FACTORY OPTIONS ({len(opts)} codes, {with_desc} with descriptions)",
+                h_section,
+            ))
+            for o in opts:
+                code = o.get("code") or ""
+                desc = o.get("description") or ""
+                if desc:
+                    story.append(Paragraph(f"•&nbsp;&nbsp;<b>{code}</b> — {desc}", body))
+                else:
+                    story.append(Paragraph(f"•&nbsp;&nbsp;<b>{code}</b>", body))
+        else:
+            story.append(Paragraph("No factory options returned for this VIN.", body))
+
+    elif report_type == "outvin_spec" and isinstance(data, dict):
+        # Outvin multi-make datacard — richer vehicle metadata than
+        # Bimmervin/mbtools. Show a header block with model / production
+        # date / power etc. before the option list.
+        veh_bits: list[str] = []
+        if data.get("make"):    veh_bits.append(str(data["make"]))
+        if data.get("model"):   veh_bits.append(str(data["model"]))
+        if data.get("production_date"): veh_bits.append(f"Built {data['production_date']}")
+        if veh_bits:
+            story.append(Paragraph("SUMMARY", h_section))
+            story.append(Paragraph(" · ".join(veh_bits), body))
+            eng_bits: list[str] = []
+            if data.get("engine_code"): eng_bits.append(f"Engine {data['engine_code']}")
+            if data.get("displacement"): eng_bits.append(f"{data['displacement']}L")
+            if data.get("power_kw"): eng_bits.append(f"{data['power_kw']}kW")
+            if data.get("fuel_type"): eng_bits.append(str(data["fuel_type"]))
+            if data.get("transmission"): eng_bits.append(str(data["transmission"]))
+            if data.get("drive_type"): eng_bits.append(str(data["drive_type"]).upper())
+            if eng_bits:
+                story.append(Paragraph(" · ".join(eng_bits), body))
+            trim_bits: list[str] = []
+            if data.get("colour"): trim_bits.append(f"Colour: {data['colour']}")
+            if data.get("interior"): trim_bits.append(f"Interior: {data['interior']}")
+            if trim_bits:
+                story.append(Paragraph(" · ".join(trim_bits), body))
 
         opts = data.get("options") or []
         if opts:
@@ -6462,7 +6633,7 @@ def _market_analysis_context(sub: dict) -> str:
             ("night", "Nightlighting / Night package"),
             ("driver's package", "Driver's package"),
         ]
-        seen_terms = set()
+        seen_terms: set[str] = set()
         for o in mb_opts:
             term = (o.get("description") or "").lower()
             if not term:
@@ -6478,6 +6649,59 @@ def _market_analysis_context(sub: dict) -> str:
             f"- Mercedes factory options (mbtools){chassis_str}: {total_mb} option codes"
             f" ({described} named){hits_str}"
         )
+
+    # -- Outvin OEM datacard (any of 30+ makes) --------------------------
+    # Outvin returns clean model / production / power / colour / interior
+    # metadata plus a fully-named factory-option list, so we surface those
+    # directly to the AI to sharpen its valuation reasoning on any make
+    # (not just BMW / Merc where we have specialist decoders).
+    os_ = sub.get("outvin_spec") or {}
+    if isinstance(os_, dict) and os_.get("status") == "ok":
+        ov_bits: list[str] = []
+        mk = os_.get("make") or sub.get("make_name") or "vehicle"
+        ov_bits.append(f"OEM VIN datacard (Outvin): make={mk}")
+        if os_.get("model"): ov_bits.append(f"model={os_['model']}")
+        if os_.get("production_date"): ov_bits.append(f"built={os_['production_date']}")
+        if os_.get("engine_code"): ov_bits.append(f"engine_code={os_['engine_code']}")
+        if os_.get("power_kw"): ov_bits.append(f"{os_['power_kw']}kW")
+        if os_.get("displacement"): ov_bits.append(f"{os_['displacement']}L")
+        if os_.get("colour"): ov_bits.append(f"colour={os_['colour']}")
+        if os_.get("interior"): ov_bits.append(f"interior={os_['interior']}")
+        ov_opts = os_.get("options") or []
+        # Highlight premium items the AI should call out.
+        premium_ov: list[str] = []
+        keyword_map_ov = [
+            ("panoramic", "Panoramic sunroof"),
+            ("harman", "Harman/Kardon audio"),
+            ("burmester", "Burmester audio"),
+            ("bose", "Bose audio"),
+            ("bang", "Bang & Olufsen audio"),
+            ("head-up", "Head-Up display"),
+            ("adaptive cruise", "Adaptive cruise"),
+            ("lane keep", "Lane keeping"),
+            ("360", "360° camera"),
+            ("massage", "Massaging seats"),
+            ("ventilated", "Ventilated seats"),
+            ("m sport", "M Sport package"),
+            ("amg", "AMG package/trim"),
+            ("r-line", "R-Line trim"),
+            ("gti", "GTI trim"),
+            ("s-line", "S-Line trim"),
+        ]
+        seen_ov: set[str] = set()
+        for o in ov_opts:
+            term = (o.get("description") or "").lower()
+            if not term:
+                continue
+            for kw, label in keyword_map_ov:
+                if kw in term and label not in seen_ov:
+                    seen_ov.add(label)
+                    premium_ov.append(label)
+        total_ov = len(ov_opts)
+        if total_ov:
+            hits = f" — notable: {', '.join(premium_ov[:6])}" if premium_ov else ""
+            ov_bits.append(f"{total_ov} factory options{hits}")
+        lines.append("- " + "; ".join(ov_bits))
 
     # -- JLR OSH service history (Land Rover / Range Rover / Jaguar) -----
     losh = sub.get("landrover_osh") or {}

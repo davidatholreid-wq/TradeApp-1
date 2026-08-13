@@ -79,6 +79,7 @@ export type ReportOrder = {
     | "car_vertical"
     | "bmw_options"
     | "mb_options"
+    | "outvin_spec"
     | "landrover_osh"
     | "kredo_vin_history";
   name: string;

@@ -46,14 +46,32 @@ export function ReportResultBody({ data }: { data: Record<string, any> }) {
     data && data.status === "ok" && Array.isArray(data.options) && !sections;
   if (isFactoryOptions) {
     const options = (data.options || []) as { code: string; kind: string; description?: string | null }[];
-    const isMb = data.provider === "mbtools" || !!data.series;
+    const isMb = data.provider === "mbtools" || (!!data.series && !data.provider);
+    const isOutvin = data.provider === "outvin";
     const captionBits: string[] = [];
     captionBits.push(`${options.length} factory-fitted option${options.length === 1 ? "" : "s"}`);
     if (data.vin) captionBits.push(`VIN ${data.vin}`);
-    if (isMb && data.series) captionBits.push(`Chassis W${data.series}`);
-    if (isMb && data.year) captionBits.push(String(data.year));
-    if (isMb && data.fuel) captionBits.push(data.fuel);
-    if (isMb && data.headunit?.generation) captionBits.push(`Head Unit ${data.headunit.generation}`);
+    // Outvin — rich metadata block
+    if (isOutvin) {
+      if (data.make && data.model) captionBits.push(`${data.make} · ${data.model}`);
+      else if (data.model) captionBits.push(String(data.model));
+      if (data.production_date) captionBits.push(`Built ${data.production_date}`);
+      const engineBits: string[] = [];
+      if (data.engine_code) engineBits.push(`${data.engine_code}`);
+      if (data.displacement) engineBits.push(`${data.displacement}L`);
+      if (data.power_kw) engineBits.push(`${data.power_kw}kW`);
+      if (data.fuel_type) engineBits.push(String(data.fuel_type));
+      if (engineBits.length) captionBits.push(engineBits.join(" · "));
+      if (data.colour) captionBits.push(`Colour ${data.colour}`);
+      if (data.interior) captionBits.push(`Interior ${data.interior}`);
+    }
+    // mbtools — chassis / head-unit block
+    if (isMb && !isOutvin) {
+      if (data.series) captionBits.push(`Chassis W${data.series}`);
+      if (data.year) captionBits.push(String(data.year));
+      if (data.fuel) captionBits.push(data.fuel);
+      if (data.headunit?.generation) captionBits.push(`Head Unit ${data.headunit.generation}`);
+    }
     return (
       <View>
         <Text style={[styles.viewReportBody, { marginBottom: spacing.sm }]}>

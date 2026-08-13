@@ -49,6 +49,11 @@ export type VinLinkedReportsCardProps = {
   isCoverMode: boolean;
   isBimmerSupported: boolean;
   isMbSupported: boolean;
+  isOutvinSupported: boolean;
+  /** Dynamic label rewritten per-submission: "<Make> Factory Options"
+      (e.g. "Volkswagen Factory Options"). Falls back to the generic
+      catalog name if not supplied. */
+  outvinReportLabel?: string;
   isLandroverSupported: boolean;
   reportCatalog: ReportCatalog;
   orderedReportTypes: Set<string>;
@@ -71,6 +76,8 @@ export function VinLinkedReportsCard({
   isCoverMode,
   isBimmerSupported,
   isMbSupported,
+  isOutvinSupported,
+  outvinReportLabel,
   isLandroverSupported,
   reportCatalog,
   orderedReportTypes,
@@ -146,6 +153,7 @@ export function VinLinkedReportsCard({
             ];
             if (isBimmerSupported) baseTypes.push("bmw_options");
             if (isMbSupported) baseTypes.push("mb_options");
+            if (isOutvinSupported) baseTypes.push("outvin_spec");
             if (isLandroverSupported) baseTypes.push("landrover_osh");
             if (sub.vin && sub.vin.trim() && sub.vin.toUpperCase() !== "TBC") {
               baseTypes.push("kredo_vin_history");
@@ -155,6 +163,14 @@ export function VinLinkedReportsCard({
             .filter((t) => (!isAdmin && !isCoverMode) || orderedReportTypes.has(t))
             .map((t) => {
               const meta = reportCatalog[t];
+              // Rewrite the row name for the Outvin multi-make report so
+              // dealers see "Volkswagen Factory Options" instead of the
+              // generic catalog label. Fallback to the catalog name for
+              // any other report or when the make couldn't be resolved.
+              const displayName =
+                t === "outvin_spec" && outvinReportLabel
+                  ? outvinReportLabel
+                  : meta.name;
               const alreadyOrdered = orderedReportTypes.has(t);
               const existing = (sub.report_orders || []).find((r) => r.type === t);
               const busy = orderingReportType === t;
@@ -162,7 +178,7 @@ export function VinLinkedReportsCard({
               return (
                 <View key={t} style={styles.reportCard}>
                   <View style={{ flex: 1, marginRight: spacing.sm }}>
-                    <Text style={styles.reportName}>{meta.name}</Text>
+                    <Text style={styles.reportName}>{displayName}</Text>
                     <Text style={styles.reportCost}>R{meta.cost_zar.toFixed(0)}</Text>
                     {alreadyOrdered ? (
                       <View style={styles.reportStatusRow}>
@@ -213,7 +229,7 @@ export function VinLinkedReportsCard({
                       testID={`order-report-${t}`}
                       style={[styles.orderBtn, busy && styles.docBtnDisabled]}
                       onPress={() =>
-                        onConfirmOrder({ type: t, name: meta.name, cost_zar: meta.cost_zar })
+                        onConfirmOrder({ type: t, name: displayName, cost_zar: meta.cost_zar })
                       }
                       disabled={busy}
                     >
