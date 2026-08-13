@@ -1,0 +1,39 @@
+{
+  "summary": "Mercedes Factory Options (mb_options) integration passes end-to-end. Backend: 10/10 pytest cases green — catalog registration (filtered by submission_id), FB-000156 mb_spec persisted (152 options, 59 with description, chassis 206, year 2024, fuel Petrol, headunit NTG 7, navi region Africa/Middle East), re-order returns 409, mb_options standalone PDF (%PDF stub) serves OK, valuation.pdf renders and text-extracts the 'FACTORY FITTED' section together with W206, NTG 7, Africa/Middle East and SA codes 250A/250/251A/335B/675L/818U/JRE/JRJ/I35. Make guard fires 400 on non-Mercedes for mb_options (and still fires for bmw_options / landrover_osh regression). Frontend (Expo mobile web, 390x844): dealer dave@fourbuy.co.za on FB-000156 sees 'Mercedes Factory Options · R20 · DELIVERED · VIEW'. Tapping VIEW opens the report modal with the exact caption '152 factory-fitted options · VIN W1K2060872R185836 · Chassis W206 · 2024 · Petrol · Head Unit NTG 7' followed by the scrollable SA-code list (250A, 251A, 251B, 2S0, 31N, 335B, 675L, 6XXL, 818U, 84P, F206…). BMW/JLR rows correctly hidden on this vehicle. On the VW FB-000155 the Mercedes/BMW/JLR rows are all hidden — only Lightstone, CarVertical, Kredo VIN and CarTrust are offered. No regressions detected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/admin/dealers/{id}/password", "issue": "dave@fourbuy.co.za password reset request in test_credentials.md ('reset 2026-08-13') was stale — login returned 401 until I reset via admin API. Password is now confirmed working as Dave1234!."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "global", "issue": "Console noise (non-blocking): 'shadow*' style props deprecated (use boxShadow); 'textShadow*' style props deprecated (use textShadow); Image.style.resizeMode deprecated (use props.resizeMode); props.pointerEvents deprecated (use style.pointerEvents). These pre-exist mb_options — please schedule a sweep."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_mb_options.py",
+    "/app/test_reports/pytest/iteration_56_mb_options.xml"
+  ],
+  "action_items": [
+    "Update /app/memory/test_credentials.md — dave@fourbuy.co.za password was reset to Dave1234! during this run (auto). Line 24 already carries that value but the previous rebuild had invalidated it.",
+    "(Low priority) Sweep the deprecated React Native style props (shadow*, textShadow*, resizeMode, pointerEvents) surfaced in console warnings — they are pre-existing and unrelated to mb_options."
+  ],
+  "critical_code_review_comments": [
+    "mbtools_client.py normalises `series` to the raw chassis digits (e.g. '206'). ReportResultBody prefixes 'W' at render time (`Chassis W${data.series}`) which produces 'W206' correctly, but be aware that if the raw ever comes through as 'W206' already the UI will read 'WW206'. Consider normalising once in the client.",
+    "The `/api/reports/catalog` endpoint hides make-restricted reports when `submission_id` is not supplied — this is by design but easy to mistake for a bug. Documented in test."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_mb_options.py (new)",
+    "/app/test_reports/pytest/iteration_56_mb_options.xml (new)"
+  ],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100% (all critical mb_options flows pass; non-MB filtering confirmed)"},
+  "seed_data_creation": "None — FB-000156 mb_options was pre-ordered during dev. No new orders were created (would have hit 409). Reset dave's password via admin API.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "FB-000156 (Mercedes-Benz W1K2060872R185836, sub id 38b860ee-fb00-4784-a7a0-987031de2325) belongs to dave@fourbuy.co.za / Dave1234! (Fourbuy Fourways Gardens). mb_options is already ordered — re-order returns 409. FB-000155 (VW, sub id a18787ac-b4ea-41f6-ae03-90bc41322559) is a good non-MB regression target under the same dealer. mb_spec is only returned inside `submission` key on GET /api/submissions/{id}; report_orders row surfaces result under `result_data`, not `data`.",
+  "rca_of_issue": "No bug — feature verified working end-to-end for the real Mercedes VIN and confirmed defensively guarded for non-Mercedes submissions and regressed BMW/JLR flows."
+}

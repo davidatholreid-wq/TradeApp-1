@@ -78,6 +78,7 @@ export type ReportOrder = {
     | "lightstone_repair"
     | "car_vertical"
     | "bmw_options"
+    | "mb_options"
     | "landrover_osh"
     | "kredo_vin_history";
   name: string;

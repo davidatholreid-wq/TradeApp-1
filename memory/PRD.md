@@ -28,3 +28,11 @@ Dark "Performance Pro" theme (see `/app/design_guidelines.json`). Primary blue `
 - License disk PDF417 parsing (currently stores raw scanned string; can be parsed later).
 - Web-only admin panel (admin uses same mobile app for now).
 - Refresh tokens.
+
+## Third-Party Integrations (delivered)
+- **Kredo** — CarTrust vehicle report + VIN accident history (live paid API).
+- **Bimmervin (vinrequest.xyz)** — BMW / MINI factory options (OAuth2 client-credentials, live paid API).
+- **mbtools.com (mb.vin operator)** — Mercedes-family factory options / SA codes (single `apiKey` query-string, live paid API). Added Jan 2026. Same JWT auth family as Bimmervin.
+- **Cloudinary** — image storage for license disks & vehicle photos.
+- **Cloudflare Turnstile** — public valuation portal captcha.
+- **Emergent** — LLM (GPT-5.2), Resend Email, Push Notifications.

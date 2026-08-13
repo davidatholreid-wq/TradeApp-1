@@ -36,19 +36,28 @@ export function ReportResultBody({ data }: { data: Record<string, any> }) {
     return String(v);
   };
 
-  // BMW Factory Options result (from Bimmervin) has a different shape than
-  // the Lightstone/CarVertical mock reports — no summary/sections, just
-  // {status:"ok", vin, options:[{code, kind, description}], ...}. Render
-  // it inline as a list of code + description pills instead of using the
-  // generic sections renderer.
-  const isBmwOptions =
+  // BMW / Mercedes Factory Options result shares the same normalised
+  // shape produced by our two client wrappers — no summary/sections,
+  // just {status:"ok", vin, options:[{code, kind, description}], ...}.
+  // Renders as a list of code + description pills. The Mercedes payload
+  // also carries `series` (chassis), `year`, `fuel`, `headunit`, which
+  // we tease into the intro caption when present.
+  const isFactoryOptions =
     data && data.status === "ok" && Array.isArray(data.options) && !sections;
-  if (isBmwOptions) {
+  if (isFactoryOptions) {
     const options = (data.options || []) as { code: string; kind: string; description?: string | null }[];
+    const isMb = data.provider === "mbtools" || !!data.series;
+    const captionBits: string[] = [];
+    captionBits.push(`${options.length} factory-fitted option${options.length === 1 ? "" : "s"}`);
+    if (data.vin) captionBits.push(`VIN ${data.vin}`);
+    if (isMb && data.series) captionBits.push(`Chassis W${data.series}`);
+    if (isMb && data.year) captionBits.push(String(data.year));
+    if (isMb && data.fuel) captionBits.push(data.fuel);
+    if (isMb && data.headunit?.generation) captionBits.push(`Head Unit ${data.headunit.generation}`);
     return (
       <View>
         <Text style={[styles.viewReportBody, { marginBottom: spacing.sm }]}>
-          {options.length} factory-fitted option{options.length === 1 ? "" : "s"} against VIN {data.vin || "—"}.
+          {captionBits.join(" · ")}
         </Text>
         <View style={styles.bimmerOptionsList}>
           {options.map((o) => (

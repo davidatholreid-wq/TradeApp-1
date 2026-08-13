@@ -201,6 +201,23 @@ REPORT_CATALOG = {
         "cost_zar": 20.0,
         "supported_makes": ["BMW", "MINI"],
     },
+    # Mercedes-family VIN-linked report — sourced live from mbtools.com
+    # (the sanctioned developer API behind the mb.vin consumer front-end,
+    # confirmed same operator as bimmer.work / Bimmervin). Free-tier key
+    # while we're piloting — cost mirrors bmw_options.
+    "mb_options": {
+        "name": "Mercedes Factory Options",
+        "cost_zar": 20.0,
+        # Broad make list handled defensively by `is_mb_supported_make()`
+        # at the branch site, but we duplicate the friendly list here so
+        # the front-end can filter on the exact strings.
+        "supported_makes": [
+            "Mercedes-Benz", "Mercedes Benz", "Mercedes",
+            "Mercedes-AMG", "Mercedes AMG", "AMG",
+            "Mercedes-Maybach", "Mercedes Maybach", "Maybach",
+            "Smart",
+        ],
+    },
     # JLR Online Service History — Land Rover / Range Rover / Jaguar.
     # Scraped live from https://osh.landrover.com. Result caches on the
     # submission so a given VIN is only scraped once. Only offered on
@@ -935,7 +952,7 @@ class DealerPhotoUpload(BaseModel):
 
 
 class ReportOrderCreate(BaseModel):
-    type: Literal["lightstone_verification", "lightstone_repair", "car_vertical", "bmw_options", "landrover_osh"]
+    type: Literal["lightstone_verification", "lightstone_repair", "car_vertical", "bmw_options", "mb_options", "landrover_osh"]
     accepted_charge: bool = False
 
 
@@ -3104,6 +3121,29 @@ async def order_submission_report(
         result_data = spec
         note = "Sourced live from Bimmervin (BMW factory order data)."
         mocked = False
+    elif payload.type == "mb_options":
+        # Mercedes-family VIN-linked report — LIVE mbtools.com lookup.
+        # Same "on-failure don't bill" contract as bmw_options / landrover_osh:
+        # errors bubble up as 502 and no order row is inserted.
+        from services.mbtools_client import fetch_mb_datacard
+
+        spec = await fetch_mb_datacard(vin)
+        if spec.get("status") != "ok":
+            raise HTTPException(
+                502,
+                spec.get("error") or "Could not fetch Mercedes factory options — please try again.",
+            )
+
+        # Mirror onto the submission so the mobile "Factory Fitted Vehicle
+        # Options" card, the valuation PDF, and the admin view can all
+        # find the payload without needing the report_orders row.
+        await db.submissions.update_one(
+            {"id": sub_id},
+            {"$set": {"mb_spec": spec}},
+        )
+        result_data = spec
+        note = "Sourced live from mbtools.com (Mercedes-Benz factory build data)."
+        mocked = False
     elif payload.type == "landrover_osh":
         # Live JLR Online Service History scrape. Same "on-failure don't
         # bill" contract as bmw_options — errors bubble up as 502 and
@@ -4079,6 +4119,80 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
         else:
             story.append(Paragraph("No factory options returned for this VIN.", small))
 
+    # ============ MERCEDES FACTORY FITTED OPTIONS (mbtools.com) ============
+    # Mercedes-family twin of the Bimmervin BMW block above. Only rendered
+    # when the submission carries an `mb_spec` snapshot (i.e. the dealer
+    # actually ordered the mb_options report). Layout mirrors the BMW
+    # section so print + on-screen readers get a consistent look; the only
+    # deltas are (a) we surface the mbtools-provided chassis / model year /
+    # head-unit / navi-region metadata in the caption, and (b) we render
+    # SA codes only (Mercedes doesn't return E/HO groups). Codes without a
+    # `salesTerm` from the API fall back to code-only rows.
+    ms = sub.get("mb_spec") or {}
+    if isinstance(ms, dict) and ms.get("status") == "ok":
+        story.append(Paragraph("FACTORY FITTED VEHICLE OPTIONS", section_title))
+        cap_bits = [f"VIN {ms.get('vin') or '—'}"]
+        if ms.get("series"):
+            cap_bits.append(f"Chassis W{ms['series']}")
+        if ms.get("year"):
+            cap_bits.append(str(ms['year']))
+        if ms.get("fuel"):
+            cap_bits.append(ms['fuel'])
+        hu = ms.get("headunit") or {}
+        if hu.get("generation"):
+            cap_bits.append(f"Head Unit {hu['generation']}")
+        if hu.get("navi_region"):
+            cap_bits.append(f"Navi {hu['navi_region']}")
+        total_n = int(ms.get("options_total") or 0)
+        with_desc = int(ms.get("options_with_desc") or 0)
+        if total_n:
+            cap_bits.append(f"{total_n} options")
+        if with_desc and total_n:
+            cap_bits.append(f"{with_desc}/{total_n} named")
+        story.append(Paragraph(
+            '<font name="Helvetica" size="8" color="#6B6B6B">' +
+            " · ".join(cap_bits) +
+            "</font>",
+            small,
+        ))
+
+        opts = ms.get("options") or []
+        if opts:
+            # Sort: named codes first (more useful to dealers), then
+            # unnamed alphanumerically. Same visual style as BMW section.
+            sorted_opts = sorted(
+                opts,
+                key=lambda x: (0 if x.get("description") else 1, x.get("code") or ""),
+            )
+            opt_rows: list[list[Any]] = [["Kind", "Code", "Description"]]
+            for o in sorted_opts:
+                kind = o.get("kind") or "SA"
+                code = o.get("code") or ""
+                desc = o.get("description") or "—"
+                opt_rows.append([
+                    Paragraph(
+                        f'<font name="Helvetica-Bold" size="8">{kind}</font>',
+                        ParagraphStyle("mb_opt_kind", parent=small, leading=10, alignment=1),
+                    ),
+                    Paragraph(
+                        f'<font name="Courier-Bold" size="8">{code}</font>',
+                        ParagraphStyle("mb_opt_code", parent=small, leading=10),
+                    ),
+                    _P(desc),
+                ])
+            t_opts = Table(opt_rows, colWidths=[14 * mm, 22 * mm, 150 * mm], repeatRows=1)
+            ts_opts = _row_style()
+            ts_opts.add("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 8)
+            ts_opts.add("BACKGROUND", (0, 0), (-1, 0), PAPER)
+            ts_opts.add("BACKGROUND", (0, 1), (0, -1), rl_colors.HexColor("#F7F7F5"))
+            ts_opts.add("ALIGN", (0, 0), (0, -1), "CENTER")
+            ts_opts.add("TOPPADDING", (0, 1), (-1, -1), 3)
+            ts_opts.add("BOTTOMPADDING", (0, 1), (-1, -1), 3)
+            t_opts.setStyle(ts_opts)
+            story.append(t_opts)
+        else:
+            story.append(Paragraph("No factory options returned for this VIN.", small))
+
     # ============ AI MARKET ANALYSIS ============
     # The analysis payload lives at `sub.market_analysis.analysis.*`
     # (the outer object also carries `generated_at` + `model`). Historic
@@ -4252,7 +4366,12 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
             # section. The report is still listed in the "ORDERED VIN
             # REPORTS" summary table above so the dealer can see it was
             # delivered — we just don't re-print the same 52 rows.
-            if r.get("type") == "bmw_options":
+            if r.get("type") in ("bmw_options", "mb_options"):
+                # Same rationale for mb_options as bmw_options: the full
+                # factory-option list is already rendered above in the
+                # "FACTORY FITTED VEHICLE OPTIONS" section (sourced from
+                # the submission's cached `bimmer_spec` / `mb_spec`).
+                # Skipping avoids a duplicate, half-broken page.
                 continue
             story.append(PageBreak())
             story.append(Paragraph(
@@ -5262,6 +5381,45 @@ async def _build_report_pdf(sub: dict, order: dict) -> bytes:
                 desc = o.get("description") or o.get("name") or ""
                 story.append(Paragraph(f"•&nbsp;&nbsp;<b>{code}</b> — {desc}", body))
         elif not data.get("summary") and not data.get("sections"):
+            story.append(Paragraph("No factory options returned for this VIN.", body))
+
+    elif report_type == "mb_options" and isinstance(data, dict):
+        # Mercedes factory-option list (mbtools.com).
+        # Similar to bmw_options but we also surface the chassis / model /
+        # year / headunit summary because mbtools returns richer vehicle
+        # metadata than Bimmervin.
+        veh_bits = []
+        if data.get("series"):     veh_bits.append(f"Chassis W{data['series']}")
+        if data.get("year"):       veh_bits.append(str(data["year"]))
+        if data.get("fuel"):       veh_bits.append(data["fuel"])
+        if data.get("is_facelift"): veh_bits.append("Facelift")
+        if veh_bits:
+            story.append(Paragraph("SUMMARY", h_section))
+            story.append(Paragraph(" · ".join(veh_bits), body))
+            hu = data.get("headunit") or {}
+            hu_bits = []
+            if hu.get("generation"):
+                hu_bits.append(f"Head Unit: {hu['generation']}")
+            if hu.get("navi_region"):
+                hu_bits.append(f"Navi region: {hu['navi_region']}")
+            if hu_bits:
+                story.append(Paragraph(" · ".join(hu_bits), body))
+
+        opts = data.get("options") or []
+        if opts:
+            with_desc = sum(1 for o in opts if o.get("description"))
+            story.append(Paragraph(
+                f"FACTORY OPTIONS ({len(opts)} codes, {with_desc} with descriptions)",
+                h_section,
+            ))
+            for o in opts:
+                code = o.get("code") or ""
+                desc = o.get("description") or ""
+                if desc:
+                    story.append(Paragraph(f"•&nbsp;&nbsp;<b>{code}</b> — {desc}", body))
+                else:
+                    story.append(Paragraph(f"•&nbsp;&nbsp;<b>{code}</b>", body))
+        else:
             story.append(Paragraph("No factory options returned for this VIN.", body))
 
     # Summary paragraph
@@ -6282,6 +6440,44 @@ def _market_analysis_context(sub: dict) -> str:
             lines.append(
                 f"- BMW factory options (Bimmervin): {total_opts} options fitted{hits_str}"
             )
+
+    # -- Mercedes factory options (mbtools.com) -------------------------
+    ms = sub.get("mb_spec") or {}
+    if isinstance(ms, dict) and ms.get("status") == "ok":
+        mb_opts = ms.get("options") or []
+        total_mb = int(ms.get("options_total") or len(mb_opts))
+        described = int(ms.get("options_with_desc") or 0)
+        # Surface the human-readable "salesTerm" entries so the AI can pick
+        # up premium equipment (AMG packages, Burmester, etc.).
+        premium_mb: list[str] = []
+        keyword_map = [
+            ("amg", "AMG package/trim"),
+            ("burmester", "Burmester audio"),
+            ("keyless go", "KEYLESS GO"),
+            ("panoramic", "Panoramic sunroof"),
+            ("mbux", "MBUX enhanced"),
+            ("mercedes me", "Mercedes me connect"),
+            ("distronic", "Distronic (adaptive cruise)"),
+            ("head-up", "Head-Up display"),
+            ("night", "Nightlighting / Night package"),
+            ("driver's package", "Driver's package"),
+        ]
+        seen_terms = set()
+        for o in mb_opts:
+            term = (o.get("description") or "").lower()
+            if not term:
+                continue
+            for kw, label in keyword_map:
+                if kw in term and label not in seen_terms:
+                    seen_terms.add(label)
+                    premium_mb.append(label)
+        chassis = ms.get("series")
+        chassis_str = f" (W{chassis} chassis)" if chassis else ""
+        hits_str = f" — notable: {', '.join(premium_mb[:5])}" if premium_mb else ""
+        lines.append(
+            f"- Mercedes factory options (mbtools){chassis_str}: {total_mb} option codes"
+            f" ({described} named){hits_str}"
+        )
 
     # -- JLR OSH service history (Land Rover / Range Rover / Jaguar) -----
     losh = sub.get("landrover_osh") or {}

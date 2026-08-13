@@ -46,6 +46,7 @@ export type VinLinkedReportsCardProps = {
   isAdmin: boolean;
   isCoverMode: boolean;
   isBimmerSupported: boolean;
+  isMbSupported: boolean;
   isLandroverSupported: boolean;
   reportCatalog: ReportCatalog;
   orderedReportTypes: Set<string>;
@@ -67,6 +68,7 @@ export function VinLinkedReportsCard({
   isAdmin,
   isCoverMode,
   isBimmerSupported,
+  isMbSupported,
   isLandroverSupported,
   reportCatalog,
   orderedReportTypes,
@@ -141,6 +143,7 @@ export function VinLinkedReportsCard({
               "car_vertical",
             ];
             if (isBimmerSupported) baseTypes.push("bmw_options");
+            if (isMbSupported) baseTypes.push("mb_options");
             if (isLandroverSupported) baseTypes.push("landrover_osh");
             if (sub.vin && sub.vin.trim() && sub.vin.toUpperCase() !== "TBC") {
               baseTypes.push("kredo_vin_history");

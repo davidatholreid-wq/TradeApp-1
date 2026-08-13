@@ -235,6 +235,21 @@ export default function VehicleDetail() {
     return ["LAND ROVER", "LAND-ROVER", "LANDROVER", "RANGE ROVER", "RANGE-ROVER", "JAGUAR"].includes(mk);
   }, [sub?.make_name]);
 
+  // Mercedes factory-options report (mbtools.com) — offered on any
+  // Mercedes-family submission (Mercedes-Benz, Mercedes-AMG, Maybach,
+  // Smart). Mirrors backend `is_mb_supported_make()`; broad substring
+  // match keeps us robust to typos like "Mercedes Benz" vs "Mercedes-Benz".
+  const isMbSupported = useMemo(() => {
+    const mk = (sub?.make_name || (sub as any)?.make || "").toString().toUpperCase();
+    if (!mk) return false;
+    return (
+      mk.includes("MERCEDES") ||
+      mk.includes("MAYBACH") ||
+      mk === "AMG" ||
+      mk === "SMART"
+    );
+  }, [sub?.make_name]);
+
   const fetchBimmerSpec = async () => {
     if (!id || bimmerLoading) return;
     setBimmerLoading(true);
@@ -1196,6 +1211,9 @@ export default function VehicleDetail() {
     // BMW factory options — live Bimmervin lookup, only offered on
     // BMW and MINI vehicles.
     bmw_options: { name: "BMW Factory Options", cost_zar: 20 },
+    // Mercedes factory options — live mbtools.com lookup, offered on
+    // any Mercedes-family vehicle (Mercedes-Benz, AMG, Maybach, Smart).
+    mb_options: { name: "Mercedes Factory Options", cost_zar: 20 },
     // JLR Online Service History — live osh.landrover.com scrape, only
     // offered on Land Rover / Range Rover / Jaguar vehicles.
     landrover_osh: { name: "Land Rover / Jaguar Service History", cost_zar: 20 },
@@ -2409,6 +2427,7 @@ export default function VehicleDetail() {
           isAdmin={isAdmin}
           isCoverMode={isCoverMode}
           isBimmerSupported={isBimmerSupported}
+          isMbSupported={isMbSupported}
           isLandroverSupported={isLandroverSupported}
           reportCatalog={REPORT_CATALOG}
           orderedReportTypes={orderedReportTypes}
