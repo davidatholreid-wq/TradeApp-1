@@ -1,6 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { TouchableOpacity } from "@/src/components/HapticButtons";
-import { View, Text, StyleSheet, ScrollView, Image, Share, Platform, useWindowDimensions } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Image, Share, Platform, useWindowDimensions, Modal, TextInput, ActivityIndicator, KeyboardAvoidingView, Alert } from "react-native";
+import * as WebBrowser from "expo-web-browser";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
+import { apiFetch, TOKEN_KEY } from "@/src/api";
+import { storage } from "@/src/utils/storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useAuth } from "@/src/context/AuthContext";
@@ -25,6 +30,151 @@ export default function Profile() {
   const router = useRouter();
   const tabBarHeight = useBottomTabBarHeight();
   const [sharing, setSharing] = useState(false);
+
+  // ---------------------------------------------------------------------
+  // Company Invoice Details — separate un-branded PDF the dealer can
+  // hand to suppliers or customers. The dealership doc holds banking +
+  // contact fields that the dealer can self-manage (backend endpoints:
+  // GET/PATCH /api/my-dealership; PDF at
+  // /api/my-dealership/invoice-details.pdf).
+  // ---------------------------------------------------------------------
+  type DealershipInvoiceFields = {
+    id?: string;
+    name?: string | null;
+    address?: string | null;
+    company_reg_no?: string | null;
+    vat_no?: string | null;
+    contact_person?: string | null;
+    contact_email?: string | null;
+    contact_phone?: string | null;
+    website?: string | null;
+    bank_name?: string | null;
+    bank_account_holder?: string | null;
+    bank_account_no?: string | null;
+    bank_branch_code?: string | null;
+    bank_account_type?: string | null;
+    bank_swift?: string | null;
+    invoice_notes?: string | null;
+  };
+  const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [dealership, setDealership] = useState<DealershipInvoiceFields | null>(null);
+  const [invoiceForm, setInvoiceForm] = useState<DealershipInvoiceFields>({});
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [invoiceSaving, setInvoiceSaving] = useState(false);
+  const [invoiceDownloading, setInvoiceDownloading] = useState(false);
+
+  useEffect(() => {
+    if (user?.role !== "dealer") return;
+    // Lazy-load the dealership record once per profile mount so the
+    // Company Invoice Details section can show pre-existing values.
+    // Failures are non-fatal — the modal will show an empty form and
+    // the download button will surface any auth error at click time.
+    (async () => {
+      try {
+        setInvoiceLoading(true);
+        const r = await apiFetch("/api/my-dealership");
+        const d = r?.dealership || null;
+        if (d) {
+          setDealership(d);
+          setInvoiceForm({
+            address: d.address ?? "",
+            contact_person: d.contact_person ?? "",
+            contact_email: d.contact_email ?? "",
+            contact_phone: d.contact_phone ?? "",
+            website: d.website ?? "",
+            bank_name: d.bank_name ?? "",
+            bank_account_holder: d.bank_account_holder ?? "",
+            bank_account_no: d.bank_account_no ?? "",
+            bank_branch_code: d.bank_branch_code ?? "",
+            bank_account_type: d.bank_account_type ?? "",
+            bank_swift: d.bank_swift ?? "",
+            invoice_notes: d.invoice_notes ?? "",
+          });
+        }
+      } catch {
+        /* non-fatal — keep the section usable */
+      } finally {
+        setInvoiceLoading(false);
+      }
+    })();
+  }, [user?.role]);
+
+  const saveInvoiceDetails = async () => {
+    try {
+      setInvoiceSaving(true);
+      // Send blanks as null so the backend can clear a field the dealer
+      // deliberately wiped. `exclude_none=True` on the pydantic model
+      // means empty strings still hit the DB (blanking works), while
+      // omitted keys keep the existing value untouched.
+      const body = { ...invoiceForm };
+      const r = await apiFetch("/api/my-dealership", {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+      setDealership(r?.dealership || null);
+      setInvoiceOpen(false);
+      Alert.alert("Saved", "Your company invoice details have been updated.");
+    } catch (e: any) {
+      Alert.alert("Could not save", e?.message || "Unknown error.");
+    } finally {
+      setInvoiceSaving(false);
+    }
+  };
+
+  const downloadInvoicePdf = async () => {
+    try {
+      setInvoiceDownloading(true);
+      const token = await storage.secureGet<string>(TOKEN_KEY, "");
+      const base = process.env.EXPO_PUBLIC_BACKEND_URL || "";
+      const ts = Date.now();
+      const filename = `${(dealership?.name || "company").replace(/\s+/g, "_")}_invoice_details.pdf`;
+      if (Platform.OS === "web") {
+        // Web: fetch with header, blob → open in new tab. Safer than
+        // putting the token in the URL (would leak into browser history).
+        const res = await fetch(`${base}/api/my-dealership/invoice-details.pdf?t=${ts}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          cache: "no-store" as any,
+        });
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        const blob = await res.blob();
+        const objUrl = URL.createObjectURL(blob);
+        // Trigger a download rather than an in-tab open — this is a
+        // supplier/customer artefact, so a File download is friendlier
+        // than a preview tab.
+        const a = document.createElement("a");
+        a.href = objUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
+      } else {
+        // Native: download to cache, then share. The share sheet is the
+        // right primitive here — dealer wants to attach the PDF to a
+        // WhatsApp / email to the supplier.
+        const path = `${FileSystem.cacheDirectory}${filename}`;
+        const dl = await FileSystem.downloadAsync(
+          `${base}/api/my-dealership/invoice-details.pdf?t=${ts}&access_token=${encodeURIComponent(token || "")}`,
+          path,
+        );
+        if (dl.status !== 200) throw new Error(`Server returned ${dl.status}`);
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(dl.uri, {
+            mimeType: "application/pdf",
+            dialogTitle: "Company Invoice Details",
+            UTI: "com.adobe.pdf",
+          });
+        } else {
+          await WebBrowser.openBrowserAsync(dl.uri);
+        }
+      }
+    } catch (e: any) {
+      Alert.alert("Download failed", e?.message || "Could not generate the PDF.");
+    } finally {
+      setInvoiceDownloading(false);
+    }
+  };
 
   // Referral code is auto-generated for every dealer at account creation
   // (and lazily on /auth/me for accounts that pre-date the feature). It's
@@ -196,6 +346,65 @@ export default function Profile() {
           </View>
         ) : null}
 
+        {/* Company Invoice Details — un-branded PDF the dealer can hand to
+            suppliers / customers. Deliberately separate from the Company
+            section above so the "invoice-safe" nature is obvious. */}
+        {user.role === "dealer" ? (
+          <View style={styles.section}>
+            <View style={styles.invoiceHeaderRow}>
+              <Text style={styles.sectionTitle}>Company Invoice Details</Text>
+              <TouchableOpacity
+                style={styles.invoiceEditBtn}
+                onPress={() => setInvoiceOpen(true)}
+                disabled={invoiceLoading}
+                testID="profile-invoice-edit"
+              >
+                <Ionicons name="create-outline" size={14} color={colors.textSecondary} />
+                <Text style={styles.invoiceEditBtnText}>Edit</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.hintText}>
+              A clean, un-branded PDF summary of your company&apos;s invoicing
+              details (address, VAT, banking, contact). Send it to suppliers
+              or customers who need your details on file.
+            </Text>
+            {/* Quick preview of what will render — surfaces empty state gently */}
+            <View style={styles.invoicePreviewCard}>
+              <Text style={styles.invoicePreviewCompany}>
+                {dealership?.name || user.company_info?.company_name || "Your company"}
+              </Text>
+              {dealership?.contact_email ? (
+                <Text style={styles.invoicePreviewMeta}>{dealership.contact_email}</Text>
+              ) : null}
+              {dealership?.bank_name ? (
+                <Text style={styles.invoicePreviewMeta}>
+                  {dealership.bank_name}
+                  {dealership.bank_account_no ? ` · Acct ${dealership.bank_account_no}` : ""}
+                </Text>
+              ) : (
+                <Text style={styles.invoicePreviewEmpty}>
+                  No banking details added yet — tap Edit to add them.
+                </Text>
+              )}
+            </View>
+            <TouchableOpacity
+              style={[styles.downloadInvoiceBtn, invoiceDownloading && { opacity: 0.6 }]}
+              onPress={downloadInvoicePdf}
+              disabled={invoiceDownloading}
+              testID="profile-download-invoice-details"
+            >
+              {invoiceDownloading ? (
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+              ) : (
+                <Ionicons name="document-text-outline" size={16} color={colors.onPrimary} />
+              )}
+              <Text style={styles.downloadInvoiceBtnText}>
+                {invoiceDownloading ? "Preparing…" : "Download Company Invoice Details"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         {user.role === "dealer" ? (
           <View style={styles.hintBox}>
             <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
@@ -329,6 +538,156 @@ export default function Profile() {
           <Text style={styles.logoutText}>Sign Out</Text>
         </TouchableOpacity>
       </ScrollView>
+      {/* Company Invoice Details editor — modal so we don't blow up
+          the profile scroll surface for the many dealers who won't
+          need this every session. */}
+      <Modal
+        visible={invoiceOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setInvoiceOpen(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={styles.modalBackdrop}
+        >
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Company Invoice Details</Text>
+              <TouchableOpacity
+                onPress={() => setInvoiceOpen(false)}
+                style={styles.modalClose}
+                testID="profile-invoice-close"
+              >
+                <Ionicons name="close" size={22} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              contentContainerStyle={{ paddingBottom: 24 }}
+              keyboardShouldPersistTaps="handled"
+            >
+              <Text style={styles.modalHelper}>
+                These details appear on the un-branded PDF you can send to
+                suppliers and customers. Leave any field blank to hide it.
+              </Text>
+
+              <Text style={styles.modalGroupTitle}>Business address</Text>
+              <TextInput
+                style={[styles.modalInput, { minHeight: 68 }]}
+                value={invoiceForm.address || ""}
+                onChangeText={(v) => setInvoiceForm({ ...invoiceForm, address: v })}
+                placeholder="Street address, suburb, city, postcode"
+                placeholderTextColor={colors.textSecondary}
+                multiline
+              />
+
+              <Text style={styles.modalGroupTitle}>Contact</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={invoiceForm.contact_person || ""}
+                onChangeText={(v) => setInvoiceForm({ ...invoiceForm, contact_person: v })}
+                placeholder="Contact person (e.g. John Smith)"
+                placeholderTextColor={colors.textSecondary}
+              />
+              <TextInput
+                style={styles.modalInput}
+                value={invoiceForm.contact_email || ""}
+                onChangeText={(v) => setInvoiceForm({ ...invoiceForm, contact_email: v })}
+                placeholder="Email"
+                autoCapitalize="none"
+                keyboardType="email-address"
+                placeholderTextColor={colors.textSecondary}
+              />
+              <TextInput
+                style={styles.modalInput}
+                value={invoiceForm.contact_phone || ""}
+                onChangeText={(v) => setInvoiceForm({ ...invoiceForm, contact_phone: v })}
+                placeholder="Phone"
+                keyboardType="phone-pad"
+                placeholderTextColor={colors.textSecondary}
+              />
+              <TextInput
+                style={styles.modalInput}
+                value={invoiceForm.website || ""}
+                onChangeText={(v) => setInvoiceForm({ ...invoiceForm, website: v })}
+                placeholder="Website (e.g. www.example.co.za)"
+                autoCapitalize="none"
+                placeholderTextColor={colors.textSecondary}
+              />
+
+              <Text style={styles.modalGroupTitle}>Banking</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={invoiceForm.bank_name || ""}
+                onChangeText={(v) => setInvoiceForm({ ...invoiceForm, bank_name: v })}
+                placeholder="Bank name"
+                placeholderTextColor={colors.textSecondary}
+              />
+              <TextInput
+                style={styles.modalInput}
+                value={invoiceForm.bank_account_holder || ""}
+                onChangeText={(v) => setInvoiceForm({ ...invoiceForm, bank_account_holder: v })}
+                placeholder="Account holder"
+                placeholderTextColor={colors.textSecondary}
+              />
+              <TextInput
+                style={styles.modalInput}
+                value={invoiceForm.bank_account_no || ""}
+                onChangeText={(v) => setInvoiceForm({ ...invoiceForm, bank_account_no: v })}
+                placeholder="Account number"
+                keyboardType="number-pad"
+                placeholderTextColor={colors.textSecondary}
+              />
+              <TextInput
+                style={styles.modalInput}
+                value={invoiceForm.bank_branch_code || ""}
+                onChangeText={(v) => setInvoiceForm({ ...invoiceForm, bank_branch_code: v })}
+                placeholder="Branch / universal code"
+                keyboardType="number-pad"
+                placeholderTextColor={colors.textSecondary}
+              />
+              <TextInput
+                style={styles.modalInput}
+                value={invoiceForm.bank_account_type || ""}
+                onChangeText={(v) => setInvoiceForm({ ...invoiceForm, bank_account_type: v })}
+                placeholder="Account type (e.g. Business Cheque)"
+                placeholderTextColor={colors.textSecondary}
+              />
+              <TextInput
+                style={styles.modalInput}
+                value={invoiceForm.bank_swift || ""}
+                onChangeText={(v) => setInvoiceForm({ ...invoiceForm, bank_swift: v })}
+                placeholder="SWIFT / BIC (for international)"
+                autoCapitalize="characters"
+                placeholderTextColor={colors.textSecondary}
+              />
+
+              <Text style={styles.modalGroupTitle}>Notes</Text>
+              <TextInput
+                style={[styles.modalInput, { minHeight: 90 }]}
+                value={invoiceForm.invoice_notes || ""}
+                onChangeText={(v) => setInvoiceForm({ ...invoiceForm, invoice_notes: v })}
+                placeholder="e.g. Payment terms: 30 days. Quote invoice number as reference."
+                placeholderTextColor={colors.textSecondary}
+                multiline
+              />
+
+              <TouchableOpacity
+                style={[styles.modalPrimaryBtn, invoiceSaving && { opacity: 0.6 }]}
+                onPress={saveInvoiceDetails}
+                disabled={invoiceSaving}
+                testID="profile-invoice-save"
+              >
+                {invoiceSaving ? (
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
+                ) : (
+                  <Text style={styles.modalPrimaryBtnText}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -528,6 +887,134 @@ const makeStyles = (colors: Palette, isWide: boolean) => StyleSheet.create({
     ...(isWide ? { maxWidth: 720, width: "100%", alignSelf: "center" } : {}),
   },
   hintText: { color: colors.textSecondary, fontSize: 12, flex: 1, lineHeight: 17 },
+
+  // Company Invoice Details section
+  invoiceHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.xs,
+  },
+  invoiceEditBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  invoiceEditBtnText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  invoicePreviewCard: {
+    marginTop: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    gap: 4,
+  },
+  invoicePreviewCompany: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  invoicePreviewMeta: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  invoicePreviewEmpty: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontStyle: "italic",
+    lineHeight: 16,
+  },
+  downloadInvoiceBtn: {
+    marginTop: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+  },
+  downloadInvoiceBtnText: {
+    color: colors.onPrimary,
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  // Invoice-editor modal
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "flex-end",
+  },
+  modalSheet: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    maxHeight: "88%",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.sm,
+  },
+  modalTitle: { color: colors.text, fontSize: 18, fontWeight: "700" },
+  modalClose: {
+    padding: 6,
+    borderRadius: 999,
+  },
+  modalHelper: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: spacing.md,
+  },
+  modalGroupTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "700",
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === "ios" ? 12 : 8,
+    color: colors.text,
+    fontSize: 14,
+    marginBottom: spacing.xs,
+  },
+  modalPrimaryBtn: {
+    marginTop: spacing.lg,
+    paddingVertical: 14,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalPrimaryBtnText: {
+    color: colors.onPrimary,
+    fontWeight: "700",
+    fontSize: 15,
+  },
 
   // Referral / share card
   referralCodeRow: {

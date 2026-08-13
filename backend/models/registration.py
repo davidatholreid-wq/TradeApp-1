@@ -59,6 +59,23 @@ class DealershipUpdate(BaseModel):
     company_reg_no: Optional[str] = None
     vat_no: Optional[str] = None
     active: Optional[bool] = None
+    # ---- Company invoice details ---------------------------------------
+    # Optional metadata the dealership can populate themselves via the
+    # Profile screen so we can render an un-branded "Company Invoice
+    # Details" PDF they can hand to suppliers or customers. Every field
+    # is a plain string — no validation beyond max-length in the mongo
+    # layer, because these are pure display strings.
+    contact_person: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    website: Optional[str] = None
+    bank_name: Optional[str] = None
+    bank_account_holder: Optional[str] = None
+    bank_account_no: Optional[str] = None
+    bank_branch_code: Optional[str] = None
+    bank_account_type: Optional[str] = None
+    bank_swift: Optional[str] = None
+    invoice_notes: Optional[str] = None
 
 
 class DealershipCreate(BaseModel):

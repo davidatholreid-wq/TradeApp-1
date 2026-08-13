@@ -7373,6 +7373,271 @@ async def admin_restore_dealer(dealer_id: str, current: dict = Depends(require_a
 
 
 # ============ Admin billing report ============
+@api_router.get("/my-dealership")
+async def get_my_dealership(current: dict = Depends(get_current_user)):
+    """Return the currently-signed-in user's dealership record so the
+    Profile screen can pre-fill the Company Invoice Details form.
+
+    Admins do not have a dealership — they get a 404 here (they should
+    use `/admin/dealerships/{id}` instead).
+    """
+    dealership_id = current.get("dealership_id")
+    if not dealership_id:
+        raise HTTPException(404, "Current user has no dealership.")
+    d = await db.dealerships.find_one({"id": dealership_id}, {"_id": 0})
+    if not d:
+        raise HTTPException(404, "Dealership not found.")
+    return {"dealership": d}
+
+
+@api_router.patch("/my-dealership")
+async def patch_my_dealership(
+    payload: DealershipUpdate,
+    current: dict = Depends(get_current_user),
+):
+    """Dealer self-serves updates to their own dealership's invoice
+    details (banking, contact, website, notes).
+
+    Guardrails: dealers cannot rename their dealership, change its
+    `active` flag, or edit VAT / company-reg numbers via this endpoint
+    — those touch billing identity and stay admin-only through
+    `PATCH /admin/dealerships/{id}`. This restriction is applied by
+    ignoring those keys silently instead of erroring, so the mobile
+    form can still send the whole shape without special-casing.
+    """
+    dealership_id = current.get("dealership_id")
+    if not dealership_id:
+        raise HTTPException(404, "Current user has no dealership.")
+
+    editable_fields = {
+        "contact_person", "contact_email", "contact_phone", "website",
+        "bank_name", "bank_account_holder", "bank_account_no",
+        "bank_branch_code", "bank_account_type", "bank_swift",
+        "invoice_notes", "address",
+    }
+    incoming = payload.dict(exclude_none=True)
+    updates = {k: v for k, v in incoming.items() if k in editable_fields}
+    if not updates:
+        raise HTTPException(400, "No editable fields supplied.")
+    updates["updated_at"] = now_utc()
+
+    result = await db.dealerships.update_one(
+        {"id": dealership_id}, {"$set": updates}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(404, "Dealership not found.")
+    fresh = await db.dealerships.find_one({"id": dealership_id}, {"_id": 0})
+    return {"dealership": fresh}
+
+
+@api_router.get("/my-dealership/invoice-details.pdf")
+async def my_dealership_invoice_details_pdf(
+    current: dict = Depends(get_user_flexible),
+):
+    """Generate a clean, UN-BRANDED PDF summarising the dealership's
+    invoice-issuing details so the dealer can attach it to
+    correspondence with suppliers / customers.
+
+    IMPORTANT: no Fourbuy branding, no logo, no marketing footer —
+    the user explicitly asked for a supplier-safe document that
+    represents ONLY their own company. Anything Fourbuy-ish would
+    defeat the purpose.
+
+    Accepts both `Authorization: Bearer <jwt>` (in-app fetch) and
+    `?access_token=<jwt>` (native WebBrowser opening the URL directly).
+    """
+    dealership_id = current.get("dealership_id")
+    if not dealership_id:
+        raise HTTPException(404, "Current user has no dealership.")
+    d = await db.dealerships.find_one({"id": dealership_id}, {"_id": 0})
+    if not d:
+        raise HTTPException(404, "Dealership not found.")
+
+    pdf_bytes = _build_dealership_invoice_details_pdf(d)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'inline; filename="{(d.get("name") or "company").replace(" ", "_")}_invoice_details.pdf"'
+            ),
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+def _build_dealership_invoice_details_pdf(d: dict) -> bytes:
+    """Render the un-branded Company Invoice Details PDF.
+
+    Layout is deliberately plain — a business-card style header with
+    the company name, then two-column key/value tables for Company
+    Details, Contact Details, and Banking Details. Every section is
+    rendered ONLY if it has at least one populated field, so the
+    document never shows a wall of blank rows.
+    """
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors as rl_colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from io import BytesIO
+
+    def _v(*keys: str) -> str:
+        """First non-empty stringified value from the doc for any of the
+        keys, or the empty string. Prevents "None" from bleeding into
+        the PDF for freshly-created dealerships."""
+        for k in keys:
+            v = d.get(k)
+            if v is None:
+                continue
+            s = str(v).strip()
+            if s:
+                return s
+        return ""
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=22 * mm, rightMargin=22 * mm,
+        topMargin=24 * mm, bottomMargin=22 * mm,
+        title=f"{_v('name') or 'Company'} — Invoice Details",
+        author=_v("name") or "Company",
+    )
+    styles = getSampleStyleSheet()
+
+    ink = rl_colors.HexColor("#111111")
+    subtle = rl_colors.HexColor("#666666")
+    rule = rl_colors.HexColor("#E4E4E7")
+
+    style_company = ParagraphStyle(
+        "company", parent=styles["Title"], fontName="Helvetica-Bold",
+        fontSize=22, textColor=ink, alignment=0, spaceAfter=2,
+    )
+    style_sub = ParagraphStyle(
+        "sub", parent=styles["Normal"], fontName="Helvetica",
+        fontSize=10, textColor=subtle, alignment=0, spaceAfter=10,
+    )
+    style_section = ParagraphStyle(
+        "section", parent=styles["Heading2"], fontName="Helvetica-Bold",
+        fontSize=11, textColor=ink, alignment=0, spaceBefore=14,
+        spaceAfter=6, letterSpacing=1,
+    )
+    style_body = ParagraphStyle(
+        "body", parent=styles["Normal"], fontName="Helvetica",
+        fontSize=10, textColor=ink, leading=13,
+    )
+    style_muted = ParagraphStyle(
+        "muted", parent=styles["Normal"], fontName="Helvetica-Oblique",
+        fontSize=9, textColor=subtle, leading=12,
+    )
+
+    story = []
+
+    # ---- Header block: company name + optional strapline --------------
+    story.append(Paragraph(_v("name") or "Company", style_company))
+
+    # Strapline: use the first non-empty of website / contact_email so the
+    # top of the sheet always has SOMETHING to identify the dealership by.
+    strapline_bits = []
+    if _v("website"):        strapline_bits.append(_v("website"))
+    if _v("contact_email"):  strapline_bits.append(_v("contact_email"))
+    if _v("contact_phone"):  strapline_bits.append(_v("contact_phone"))
+    if strapline_bits:
+        story.append(Paragraph("  ·  ".join(strapline_bits), style_sub))
+
+    # Divider rule so the header feels grounded.
+    story.append(Spacer(1, 4))
+    rule_tbl = Table([[""]], colWidths=[166 * mm], rowHeights=[0.6])
+    rule_tbl.setStyle(TableStyle([("LINEBELOW", (0, 0), (-1, -1), 0.6, rule)]))
+    story.append(rule_tbl)
+    story.append(Spacer(1, 6))
+
+    # ---- Section: Company details -------------------------------------
+    company_rows: list[list[str]] = []
+    if _v("company_reg_no"):
+        company_rows.append(["Company Registration No.", _v("company_reg_no")])
+    if _v("vat_no"):
+        company_rows.append(["VAT Number", _v("vat_no")])
+    if _v("address"):
+        # Address may be multi-line — render as a Paragraph so line-breaks show.
+        company_rows.append(["Business Address", Paragraph(_v("address").replace("\n", "<br/>"), style_body)])
+    if company_rows:
+        story.append(Paragraph("COMPANY DETAILS", style_section))
+        tbl = Table(company_rows, colWidths=[55 * mm, 111 * mm])
+        tbl.setStyle(TableStyle([
+            ("FONT",         (0, 0), (0, -1), "Helvetica-Bold", 10),
+            ("FONT",         (1, 0), (1, -1), "Helvetica",       10),
+            ("TEXTCOLOR",    (0, 0), (0, -1), subtle),
+            ("TEXTCOLOR",    (1, 0), (1, -1), ink),
+            ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+            ("LINEBELOW",    (0, 0), (-1, -1), 0.3, rule),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 6),
+            ("TOPPADDING",   (0, 0), (-1, -1), 6),
+        ]))
+        story.append(tbl)
+
+    # ---- Section: Contact details -------------------------------------
+    contact_rows: list[list[str]] = []
+    if _v("contact_person"): contact_rows.append(["Contact Person", _v("contact_person")])
+    if _v("contact_email"):  contact_rows.append(["Email",          _v("contact_email")])
+    if _v("contact_phone"):  contact_rows.append(["Phone",          _v("contact_phone")])
+    if _v("website"):        contact_rows.append(["Website",        _v("website")])
+    if contact_rows:
+        story.append(Paragraph("CONTACT DETAILS", style_section))
+        tbl = Table(contact_rows, colWidths=[55 * mm, 111 * mm])
+        tbl.setStyle(TableStyle([
+            ("FONT",         (0, 0), (0, -1), "Helvetica-Bold", 10),
+            ("FONT",         (1, 0), (1, -1), "Helvetica",       10),
+            ("TEXTCOLOR",    (0, 0), (0, -1), subtle),
+            ("TEXTCOLOR",    (1, 0), (1, -1), ink),
+            ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+            ("LINEBELOW",    (0, 0), (-1, -1), 0.3, rule),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 6),
+            ("TOPPADDING",   (0, 0), (-1, -1), 6),
+        ]))
+        story.append(tbl)
+
+    # ---- Section: Banking details -------------------------------------
+    banking_rows: list[list[str]] = []
+    if _v("bank_name"):            banking_rows.append(["Bank",              _v("bank_name")])
+    if _v("bank_account_holder"):  banking_rows.append(["Account Holder",    _v("bank_account_holder")])
+    if _v("bank_account_no"):      banking_rows.append(["Account Number",    _v("bank_account_no")])
+    if _v("bank_branch_code"):     banking_rows.append(["Branch Code",       _v("bank_branch_code")])
+    if _v("bank_account_type"):    banking_rows.append(["Account Type",      _v("bank_account_type")])
+    if _v("bank_swift"):           banking_rows.append(["SWIFT / BIC",       _v("bank_swift")])
+    if banking_rows:
+        story.append(Paragraph("BANKING DETAILS", style_section))
+        tbl = Table(banking_rows, colWidths=[55 * mm, 111 * mm])
+        tbl.setStyle(TableStyle([
+            ("FONT",         (0, 0), (0, -1), "Helvetica-Bold", 10),
+            ("FONT",         (1, 0), (1, -1), "Helvetica",       10),
+            ("TEXTCOLOR",    (0, 0), (0, -1), subtle),
+            ("TEXTCOLOR",    (1, 0), (1, -1), ink),
+            ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+            ("LINEBELOW",    (0, 0), (-1, -1), 0.3, rule),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 6),
+            ("TOPPADDING",   (0, 0), (-1, -1), 6),
+        ]))
+        story.append(tbl)
+
+    # ---- Optional notes ------------------------------------------------
+    if _v("invoice_notes"):
+        story.append(Paragraph("NOTES", style_section))
+        story.append(Paragraph(_v("invoice_notes").replace("\n", "<br/>"), style_body))
+
+    # If nothing at all was populated (fresh dealership), leave a gentle
+    # hint so the empty PDF isn't confusing.
+    if not (company_rows or contact_rows or banking_rows or _v("invoice_notes")):
+        story.append(Paragraph(
+            "No invoice details captured yet. Add them under Profile → "
+            "Company Invoice Details to populate this sheet.",
+            style_muted,
+        ))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
 @api_router.get("/billing/my")
 async def my_billing(
     month: Optional[str] = None,
