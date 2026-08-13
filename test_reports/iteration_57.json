@@ -1,0 +1,44 @@
+{
+  "summary": "Visual QA sweep — Button contrast audit across Light and Dark themes on mobile (390x844) as admin (admin@fourbuy.co.za). Walked through Login, Public Valuation, Home, Submissions, Stock, Dealers, Profile, Vehicle detail (FB-000156, FB-000155). Toggled theme via Profile -> theme-toggle-light/dark. Screenshots captured for each screen in both themes. Result: 21 pass / 3 fail / 6 aesthetic. Key regressions found in LIGHT mode: the 'Sign Out' button on Profile has salmon text on very pale pink background (P1 low contrast); the FB-reference chip contrast is low; some ghost buttons in Stock/Dealers have very light borders on white cards. In DARK mode: 'Update Price' filled button visually blends into its parent dark card (icon+label are legible but the button silhouette disappears - aesthetic); delete/trash icon in the header uses red on a near-black surface with low contrast; 'Contact on WhatsApp' green ghost button contrast is fine, but 'Deal Done' outline chip has a barely-visible dark border. Natis Owners Query Pending amber chip verified in both themes and looks tasteful.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Profile > Sign Out button", "issue": "In LIGHT mode: pale salmon text on very pale pink background - label barely readable (P1). In DARK mode: dark red text on near-black card, low but acceptable contrast (P2).", "testID": "logout-button", "priority": "P1"},
+      {"component": "Vehicle detail > REFERENCE row chip (FB-000156 pill)", "issue": "In LIGHT mode top of card: the 'FB-000156' pill on the right side of the REFERENCE row appears very low contrast (light gray on white). In DARK mode the same pill is readable. Visible in L_veh156_top_closeup vs D_veh156_top_closeup.", "testID": "n/a", "priority": "P1"},
+      {"component": "Vehicle detail > Admin Pricing > Update Price primary button", "issue": "In DARK mode the filled button uses black/near-black fill on a near-black card - the button outline disappears entirely into the card. Only the white icon+label are visible. Looks like floating text. Aesthetic/P2.", "testID": "update-price-button", "priority": "P2"},
+      {"component": "Vehicle detail header > Trash / delete icon (top-right)", "issue": "In DARK mode the trash icon is drawn in red on a near-black surface, low contrast; combined with no explicit hit-target background, it is easy to miss. P2. In LIGHT mode it's a clearer red on white - fine.", "testID": "vehicle-delete-button", "priority": "P2"},
+      {"component": "Stock list > 'Open' ghost button on each row", "issue": "In LIGHT mode the outline is a very pale gray on white card - button edges nearly invisible. Label is still readable so P2. 'Mark Sold' primary button next to it is fine (black fill).", "testID": "stock-open-button", "priority": "P2"},
+      {"component": "Dealers > 'New Dealership' + 'Show archived' header buttons", "issue": "In LIGHT mode both header buttons render as white/near-white pills with a thin gray outline on a white background - very subtle. Label text is dark and readable so this is aesthetic (P2). In DARK mode the same buttons show fine.", "testID": "n/a", "priority": "P2"},
+      {"component": "Vehicle detail > Deal outcome tri-state chips (Pending / Deal Done / No Deal)", "issue": "In DARK mode 'Deal Done' and 'No Deal' inactive outline chips use a very dark outline on the dark card; the outlines nearly disappear and the chips look like plain text. Icons are legible so P2 aesthetic. Amber 'Pending' active chip is fine in both themes.", "testID": "deal-outcome-pending / deal-done / no-deal", "priority": "P2"},
+      {"component": "Vehicle detail > 'LOCKED AT VALUATION' pill", "issue": "In LIGHT mode the pill uses light gray fill with mid-gray text on a white card - low contrast but readable. P2 aesthetic.", "testID": "n/a", "priority": "P2"},
+      {"component": "Public valuation portal > 'Continue' primary CTA (unauth)", "issue": "Portal is dark-themed only; 'Continue' button is white with dark label, readable. Toggle does not apply here (public page). Reported as OK but note there is no light-mode variant.", "testID": "public-valuation-continue", "priority": "P2"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Profile (Light)", "issues": ["Sign Out button uses tinted-red text on tinted-red background (approx #FEE2E2 bg / #F87171 text) - fails WCAG AA."]},
+      {"screen": "Vehicle detail (Light)", "issues": ["FB reference pill contrast is poor.", "'LOCKED AT VALUATION' pill grey-on-white is subtle."]},
+      {"screen": "Vehicle detail (Dark)", "issues": ["Primary filled buttons (Update Price) blend into dark card - consider adding a subtle border or lifting the button surface.", "Inactive outline chips use near-invisible borders."]},
+      {"screen": "Stock/Dealers (Light)", "issues": ["Ghost/outline header buttons need a slightly darker border to be discoverable on white cards."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Fix Sign Out (logout-button) in LIGHT mode - increase text contrast (e.g. use #B91C1C or #991B1B text on #FEE2E2 bg, or use outlined red border with darker label).",
+    "Increase contrast of FB-reference chip on vehicle detail in LIGHT mode (use darker text on the pill).",
+    "In DARK mode add a subtle border or 1-2 shade lift to the 'Update Price' primary button so its silhouette is visible against the card.",
+    "Review inactive Deal Outcome outline chips in DARK mode - increase border alpha or lighten the outline color.",
+    "In LIGHT mode strengthen the outline color on Stock 'Open' and Dealers header ghost buttons for discoverability.",
+    "In DARK mode consider giving the header trash icon a slightly larger tap-target background or a lighter red so it's easier to spot."
+  ],
+  "critical_code_review_comments": [
+    "Not applicable for a visual audit - no code changes made."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A", "frontend": "70% (buttons overwhelmingly OK; 3 P1/priority issues found)"},
+  "seed_data_creation": "None. Used existing FB-000156 (Mercedes AMG C43) and FB-000155 (VW Tiguan) submissions.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Vehicle IDs used: FB-000156=38b860ee-fb00-4784-a7a0-987031de2325, FB-000155=a18787ac-b4ea-41f6-ae03-90bc41322559. Toggle theme via Profile tab (testIDs theme-toggle-light / theme-toggle-dark). The Natis Owners Query Pending amber chip renders on FB-000156's Kredo CarTrust Vehicle Report row inside VIN-Linked Reports section - verified readable in both themes.",
+  "rca_of_issue": "Root cause for Light-mode Sign Out button contrast: destructive/danger button uses low-alpha tinted red for both bg and label in the light palette. Root cause for Dark-mode Update Price button: primary variant uses colors.card as fill on dark surfaces so it collapses into the parent card. Both are token-level fixes in the theme file, not per-screen fixes."
+}
