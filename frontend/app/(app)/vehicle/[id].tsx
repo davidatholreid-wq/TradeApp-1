@@ -905,7 +905,12 @@ export default function VehicleDetail() {
       // dialog / the native PDF viewer. This works both on device and
       // in web preview, and doesn't rely on the (now expired) presigned
       // Kredo S3 URL.
-      const token = await storage.getItem(TOKEN_KEY);
+      // IMPORTANT: auth tokens are written via `storage.secureSet`
+      // (Keychain / SecureStore), so we MUST read them back with
+      // `secureGet` — plain `getItem` hits AsyncStorage and returns
+      // null, which causes the backend to reject the request with 401
+      // ("Could not open PDF — Server returned 401", seen on FB-000155).
+      const token = await storage.secureGet<string>(TOKEN_KEY, "");
       // Cache-buster: mid-Aug 2026 the endpoint's PDF payload changed
       // twice (compact locally-rendered → Kredo's full 5-page).
       // Without a fresh URL every open the browser / OS PDF viewer
@@ -1559,12 +1564,13 @@ export default function VehicleDetail() {
                   // stamps a red "SUBMISSION EXPIRED" banner on page 1
                   // so the dealer never mistakes this for a live doc.
                   try {
-                    // IMPORTANT: use TOKEN_KEY (== "app.auth.token"), NOT
-                    // the literal "token" — the auth key was previously
-                    // wrong here which caused every archived-PDF fetch
-                    // to hit the backend without an Authorization header
-                    // and receive a 401.
-                    const token = await storage.getItem(TOKEN_KEY);
+                    // IMPORTANT: auth tokens are written via
+                    // `storage.secureSet` (Keychain / SecureStore).
+                    // Reading with `getItem` (AsyncStorage) returns
+                    // null and the request goes out unauthenticated →
+                    // the backend rejects it with 401. Always use
+                    // `secureGet` for TOKEN_KEY.
+                    const token = await storage.secureGet<string>(TOKEN_KEY, "");
                     const base = process.env.EXPO_PUBLIC_BACKEND_URL || "";
                     const fetchUrl = `${base}/api/submissions/${id}/valuation.pdf`;
                     const res = await fetch(fetchUrl, {
