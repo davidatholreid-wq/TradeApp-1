@@ -1108,18 +1108,20 @@ async def kredo_cartrust_pdf(
     submission_id: str,
     current: dict = Depends(get_current_user),
 ):
-    """Stream a full CarTrust PDF back to authorised callers.
+    """Stream the CarTrust PDF back to authorised callers.
 
-    History: Kredo delivers a *compact* PDF that only surfaces a subset
-    of the fields the CarTrust API actually returns. Dealers reviewing
-    reports on FB-000154 flagged that the on-screen JSON contained
-    Ownership, Technical, Microdot, Financial-interest and Generic-
-    spec sections that never appeared in the downloadable PDF.
-    Aug 2026: switched to a locally-rendered PDF built from the full
-    ``pdf_sections`` payload in the callback JSON so every table
-    Kredo ships is visible to the dealer. The original Kredo PDF is
-    still kept on the record (``pdf_b64``) as a backup — we fall
-    back to it if the JSON is missing for some reason.
+    History:
+      * Aug 2026 (v1) — Served Kredo's own PDF verbatim.
+      * Aug 2026 (v2) — Switched to a locally-rendered PDF built from
+        the callback JSON's ``pdf_sections`` because dealers complained
+        Kredo's PDF looked "compact". That turned out to be wrong:
+        Kredo's PDF actually contains DATA THAT ISN'T IN THE
+        CALLBACK JSON (Owner history / previous owners, "Requested
+        By" metadata, Mileage-over-time timeline). Rendering only
+        from the JSON silently dropped those sections on FB-000154.
+      * Aug 2026 (v3, current) — Prefer Kredo's PDF (the richest
+        source of truth), and only fall back to the locally-rendered
+        PDF if the stored bytes are missing or corrupt.
 
     Dealers may only read their own dealership's PDFs; admins may read
     any.
@@ -1144,29 +1146,34 @@ async def kredo_cartrust_pdf(
     if not report or report.get("status") != "completed":
         raise HTTPException(404, "No completed CarTrust report for this submission")
 
-    # Prefer the locally-rendered "full" PDF built from pdf_sections.
-    ct_raw = ((report.get("callback_payload") or {}).get("cartrust_json"))
+    # v3: Prefer Kredo's own PDF — it contains sections (Owner history,
+    # Requested-By metadata, Mileage-over-time) that the callback JSON
+    # doesn't expose.
     pdf_bytes: Optional[bytes] = None
-    if ct_raw:
-        try:
-            pdf_bytes = _render_cartrust_pdf_from_json(ct_raw, sub)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("cartrust: local PDF render failed, falling back to Kredo PDF: %s", exc)
-            pdf_bytes = None
-
-    # Fallback to the Kredo-supplied PDF if the JSON isn't available
-    # or the local render blew up.
-    if pdf_bytes is None:
-        pdf_b64 = report.get("pdf_b64")
-        if not pdf_b64:
-            raise HTTPException(
-                404,
-                "PDF bytes missing — report may have been ordered before PDF hosting was enabled. Please re-order.",
-            )
+    pdf_b64 = report.get("pdf_b64")
+    if pdf_b64:
         try:
             pdf_bytes = _base64.b64decode(pdf_b64)
         except Exception:
-            raise HTTPException(500, "Stored PDF is corrupt") from None
+            logger.warning("cartrust: stored pdf_b64 is corrupt for %s, will try JSON render", submission_id)
+            pdf_bytes = None
+
+    # Fallback — render from JSON if Kredo's PDF bytes aren't stored
+    # or failed to decode.  This is intentionally a fallback because
+    # the JSON is a subset of what Kredo prints.
+    if pdf_bytes is None:
+        ct_raw = ((report.get("callback_payload") or {}).get("cartrust_json"))
+        if ct_raw:
+            try:
+                pdf_bytes = _render_cartrust_pdf_from_json(ct_raw, sub)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("cartrust: local PDF render failed for %s: %s", submission_id, exc)
+
+    if pdf_bytes is None:
+        raise HTTPException(
+            404,
+            "PDF bytes missing — report may have been ordered before PDF hosting was enabled. Please re-order.",
+        )
 
     filename = f"cartrust_{sub.get('reference') or submission_id}.pdf"
     return Response(
