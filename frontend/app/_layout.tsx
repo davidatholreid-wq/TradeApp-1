@@ -18,6 +18,33 @@ LogBox.ignoreAllLogs(true);
 
 SplashScreen.preventAutoHideAsync();
 
+// -----------------------------------------------------------------------------
+// Web safety net: swallow @expo/vector-icons -> expo-font -> fontfaceobserver
+// 6000ms timeout rejections. These fire when Metro's dev server (or the icon
+// CDN) is momentarily slow to serve a .ttf file. The failure is transient and
+// self-heals (icons render as boxes for a beat, then swap in once the font
+// arrives), but the raw promise rejection surfaces in the RN Web error overlay
+// as "Uncaught Error: 6000ms timeout exceeded" which looks like a crash to
+// the user. Filter those specific rejections out so real errors still bubble.
+// -----------------------------------------------------------------------------
+if (Platform.OS === "web" && typeof window !== "undefined") {
+  const isFontTimeout = (msg: unknown): boolean => {
+    if (!msg) return false;
+    const s = typeof msg === "string" ? msg : (msg as any).message || String(msg);
+    return typeof s === "string" && s.includes("ms timeout exceeded");
+  };
+  window.addEventListener("unhandledrejection", (event) => {
+    if (isFontTimeout((event as any).reason)) {
+      event.preventDefault();
+    }
+  });
+  window.addEventListener("error", (event) => {
+    if (isFontTimeout((event as any).error) || isFontTimeout((event as any).message)) {
+      event.preventDefault();
+    }
+  });
+}
+
 // Push notification: foreground handler (module scope)
 if (Platform.OS !== "web") {
   Notifications.setNotificationHandler({
