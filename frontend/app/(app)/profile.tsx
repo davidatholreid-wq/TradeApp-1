@@ -916,7 +916,9 @@ const makeStyles = (colors: Palette, isWide: boolean) => StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.surface,
+    // Palette uses `card`, not `surface` — the previous key resolved to
+    // undefined which RN Web rendered as transparent.
+    backgroundColor: colors.card,
     gap: 4,
   },
   invoicePreviewCompany: {
@@ -958,12 +960,12 @@ const makeStyles = (colors: Palette, isWide: boolean) => StyleSheet.create({
     justifyContent: "flex-end",
   },
   modalSheet: {
-    // Use surface (card colour) NOT background — a dark-mode background
-    // that inherits a partial-transparency at the OS layer was making
-    // the sheet look see-through. Surface is guaranteed opaque + gives
-    // us the right paper feel. Add a subtle top border + shadow so it
-    // clearly floats over the dimmed backdrop.
-    backgroundColor: colors.surface,
+    // The palette exposes `card` / `paper` / `cardElev` — NOT `surface`
+    // or `background`. Using undefined values on RN Web renders as
+    // transparent, which is what made the sheet see-through. `paper`
+    // is our darkest "solid canvas" hue and the correct choice for a
+    // full-height modal card.
+    backgroundColor: colors.paper,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderTopWidth: 1,
@@ -980,7 +982,7 @@ const makeStyles = (colors: Palette, isWide: boolean) => StyleSheet.create({
         shadowOffset: { width: 0, height: -4 },
       },
       android: { elevation: 24 },
-      default: { boxShadow: "0 -6px 24px rgba(0,0,0,0.25)" as any },
+      default: { boxShadow: "0 -6px 24px rgba(0,0,0,0.35)" as any },
     }),
   },
   modalHeader: {
@@ -1012,10 +1014,10 @@ const makeStyles = (colors: Palette, isWide: boolean) => StyleSheet.create({
   modalInput: {
     borderWidth: 1,
     borderColor: colors.border,
-    // Sheet is now `colors.surface`; use `colors.background` (or a
-    // near-white/near-black paired hue) so the input box stands out
-    // clearly against the sheet and typed text is easy to read.
-    backgroundColor: colors.background,
+    // `inputBg` is the palette's dedicated input surface — clearly
+    // distinct from `paper` (the sheet) so each field visibly stands
+    // out. Fixes the see-through look on both dark and light themes.
+    backgroundColor: colors.inputBg,
     borderRadius: radius.sm,
     paddingHorizontal: 12,
     paddingVertical: Platform.OS === "ios" ? 12 : 8,
