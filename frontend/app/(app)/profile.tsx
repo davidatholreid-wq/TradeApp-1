@@ -954,16 +954,34 @@ const makeStyles = (colors: Palette, isWide: boolean) => StyleSheet.create({
   // Invoice-editor modal
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
+    backgroundColor: "rgba(0,0,0,0.55)",
     justifyContent: "flex-end",
   },
   modalSheet: {
-    backgroundColor: colors.background,
+    // Use surface (card colour) NOT background — a dark-mode background
+    // that inherits a partial-transparency at the OS layer was making
+    // the sheet look see-through. Surface is guaranteed opaque + gives
+    // us the right paper feel. Add a subtle top border + shadow so it
+    // clearly floats over the dimmed backdrop.
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
+    borderTopWidth: 1,
+    borderColor: colors.border,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
+    paddingBottom: Platform.OS === "ios" ? 24 : 12,
     maxHeight: "88%",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.25,
+        shadowRadius: 16,
+        shadowOffset: { width: 0, height: -4 },
+      },
+      android: { elevation: 24 },
+      default: { boxShadow: "0 -6px 24px rgba(0,0,0,0.25)" as any },
+    }),
   },
   modalHeader: {
     flexDirection: "row",
@@ -994,7 +1012,10 @@ const makeStyles = (colors: Palette, isWide: boolean) => StyleSheet.create({
   modalInput: {
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.surface,
+    // Sheet is now `colors.surface`; use `colors.background` (or a
+    // near-white/near-black paired hue) so the input box stands out
+    // clearly against the sheet and typed text is easy to read.
+    backgroundColor: colors.background,
     borderRadius: radius.sm,
     paddingHorizontal: 12,
     paddingVertical: Platform.OS === "ios" ? 12 : 8,
