@@ -1019,6 +1019,19 @@ async def kredo_cartrust_status(
     report = ((sub.get("reports") or {}).get("kredo_cartrust") or None)
     if not report:
         return {"status": "not_ordered", "report": None}
+    # Backfill ownership_status for reports that landed before we started
+    # stamping it (any submission where the callback fired prior to this
+    # feature). Cheap re-derivation from the stored payload — no vendor
+    # call. Persists so subsequent polls skip the recompute.
+    if report.get("status") == "completed" and not report.get("ownership_status"):
+        cb = report.get("callback_payload") or {}
+        if cb:
+            derived = _derive_ownership_status(cb)
+            report["ownership_status"] = derived
+            await db.submissions.update_one(
+                {"id": submission_id},
+                {"$set": {"reports.kredo_cartrust.ownership_status": derived}},
+            )
     return {"status": report.get("status", "unknown"), "report": report}
 
 
@@ -1236,8 +1249,93 @@ async def kredo_cartrust_callback(request: Request):
         set_updates["reports.kredo_cartrust.pdf_public_id"] = fetched.get("pdf_public_id")
         set_updates["reports.kredo_cartrust.hosted_on_cloudinary"] = bool(fetched.get("pdf_public_id"))
 
+    # Compute an at-a-glance ownership_status derived from the callback
+    # payload so the mobile app doesn't need to walk the whole cartrust
+    # JSON on every render. Kredo returns literal `"No Record Found"`
+    # strings for every ownership field when their downstream data feed
+    # has nothing on the VIN (verified on FB-000155 & FB-000156). We
+    # surface this as `pending` on the report so the UI can show a
+    # small "ownership pending" banner, and flip to `populated` on any
+    # subsequent callback that carries a real value.
+    ownership_status = _derive_ownership_status(payload)
+    set_updates["reports.kredo_cartrust.ownership_status"] = ownership_status
+    set_updates["reports.kredo_cartrust.last_callback_at"] = now
+
     await db.submissions.update_one({"id": sub_id}, {"$set": set_updates})
-    return {"ok": True, "matched": True, "status": "completed"}
+    return {"ok": True, "matched": True, "status": "completed", "ownership_status": ownership_status}
+
+
+# ---------------------------------------------------------------------------
+# Ownership-status helpers
+# ---------------------------------------------------------------------------
+_OWNERSHIP_KEYS = (
+    "OwnerID", "OwnerInitials", "OwnerSurname", "OwnerNationality",
+    "PreviousOwnerID", "PreviousOwnerDate",
+)
+_OWNERSHIP_EMPTY_MARKERS = {
+    "no record found", "", "n/a", "na", "none", "null", "—", "-", "unknown",
+}
+
+
+def _derive_ownership_status(callback_payload: dict[str, Any]) -> str:
+    """Peek into a Kredo cartrust callback and decide whether the
+    ownership section actually contains real data.
+
+    Returns one of:
+      * ``"populated"`` — at least one ownership field has a real value
+      * ``"pending"``   — every ownership field is either missing or a
+        recognised empty marker (``"No Record Found"``, ``"N/A"``, …)
+      * ``"unknown"``   — we couldn't locate an ownership block at all
+        (schema drift, or the callback JSON was not the datacard shape)
+
+    Never raises — defensive by design because it runs on the webhook
+    hot path.
+    """
+    try:
+        ct_raw = callback_payload.get("cartrust_json") or callback_payload.get("cartrustJson")
+        if ct_raw is None:
+            # Some Kredo payloads inline the datacard at top level.
+            data = callback_payload
+        elif isinstance(ct_raw, str):
+            import json as _json
+            data = _json.loads(ct_raw)
+        else:
+            data = ct_raw
+
+        ownership = None
+        # Walk shallowly (max 3 levels) for an "ownership" dict.
+        def _find(o, depth: int = 0):
+            nonlocal ownership
+            if depth > 3 or ownership is not None:
+                return
+            if isinstance(o, dict):
+                for k, v in o.items():
+                    if isinstance(k, str) and k.lower() in ("ownership", "owner_history", "owners"):
+                        if isinstance(v, dict):
+                            ownership = v
+                            return
+                    _find(v, depth + 1)
+            elif isinstance(o, list):
+                for x in o[:20]:
+                    _find(x, depth + 1)
+        _find(data)
+
+        if ownership is None:
+            return "unknown"
+
+        populated = False
+        for k in _OWNERSHIP_KEYS:
+            v = ownership.get(k)
+            if v is None:
+                continue
+            s = str(v).strip().lower()
+            if s not in _OWNERSHIP_EMPTY_MARKERS:
+                populated = True
+                break
+        return "populated" if populated else "pending"
+    except Exception:
+        logger.exception("_derive_ownership_status: unexpected failure")
+        return "unknown"
 
 
 @router.get("/kredo/cartrust/pdf/{submission_id}")

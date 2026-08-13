@@ -28,6 +28,8 @@ import type { Submission, ReportOrder } from "@/src/types/vehicle";
 export type CartrustState = {
   status: "pending" | "completed" | "failed" | string;
   error?: string | null;
+  ownership_status?: "populated" | "pending" | "unknown" | null;
+  last_callback_at?: string | null;
 } | null | undefined;
 
 export type ConfirmReportChoice = {
@@ -259,6 +261,27 @@ export function VinLinkedReportsCard({
                         : cartrust.status === "completed"
                           ? "Ready to view"
                           : (cartrust.error || "Please try again")}
+                    </Text>
+                  </View>
+                ) : null}
+                {/* Ownership-pending banner: Kredo returns "No Record Found"
+                    for every ownership field when their downstream data
+                    feed hasn't populated for the VIN yet. It CAN backfill
+                    within ~24h via a second callback (our matcher accepts
+                    that) but is not guaranteed. Set expectations for the
+                    dealer instead of them thinking the report is broken. */}
+                {cartrust?.status === "completed" &&
+                cartrust?.ownership_status === "pending" ? (
+                  <View style={styles.cartrustOwnershipBanner} testID="cartrust-ownership-pending">
+                    <Ionicons
+                      name="time-outline"
+                      size={14}
+                      color={colors.warning || "#B45309"}
+                    />
+                    <Text style={styles.cartrustOwnershipBannerText}>
+                      Ownership section pending — Kredo may backfill this
+                      within ~24 hours. Re-open the report later for the
+                      updated version (no re-order required).
                     </Text>
                   </View>
                 ) : null}

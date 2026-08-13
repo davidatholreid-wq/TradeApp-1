@@ -2243,6 +2243,27 @@ export const makeStyles = (colors: Palette) => StyleSheet.create({
   statusPillTextOk: { color: colors.onPrimary },
   reportStatusRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 },
   reportStatusMeta: { color: colors.textSecondary, fontSize: 11, flex: 1 },
+  // "Ownership pending" chip shown under the CarTrust row. Uses the
+  // theme's warning colour where available; falls back to an amber that
+  // works on both light & dark themes.
+  cartrustOwnershipBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: (colors as any).warningBorder || "#F4C36B",
+    backgroundColor: (colors as any).warningBg || "#FEF3C7",
+  },
+  cartrustOwnershipBannerText: {
+    flex: 1,
+    color: (colors as any).warningText || "#78350F",
+    fontSize: 11,
+    lineHeight: 15,
+  },
   viewReportBtn: {
     flexDirection: "row",
     alignItems: "center",

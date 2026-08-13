@@ -693,6 +693,13 @@ export default function VehicleDetail() {
     pdf_url?: string | null;
     cost_zar?: number | null;
     error?: string | null;
+    // Derived server-side (`_derive_ownership_status`). Values:
+    //   "populated" — at least one ownership field has a real value.
+    //   "pending"   — every ownership field is "No Record Found" (Kredo's
+    //                 downstream feed hasn't backfilled yet).
+    //   "unknown"   — couldn't locate an ownership block (schema drift).
+    ownership_status?: "populated" | "pending" | "unknown" | null;
+    last_callback_at?: string | null;
   };
   const [cartrust, setCartrust] = useState<CartrustReport | null>(null);
   const [cartrustLoading, setCartrustLoading] = useState(false);
