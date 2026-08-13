@@ -2241,28 +2241,28 @@ export const makeStyles = (colors: Palette) => StyleSheet.create({
   statusPillText: { fontSize: 9, fontWeight: "800", letterSpacing: 1 },
   statusPillTextPending: { color: colors.warning },
   statusPillTextOk: { color: colors.onPrimary },
-  reportStatusRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 },
+  reportStatusRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6, flexWrap: "wrap" },
   reportStatusMeta: { color: colors.textSecondary, fontSize: 11, flex: 1 },
-  // "Ownership pending" chip shown under the CarTrust row. Uses the
-  // theme's warning colour where available; falls back to an amber that
-  // works on both light & dark themes.
-  cartrustOwnershipBanner: {
+  // Compact "Natis Owners Query Pending" chip — sits inline with the
+  // status pill so the CarTrust card stays a single-row summary on
+  // narrow phone widths. Amber palette for a soft "waiting on data"
+  // signal without alarming the dealer.
+  cartrustOwnershipChip: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 6,
-    marginTop: 6,
+    alignItems: "center",
+    gap: 4,
     paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: radius.sm,
+    paddingVertical: 3,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: (colors as any).warningBorder || "#F4C36B",
     backgroundColor: (colors as any).warningBg || "#FEF3C7",
   },
-  cartrustOwnershipBannerText: {
-    flex: 1,
+  cartrustOwnershipChipText: {
     color: (colors as any).warningText || "#78350F",
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.2,
   },
   viewReportBtn: {
     flexDirection: "row",

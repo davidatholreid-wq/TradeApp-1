@@ -255,34 +255,35 @@ export function VinLinkedReportsCard({
                         {String(cartrust.status).toUpperCase()}
                       </Text>
                     </View>
-                    <Text style={styles.reportStatusMeta}>
-                      {cartrust.status === "pending"
-                        ? "Kredo is preparing your report…"
-                        : cartrust.status === "completed"
-                          ? "Ready to view"
-                          : (cartrust.error || "Please try again")}
-                    </Text>
-                  </View>
-                ) : null}
-                {/* Ownership-pending banner: Kredo returns "No Record Found"
-                    for every ownership field when their downstream data
-                    feed hasn't populated for the VIN yet. It CAN backfill
-                    within ~24h via a second callback (our matcher accepts
-                    that) but is not guaranteed. Set expectations for the
-                    dealer instead of them thinking the report is broken. */}
-                {cartrust?.status === "completed" &&
-                cartrust?.ownership_status === "pending" ? (
-                  <View style={styles.cartrustOwnershipBanner} testID="cartrust-ownership-pending">
-                    <Ionicons
-                      name="time-outline"
-                      size={14}
-                      color={colors.warning || "#B45309"}
-                    />
-                    <Text style={styles.cartrustOwnershipBannerText}>
-                      Ownership section pending — Kredo may backfill this
-                      within ~24 hours. Re-open the report later for the
-                      updated version (no re-order required).
-                    </Text>
+                    {/* Inline "Natis Owners Query Pending" pill — surfaced when
+                        Kredo's ownership feed hasn't backfilled yet. Kept as a
+                        single compact chip so it slots next to the status pill
+                        without breaking the row into a 4-line block on narrow
+                        phone widths. */}
+                    {cartrust.status === "completed" &&
+                    cartrust.ownership_status === "pending" ? (
+                      <View
+                        style={styles.cartrustOwnershipChip}
+                        testID="cartrust-ownership-pending"
+                      >
+                        <Ionicons
+                          name="time-outline"
+                          size={11}
+                          color={(colors as any).warningText || "#78350F"}
+                        />
+                        <Text style={styles.cartrustOwnershipChipText}>
+                          Natis Owners Query Pending
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.reportStatusMeta}>
+                        {cartrust.status === "pending"
+                          ? "Kredo is preparing your report…"
+                          : cartrust.status === "completed"
+                            ? "Ready to view"
+                            : (cartrust.error || "Please try again")}
+                      </Text>
+                    )}
                   </View>
                 ) : null}
               </View>
