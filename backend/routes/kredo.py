@@ -50,6 +50,7 @@ from services.referral import allocate_unique_code  # noqa: F401 (kept for parit
 from server import (
     db,
     get_current_user,
+    get_user_flexible,
     now_utc,
     logger,
     _can_access_submission,
@@ -1058,19 +1059,34 @@ async def kredo_cartrust_callback(request: Request):
     )
     kredo_status = (payload.get("status") or "completed").lower()
 
-    # Locate the submission by the pending order (VIN + status=pending).
+    # Locate the submission — matching strategy:
+    #  1. First, prefer a still-pending order for this VIN (the very
+    #     first callback in a report's lifecycle).
+    #  2. Otherwise, fall back to the client_guid on the original ack —
+    #     Kredo told us (Aug 2026) that the ownership feed can arrive
+    #     several minutes after the first callback and gets pushed as a
+    #     SECOND webhook against the same client_guid. Historically our
+    #     matcher required `status: pending` so we silently dropped
+    #     those updates. Now we also accept them when the report is
+    #     already `completed`, and refresh the stored PDF bytes.
     sub = await db.submissions.find_one(
         {"vin": vin, "reports.kredo_cartrust.status": "pending"}, {"_id": 0, "id": 1}
     )
     if not sub:
-        # Fallback: any submission with a pending kredo_cartrust order that
-        # matches the client_guid on the ack.
         client_guid = payload.get("client_guid") or payload.get("clientGuid")
         if client_guid:
             sub = await db.submissions.find_one(
                 {"reports.kredo_cartrust.ack.client_guid": client_guid},
                 {"_id": 0, "id": 1},
             )
+    if not sub and vin:
+        # Last-resort: any completed report for this VIN. Ownership feed
+        # updates from Kredo may lack a client_guid, so fall back to VIN
+        # alone (highest specificity we have on those payloads).
+        sub = await db.submissions.find_one(
+            {"vin": vin, "reports.kredo_cartrust.status": "completed"},
+            {"_id": 0, "id": 1},
+        )
     if not sub:
         logger.warning("cartrust_callback: no matching submission for vin=%s", vin)
         return {"ok": True, "matched": False}
@@ -1119,9 +1135,15 @@ async def kredo_cartrust_callback(request: Request):
 @router.get("/kredo/cartrust/pdf/{submission_id}")
 async def kredo_cartrust_pdf(
     submission_id: str,
-    current: dict = Depends(get_current_user),
+    current: dict = Depends(get_user_flexible),
 ):
     """Stream the CarTrust PDF back to authorised callers.
+
+    Accepts either an ``Authorization: Bearer <jwt>`` header (used by the
+    in-app fetch()) OR an ``?access_token=<jwt>`` query parameter — the
+    latter lets us hand the URL directly to ``WebBrowser.openBrowserAsync``
+    on native (which can't forward custom headers) so iOS opens the PDF
+    inline in Safari View Controller instead of the share sheet.
 
     History:
       * Aug 2026 (v1) — Served Kredo's own PDF verbatim.

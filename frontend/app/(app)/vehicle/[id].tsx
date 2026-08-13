@@ -900,70 +900,50 @@ export default function VehicleDetail() {
   const openCartrust = async () => {
     if (!cartrust) return;
     try {
-      // Fetch the PDF through our authenticated backend endpoint, save
-      // to a local temp file, then hand it to expo-file-system's sharing
-      // dialog / the native PDF viewer. This works both on device and
-      // in web preview, and doesn't rely on the (now expired) presigned
-      // Kredo S3 URL.
-      // IMPORTANT: auth tokens are written via `storage.secureSet`
-      // (Keychain / SecureStore), so we MUST read them back with
-      // `secureGet` — plain `getItem` hits AsyncStorage and returns
-      // null, which causes the backend to reject the request with 401
-      // ("Could not open PDF — Server returned 401", seen on FB-000155).
+      // On native we hand the URL DIRECTLY to expo-web-browser so iOS
+      // opens the PDF inline in Safari View Controller (full scroll +
+      // zoom + built-in share) instead of the share sheet. To keep the
+      // endpoint authenticated we pass the JWT as `?access_token=` — the
+      // backend's `get_user_flexible` dependency accepts either the
+      // Bearer header (used by fetch()) or this query-string token.
+      //
+      // IMPORTANT: tokens are stored via `storage.secureSet` (Keychain /
+      // SecureStore); reading with `getItem` (AsyncStorage) returns null
+      // and the request goes out unauthenticated → 401.
       const token = await storage.secureGet<string>(TOKEN_KEY, "");
-      // Cache-buster: mid-Aug 2026 the endpoint's PDF payload changed
-      // twice (compact locally-rendered → Kredo's full 5-page).
-      // Without a fresh URL every open the browser / OS PDF viewer
-      // happily serves a stale blob and dealers think we lost their
-      // ownership-history section.
-      const url = `${process.env.EXPO_PUBLIC_BACKEND_URL}/api/kredo/cartrust/pdf/${sub.id}?t=${Date.now()}`;
-      // On web we can just open with the Authorization header via a fetch
-      // + blob URL trick. On native, expo-web-browser can open a URL
-      // that already carries auth via a query-string bearer — but our
-      // API only accepts headers, so we blob it locally instead.
-      const res = await fetch(url, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        cache: "no-store" as any,
-      });
-      if (!res.ok) {
-        throw new Error(`Server returned ${res.status}`);
-      }
-      const blob = await res.blob();
+      const base = process.env.EXPO_PUBLIC_BACKEND_URL || "";
+      // Cache-buster: the endpoint's PDF payload has churned twice in
+      // Aug 2026 (compact local render → full Kredo 5-page → merged
+      // with valuation). Fresh URL every open keeps the browser / OS
+      // PDF viewer from serving a stale blob.
+      const ts = Date.now();
+
       if (Platform.OS === "web") {
+        // Web: fetch as blob (with header) → object URL → open new tab.
+        // We can't rely on ?access_token because on web the browser
+        // will happily follow a redirect and expose the token in
+        // history/logs; the header + blob route is safer.
+        const res = await fetch(`${base}/api/kredo/cartrust/pdf/${sub.id}?t=${ts}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          cache: "no-store" as any,
+        });
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        const blob = await res.blob();
         const objUrl = URL.createObjectURL(blob);
         await WebBrowser.openBrowserAsync(objUrl);
-        // Revoke a minute later to give the tab time to load.
         setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
       } else {
-        // Convert to base64 and write to cache dir, then open with the OS.
-        const b64: string = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
-          reader.onerror = () => reject(reader.error);
-          reader.readAsDataURL(blob);
+        // Native: use the authenticated https URL directly — Safari
+        // View Controller / Chrome Custom Tab render PDFs inline.
+        const authedUrl = `${base}/api/kredo/cartrust/pdf/${sub.id}?t=${ts}${
+          token ? `&access_token=${encodeURIComponent(token)}` : ""
+        }`;
+        await WebBrowser.openBrowserAsync(authedUrl, {
+          // Prefer a modal-style in-app viewer with a Done button.
+          presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+          controlsColor: "#ffffff",
+          toolbarColor: "#000000",
         });
-        // Native cache path — timestamped so we never reuse a stale
-        // copy of the PDF that was saved to disk under an older
-        // renderer version.
-        const path = `${FileSystem.cacheDirectory}cartrust_${sub.id}_${Date.now()}.pdf`;
-        await FileSystem.writeAsStringAsync(path, b64, { encoding: FileSystem.EncodingType.Base64 });
-        // Hand the local file to the OS. `WebBrowser.openBrowserAsync`
-        // only accepts http(s):// URLs on iOS (throws "The provided
-        // URL is not valid" for file:// paths — seen on FB-000155),
-        // so we route through expo-sharing which renders the native
-        // share-sheet with an inline PDF preview + save/print/mail
-        // options. Falls back to WebBrowser only if sharing is
-        // unavailable (rare — e.g. simulator without a share host).
-        const canShare = await Sharing.isAvailableAsync();
-        if (canShare) {
-          await Sharing.shareAsync(path, {
-            mimeType: "application/pdf",
-            dialogTitle: "CarTrust Report",
-            UTI: "com.adobe.pdf",
-          });
-        } else {
-          await WebBrowser.openBrowserAsync(path);
-        }
       }
     } catch (e: any) {
       Alert.alert("Could not open PDF", e?.message || String(e));
