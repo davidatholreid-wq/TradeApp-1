@@ -947,7 +947,23 @@ export default function VehicleDetail() {
         // renderer version.
         const path = `${FileSystem.cacheDirectory}cartrust_${sub.id}_${Date.now()}.pdf`;
         await FileSystem.writeAsStringAsync(path, b64, { encoding: FileSystem.EncodingType.Base64 });
-        await WebBrowser.openBrowserAsync(path);
+        // Hand the local file to the OS. `WebBrowser.openBrowserAsync`
+        // only accepts http(s):// URLs on iOS (throws "The provided
+        // URL is not valid" for file:// paths — seen on FB-000155),
+        // so we route through expo-sharing which renders the native
+        // share-sheet with an inline PDF preview + save/print/mail
+        // options. Falls back to WebBrowser only if sharing is
+        // unavailable (rare — e.g. simulator without a share host).
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(path, {
+            mimeType: "application/pdf",
+            dialogTitle: "CarTrust Report",
+            UTI: "com.adobe.pdf",
+          });
+        } else {
+          await WebBrowser.openBrowserAsync(path);
+        }
       }
     } catch (e: any) {
       Alert.alert("Could not open PDF", e?.message || String(e));
@@ -1601,7 +1617,20 @@ export default function VehicleDetail() {
                       });
                       const path = `${FileSystem.cacheDirectory}valuation_${id}_expired.pdf`;
                       await FileSystem.writeAsStringAsync(path, b64, { encoding: FileSystem.EncodingType.Base64 });
-                      await WebBrowser.openBrowserAsync(path);
+                      // iOS `WebBrowser.openBrowserAsync` refuses
+                      // file:// URLs ("The provided URL is not valid").
+                      // Route through expo-sharing for an inline PDF
+                      // preview + native save/print/mail options.
+                      const canShare = await Sharing.isAvailableAsync();
+                      if (canShare) {
+                        await Sharing.shareAsync(path, {
+                          mimeType: "application/pdf",
+                          dialogTitle: "Archived Valuation PDF",
+                          UTI: "com.adobe.pdf",
+                        });
+                      } else {
+                        await WebBrowser.openBrowserAsync(path);
+                      }
                     }
                   } catch (err: any) {
                     Alert.alert("Could not download PDF", err?.message || "Please try again shortly.");
