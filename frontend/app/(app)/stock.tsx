@@ -26,7 +26,6 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  Image,
   RefreshControl,
   TextInput,
   Platform,
@@ -50,17 +49,18 @@ import { confirmAsync } from "@/src/utils/vehicle-detail";
 // ---------------------------------------------------------------------------
 type StockItem = {
   id: string;
-  reference?: string;
+  submission_id?: string;
+  stock_number?: string | null;
   make_name?: string;
   model_name?: string;
   derivative_name?: string;
+  mm_code?: string | null;
   year?: number;
   mileage?: number;
   colour?: string;
   vin?: string;
-  front_photo?: string | null;
+  condition_score?: number | null;
   my_offer_price_zar?: number | null;
-  purchase_price_zar?: number | null;
   target_sell_price_zar?: number | null;
   purchased_at?: string;
   days_in_stock?: number | null;
@@ -154,13 +154,13 @@ export default function StockScreen() {
   // ---------------------------------------------------------------------
   const filteredItems = useMemo(() => {
     let items = data?.items || [];
-    // Search: matches VIN, reference, make, model, derivative, dealership.
+    // Search: matches stock number, VIN, submission id, make, model, derivative, dealership.
     const q = search.trim().toLowerCase();
     if (q) {
       items = items.filter((it) => {
         const hay = [
-          it.reference, it.vin, it.make_name, it.model_name,
-          it.derivative_name, it.dealership_name, String(it.year || ""),
+          it.stock_number, it.submission_id, it.vin, it.make_name, it.model_name,
+          it.derivative_name, it.mm_code, it.dealership_name, String(it.year || ""),
         ].filter(Boolean).join(" ").toLowerCase();
         return hay.includes(q);
       });
@@ -175,8 +175,8 @@ export default function StockScreen() {
         break;
       case "highest_value":
         sorted.sort((a, b) => {
-          const av = a.purchase_price_zar || a.my_offer_price_zar || 0;
-          const bv = b.purchase_price_zar || b.my_offer_price_zar || 0;
+          const av = a.my_offer_price_zar || 0;
+          const bv = b.my_offer_price_zar || 0;
           return bv - av;
         });
         break;
@@ -203,7 +203,7 @@ export default function StockScreen() {
     }
     setSavingTarget(true);
     try {
-      await apiFetch(`/api/stock/${item.id}/target-price`, {
+      await apiFetch(`/api/stock/${item.id}`, {
         method: "PATCH",
         body: JSON.stringify({ target_sell_price_zar: n }),
       });
@@ -261,7 +261,7 @@ export default function StockScreen() {
           <View style={{ flex: 1 }}>
             <Text style={styles.title}>Stock</Text>
             <Text style={styles.subtitle}>
-              {isAdmin ? "All dealerships" : "Your dealership"} · deal done, not yet sold
+              {isAdmin ? "All dealerships" : "Your dealership"} · transferred to stock, not yet sold
             </Text>
           </View>
           <TouchableOpacity
@@ -368,7 +368,7 @@ export default function StockScreen() {
               <Text style={{ color: colors.textSecondary, textAlign: "center", marginTop: spacing.xs }}>
                 {search || ageFilter !== "all"
                   ? "No stock matches your filters."
-                  : "No vehicles in stock yet. Mark a deal as done on a submission to add it here."}
+                  : "No vehicles in stock yet. Open a fully-valued submission and tap \"Transfer to Stock\" to add it here."}
               </Text>
             </View>
           ) : (
@@ -598,24 +598,21 @@ function StockRow({
   const age = ageTint(row.days_in_stock);
   const title = [row.year, row.make_name].filter(Boolean).join(" ");
   return (
-    <View style={styles.rowCard} testID={`stock-row-${row.reference || row.id}`}>
+    <View style={styles.rowCard} testID={`stock-row-${row.stock_number || row.id}`}>
       <View style={styles.rowTop}>
-        <TouchableOpacity
-          onPress={onOpenSubmission}
-          activeOpacity={0.9}
-          style={styles.rowThumbWrap}
-        >
-          {row.front_photo ? (
-            <Image source={{ uri: row.front_photo }} style={styles.rowThumb} resizeMode="cover" />
-          ) : (
-            <View style={styles.rowThumbPlaceholder}>
-              <Ionicons name="car-outline" size={24} color={colors.textDisabled} />
-            </View>
-          )}
-          <View style={[styles.ageBadge, { backgroundColor: age.bg }]}>
+        {/* Stock-number badge + age pill — replaces the photo thumbnail
+            (per product spec: no images copied from the submission). */}
+        <View style={styles.rowStockBadgeWrap}>
+          <View style={styles.rowStockBadge}>
+            <Ionicons name="pricetag" size={12} color={colors.primary} />
+            <Text style={styles.rowStockBadgeTxt} numberOfLines={1}>
+              {row.stock_number || "—"}
+            </Text>
+          </View>
+          <View style={[styles.ageBadge, { backgroundColor: age.bg, position: "relative", bottom: undefined, left: undefined, marginTop: 6 }]}>
             <Text style={[styles.ageBadgeTxt, { color: age.fg }]}>{age.label}</Text>
           </View>
-        </TouchableOpacity>
+        </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <TouchableOpacity onPress={onOpenSubmission} activeOpacity={0.85}>
             <Text style={styles.rowTitle} numberOfLines={1}>{title || "—"}</Text>
@@ -626,11 +623,20 @@ function StockRow({
             ) : null}
           </TouchableOpacity>
           <View style={styles.rowMetaRow}>
-            {row.reference ? (
-              <Text style={styles.rowMeta}>{row.reference}</Text>
+            {row.mm_code ? (
+              <Text style={styles.rowMeta}>M&M {row.mm_code}</Text>
             ) : null}
             {row.mileage ? (
-              <Text style={styles.rowMeta}>· {Number(row.mileage).toLocaleString("en-ZA")} km</Text>
+              <Text style={styles.rowMeta}>
+                {row.mm_code ? "· " : ""}
+                {Number(row.mileage).toLocaleString("en-ZA")} km
+              </Text>
+            ) : null}
+            {row.colour ? (
+              <Text style={styles.rowMeta}>· {row.colour}</Text>
+            ) : null}
+            {row.condition_score != null ? (
+              <Text style={styles.rowMeta}>· Cond {Number(row.condition_score).toFixed(1)}</Text>
             ) : null}
             {row.vin ? (
               <Text style={styles.rowMeta} numberOfLines={1}>· VIN {row.vin}</Text>
@@ -645,16 +651,13 @@ function StockRow({
         </View>
       </View>
 
-      {/* Price grid */}
+      {/* Price grid — My Offer (cost basis) on the left, target sell on
+          the right.  The old "Purchased" cell is gone; My Offer is the
+          only cost basis in the new stock model (per product spec). */}
       <View style={styles.priceRow}>
         <PriceCell
           label="MY OFFER"
           value={fmtZar(row.my_offer_price_zar)}
-          styles={styles}
-        />
-        <PriceCell
-          label="PURCHASED"
-          value={fmtZar(row.purchase_price_zar)}
           styles={styles}
         />
         {editingTarget ? (
@@ -790,10 +793,10 @@ function MarkSoldModal({
   const profit = useMemo(() => {
     const sp = parseInt(salePrice.replace(/[^\d]/g, ""), 10);
     const rc = parseInt(reconCost.replace(/[^\d]/g, ""), 10) || 0;
-    const cost = item.purchase_price_zar || item.my_offer_price_zar || 0;
+    const cost = item.my_offer_price_zar || 0;
     if (!Number.isFinite(sp)) return null;
     return sp - rc - cost;
-  }, [salePrice, reconCost, item.purchase_price_zar, item.my_offer_price_zar]);
+  }, [salePrice, reconCost, item.my_offer_price_zar]);
 
   const submit = useCallback(async () => {
     const sp = parseInt(salePrice.replace(/[^\d]/g, ""), 10);
@@ -842,7 +845,7 @@ function MarkSoldModal({
             {[item.year, item.make_name, item.derivative_name || item.model_name]
               .filter(Boolean)
               .join(" ")}
-            {item.reference ? ` · ${item.reference}` : ""}
+            {item.stock_number ? ` · ${item.stock_number}` : ""}
           </Text>
 
           <ScrollView contentContainerStyle={{ gap: spacing.sm, paddingBottom: spacing.md }}>
@@ -911,7 +914,7 @@ function MarkSoldModal({
                   {fmtZar(profit)}
                 </Text>
                 <Text style={styles.profitHint}>
-                  Sale − recon − cost basis (purchase or My Offer)
+                  Sale − recon − My Offer (cost basis)
                 </Text>
               </View>
             ) : null}
@@ -1159,6 +1162,32 @@ const makeStyles = (colors: Palette) =>
     rowThumbPlaceholder: {
       width: 92, height: 68, borderRadius: 8, backgroundColor: colors.bg,
       alignItems: "center", justifyContent: "center",
+    },
+    // Stock-number left rail — replaces the photo thumbnail. Vertically
+    // stacks the stock number pill and the aging badge so the row still
+    // has a strong left anchor even without an image.
+    rowStockBadgeWrap: {
+      alignItems: "flex-start",
+      minWidth: 92,
+    },
+    rowStockBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.primary + "66",
+      backgroundColor: colors.primary + "18",
+    },
+    rowStockBadgeTxt: {
+      color: colors.primary,
+      fontSize: 12,
+      fontWeight: "900",
+      letterSpacing: 0.4,
+      maxWidth: 120,
+      fontFamily: fonts.number,
     },
     ageBadge: {
       position: "absolute",

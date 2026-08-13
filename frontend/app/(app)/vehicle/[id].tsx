@@ -47,6 +47,8 @@ import ReportResultBody from "@/src/components/vehicle/ReportResultBody";
 import MarketAnalysisCard from "@/src/components/vehicle/MarketAnalysisCard";
 import VinLinkedReportsCard from "@/src/components/vehicle/VinLinkedReportsCard";
 import DealTrackingCard from "@/src/components/vehicle/DealTrackingCard";
+import { TransferToStockCard } from "@/src/components/vehicle/TransferToStockCard";
+import { TransferToStockModal } from "@/src/components/vehicle/modals/TransferToStockModal";
 import ConditionSection from "@/src/components/vehicle/ConditionSection";
 import IdentityLicenseSection from "@/src/components/vehicle/IdentityLicenseSection";
 import TyreEstimateCard from "@/src/components/vehicle/TyreEstimateCard";
@@ -338,6 +340,14 @@ export default function VehicleDetail() {
   // Assign-Suppliers modal (managerial-only). The modal loads the
   // dealership's supplier catalog itself; we just gate visibility here.
   const [assignSuppliersOpen, setAssignSuppliersOpen] = useState(false);
+  // Transfer-to-Stock modal + un-transfer loading state — the Aug 2026
+  // stock rework hangs off these two.  The Deal Tracking legacy state
+  // (dealDoneChoice / dealSoldChoice / dealPurchaseInput / …) is kept
+  // in the file so we don't churn the numerous prop drills below, but
+  // it is no longer rendered — see the TransferToStockCard block at
+  // the bottom of the scroll where DealTrackingCard used to live.
+  const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [untransferring, setUntransferring] = useState(false);
   // Whenever the server-side `sub.deal` changes, mirror BOTH the tri-
   // state choices and the numeric fields into the local form state so
   // the UI reflects persisted values on load.
@@ -1398,6 +1408,60 @@ export default function VehicleDetail() {
       setDownloadingRecon(false);
     }
   };
+
+  // -------------------------------------------------------------------------
+  // Transfer to Stock — creates a stock_items row from this submission's
+  // vehicle info + the dealer-supplied stock_number & target price.
+  // Reloads the submission so the "IN STOCK" badge appears immediately.
+  // -------------------------------------------------------------------------
+  const refreshSubmission = useCallback(async () => {
+    if (!id) return;
+    try {
+      const fresh = await apiFetch(`/api/submissions/${id}`);
+      // The submissions endpoint returns { submission: {...}, deal_profit, … }
+      setSub((fresh as any)?.submission ?? (fresh as any));
+    } catch {
+      /* non-fatal — a manual pull-to-refresh will catch it */
+    }
+  }, [id]);
+
+  const handleTransferToStock = useCallback(
+    async (payload: { stock_number: string; target_sell_price_zar: number }) => {
+      if (!sub) return;
+      try {
+        await apiFetch(`/api/submissions/${sub.id}/transfer-to-stock`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        setTransferModalOpen(false);
+        await refreshSubmission();
+      } catch (e: any) {
+        Alert.alert("Transfer failed", e?.message || "Please try again.");
+      }
+    },
+    [sub, refreshSubmission],
+  );
+
+  const handleUntransferFromStock = useCallback(async () => {
+    if (!sub) return;
+    const proceed = await confirmAsync(
+      "Remove from Stock?",
+      "This will remove the vehicle from your stock list and unlock the My Offer price on this submission so you can revise it. Sold vehicles cannot be un-transferred.",
+      "Remove",
+    );
+    if (!proceed) return;
+    setUntransferring(true);
+    try {
+      await apiFetch(`/api/submissions/${sub.id}/untransfer-from-stock`, {
+        method: "POST",
+      });
+      await refreshSubmission();
+    } catch (e: any) {
+      Alert.alert("Couldn't un-transfer", e?.message || "Please try again.");
+    } finally {
+      setUntransferring(false);
+    }
+  }, [sub, refreshSubmission]);
 
   const handleOpenReportPdf = async (reportType: ReportOrder["type"]) => {
     if (!sub) return;
@@ -2501,7 +2565,12 @@ export default function VehicleDetail() {
         {!isCoverMode && (isAdmin || isOwningDealer) ? (
           (() => {
             const deal = (sub as any).deal as DealInfo | null | undefined;
-            const canEditOffer = !isAdmin && isOwningDealer && !!((user as any)?.is_pricing_agent);
+            // My Offer is locked once the submission has been
+            // transferred to stock — the dealer must un-transfer first
+            // (which un-locks it) if they want to change their offer.
+            const inStock = !!((sub as any)?.stock_item_id);
+            const canEditOffer =
+              !isAdmin && isOwningDealer && !!((user as any)?.is_pricing_agent) && !inStock;
             return (
               <DealerOfferCard
                 deal={deal}
@@ -2523,54 +2592,43 @@ export default function VehicleDetail() {
           })()
         ) : null}
 
-        {/* ==================== DEAL TRACKING ====================
-            Visible to any user on the OWNING dealership + admins, after
-            a dealer offer has been captured. Only `is_pricing_agent`
-            users on that dealership can edit; everyone else sees it
-            read-only. Hidden in cover-mode and while pending. */}
-        {!isCoverMode &&
-        sub.status !== "pending" &&
-        (isAdmin || isOwningDealer) &&
-        (sub as any)?.deal?.dealer_offer_zar != null ? (
+        {/* ==================== TRANSFER TO STOCK ====================
+            Replaces the old Deal Tracking flow (Aug 2026 rework). One
+            button — "Transfer to Stock" — captures a stock number +
+            target sell price and drops the vehicle into the standalone
+            stock_items collection.  Once transferred, the card shows
+            the STK-#### badge, the recon PDF download, supplier
+            assignment pill, and an un-transfer button.  Visible only
+            to users on the OWNING dealership + admins.  Hidden in
+            cover-mode.  Requires a fully-valued submission (subject-
+            to-view vehicles cannot be transferred). */}
+        {!isCoverMode && sub.status !== "pending" && (isAdmin || isOwningDealer) ? (
           (() => {
-            const deal = (sub as any).deal as DealInfo | null | undefined;
-            const profit = ((sub as any).deal_profit as DealProfit | null) || null;
-            const canEdit = !isAdmin && isOwningDealer && !!((user as any)?.is_pricing_agent);
-            const readOnly = !canEdit;
+            const stockItemId = (sub as any)?.stock_item_id || null;
+            const stockNumber = (sub as any)?.stock_number || null;
+            const transferredAt = (sub as any)?.transferred_to_stock_at || null;
+            const canTransfer = isAdmin || (isOwningDealer && !!((user as any)?.is_pricing_agent));
+            const isFullyValued = !!(sub as any)?.priced_at;
             return (
-              <DealTrackingCard
-                deal={deal}
-                profit={profit}
-                readOnly={readOnly}
-                dealDoneChoice={dealDoneChoice}
-                onDoneChoice={setDealDoneChoice}
-                dealPurchaseInput={dealPurchaseInput}
-                onPurchaseInputChange={setDealPurchaseInput}
-                dealSoldChoice={dealSoldChoice}
-                onSoldChoice={setDealSoldChoice}
-                dealReconInput={dealReconInput}
-                onReconInputChange={setDealReconInput}
-                dealSaleInput={dealSaleInput}
-                onSaleInputChange={setDealSaleInput}
-                dealFinancialsDirty={dealFinancialsDirty}
-                dealSaving={dealSaving}
-                onSave={saveDealFinancials}
+              <TransferToStockCard
+                stockItemId={stockItemId}
+                stockNumber={stockNumber}
+                transferredAt={transferredAt}
+                isFullyValued={isFullyValued}
+                canTransfer={canTransfer}
+                onOpenTransferModal={() => setTransferModalOpen(true)}
+                onUntransfer={handleUntransferFromStock}
+                untransferring={untransferring}
                 downloadingRecon={downloadingRecon}
                 onDownloadReconPdf={handleDownloadReconditioningPdf}
-                canAssignSuppliers={canEdit}
                 supplierAssignmentSummary={{
                   total: (sub as any)?.reconditioning_items?.length || 0,
                   assigned: ((sub as any)?.reconditioning_items || []).filter(
                     (r: any) => r?.supplier?.id,
                   ).length,
                 }}
-                onAssignSuppliers={() => setAssignSuppliersOpen(true)}
-                dealPdfDownloading={dealPdfDownloading}
-                onDownloadProfitPdf={handleDownloadProfitPdf}
-                formatMoneyString={formatMoneyString}
-                fmtZar={fmtZar}
+                onAssignSuppliers={canTransfer ? () => setAssignSuppliersOpen(true) : undefined}
                 colors={colors}
-                styles={styles}
               />
             );
           })()
@@ -2750,6 +2808,30 @@ export default function VehicleDetail() {
             /* non-fatal */
           }
         }}
+      />
+
+      {/* Transfer-to-Stock modal — 2 fields (stock number + target
+          selling price). On success we refresh the submission so the
+          "IN STOCK" badge + un-transfer button appear immediately. */}
+      <TransferToStockModal
+        visible={transferModalOpen}
+        onClose={() => setTransferModalOpen(false)}
+        onSubmit={handleTransferToStock}
+        vehicleTitle={
+          [sub?.year, (sub as any)?.make_name, (sub as any)?.model_name]
+            .filter(Boolean)
+            .join(" ") || "Vehicle"
+        }
+        vehicleSubtitle={
+          (sub as any)?.derivative_name ||
+          ((sub as any)?.reference ? String((sub as any).reference) : null)
+        }
+        suggestedTargetZar={
+          ((sub as any)?.price?.offer_to_dealer_zar as number | undefined) ||
+          ((sub as any)?.deal?.dealer_offer_zar as number | undefined) ||
+          null
+        }
+        colors={colors}
       />
     </SafeAreaView>
   );

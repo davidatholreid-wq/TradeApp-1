@@ -1,0 +1,49 @@
+{
+  "summary": "Full test of the Aug-2026 Stock architecture refactor (stock_items collection + Transfer-to-Stock flow replacing the old Deal Tracking card). Backend: rewrote /app/backend/tests/test_stock_module_v2.py with 25 pytest cases covering (a) 401 on every endpoint, (b) POST /api/submissions/{sid}/transfer-to-stock — success + already-transferred 400 + duplicate stock_number 409 + subject-to-view 400 + non-managerial 403, (c) POST /api/submissions/{sid}/untransfer-from-stock — happy path + not-transferred 400 + sold-item 400, (d) GET /api/stock — new shape, no legacy reference/purchase_price_zar/front_photo, (e) PATCH /api/stock/{id} — target-price only, multi-field (mileage/colour/condition_score), duplicate 409, blank 400, sold 400, non-managerial 403, (f) POST /api/stock/{id}/mark-sold — success + item disappears from list, (g) GET /api/stock/export.csv — exact-string header match for dealer AND admin (extra Dealership column), (h) legacy PATCH /api/stock/{id}/target-price returns 404 (route removed). All 25 tests PASS after two selector fixes to handle the /api/admin/submissions response envelope `{submissions:[...]}`. Frontend smoke test @ 390x844 as minitest@example.com: 'Deal Tracking' text is gone from vehicle detail (count=0); new transfer-to-stock-card is present with correct icon+title 'Stock', the 'Transfer to Stock' button renders disabled (computed opacity 0.4) with helper text 'Only managerial users on this dealership can transfer vehicles into stock.'; no 'Subject-to-view' notice on the priced sub; Reconditioning/Assign Suppliers actions correctly hidden pre-transfer. Stock screen loads with new empty state (no rows in preview DB after purge). No react_native issues detected in the touched files. Two MINOR stale-copy issues flagged for main agent (empty-state on /stock still references the old deal-done language). DB cleanup script committed at /app/scripts/cleanup_test_stock.py for future iterations.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/stock (dealer)",
+        "issues": [
+          "Header sub-label still reads 'Your dealership · deal done, not yet sold' — this is legacy wording from the derived-view era; should be updated to reference the transfer flow (e.g. 'Your dealership · transferred, not yet sold').",
+          "Empty state copy still reads 'Mark a deal as done on a submission to add it here.' — should be updated to 'Transfer a submission to stock to add it here.' since Deal Tracking is gone."
+        ]
+      }
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_stock_module_v2.py",
+    "/app/test_reports/pytest/iteration_55_stock_v2.xml",
+    "/app/scripts/cleanup_test_stock.py"
+  ],
+  "action_items": [
+    "Update /app/frontend/app/(app)/stock.tsx header sub-label from 'deal done, not yet sold' to something like 'transferred to stock, not yet sold'.",
+    "Update the /stock empty-state message to instruct users to Transfer a submission (not Mark a deal as done).",
+    "The legacy test_stock_module.py (iteration_54) is now stale — it still asserts against the old shape (reference/purchase_price_zar/front_photo columns + PATCH /target-price endpoint). Consider deleting it so it doesn't confuse regression runs."
+  ],
+  "critical_code_review_comments": [
+    "routes/stock.py is clean and self-contained. Uniqueness check is case-insensitive via _norm_stock_number → verified via manual seed test that a fake stock_item with STK-TEST-DUP-SEED-1 in one dealership blocks both a new transfer AND a PATCH-rename with the same number, returning 409 with clear message.",
+    "PATCH endpoint correctly denormalises stock_number back to the parent submission when it's renamed (line 513-518) — good for keeping the vehicle-detail badge accurate.",
+    "Un-transfer clears exactly the 4 fields it stamped (stock_item_id, stock_number, transferred_to_stock_at, transferred_to_stock_by) — verified via direct MongoDB inspection showing {} after untransfer.",
+    "The `_can_write_stock` helper cleanly gates PATCH + mark-sold + un-transfer to managerial-only, matching TransferToStockCard's `canTransfer` prop semantics.",
+    "One micro-inefficiency (non-blocking): _row_for_api is called both in the GET /stock loop AND again on PATCH; totally fine at MVP scale but could be inlined if this endpoint ever becomes hot. Not an issue to fix now.",
+    "TransferToStockCard.tsx correctly disables the button when EITHER !canTransfer OR !isFullyValued and shows the appropriate mutually-exclusive messaging (guard notice for subject-to-view, helper text for non-managerial). Good UX separation."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_stock_module_v2.py (NEW - 25 tests, all passing)",
+    "/app/scripts/cleanup_test_stock.py (NEW - test-data purge utility)"
+  ],
+  "success_rate": {"backend": "100% (25/25)", "frontend": "100% (all mobile smoke checks pass, two copy-only design issues flagged)"},
+  "seed_data_creation": "During tests: transient stock_items created via the transfer endpoint (all prefixed STK-TEST-* and STK-TEST-DUP-*) plus one seeded fake stock_item to force the duplicate-stock-number branch. All test data purged via /app/scripts/cleanup_test_stock.py before and after runs (final state: 0 stock_items in DB). No dealer-account seeding required — admin@fourbuy.co.za was sufficient for the managerial path.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "1) The stock_items collection is the new source of truth — always run `python /app/scripts/cleanup_test_stock.py` before/after your suite to keep uniqueness checks deterministic. 2) The /api/admin/submissions endpoint returns `{submissions:[...], counts:{...}, archive_after_days:N}` — use `body.get('items') or body.get('submissions') or []` to be robust. 3) In the preview DB, most dealerships have only ONE priced+un-transferred submission, so tests that need TWO subs in the SAME dealership (dup stock_number branch) rely on inserting a fake seed stock_item directly via motor — see test_transfer_rejects_duplicate_stock_number and test_patch_duplicate_stock_number_409. 4) After a mark-sold run, the sold stock_item stays in the collection (with sold=true) — the cleanup script also purges those. 5) Old test_stock_module.py (iteration_54) is stale and can be removed.",
+  "rca_of_issue": "N/A — no bugs found. Everything requested was verified functional. Design copy issues on /stock are cosmetic-only (empty-state wording); logic is 100% correct."
+}
