@@ -794,6 +794,80 @@ def _extract_plate_from_license_disk(sub: dict) -> Optional[str]:
     return None
 
 
+async def _ocr_plate_from_disk_photo(photo_url: str) -> Optional[str]:
+    """Fetch a license-disk photograph and OCR the registration plate.
+
+    Used as a fallback in `/kredo/cartrust/order` when the submission has
+    a photo but no decoded PDF-417 barcode string (typical when the
+    original submission decoded the disc via the LLM-OCR fallback, whose
+    result was previously not persisted as a top-level plate field).
+
+    Reuses the existing `/api/vehicles/license-disk/decode` handler
+    (`decode_license_disk`) so behaviour stays consistent — it does the
+    barcode attempt first, then LLM-vision OCR, and returns a normalised
+    `parsed.registration` value.
+
+    Returns the plate string (uppercased, spaces stripped) or None if we
+    couldn't recover anything. Never raises — the caller decides what to
+    do on failure.
+    """
+    import re as _re
+    if not photo_url or not isinstance(photo_url, str):
+        return None
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=20.0) as h:
+            r = await h.get(photo_url)
+        if r.status_code != 200 or not r.content:
+            logger.warning(
+                "ocr_plate_from_photo: fetch %s returned %s", photo_url, r.status_code
+            )
+            return None
+        import base64 as _b64
+        img_b64 = _b64.b64encode(r.content).decode("ascii")
+    except Exception:
+        logger.exception("ocr_plate_from_photo: photo download failed")
+        return None
+
+    # Reuse the existing decode endpoint's handler.
+    try:
+        from server import decode_license_disk, LicenseDiskDecodeRequest
+    except Exception:
+        logger.exception("ocr_plate_from_photo: could not import decode_license_disk")
+        return None
+
+    try:
+        req = LicenseDiskDecodeRequest(image_base64=img_b64)
+        # `decode_license_disk` doesn't consult `current` — a stub role
+        # keeps it happy and avoids a real dependency-injection chain.
+        result = await decode_license_disk(
+            req, current={"id": "internal", "role": "internal"}
+        )
+    except Exception:
+        logger.exception("ocr_plate_from_photo: decode_license_disk raised")
+        return None
+
+    # Two possible shapes: barcode path (has `raw` + `parsed` dict from
+    # `_parse_license_disk_string`), or OCR path (has `parsed.registration`).
+    parsed = (result or {}).get("parsed") or {}
+    plate = (
+        parsed.get("registration")
+        or parsed.get("licenceNo")
+        or parsed.get("license_no")
+        or parsed.get("plate")
+    )
+    if not plate or not isinstance(plate, str):
+        return None
+    plate = plate.strip().upper().replace(" ", "")
+    # Sanity-check against the same pattern the barcode extractor uses so
+    # a hallucinated OCR value like "REGISTRATION" or a random word never
+    # gets forwarded to Kredo.
+    if not _re.match(r"^[A-Z]{1,3}[0-9]{1,6}[A-Z]{0,4}$", plate):
+        logger.info("ocr_plate_from_photo: dropped implausible plate %r", plate)
+        return None
+    return plate
+
+
 class KredoCartrustOrderRequest(BaseModel):
     submission_id: str
 
@@ -838,6 +912,40 @@ async def kredo_cartrust_order(
 
     dealer_info = current.get("dealer_info") or {}
     licence_no = _extract_plate_from_license_disk(sub)
+
+    # ---- Fallback: re-OCR the license-disk photo we already have ----
+    # `_extract_plate_from_license_disk` only knows how to read the
+    # PDF-417 barcode string in `license_disk_data`. When the original
+    # decode fell back to LLM-OCR (typical for photos with glare / bad
+    # angle / cropped edges — verified on FB-000156), the barcode string
+    # is null and no top-level plate field was ever set, so the plate
+    # is effectively lost. However, the license-disk photograph itself
+    # is stored on Cloudinary and we can re-OCR it on-demand right here
+    # to recover the registration. We then persist the recovered plate
+    # on the submission so subsequent orders / retries are instant.
+    if not licence_no and sub.get("license_disk_photo"):
+        try:
+            recovered = await _ocr_plate_from_disk_photo(
+                sub["license_disk_photo"]
+            )
+        except Exception:
+            logger.exception(
+                "cartrust_order: license-disk photo re-OCR threw for %s",
+                payload.submission_id,
+            )
+            recovered = None
+        if recovered:
+            licence_no = recovered
+            # Backfill so we don't OCR again next time.
+            await db.submissions.update_one(
+                {"id": payload.submission_id},
+                {"$set": {"license_plate": recovered}},
+            )
+            logger.info(
+                "cartrust_order: recovered plate %r for %s via photo re-OCR",
+                recovered, payload.submission_id,
+            )
+
     if not licence_no:
         raise HTTPException(
             400,
