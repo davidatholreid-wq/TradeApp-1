@@ -336,25 +336,145 @@ class KredoClient:
             "requester_phone": requester_phone,
             "vin": vin,
             "RegistrationNumber": registration_number,
+            "reg": registration_number,  # Kredo's callback echoes this key
             "mileage": str(mileage),
             "vehicle_condition": vehicle_condition,
             "serviceHistory": service_history or "",
         }
-        # Attach the extra vehicle-confirmation hints when we have
-        # them. Empty strings are stripped so the callback JSON
-        # `user_input` block only echoes real values back.
-        extras = {
-            "manufacturer": manufacturer, "Manufacturer": manufacturer,
-            "model": model, "Model": model,
-            "variant": variant, "Variant": variant,
-            "engine_number": engine_number, "EngineNumber": engine_number,
-            "colour": colour, "Colour": colour, "color": colour,
-            "year_of_registration": year_of_registration,
-            "YearOfRegistration": year_of_registration,
+
+        # ---------------------------------------------------------------
+        # Brute-force schema discovery for Vehicle Confirmation fields.
+        # ---------------------------------------------------------------
+        # As of Aug 2026 Kredo's `/public/cartrust_pdf` endpoint silently
+        # drops any key it doesn't recognise (verified on FB-000155:
+        # only `vin`, `reg`, `mileage`, `vehicle_condition`,
+        # `RegistrationNumber` came back in the callback's `user_input`
+        # echo — every other key we sent was dropped, and Manufacturer,
+        # Engine Number, Colour and Year of Registration all printed
+        # "NOT SUPPLIED" on the PDF).
+        #
+        # Their support has been asked for the authoritative schema.
+        # In the meantime we scatter every plausible casing / prefix
+        # combination we can think of (snake_case, camelCase, PascalCase,
+        # with & without a `vehicle_` prefix, both `colour` and
+        # `color`) AND a nested `vehicle: {...}` object — one of these
+        # is very likely to match whatever field name their backend
+        # actually reads. Unknown keys are silently discarded so this
+        # is safe.
+        # ---------------------------------------------------------------
+        flat_extras: dict[str, str] = {}
+        pairs = (
+            ("manufacturer", manufacturer),
+            ("model",        model),
+            ("variant",      variant),
+            ("engine_number", engine_number),
+            ("colour",       colour),
+            ("year_of_registration", year_of_registration),
+        )
+        for base, val in pairs:
+            if not val:
+                continue
+            camel = "".join(w if i == 0 else w.title() for i, w in enumerate(base.split("_")))
+            pascal = "".join(w.title() for w in base.split("_"))
+            for variant_key in {
+                base,
+                base.upper(),
+                camel,
+                pascal,
+                f"vehicle_{base}",
+                f"vehicle{pascal}",
+                f"car_{base}",
+                f"car{pascal}",
+            }:
+                flat_extras[variant_key] = str(val)
+
+        # Special-cases their doc examples hint at:
+        if manufacturer:
+            flat_extras.update({"make": manufacturer, "Make": manufacturer, "make_name": manufacturer})
+        if engine_number:
+            flat_extras.update({
+                "engineNumber": engine_number,
+                "EngineNo": engine_number,
+                "engine_no": engine_number,
+            })
+        if colour:
+            # American spelling might be canonical on their side
+            flat_extras.update({
+                "color": colour, "Color": colour, "vehicle_color": colour,
+                "vehicleColor": colour, "vehicle_colour": colour,
+            })
+        if year_of_registration:
+            flat_extras.update({
+                "year": str(year_of_registration),
+                "Year": str(year_of_registration),
+                "regYear": str(year_of_registration),
+                "registrationYear": str(year_of_registration),
+                "yearRegistered": str(year_of_registration),
+                "year_registered": str(year_of_registration),
+            })
+
+        payload.update({k: v for k, v in flat_extras.items() if v})
+
+        # Nested `vehicle` object — REST-conventional shape. Sending this
+        # in ADDITION to the flat keys means Kredo can read from either
+        # structure without breaking anything.
+        vehicle_obj = {
+            "make": manufacturer or None,
+            "manufacturer": manufacturer or None,
+            "model": model or None,
+            "variant": variant or None,
+            "engineNumber": engine_number or None,
+            "engine_number": engine_number or None,
+            "colour": colour or None,
+            "color": colour or None,
+            "year": str(year_of_registration) if year_of_registration else None,
+            "yearOfRegistration": str(year_of_registration) if year_of_registration else None,
+            "year_of_registration": str(year_of_registration) if year_of_registration else None,
         }
-        for k, v in extras.items():
-            if v:
-                payload[k] = str(v)
+        vehicle_obj = {k: v for k, v in vehicle_obj.items() if v}
+        if vehicle_obj:
+            payload["vehicle"] = vehicle_obj
+            payload["Vehicle"] = vehicle_obj
+            payload["vehicle_confirmation"] = vehicle_obj  # long-shot: matches their pdf section name
+
+        # Also mirror everything inside a `user_input` block — because
+        # THAT is the key Kredo echoes back on the callback, on the
+        # chance they read supplied vehicle info from there too.
+        user_input = {
+            "vin": vin,
+            "reg": registration_number,
+            "mileage": str(mileage),
+            "vehicle_condition": vehicle_condition,
+            "RegistrationNumber": registration_number,
+        }
+        if manufacturer:
+            user_input.update({"manufacturer": manufacturer, "Manufacturer": manufacturer, "make": manufacturer})
+        if model:
+            user_input["model"] = model
+        if variant:
+            user_input["variant"] = variant
+        if engine_number:
+            user_input.update({"engine_number": engine_number, "EngineNumber": engine_number})
+        if colour:
+            user_input.update({"colour": colour, "color": colour, "Colour": colour})
+        if year_of_registration:
+            user_input.update({
+                "year_of_registration": str(year_of_registration),
+                "YearOfRegistration": str(year_of_registration),
+                "year": str(year_of_registration),
+            })
+        payload["user_input"] = user_input
+
+        # Diagnostic log so we can immediately see (in
+        # /var/log/supervisor/backend.err.log) what keys we sent to Kredo
+        # and cross-check them against Kredo's callback echo.
+        logger.info(
+            "cartrust_order payload: %d top-level keys; vehicle=%s user_input=%s",
+            len(payload),
+            list((payload.get("vehicle") or {}).keys()),
+            list(user_input.keys()),
+        )
+
         return await self._post("/public/cartrust_pdf", payload)
 
     async def aclose(self) -> None:
