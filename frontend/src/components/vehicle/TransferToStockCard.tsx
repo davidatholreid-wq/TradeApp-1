@@ -33,6 +33,15 @@ export type TransferToStockCardProps = {
   // Guard: is the submission a full valuation (priced)? Subject-to-view
   // submissions cannot be transferred until they're fully priced.
   isFullyValued: boolean;
+  // Deal outcome ---------------------------------------------------------
+  // Tri-state (Aug 2026 re-add): dealers must pick an outcome BEFORE
+  // they can download the recon sheet or transfer to stock. Backed by
+  // the same `deal.done` bool on the submission (`true`/`false`/`null`).
+  // Passed in already-normalised: `true` → Deal Done, `false` → No Deal
+  // Done, `null`/`undefined` → Pending.
+  dealDone: boolean | null;
+  updatingDealOutcome: boolean;
+  onSetDealOutcome: (val: boolean | null) => void;
   // Access ---------------------------------------------------------------
   // The card is visible to any user on the owning dealership + admin,
   // but only managerial users can transfer / un-transfer.  Non-manager
@@ -60,6 +69,9 @@ export function TransferToStockCard({
   stockNumber,
   transferredAt,
   isFullyValued,
+  dealDone,
+  updatingDealOutcome,
+  onSetDealOutcome,
   canTransfer,
   onOpenTransferModal,
   onUntransfer,
@@ -78,11 +90,15 @@ export function TransferToStockCard({
       <View style={styles.header}>
         <Ionicons name="car-sport-outline" size={18} color={colors.primary} />
         <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Stock</Text>
+          <Text style={styles.title}>Deal</Text>
           <Text style={styles.subtitle}>
             {isInStock
               ? "This vehicle is in your dealership stock list."
-              : "Transfer this valuation into your stock list once the deal is done."}
+              : dealDone === true
+                ? "Deal done — download the recon sheet or transfer this vehicle to stock."
+                : dealDone === false
+                  ? "This vehicle was not purchased."
+                  : "Mark the deal outcome to unlock recon and stock transfer."}
           </Text>
         </View>
         {isInStock ? (
@@ -107,23 +123,116 @@ export function TransferToStockCard({
               </Text>
             </View>
           ) : null}
-          <TouchableOpacity
-            testID="transfer-to-stock-open-btn"
-            disabled={!canTransfer || !isFullyValued}
-            onPress={onOpenTransferModal}
-            style={[
-              styles.primaryBtn,
-              (!canTransfer || !isFullyValued) && styles.primaryBtnDisabled,
-              { backgroundColor: colors.primary },
-            ]}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="arrow-forward-circle" size={18} color={colors.onPrimary} />
-            <Text style={[styles.primaryBtnTxt, { color: colors.onPrimary }]}>Transfer to Stock</Text>
-          </TouchableOpacity>
-          {!canTransfer && isFullyValued ? (
+
+          {/* Deal outcome tri-state — the gate for everything below.
+              A dealer must pick Deal Done before Recon PDF / Transfer
+              to Stock become available.  Non-managerial users see the
+              current state but the buttons are disabled. */}
+          <View style={styles.outcomeRow} testID="deal-outcome-row">
+            {(
+              [
+                { key: "pending", label: "Pending", val: null as boolean | null, icon: "hourglass-outline" as const },
+                { key: "done", label: "Deal Done", val: true as boolean | null, icon: "checkmark-circle-outline" as const },
+                { key: "no_deal", label: "No Deal", val: false as boolean | null, icon: "close-circle-outline" as const },
+              ]
+            ).map((opt) => {
+              const active =
+                opt.val === null ? dealDone === null || dealDone === undefined : opt.val === dealDone;
+              const tint =
+                opt.key === "done" ? "#16A34A" : opt.key === "no_deal" ? "#DC2626" : "#B67900";
+              return (
+                <TouchableOpacity
+                  key={opt.key}
+                  testID={`deal-outcome-${opt.key}`}
+                  onPress={() => (canTransfer && !updatingDealOutcome ? onSetDealOutcome(opt.val) : undefined)}
+                  disabled={!canTransfer || updatingDealOutcome}
+                  activeOpacity={0.85}
+                  style={[
+                    styles.outcomeChip,
+                    active && {
+                      borderColor: tint,
+                      backgroundColor: tint + "22",
+                    },
+                    (!canTransfer || updatingDealOutcome) && { opacity: 0.55 },
+                  ]}
+                >
+                  <Ionicons name={opt.icon} size={14} color={active ? tint : colors.textSecondary} />
+                  <Text
+                    style={[
+                      styles.outcomeChipTxt,
+                      { color: active ? tint : colors.textSecondary, fontWeight: active ? "900" : "700" },
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {dealDone === true ? (
+            <>
+              {/* Assign Suppliers pill (managerial only). */}
+              {onAssignSuppliers && canTransfer ? (
+                <TouchableOpacity
+                  testID="stock-assign-suppliers-pill"
+                  onPress={onAssignSuppliers}
+                  style={styles.pill}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="people-outline" size={14} color={colors.primary} />
+                  <Text style={styles.pillTxt}>
+                    {supplierAssignmentSummary && supplierAssignmentSummary.total > 0
+                      ? `Allocate Suppliers to Recon · ${supplierAssignmentSummary.assigned}/${supplierAssignmentSummary.total}`
+                      : "Allocate Suppliers to Recon"}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+
+              {/* Reconditioning Requirement Sheet — available the
+                  moment Deal Done is picked so the reconditioner can
+                  start work before the vehicle even gets a stock
+                  number. */}
+              <TouchableOpacity
+                testID="stock-download-recon-pdf"
+                disabled={downloadingRecon}
+                style={styles.secondaryBtn}
+                onPress={onDownloadReconPdf}
+                activeOpacity={0.85}
+              >
+                {downloadingRecon ? (
+                  <ActivityIndicator size="small" color={colors.text} />
+                ) : (
+                  <>
+                    <Ionicons name="construct-outline" size={16} color={colors.text} />
+                    <Text style={[styles.secondaryBtnTxt, { color: colors.text }]}>
+                      Download Reconditioning Sheet
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              {/* Transfer to Stock — primary CTA, gated on Deal Done. */}
+              <TouchableOpacity
+                testID="transfer-to-stock-open-btn"
+                disabled={!canTransfer || !isFullyValued}
+                onPress={onOpenTransferModal}
+                style={[
+                  styles.primaryBtn,
+                  (!canTransfer || !isFullyValued) && styles.primaryBtnDisabled,
+                  { backgroundColor: colors.primary },
+                ]}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="arrow-forward-circle" size={18} color={colors.onPrimary} />
+                <Text style={[styles.primaryBtnTxt, { color: colors.onPrimary }]}>Transfer to Stock</Text>
+              </TouchableOpacity>
+            </>
+          ) : null}
+
+          {!canTransfer ? (
             <Text style={styles.hintTxt}>
-              Only managerial users on this dealership can transfer vehicles into stock.
+              Only managerial users on this dealership can set the deal outcome or transfer vehicles into stock.
             </Text>
           ) : null}
         </>
@@ -340,5 +449,31 @@ const makeStyles = (colors: any) =>
       color: "#DC2626",
       fontSize: 12,
       fontWeight: "800",
+    },
+    // Tri-state deal outcome (Pending · Deal Done · No Deal Done)
+    // ------------------------------------------------------------------
+    // Rendered as a row of three equal-weight chips at the top of the
+    // "not transferred" branch. Tint mirrors the choice: amber for
+    // pending, green for done, red for no-deal.
+    outcomeRow: {
+      flexDirection: "row",
+      gap: 6,
+    },
+    outcomeChip: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 5,
+      paddingVertical: 8,
+      paddingHorizontal: 8,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.bg,
+    },
+    outcomeChipTxt: {
+      fontSize: 12,
+      letterSpacing: 0.2,
     },
   });

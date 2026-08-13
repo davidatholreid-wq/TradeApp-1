@@ -2609,12 +2609,21 @@ export default function VehicleDetail() {
             const transferredAt = (sub as any)?.transferred_to_stock_at || null;
             const canTransfer = isAdmin || (isOwningDealer && !!((user as any)?.is_pricing_agent));
             const isFullyValued = !!(sub as any)?.priced_at;
+            // Normalise the deal.done tri-state so the card can drive
+            // the outcome chips: true → Deal Done, false → No Deal,
+            // undefined/null → Pending.
+            const rawDone = (sub as any)?.deal?.done;
+            const dealDoneVal: boolean | null =
+              rawDone === true ? true : rawDone === false ? false : null;
             return (
               <TransferToStockCard
                 stockItemId={stockItemId}
                 stockNumber={stockNumber}
                 transferredAt={transferredAt}
                 isFullyValued={isFullyValued}
+                dealDone={dealDoneVal}
+                updatingDealOutcome={dealSaving}
+                onSetDealOutcome={(val) => patchDeal({ done: val })}
                 canTransfer={canTransfer}
                 onOpenTransferModal={() => setTransferModalOpen(true)}
                 onUntransfer={handleUntransferFromStock}
