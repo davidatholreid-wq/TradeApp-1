@@ -906,13 +906,19 @@ export default function VehicleDetail() {
       // in web preview, and doesn't rely on the (now expired) presigned
       // Kredo S3 URL.
       const token = await storage.getItem(TOKEN_KEY);
-      const url = `${process.env.EXPO_PUBLIC_BACKEND_URL}/api/kredo/cartrust/pdf/${sub.id}`;
+      // Cache-buster: mid-Aug 2026 the endpoint's PDF payload changed
+      // twice (compact locally-rendered → Kredo's full 5-page).
+      // Without a fresh URL every open the browser / OS PDF viewer
+      // happily serves a stale blob and dealers think we lost their
+      // ownership-history section.
+      const url = `${process.env.EXPO_PUBLIC_BACKEND_URL}/api/kredo/cartrust/pdf/${sub.id}?t=${Date.now()}`;
       // On web we can just open with the Authorization header via a fetch
       // + blob URL trick. On native, expo-web-browser can open a URL
       // that already carries auth via a query-string bearer — but our
       // API only accepts headers, so we blob it locally instead.
       const res = await fetch(url, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
+        cache: "no-store" as any,
       });
       if (!res.ok) {
         throw new Error(`Server returned ${res.status}`);
@@ -931,7 +937,10 @@ export default function VehicleDetail() {
           reader.onerror = () => reject(reader.error);
           reader.readAsDataURL(blob);
         });
-        const path = `${FileSystem.cacheDirectory}cartrust_${sub.id}.pdf`;
+        // Native cache path — timestamped so we never reuse a stale
+        // copy of the PDF that was saved to disk under an older
+        // renderer version.
+        const path = `${FileSystem.cacheDirectory}cartrust_${sub.id}_${Date.now()}.pdf`;
         await FileSystem.writeAsStringAsync(path, b64, { encoding: FileSystem.EncodingType.Base64 });
         await WebBrowser.openBrowserAsync(path);
       }

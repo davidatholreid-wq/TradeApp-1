@@ -1181,7 +1181,12 @@ async def kredo_cartrust_pdf(
         media_type="application/pdf",
         headers={
             "Content-Disposition": f'inline; filename="{filename}"',
-            "Cache-Control": "private, max-age=300",
+            # No caching — the underlying PDF payload has churned twice
+            # this month (Kredo original → local render → back to Kredo).
+            # Cache-Control: no-store forces the browser to refetch on
+            # every open so a stale copy never confuses the dealer.
+            "Cache-Control": "no-store, no-cache, must-revalidate, private",
+            "Pragma": "no-cache",
         },
     )
 
