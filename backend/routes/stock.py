@@ -119,6 +119,7 @@ _EDITABLE_VEHICLE_FIELDS: List[str] = [
     "floorplan_amount_zar",
     "expected_recon_cost_zar",
     "advertised",
+    "fully_reconditioned",
 ]
 
 
@@ -160,6 +161,7 @@ class StockPatchIn(BaseModel):
     floorplan_amount_zar: Optional[int] = Field(default=None, ge=0, le=100_000_000)
     expected_recon_cost_zar: Optional[int] = Field(default=None, ge=0, le=10_000_000)
     advertised: Optional[bool] = None
+    fully_reconditioned: Optional[bool] = None
 
 
 class MarkSoldIn(BaseModel):
@@ -251,6 +253,7 @@ def _row_for_api(doc: dict) -> dict:
         "floorplan_amount_zar": doc.get("floorplan_amount_zar"),
         "expected_recon_cost_zar": doc.get("expected_recon_cost_zar"),
         "advertised": bool(doc.get("advertised", False)),
+        "fully_reconditioned": bool(doc.get("fully_reconditioned", False)),
         "purchased_at": purchased_at,
         "days_in_stock": days,
         "dealership_id": doc.get("dealership_id"),

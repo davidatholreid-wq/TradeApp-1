@@ -54,6 +54,7 @@ type StockItem = {
   floorplan_amount_zar?: number | null;
   expected_recon_cost_zar?: number | null;
   advertised?: boolean;
+  fully_reconditioned?: boolean;
   stock_number?: string | null;
   make_name?: string;
   model_name?: string;
@@ -220,6 +221,37 @@ export default function StockScreen() {
       setSavingTarget(false);
     }
   }, [load, targetDraft]);
+
+  // Optimistic toggle for boolean stock fields (advertised, fully_reconditioned).
+  // We flip the local state immediately for snappy UX, PATCH in the
+  // background, and roll back / show a toast on failure.
+  const [togglingFlag, setTogglingFlag] = useState<string | null>(null);
+  const toggleFlag = useCallback(
+    async (item: StockItem, field: "advertised" | "fully_reconditioned") => {
+      const nextVal = !item[field];
+      const key = `${item.id}:${field}`;
+      setTogglingFlag(key);
+      // Optimistic UI update via setItems
+      setItems((prev) =>
+        prev.map((x) => (x.id === item.id ? { ...x, [field]: nextVal } : x))
+      );
+      try {
+        await apiFetch(`/api/stock/${item.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ [field]: nextVal }),
+        });
+      } catch (e: any) {
+        // Roll back
+        setItems((prev) =>
+          prev.map((x) => (x.id === item.id ? { ...x, [field]: !nextVal } : x))
+        );
+        Alert.alert("Couldn't save", e?.message || "Please try again.");
+      } finally {
+        setTogglingFlag(null);
+      }
+    },
+    [],
+  );
 
   // ---------------------------------------------------------------------
   // Export
@@ -416,6 +448,8 @@ export default function StockScreen() {
                     }}
                     onChangeTargetDraft={setTargetDraft}
                     onCommitTarget={() => commitTarget(row)}
+                    onToggleFlag={(field) => toggleFlag(row, field)}
+                    togglingFlag={togglingFlag}
                     onOpenSubmission={() => {
                       // Route to the LINKED submission — `row.id` is the
                       // stock-item's own UUID, not the vehicle's. Using
@@ -615,15 +649,20 @@ const TABLE_COLS_WEB = {
   stock:      { w: 96,  align: "left"  as const, label: "STOCK #" },
   year:       { w: 60,  align: "left"  as const, label: "YEAR" },
   make:       { w: 110, align: "left"  as const, label: "MAKE" },
-  derivative: { w: 260, align: "left"  as const, label: "MODEL / DERIVATIVE" },
+  // Nov 2026 revision — was "MODEL / DERIVATIVE" showing model + sub;
+  // dealers only want the derivative (trade name), not the internal
+  // model code. Wider now that we no longer show two lines.
+  derivative: { w: 300, align: "left"  as const, label: "DERIVATIVE" },
   mileage:    { w: 100, align: "right" as const, label: "MILEAGE" },
   colour:     { w: 100, align: "left"  as const, label: "COLOUR" },
   mm:         { w: 90,  align: "left"  as const, label: "M&M" },
   vin:        { w: 156, align: "left"  as const, label: "VIN" },
   cost:       { w: 118, align: "right" as const, label: "COST (MY OFFER)" },
   floorplan:  { w: 118, align: "right" as const, label: "FLOORPLAN" },
-  recon:      { w: 108, align: "right" as const, label: "EXP. RECON" },
-  advertised: { w: 78,  align: "center"as const, label: "ADVERT." },
+  reconCost:  { w: 108, align: "right" as const, label: "EXP. RECON" },
+  // Two clickable YES/NO chips — advertised + fully-reconditioned.
+  advertised: { w: 84,  align: "center"as const, label: "ADVERT." },
+  reconDone:  { w: 84,  align: "center"as const, label: "RECON" },
   retail:     { w: 124, align: "right" as const, label: "RETAIL" },
   age:        { w: 92,  align: "left"  as const, label: "AGE" },
   dship:      { w: 160, align: "left"  as const, label: "DEALERSHIP" },
@@ -659,7 +698,8 @@ function StockTableHeader({
   const order: string[] = isWeb
     ? [
         "stock", "year", "make", "derivative", "mileage", "colour",
-        "mm", "vin", "cost", "floorplan", "recon", "advertised",
+        "mm", "vin", "cost", "floorplan", "reconCost",
+        "advertised", "reconDone",
         "retail", "age",
         ...(isAdmin ? ["dship"] : []),
         "actions",
@@ -707,6 +747,8 @@ function StockTableRow({
   onCommitTarget,
   onOpenSubmission,
   onMarkSold,
+  onToggleFlag,
+  togglingFlag,
 }: {
   row: StockItem;
   zebra: boolean;
@@ -723,9 +765,52 @@ function StockTableRow({
   onCommitTarget: () => void;
   onOpenSubmission: () => void;
   onMarkSold: () => void;
+  onToggleFlag: (field: "advertised" | "fully_reconditioned") => void;
+  togglingFlag: string | null;
 }) {
   const isWeb = Platform.OS === "web";
   const age = ageTint(row.days_in_stock);
+
+  // ------- Yes/No clickable pill (advertised, fully_reconditioned) ---
+  // Managerial users can toggle; other roles see a read-only pill so
+  // the flags aren't accidentally flipped from a non-managerial device.
+  const YesNoToggle = ({
+    field,
+    value,
+    testID,
+  }: {
+    field: "advertised" | "fully_reconditioned";
+    value: boolean;
+    testID: string;
+  }) => {
+    const busy = togglingFlag === `${row.id}:${field}`;
+    return (
+      <TouchableOpacity
+        disabled={!isManagerial || busy}
+        activeOpacity={isManagerial ? 0.7 : 1}
+        onPress={() => onToggleFlag(field)}
+        style={[
+          styles.tableAdvertisedPill,
+          value ? styles.tableAdvertisedPillYes : styles.tableAdvertisedPillNo,
+          busy && { opacity: 0.55 },
+        ]}
+        testID={testID}
+      >
+        {busy ? (
+          <ActivityIndicator size="small" color={value ? colors.onPrimary : colors.textSecondary} />
+        ) : (
+          <Text
+            style={[
+              styles.tableAdvertisedPillTxt,
+              { color: value ? colors.onPrimary : colors.textSecondary },
+            ]}
+          >
+            {value ? "YES" : "NO"}
+          </Text>
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   // ------- Retail-price editable cell (shared for web + mobile) ------
   const retailCell = editingTarget ? (
@@ -835,17 +920,12 @@ function StockTableRow({
         >
           {row.make_name || "—"}
         </Text>
-        {/* Derivative — the trade-name row (model + derivative) */}
+        {/* Derivative — trade name only, no internal model code */}
         <View style={{ width: C.derivative.w, paddingRight: 8 }}>
           <TouchableOpacity onPress={onOpenSubmission} activeOpacity={0.7}>
             <Text style={styles.tableCellVehicle} numberOfLines={1}>
-              {row.model_name || "—"}
+              {row.derivative_name || row.model_name || "—"}
             </Text>
-            {row.derivative_name && row.derivative_name !== row.model_name ? (
-              <Text style={styles.tableCellVehicleSub} numberOfLines={1}>
-                {row.derivative_name}
-              </Text>
-            ) : null}
           </TouchableOpacity>
         </View>
         {/* Mileage */}
@@ -893,29 +973,27 @@ function StockTableRow({
           style={[
             styles.tableCell,
             styles.tableCellNumeric,
-            { width: C.recon.w, color: row.expected_recon_cost_zar ? colors.text : colors.textDisabled },
+            { width: C.reconCost.w, color: row.expected_recon_cost_zar ? colors.text : colors.textDisabled },
           ]}
           numberOfLines={1}
         >
           {row.expected_recon_cost_zar != null ? fmtZar(row.expected_recon_cost_zar) : "—"}
         </Text>
-        {/* Advertised — Yes / No pill */}
+        {/* Advertised — tap to toggle */}
         <View style={{ width: C.advertised.w, alignItems: "center" }}>
-          <View
-            style={[
-              styles.tableAdvertisedPill,
-              row.advertised ? styles.tableAdvertisedPillYes : styles.tableAdvertisedPillNo,
-            ]}
-          >
-            <Text
-              style={[
-                styles.tableAdvertisedPillTxt,
-                { color: row.advertised ? colors.onPrimary : colors.textSecondary },
-              ]}
-            >
-              {row.advertised ? "YES" : "NO"}
-            </Text>
-          </View>
+          <YesNoToggle
+            field="advertised"
+            value={!!row.advertised}
+            testID={`stock-advertised-${row.id}`}
+          />
+        </View>
+        {/* Fully Reconditioned — tap to toggle */}
+        <View style={{ width: C.reconDone.w, alignItems: "center" }}>
+          <YesNoToggle
+            field="fully_reconditioned"
+            value={!!row.fully_reconditioned}
+            testID={`stock-recon-${row.id}`}
+          />
         </View>
         {/* Retail Price (editable) */}
         <View style={{ width: C.retail.w }}>{retailCell}</View>
