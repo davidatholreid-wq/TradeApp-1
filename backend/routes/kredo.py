@@ -147,17 +147,42 @@ async def _resolve_kredo_identifiers(sub: dict) -> tuple[str, str, str, str]:
     if not kredo_models:
         raise ValueError(f"Kredo has no models for make '{k_make}'.")
 
+    # Build a list of candidate model tokens to try. Our internal
+    # `model_name` sometimes carries a compound family name like
+    # "TIGUAN / TAYRON" (VW ships the Tiguan and its long-wheelbase
+    # sibling Tayron under one M&M line), while Kredo lists them
+    # separately as just "TIGUAN". Splitting on "/" (and normalising
+    # whitespace) lets us match either side without altering the raw
+    # `model_name` on the submission. Order matters — we try the full
+    # string first so submissions carrying an exact Kredo string still
+    # win on the first pass.
     upper_model = model.upper()
-    direct = [m for m in kredo_models if m.upper() == upper_model]
-    if direct:
-        k_model = direct[0]
-    else:
-        prefixed = [m for m in kredo_models if m.upper().startswith(upper_model + " ")]
-        substring = [m for m in kredo_models if upper_model in m.upper()]
-        candidates = prefixed or substring
-        if not candidates:
-            raise ValueError(f"Kredo has no model matching '{model}' for {k_make}.")
-        k_model = _select_kredo_model_by_year(candidates, year) or candidates[0]
+    model_candidates: list[str] = [upper_model]
+    if "/" in upper_model:
+        for part in upper_model.split("/"):
+            p = re.sub(r"\s+", " ", part).strip()
+            if p and p not in model_candidates:
+                model_candidates.append(p)
+
+    k_model: Optional[str] = None
+    tried: list[str] = []
+    for cand in model_candidates:
+        tried.append(cand)
+        direct = [m for m in kredo_models if m.upper() == cand]
+        if direct:
+            k_model = direct[0]
+            break
+        prefixed = [m for m in kredo_models if m.upper().startswith(cand + " ")]
+        substring = [m for m in kredo_models if cand in m.upper()]
+        pool = prefixed or substring
+        if pool:
+            k_model = _select_kredo_model_by_year(pool, year) or pool[0]
+            break
+    if not k_model:
+        raise ValueError(
+            f"Kredo has no model matching '{model}' for {k_make}."
+            + (f" Tried: {tried}" if len(tried) > 1 else "")
+        )
 
     # Year sanity — Kredo's `years` list is authoritative.
     r = await kc.years(k_make, k_model)

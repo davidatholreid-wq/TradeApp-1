@@ -99,6 +99,16 @@ export default function AppLayout() {
           }}
         />
         <Tabs.Screen
+          name="billing"
+          options={{
+            // Billing lives in the bottom tab bar (moved out of the
+            // home-screen flip-tiles Nov 2026). Kept visible for both
+            // dealers and admins so it's always one tap away.
+            title: "Billing",
+            tabBarIcon: ({ color, size }) => <Ionicons name="cash-outline" color={color} size={size} />,
+          }}
+        />
+        <Tabs.Screen
           name="profile"
           options={{
             title: "Profile",
@@ -108,7 +118,6 @@ export default function AppLayout() {
         {/* All secondary destinations are hidden from the tab bar and
             reachable via the home-page tiles or their deep-links. */}
         <Tabs.Screen name="dealers" options={{ href: null }} />
-        <Tabs.Screen name="billing" options={{ href: null }} />
         <Tabs.Screen name="history" options={{ href: null }} />
         <Tabs.Screen name="rewards" options={{ href: null }} />
         <Tabs.Screen name="deal-outcomes" options={{ href: null }} />

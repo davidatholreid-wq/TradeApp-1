@@ -418,20 +418,29 @@ export default function HomeScreen() {
         { key: "kredo", label: "Kredo", hint: "VIN reports & CarTrust tools", icon: "pricetag", to: "/(app)/kredo-test", tint: "#F43F5E" },
       ]
     : [
-        // "Get Cover" — headline dealer action (mirrors the Submit tab).
-        // Routes to /submit so the dealer can submit a vehicle and get
-        // a Fourbuy cover in <90 seconds. Uses the brand primary tint
-        // so it visibly reads as the primary CTA on the home page.
+        // ============ TOP ROW (dealer home) ============
+        // Ordered exactly per Nov 2026 spec:
+        //   1. My Evaluations — dealer's own priced vehicles (routes
+        //      to /history, which lists their submissions).
+        //   2. Get Cover      — submit a new vehicle for cover.
+        //   3. Give Cover     — pricing agents queue (managerial only).
+        // Billing has been demoted OUT of tiles and now sits in the
+        // bottom-tab bar for a cleaner primary-action row. Stock has
+        // been renamed to "Stock List" for clarity.
+        // -------------------------------------------------
+        {
+          key: "my-evaluations",
+          label: "My Evaluations",
+          hint: "Your priced & pending vehicles",
+          icon: "car-sport" as const,
+          to: "/(app)/history",
+          tint: "#EC4899",
+        },
         { key: "get-cover", label: "Get Cover", hint: "Submit a vehicle · confirmed cover in 90 s", icon: "flash" as const, to: "/(app)/submit", tint: "#14B8A6" },
         ...(isPricingAgent
           ? [{
               key: "cover",
               label: "Give Cover",
-              // Dynamic hint that surfaces the current queue depth
-              // right in the tile — dealers who leave and come back
-              // instantly see whether new work has landed. Falls back
-              // to the base copy on the first render before the fetch
-              // resolves or if the network call fails.
               hint: coversAvailable != null && coversAvailable > 0
                 ? `${coversAvailable} car${coversAvailable === 1 ? "" : "s"} waiting · R10 each`
                 : coversAvailable === 0
@@ -440,25 +449,13 @@ export default function HomeScreen() {
               icon: "shield-checkmark" as const,
               to: "/(app)/cover",
               tint: "#5B8DEF",
-              // `badge` renders as a small primary-tinted pill in the
-              // top-right corner of the tile. Only shown when there's
-              // actually something to cover.
               badge: coversAvailable && coversAvailable > 0 ? String(coversAvailable) : undefined,
             }]
           : []),
-        { key: "billing", label: "Billing", hint: "Invoices & report charges", icon: "cash" as const, to: "/(app)/billing", tint: "#22C55E" },
-        { key: "history", label: "History", hint: "Priced & archived vehicles", icon: "time" as const, to: "/(app)/history", tint: "#A78BFA" },
+        // ============ SECONDARY ROW ============
+        // Renamed from "Stock" → "Stock List" per Nov 2026 request.
+        { key: "stock", label: "Stock List", hint: "Vehicles in stock · aging & pricing", icon: "cube" as const, to: "/(app)/stock", tint: "#8B5CF6" },
         { key: "rewards", label: "Rewards", hint: "Earn points & vouchers", icon: "gift" as const, to: "/(app)/rewards", tint: "#F97316" },
-        // "Stock" — dealership stock list, sourced from submissions where
-        // deal.done=true AND deal.sold != true. Age is measured from the
-        // deal-done timestamp so the list acts like a live floor-plan
-        // report. Managerial users can set target sell prices and mark
-        // vehicles sold from here.
-        { key: "stock", label: "Stock", hint: "Vehicles in stock · aging & pricing", icon: "car-sport" as const, to: "/(app)/stock", tint: "#8B5CF6" },
-        // "Suppliers" — dealership-scoped Recon Suppliers catalog. Every
-        // dealer at the dealership can view it; only managerial users can
-        // add / edit / delete (enforced on both frontend and backend).
-        // Placed after Rewards so it reads as a management/settings tile.
         { key: "suppliers", label: "Suppliers", hint: "Recon suppliers · dealership catalog", icon: "briefcase" as const, to: "/(app)/suppliers", tint: "#0EA5E9" },
       ];
 
