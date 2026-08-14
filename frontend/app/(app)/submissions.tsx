@@ -23,11 +23,16 @@ import { apiFetch } from "@/src/api";
 import BrandLogo from "@/src/components/BrandLogo";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-// Gold accent used to make the dealer's own offer visually dominate
-// over the neutral Fourbuy Offer + Highest Cover rows. Warm and
-// premium — reads as "your number" without competing with the green
-// (accepted) / red (declined) status colours already on the card.
-const MY_OFFER_ACCENT = "#D4A017";
+// Accent colours for the three-offer panel on submission cards.
+// Redesigned Nov 2026 — replaced the loud gold "My Offer" chip with
+// a unified emerald/indigo/neutral palette so the three offers read
+// as one grouped panel rather than a mismatched stack of pills.
+//   • Fourbuy Offer  → neutral text / soft chip (informational)
+//   • Highest Cover  → brand primary (blue) — the market's answer
+//   • My Offer       → emerald — the dealer's own stake, positive but calm
+const FOURBUY_OFFER_ACCENT = "#94A3B8";     // slate — neutral
+const COVER_OFFER_ACCENT   = "#3B82F6";     // brand blue — external market
+const MY_OFFER_ACCENT      = "#10B981";     // emerald — dealer's own number
 
 type Submission = {
   id: string;
@@ -306,56 +311,77 @@ export default function DashboardScreen() {
         </View>
       ) : null}
 
-      {/* Three-offer summary — always render every present offer so
-          dealers/admins can see the full pricing picture at a glance.
-          "My offer" for the dealer's own view, "Dealer offer" when an
-          admin is looking at the same row. */}
-      {item.status === "priced" && item.price !== null ? (
-        <View style={styles.offerRow}>
-          <Text style={styles.offerRowLabel}>Fourbuy Offer</Text>
-          <Text style={[styles.offerRowValue, { color: colors.success }]}>
-            R {item.price.toLocaleString()}
-          </Text>
-        </View>
-      ) : item.status === "declined" ? (
-        <View style={styles.offerRow}>
-          <Text style={styles.offerRowLabel}>Fourbuy Offer</Text>
-          <Text style={[styles.offerRowValue, { fontSize: 13, color: colors.textSecondary, fontWeight: "700" }]}>
-            No offer — not charged
-          </Text>
-        </View>
-      ) : null}
-      {item.highest_cover_zar != null ? (
-        <View style={styles.offerRow}>
-          <Text style={styles.offerRowLabel}>
-            Highest Cover {item.cover_count && item.cover_count > 1 ? `· ${item.cover_count} offers` : ""}
-          </Text>
-          <Text style={[styles.offerRowValue, { color: colors.primary }]}>
-            R {item.highest_cover_zar.toLocaleString()}
-          </Text>
-        </View>
-      ) : null}
-      {/* My Offer / Dealer Offer — ALWAYS rendered so the row is
-          visually the dealer's own stake in the deal. Rendered as a
-          gold highlight chip so it dominates over the neutral Fourbuy
-          and Highest Cover rows above (dealer's own number matters
-          most to them). Placeholder shows "Not set" when the dealer
-          hasn't recorded an offer yet — tapping the row takes them to
-          the vehicle detail where they can enter one. */}
-      <View style={[styles.offerRowHighlight, { borderColor: MY_OFFER_ACCENT + "66", backgroundColor: MY_OFFER_ACCENT + "14" }]}>
-        <Text style={[styles.offerRowHighlightLabel, { color: MY_OFFER_ACCENT }]}>
-          {isAdmin ? "Dealer Offer" : "My Offer"}
-        </Text>
-        {item.dealer_offer_zar != null ? (
-          <Text style={[styles.offerRowHighlightValue, { color: MY_OFFER_ACCENT }]}>
-            R {item.dealer_offer_zar.toLocaleString()}
-          </Text>
-        ) : (
-          <Text style={[styles.offerRowHighlightValue, { color: MY_OFFER_ACCENT + "AA", fontSize: 13 }]}>
-            Not set
-          </Text>
-        )}
-      </View>
+      {/* Unified offers panel — Fourbuy Offer, Highest Cover, and
+          My Offer render as one grouped card so the three prices
+          read together at a glance. Each row is a coloured left-
+          stripe + accent-tinted amount so the panel stays readable
+          without any loud borders. My Offer sits at the bottom on a
+          subtle emerald wash to hint "this is yours" without dominating. */}
+      {(() => {
+        const showFourbuy = item.status === "priced" && item.price !== null;
+        const showFourbuyNoOffer = item.status === "declined";
+        const showCover = item.highest_cover_zar != null;
+        return (
+          <View style={styles.offersPanel}>
+            {showFourbuy ? (
+              <View style={styles.offersRow}>
+                <View style={[styles.offersDot, { backgroundColor: FOURBUY_OFFER_ACCENT }]} />
+                <Text style={styles.offersRowLabel}>Fourbuy Offer</Text>
+                <Text style={[styles.offersRowValue, { color: colors.text }]}>
+                  R {item.price!.toLocaleString()}
+                </Text>
+              </View>
+            ) : showFourbuyNoOffer ? (
+              <View style={styles.offersRow}>
+                <View style={[styles.offersDot, { backgroundColor: FOURBUY_OFFER_ACCENT }]} />
+                <Text style={styles.offersRowLabel}>Fourbuy Offer</Text>
+                <Text style={[styles.offersRowValueMuted, { color: colors.textSecondary }]}>
+                  No offer — not charged
+                </Text>
+              </View>
+            ) : null}
+
+            {showCover ? (
+              <View style={[styles.offersRow, (showFourbuy || showFourbuyNoOffer) && styles.offersRowDivider]}>
+                <View style={[styles.offersDot, { backgroundColor: COVER_OFFER_ACCENT }]} />
+                <Text style={styles.offersRowLabel}>
+                  Cover Offer{item.cover_count && item.cover_count > 1 ? ` · ${item.cover_count}` : ""}
+                </Text>
+                <Text style={[styles.offersRowValue, { color: COVER_OFFER_ACCENT }]}>
+                  R {item.highest_cover_zar!.toLocaleString()}
+                </Text>
+              </View>
+            ) : null}
+
+            {/* My Offer / Dealer Offer — ALWAYS rendered so the row is a
+                consistent visual anchor for the dealer's own stake.
+                Rendered with a subtle emerald wash + left stripe so it
+                still holds a bit more weight than the neutral rows above
+                without shouting. */}
+            <View
+              style={[
+                styles.offersMyRow,
+                (showFourbuy || showFourbuyNoOffer || showCover) && styles.offersMyRowWithDivider,
+                { backgroundColor: MY_OFFER_ACCENT + "12" },
+              ]}
+            >
+              <View style={[styles.offersDot, { backgroundColor: MY_OFFER_ACCENT }]} />
+              <Text style={[styles.offersRowLabel, { color: MY_OFFER_ACCENT }]}>
+                {isAdmin ? "Dealer Offer" : "My Offer"}
+              </Text>
+              {item.dealer_offer_zar != null ? (
+                <Text style={[styles.offersRowValue, { color: MY_OFFER_ACCENT }]}>
+                  R {item.dealer_offer_zar.toLocaleString()}
+                </Text>
+              ) : (
+                <Text style={[styles.offersRowValueMuted, { color: MY_OFFER_ACCENT + "99" }]}>
+                  Not set
+                </Text>
+              )}
+            </View>
+          </View>
+        );
+      })()}
     </TouchableOpacity>
   );
 
@@ -472,89 +498,61 @@ export default function DashboardScreen() {
               </View>
             </View>
 
-            {/* Three-offer footer — shows Fourbuy Offer, Highest Cover
-                and dealer's own offer (rebranded "My Offer" for the
-                dealer's own list and "Dealer Offer" when admin views).
-                Rows only render when a value is present, so a plain
-                Pending submission still shows the "Awaiting price"
-                placeholder. */}
-            <View style={styles.gridFooter}>
+            {/* Unified offers footer — same visual language as the
+                list card so dealers see the same grouped Fourbuy / Cover
+                Offer / My Offer panel across both views. */}
+            <View style={styles.offersPanel}>
               {item.status === "priced" && item.price !== null ? (
-                <View style={styles.gridFooterRow}>
-                  <Text style={[styles.gridFooterLabel, { color: colors.textSecondary }]}>
-                    Fourbuy Offer
-                  </Text>
-                  <Text style={[styles.gridFooterValue, { color: colors.success }]}>
+                <View style={styles.offersRow}>
+                  <View style={[styles.offersDot, { backgroundColor: FOURBUY_OFFER_ACCENT }]} />
+                  <Text style={styles.offersRowLabel}>Fourbuy Offer</Text>
+                  <Text style={[styles.offersRowValue, { color: colors.text, fontSize: 14 }]}>
                     R {item.price.toLocaleString()}
                   </Text>
                 </View>
               ) : item.status === "declined" ? (
-                <View style={styles.gridFooterRow}>
-                  <Text style={[styles.gridFooterLabel, { color: colors.textSecondary }]}>
-                    Fourbuy Offer
-                  </Text>
-                  <Text
-                    style={[
-                      styles.gridFooterValue,
-                      { color: colors.textSecondary, fontSize: 11 },
-                    ]}
-                  >
+                <View style={styles.offersRow}>
+                  <View style={[styles.offersDot, { backgroundColor: FOURBUY_OFFER_ACCENT }]} />
+                  <Text style={styles.offersRowLabel}>Fourbuy Offer</Text>
+                  <Text style={[styles.offersRowValueMuted, { color: colors.textSecondary }]}>
                     No offer
                   </Text>
                 </View>
               ) : (
-                <View style={styles.gridFooterRow}>
-                  <Text style={[styles.gridFooterLabel, { color: colors.textSecondary }]}>
-                    Fourbuy Offer
-                  </Text>
-                  <Text
-                    style={[
-                      styles.gridFooterValue,
-                      { color: colors.textSecondary, fontSize: 11 },
-                    ]}
-                  >
+                <View style={styles.offersRow}>
+                  <View style={[styles.offersDot, { backgroundColor: FOURBUY_OFFER_ACCENT }]} />
+                  <Text style={styles.offersRowLabel}>Fourbuy Offer</Text>
+                  <Text style={[styles.offersRowValueMuted, { color: colors.textSecondary }]}>
                     Awaiting
                   </Text>
                 </View>
               )}
               {item.highest_cover_zar != null ? (
-                <View style={styles.gridFooterRow}>
-                  <Text style={[styles.gridFooterLabel, { color: colors.textSecondary }]}>
-                    Highest Cover
-                  </Text>
-                  <Text style={[styles.gridFooterValue, { color: colors.primary }]}>
+                <View style={[styles.offersRow, styles.offersRowDivider]}>
+                  <View style={[styles.offersDot, { backgroundColor: COVER_OFFER_ACCENT }]} />
+                  <Text style={styles.offersRowLabel}>Cover Offer</Text>
+                  <Text style={[styles.offersRowValue, { color: COVER_OFFER_ACCENT, fontSize: 14 }]}>
                     R {item.highest_cover_zar.toLocaleString()}
                   </Text>
                 </View>
               ) : null}
-              {/* My Offer / Dealer Offer — ALWAYS rendered as a gold
-                  highlight chip so the dealer's own stake dominates
-                  visually over Fourbuy Offer / Highest Cover. Empty
-                  state shows "Not set" so the row still occupies the
-                  same vertical footprint and grid cards line up. */}
               <View
                 style={[
-                  styles.gridFooterHighlight,
-                  {
-                    borderColor: MY_OFFER_ACCENT + "66",
-                    backgroundColor: MY_OFFER_ACCENT + "14",
-                  },
+                  styles.offersMyRow,
+                  styles.offersMyRowWithDivider,
+                  { backgroundColor: MY_OFFER_ACCENT + "12" },
                 ]}
               >
-                <Text style={[styles.gridFooterHighlightLabel, { color: MY_OFFER_ACCENT }]}>
+                <View style={[styles.offersDot, { backgroundColor: MY_OFFER_ACCENT }]} />
+                <Text style={[styles.offersRowLabel, { color: MY_OFFER_ACCENT }]}>
                   {isAdmin ? "Dealer Offer" : "My Offer"}
                 </Text>
                 {item.dealer_offer_zar != null ? (
-                  <Text style={[styles.gridFooterHighlightValue, { color: MY_OFFER_ACCENT }]}>
+                  <Text style={[styles.offersRowValue, { color: MY_OFFER_ACCENT, fontSize: 14 }]}>
                     R {item.dealer_offer_zar.toLocaleString()}
                   </Text>
                 ) : (
-                  <Text
-                    style={[
-                      styles.gridFooterHighlightValue,
-                      { color: MY_OFFER_ACCENT + "AA", fontSize: 11 },
-                    ]}
-                  >
+                  <Text style={[styles.offersRowValueMuted, { color: MY_OFFER_ACCENT + "99" }]}>
                     Not set
                   </Text>
                 )}
@@ -995,54 +993,67 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
   priceLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: "600" },
   priceValue: { color: colors.success, fontSize: 18, fontWeight: "800" },
-  // ---- Three-offer summary rows (list card) ----
-  // The FIRST offerRow renders the divider so a card with 0 offers still
-  // has a clean bottom edge; subsequent rows stack tight below.
-  offerRow: {
+  // ---- Unified offers panel (list card) ----
+  // A single grouped container that holds Fourbuy Offer, Cover Offer
+  // (highest external cover), and the dealer's own My Offer. Each
+  // row is a coloured left-dot + label + right-aligned amount. My
+  // Offer sits at the bottom on a subtle emerald wash so it still
+  // reads as "the dealer's own number" without shouting like the
+  // previous outlined gold pill.
+  offersPanel: {
+    marginTop: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+    overflow: "hidden",
+  },
+  offersRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginTop: 4,
-    paddingTop: 6,
-    borderTopWidth: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    gap: 10,
+  },
+  offersRowDivider: {
+    borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
   },
-  offerRowLabel: {
+  offersMyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    gap: 10,
+  },
+  offersMyRowWithDivider: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  offersDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  offersRowLabel: {
+    flex: 1,
     color: colors.textSecondary,
     fontSize: 12,
     fontWeight: "700",
-    letterSpacing: 0.2,
-    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    textTransform: "uppercase" as const,
   },
-  offerRowValue: {
-    fontSize: 15,
+  offersRowValue: {
+    fontSize: 16,
     fontWeight: "800",
-  },
-  // -- My Offer / Dealer Offer highlight row (list card) --
-  // A gold chip that visually dominates over the muted Fourbuy /
-  // Highest Cover rows above. Uses larger type + tinted background so
-  // the dealer's own number is the first thing the eye lands on.
-  offerRowHighlight: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-  },
-  offerRowHighlightLabel: {
-    fontSize: 12,
-    fontWeight: "900",
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-  },
-  offerRowHighlightValue: {
-    fontSize: 18,
-    fontWeight: "900",
     letterSpacing: -0.2,
+    fontVariant: ["tabular-nums"],
   },
+  offersRowValueMuted: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  // ---- Legacy price row (kept for other callers) ----
 
   // ---- View toggle toolbar (list ↔ grid, plus 3/6 cols) ----
   viewToolbar: {
