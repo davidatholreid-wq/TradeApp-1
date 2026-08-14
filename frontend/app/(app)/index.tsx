@@ -433,7 +433,7 @@ export default function HomeScreen() {
           label: "My Evaluations",
           hint: "Your priced & pending vehicles",
           icon: "car-sport" as const,
-          to: "/(app)/history",
+          to: "/(app)/submissions",
           tint: "#EC4899",
         },
         { key: "get-cover", label: "Get Cover", hint: "Submit a vehicle · confirmed cover in 90 s", icon: "flash" as const, to: "/(app)/submit", tint: "#14B8A6" },

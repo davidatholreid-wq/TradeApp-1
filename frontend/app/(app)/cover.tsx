@@ -22,7 +22,7 @@ import { Swipeable } from "react-native-gesture-handler";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import ScreenBackButton from "@/src/components/ScreenBackButton";
 import { Ionicons } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSafeAreaInsets, SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/src/context/AuthContext";
 import { apiFetch } from "@/src/api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -279,7 +279,7 @@ export default function GiveCoverScreen() {
       style={{ backgroundColor: colors.bg }}
       contentContainerStyle={{
         padding: spacing.md,
-        paddingTop: Math.max(insets.top, 12) + spacing.md,
+        paddingTop: spacing.md,
         paddingBottom: 80,
       }}
       refreshControl={
@@ -970,11 +970,11 @@ export default function GiveCoverScreen() {
   ) : null;
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={["top"]}>
       <ScreenBackButton />
       {scrollContent}
       {undoBar}
-    </View>
+    </SafeAreaView>
   );
 }
 
