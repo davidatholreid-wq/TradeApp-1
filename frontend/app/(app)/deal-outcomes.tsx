@@ -110,7 +110,16 @@ export default function DealOutcomesScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={["top"]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.85}>
+        <TouchableOpacity
+          onPress={() => {
+            // @ts-ignore  — canGoBack is present at runtime on expo-router v3+
+            const canGo = typeof router.canGoBack === "function" ? router.canGoBack() : true;
+            if (canGo) router.back();
+            else router.replace("/" as never);
+          }}
+          style={styles.backBtn}
+          activeOpacity={0.85}
+        >
           <Ionicons name="chevron-back" size={22} color={colors.text} />
           <Text style={[styles.backBtnTxt, { color: colors.text }]}>Back</Text>
         </TouchableOpacity>

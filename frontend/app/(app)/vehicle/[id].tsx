@@ -1791,7 +1791,19 @@ export default function VehicleDetail() {
               router.replace({ pathname: "/(app)/cover", params: { tab: "given" } });
               return;
             }
-            router.back();
+            // Otherwise prefer the browser/native back-stack if we have
+            // history to walk. When there IS no history (deep-link,
+            // fresh reload, or a router.replace(...) chain that lost the
+            // stack) fall back to the dealer's submissions inbox — the
+            // route dealers usually arrive from via the "My Evaluations"
+            // home tile. Going home was disorienting.
+            // @ts-ignore  — canGoBack is present at runtime on expo-router v3+
+            const canGo = typeof router.canGoBack === "function" ? router.canGoBack() : true;
+            if (canGo) {
+              router.back();
+            } else {
+              router.replace("/(app)/submissions" as never);
+            }
           }}
           style={styles.backBtn}
         >
