@@ -253,6 +253,54 @@ export default function StockScreen() {
     [],
   );
 
+  // Remove a car from the stock list without deleting the underlying
+  // valuation. Backend already exposes
+  // POST /api/submissions/{sid}/untransfer-from-stock which drops the
+  // stock_items row and clears the submission's stock_* fields — the
+  // submission (and its valuation history, reports, cover offers) stay
+  // completely intact. Managerial-only, guarded by a confirm.
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const untransferFromStock = useCallback(
+    async (item: StockItem) => {
+      if (!item.submission_id) {
+        Alert.alert(
+          "Cannot remove",
+          "This stock item is not linked to a submission and cannot be removed automatically.",
+        );
+        return;
+      }
+      const proceed = () => {
+        (async () => {
+          try {
+            setRemovingId(item.id);
+            await apiFetch(`/api/submissions/${item.submission_id}/untransfer-from-stock`, {
+              method: "POST",
+            });
+            setItems((prev) => prev.filter((x) => x.id !== item.id));
+          } catch (e: any) {
+            Alert.alert("Couldn't remove", e?.message || "Please try again.");
+          } finally {
+            setRemovingId(null);
+          }
+        })();
+      };
+      const title = "Remove from stock?";
+      const msg =
+        `${item.stock_number || item.derivative_name || "This vehicle"} will be removed ` +
+        "from the stock list. The valuation, offers, and reports on the underlying " +
+        "submission remain unchanged and can be transferred back at any time.";
+      if (Platform.OS === "web") {
+        if (typeof window !== "undefined" && window.confirm(`${title}\n\n${msg}`)) proceed();
+      } else {
+        Alert.alert(title, msg, [
+          { text: "Cancel", style: "cancel" },
+          { text: "Remove", style: "destructive", onPress: proceed },
+        ]);
+      }
+    },
+    [],
+  );
+
   // ---------------------------------------------------------------------
   // Export
   // ---------------------------------------------------------------------
@@ -450,6 +498,7 @@ export default function StockScreen() {
                     onCommitTarget={() => commitTarget(row)}
                     onToggleFlag={(field) => toggleFlag(row, field)}
                     togglingFlag={togglingFlag}
+                    removing={removingId === row.id}
                     onOpenSubmission={() => {
                       // Route to the LINKED submission — `row.id` is the
                       // stock-item's own UUID, not the vehicle's. Using
@@ -466,6 +515,7 @@ export default function StockScreen() {
                       router.push(`/(app)/vehicle/${row.submission_id}` as never);
                     }}
                     onMarkSold={() => setSoldModalFor(row)}
+                    onDelete={() => untransferFromStock(row)}
                   />
                 ))}
               </View>
@@ -666,7 +716,9 @@ const TABLE_COLS_WEB = {
   retail:     { w: 124, align: "right" as const, label: "RETAIL" },
   age:        { w: 92,  align: "left"  as const, label: "AGE" },
   dship:      { w: 160, align: "left"  as const, label: "DEALERSHIP" },
-  actions:    { w: 100, align: "right" as const, label: "" },
+  // Widened to 140 (was 100) to comfortably fit three icon buttons —
+  // open · mark sold · remove — on the managerial UI without cropping.
+  actions:    { w: 140, align: "right" as const, label: "" },
 } as const;
 
 const TABLE_COLS_MOBILE = {
@@ -747,6 +799,8 @@ function StockTableRow({
   onCommitTarget,
   onOpenSubmission,
   onMarkSold,
+  onDelete,
+  removing,
   onToggleFlag,
   togglingFlag,
 }: {
@@ -767,6 +821,8 @@ function StockTableRow({
   onMarkSold: () => void;
   onToggleFlag: (field: "advertised" | "fully_reconditioned") => void;
   togglingFlag: string | null;
+  onDelete: () => void;
+  removing: boolean;
 }) {
   const isWeb = Platform.OS === "web";
   const age = ageTint(row.days_in_stock);
@@ -888,6 +944,23 @@ function StockTableRow({
           testID={`stock-mark-sold-${row.id}`}
         >
           <Ionicons name="cash-outline" size={14} color={colors.onPrimary} />
+        </TouchableOpacity>
+      ) : null}
+      {/* Remove-from-stock (un-transfer). Managerial-only. Does NOT
+          delete the underlying valuation — the submission and all its
+          history stay intact, only the stock_items row is removed. */}
+      {isManagerial ? (
+        <TouchableOpacity
+          onPress={onDelete}
+          disabled={removing}
+          style={[styles.tableIconBtn, styles.tableIconBtnDanger, removing && { opacity: 0.5 }]}
+          testID={`stock-delete-${row.id}`}
+        >
+          {removing ? (
+            <ActivityIndicator size="small" color={colors.danger || "#B91C1C"} />
+          ) : (
+            <Ionicons name="trash-outline" size={14} color={colors.danger || "#B91C1C"} />
+          )}
         </TouchableOpacity>
       ) : null}
     </View>
@@ -1414,7 +1487,11 @@ const makeStyles = (colors: Palette) =>
       alignItems: "center",
       justifyContent: "center",
     },
-    // "Advertised" cell — Yes/No pill styled like a small chip so the
+    tableIconBtnDanger: {
+      // Uses danger/red palette; falls back to a neutral red so we
+      // don't tint the theme's primary red-adjacent hues by accident.
+      borderColor: colors.danger || "#B91C1C",
+    },
     // eye can scan a column of ~10-20 stock rows instantly.
     tableAdvertisedPill: {
       paddingHorizontal: 8,
