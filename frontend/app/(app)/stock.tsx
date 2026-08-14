@@ -50,6 +50,10 @@ import { confirmAsync } from "@/src/utils/vehicle-detail";
 type StockItem = {
   id: string;
   submission_id?: string;
+  // Nov 2026 detailed web stock fields.
+  floorplan_amount_zar?: number | null;
+  expected_recon_cost_zar?: number | null;
+  advertised?: boolean;
   stock_number?: string | null;
   make_name?: string;
   model_name?: string;
@@ -597,25 +601,49 @@ function AgingChart({
 // ---------------------------------------------------------------------------
 // Spreadsheet-style stock table (Nov 2026)
 // ---------------------------------------------------------------------------
-// The cards above (`StockRow`) are kept for reference / potential future
-// use, but the live UI now uses this table. Wide-only design — the outer
-// horizontal ScrollView guarantees narrow phones can still see every
-// column via left-right swipe. Column widths sum to ~1100px which comfy
-// on a 13"+ desktop and swipeable on any handset.
-const TABLE_COLS = {
-  stock:  { w: 96,  align: "left"  as const, label: "STOCK #" },
-  year:   { w: 56,  align: "left"  as const, label: "YEAR" },
-  vehicle:{ w: 280, align: "left"  as const, label: "VEHICLE" },
-  km:     { w: 100, align: "right" as const, label: "MILEAGE" },
-  cond:   { w: 60,  align: "right" as const, label: "COND" },
-  mm:     { w: 88,  align: "left"  as const, label: "M&M" },
-  vin:    { w: 156, align: "left"  as const, label: "VIN" },
-  myOffer:{ w: 120, align: "right" as const, label: "MY OFFER" },
-  target: { w: 132, align: "right" as const, label: "TARGET" },
-  age:    { w: 92,  align: "left"  as const, label: "AGE" },
-  dship:  { w: 160, align: "left"  as const, label: "DEALERSHIP" },
-  actions:{ w: 130, align: "right" as const, label: "" },
+// We render TWO variants of the table:
+//   * WEB (Platform.OS === "web") — the detailed 13-column spreadsheet
+//     dealers asked for: Stock #, Year, Make, Derivative, Mileage,
+//     Colour, M&M, VIN, Cost (My Offer), Floorplan, Recon, Advertised,
+//     Retail, Days in Stock. Wide table (~1500px) that horizontally
+//     scrolls when the viewport is narrower.
+//   * MOBILE (iOS / Android) — a simplified table (Stock, Vehicle,
+//     Mileage, Cost, Retail, Age, Actions) tuned for the smaller
+//     viewport. This is the one the dealer already sees in the app.
+// -------------- shared: age tinting is the same everywhere -----------
+const TABLE_COLS_WEB = {
+  stock:      { w: 96,  align: "left"  as const, label: "STOCK #" },
+  year:       { w: 60,  align: "left"  as const, label: "YEAR" },
+  make:       { w: 110, align: "left"  as const, label: "MAKE" },
+  derivative: { w: 260, align: "left"  as const, label: "MODEL / DERIVATIVE" },
+  mileage:    { w: 100, align: "right" as const, label: "MILEAGE" },
+  colour:     { w: 100, align: "left"  as const, label: "COLOUR" },
+  mm:         { w: 90,  align: "left"  as const, label: "M&M" },
+  vin:        { w: 156, align: "left"  as const, label: "VIN" },
+  cost:       { w: 118, align: "right" as const, label: "COST (MY OFFER)" },
+  floorplan:  { w: 118, align: "right" as const, label: "FLOORPLAN" },
+  recon:      { w: 108, align: "right" as const, label: "EXP. RECON" },
+  advertised: { w: 78,  align: "center"as const, label: "ADVERT." },
+  retail:     { w: 124, align: "right" as const, label: "RETAIL" },
+  age:        { w: 92,  align: "left"  as const, label: "AGE" },
+  dship:      { w: 160, align: "left"  as const, label: "DEALERSHIP" },
+  actions:    { w: 100, align: "right" as const, label: "" },
 } as const;
+
+const TABLE_COLS_MOBILE = {
+  stock:  { w: 88,  align: "left"  as const, label: "STOCK #" },
+  year:   { w: 52,  align: "left"  as const, label: "YR" },
+  vehicle:{ w: 240, align: "left"  as const, label: "VEHICLE" },
+  km:     { w: 96,  align: "right" as const, label: "KM" },
+  cost:   { w: 108, align: "right" as const, label: "COST" },
+  retail: { w: 108, align: "right" as const, label: "RETAIL" },
+  age:    { w: 88,  align: "left"  as const, label: "AGE" },
+  dship:  { w: 140, align: "left"  as const, label: "DEALER" },
+  actions:{ w: 90,  align: "right" as const, label: "" },
+} as const;
+
+// Note: no shared `TABLE_COLS` — each variant uses its own constant so
+// the two schemas can drift independently without runtime confusion.
 
 function StockTableHeader({
   styles,
@@ -626,24 +654,26 @@ function StockTableHeader({
   colors: Palette;
   isAdmin: boolean;
 }) {
-  const cells: [keyof typeof TABLE_COLS, string][] = [
-    ["stock", TABLE_COLS.stock.label],
-    ["year", TABLE_COLS.year.label],
-    ["vehicle", TABLE_COLS.vehicle.label],
-    ["km", TABLE_COLS.km.label],
-    ["cond", TABLE_COLS.cond.label],
-    ["mm", TABLE_COLS.mm.label],
-    ["vin", TABLE_COLS.vin.label],
-    ["myOffer", TABLE_COLS.myOffer.label],
-    ["target", TABLE_COLS.target.label],
-    ["age", TABLE_COLS.age.label],
-    ...((isAdmin ? [["dship", TABLE_COLS.dship.label]] : []) as [keyof typeof TABLE_COLS, string][]),
-    ["actions", TABLE_COLS.actions.label],
-  ];
+  const isWeb = Platform.OS === "web";
+  const cols = isWeb ? TABLE_COLS_WEB : TABLE_COLS_MOBILE;
+  const order: string[] = isWeb
+    ? [
+        "stock", "year", "make", "derivative", "mileage", "colour",
+        "mm", "vin", "cost", "floorplan", "recon", "advertised",
+        "retail", "age",
+        ...(isAdmin ? ["dship"] : []),
+        "actions",
+      ]
+    : [
+        "stock", "year", "vehicle", "km", "cost", "retail", "age",
+        ...(isAdmin ? ["dship"] : []),
+        "actions",
+      ];
   return (
     <View style={styles.tableHeaderRow}>
-      {cells.map(([k, label]) => {
-        const meta = TABLE_COLS[k];
+      {order.map((k) => {
+        const meta = (cols as any)[k];
+        if (!meta) return null;
         return (
           <Text
             key={k}
@@ -653,7 +683,7 @@ function StockTableHeader({
             ]}
             numberOfLines={1}
           >
-            {label}
+            {meta.label}
           </Text>
         );
       })}
@@ -694,37 +724,244 @@ function StockTableRow({
   onOpenSubmission: () => void;
   onMarkSold: () => void;
 }) {
+  const isWeb = Platform.OS === "web";
   const age = ageTint(row.days_in_stock);
+
+  // ------- Retail-price editable cell (shared for web + mobile) ------
+  const retailCell = editingTarget ? (
+    <View style={styles.tableTargetEdit}>
+      <TextInput
+        value={targetDraft}
+        onChangeText={onChangeTargetDraft}
+        keyboardType="number-pad"
+        placeholder="0"
+        placeholderTextColor={colors.textDisabled}
+        style={styles.tableTargetInput}
+        autoFocus
+        testID={`stock-target-input-${row.id}`}
+      />
+      <TouchableOpacity
+        onPress={onCommitTarget}
+        disabled={savingTarget}
+        style={styles.tableTargetSave}
+        testID={`stock-target-save-${row.id}`}
+      >
+        {savingTarget ? (
+          <ActivityIndicator size="small" color={colors.onPrimary} />
+        ) : (
+          <Ionicons name="checkmark" size={14} color={colors.onPrimary} />
+        )}
+      </TouchableOpacity>
+      <TouchableOpacity onPress={onCancelEditTarget} style={styles.tableTargetCancel}>
+        <Ionicons name="close" size={14} color={colors.textSecondary} />
+      </TouchableOpacity>
+    </View>
+  ) : (
+    <TouchableOpacity
+      onPress={isManagerial ? onStartEditTarget : undefined}
+      activeOpacity={isManagerial ? 0.7 : 1}
+      testID={`stock-target-cell-${row.id}`}
+    >
+      <Text
+        style={[
+          styles.tableCell,
+          styles.tableCellNumeric,
+          styles.tableCellPrice,
+          {
+            color: row.target_sell_price_zar != null ? colors.text : colors.textDisabled,
+          },
+          isManagerial ? styles.tableCellEditable : null,
+        ]}
+        numberOfLines={1}
+      >
+        {row.target_sell_price_zar != null ? fmtZar(row.target_sell_price_zar) : "Set…"}
+      </Text>
+    </TouchableOpacity>
+  );
+
+  // ------- Age pill (shared) -----------------------------------------
+  const agePill = (
+    <View style={[styles.tableAgePill, { backgroundColor: age.bg }]}>
+      <Text style={[styles.tableAgePillTxt, { color: age.fg }]}>{age.label}</Text>
+    </View>
+  );
+
+  // ------- Actions cell (shared) -------------------------------------
+  const actionsCell = (
+    <View style={styles.tableActionsCell}>
+      <TouchableOpacity
+        onPress={onOpenSubmission}
+        style={styles.tableIconBtn}
+        testID={`stock-open-${row.id}`}
+      >
+        <Ionicons name="open-outline" size={14} color={colors.text} />
+      </TouchableOpacity>
+      {isManagerial ? (
+        <TouchableOpacity
+          onPress={onMarkSold}
+          style={[styles.tableIconBtn, { backgroundColor: colors.primary }]}
+          testID={`stock-mark-sold-${row.id}`}
+        >
+          <Ionicons name="cash-outline" size={14} color={colors.onPrimary} />
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+
+  // =================== WEB: detailed 13-column table ==================
+  if (isWeb) {
+    const C = TABLE_COLS_WEB;
+    return (
+      <View
+        style={[styles.tableBodyRow, zebra && styles.tableBodyRowZebra]}
+        testID={`stock-row-${row.stock_number || row.id}`}
+      >
+        {/* Stock # */}
+        <View style={{ width: C.stock.w }}>
+          <TouchableOpacity onPress={onOpenSubmission} activeOpacity={0.7}>
+            <Text style={styles.tableCellStock} numberOfLines={1}>
+              {row.stock_number || "—"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+        {/* Year */}
+        <Text style={[styles.tableCell, { width: C.year.w }]} numberOfLines={1}>
+          {row.year || "—"}
+        </Text>
+        {/* Make */}
+        <Text
+          style={[styles.tableCellVehicle, { width: C.make.w }]}
+          numberOfLines={1}
+        >
+          {row.make_name || "—"}
+        </Text>
+        {/* Derivative — the trade-name row (model + derivative) */}
+        <View style={{ width: C.derivative.w, paddingRight: 8 }}>
+          <TouchableOpacity onPress={onOpenSubmission} activeOpacity={0.7}>
+            <Text style={styles.tableCellVehicle} numberOfLines={1}>
+              {row.model_name || "—"}
+            </Text>
+            {row.derivative_name && row.derivative_name !== row.model_name ? (
+              <Text style={styles.tableCellVehicleSub} numberOfLines={1}>
+                {row.derivative_name}
+              </Text>
+            ) : null}
+          </TouchableOpacity>
+        </View>
+        {/* Mileage */}
+        <Text
+          style={[styles.tableCell, styles.tableCellNumeric, { width: C.mileage.w }]}
+          numberOfLines={1}
+        >
+          {row.mileage ? `${Number(row.mileage).toLocaleString("en-ZA")} km` : "—"}
+        </Text>
+        {/* Colour */}
+        <Text style={[styles.tableCell, { width: C.colour.w }]} numberOfLines={1}>
+          {row.colour || "—"}
+        </Text>
+        {/* M&M code */}
+        <Text style={[styles.tableCell, { width: C.mm.w }]} numberOfLines={1}>
+          {row.mm_code || "—"}
+        </Text>
+        {/* VIN */}
+        <Text
+          style={[styles.tableCell, styles.tableCellMono, { width: C.vin.w }]}
+          numberOfLines={1}
+        >
+          {row.vin || "—"}
+        </Text>
+        {/* Cost (My Offer) */}
+        <Text
+          style={[styles.tableCell, styles.tableCellNumeric, styles.tableCellPrice, { width: C.cost.w }]}
+          numberOfLines={1}
+        >
+          {fmtZar(row.my_offer_price_zar)}
+        </Text>
+        {/* Floorplan Amount */}
+        <Text
+          style={[
+            styles.tableCell,
+            styles.tableCellNumeric,
+            { width: C.floorplan.w, color: row.floorplan_amount_zar ? colors.text : colors.textDisabled },
+          ]}
+          numberOfLines={1}
+        >
+          {row.floorplan_amount_zar != null ? fmtZar(row.floorplan_amount_zar) : "—"}
+        </Text>
+        {/* Expected Recon Cost */}
+        <Text
+          style={[
+            styles.tableCell,
+            styles.tableCellNumeric,
+            { width: C.recon.w, color: row.expected_recon_cost_zar ? colors.text : colors.textDisabled },
+          ]}
+          numberOfLines={1}
+        >
+          {row.expected_recon_cost_zar != null ? fmtZar(row.expected_recon_cost_zar) : "—"}
+        </Text>
+        {/* Advertised — Yes / No pill */}
+        <View style={{ width: C.advertised.w, alignItems: "center" }}>
+          <View
+            style={[
+              styles.tableAdvertisedPill,
+              row.advertised ? styles.tableAdvertisedPillYes : styles.tableAdvertisedPillNo,
+            ]}
+          >
+            <Text
+              style={[
+                styles.tableAdvertisedPillTxt,
+                { color: row.advertised ? colors.onPrimary : colors.textSecondary },
+              ]}
+            >
+              {row.advertised ? "YES" : "NO"}
+            </Text>
+          </View>
+        </View>
+        {/* Retail Price (editable) */}
+        <View style={{ width: C.retail.w }}>{retailCell}</View>
+        {/* Age (Days in Stock) */}
+        <View style={{ width: C.age.w, alignItems: "flex-start" }}>{agePill}</View>
+        {/* Dealership (admin) */}
+        {isAdmin ? (
+          <Text
+            style={[styles.tableCell, { width: C.dship.w, color: colors.textSecondary }]}
+            numberOfLines={1}
+          >
+            {row.dealership_name || "—"}
+          </Text>
+        ) : null}
+        {/* Actions */}
+        <View style={{ width: C.actions.w }}>{actionsCell}</View>
+      </View>
+    );
+  }
+
+  // =================== MOBILE: simplified 7-column table ==============
+  const M = TABLE_COLS_MOBILE;
   const vehicleTitle =
     [row.make_name, row.model_name].filter(Boolean).join(" ") ||
     row.derivative_name ||
     "—";
-  const vehicleSub = row.derivative_name && row.derivative_name !== row.model_name
-    ? row.derivative_name
-    : row.colour || "";
-
+  const vehicleSub =
+    row.derivative_name && row.derivative_name !== row.model_name
+      ? row.derivative_name
+      : row.colour || "";
   return (
     <View
       style={[styles.tableBodyRow, zebra && styles.tableBodyRowZebra]}
       testID={`stock-row-${row.stock_number || row.id}`}
     >
-      {/* Stock # */}
-      <View style={{ width: TABLE_COLS.stock.w }}>
+      <View style={{ width: M.stock.w }}>
         <TouchableOpacity onPress={onOpenSubmission} activeOpacity={0.7}>
           <Text style={styles.tableCellStock} numberOfLines={1}>
             {row.stock_number || "—"}
           </Text>
         </TouchableOpacity>
       </View>
-      {/* Year */}
-      <Text
-        style={[styles.tableCell, { width: TABLE_COLS.year.w, textAlign: "left" }]}
-        numberOfLines={1}
-      >
+      <Text style={[styles.tableCell, { width: M.year.w }]} numberOfLines={1}>
         {row.year || "—"}
       </Text>
-      {/* Vehicle */}
-      <View style={{ width: TABLE_COLS.vehicle.w, paddingRight: 8 }}>
+      <View style={{ width: M.vehicle.w, paddingRight: 8 }}>
         <TouchableOpacity onPress={onOpenSubmission} activeOpacity={0.7}>
           <Text style={styles.tableCellVehicle} numberOfLines={1}>
             {vehicleTitle}
@@ -736,129 +973,29 @@ function StockTableRow({
           ) : null}
         </TouchableOpacity>
       </View>
-      {/* Mileage */}
       <Text
-        style={[styles.tableCell, styles.tableCellNumeric, { width: TABLE_COLS.km.w }]}
+        style={[styles.tableCell, styles.tableCellNumeric, { width: M.km.w }]}
         numberOfLines={1}
       >
         {row.mileage ? `${Number(row.mileage).toLocaleString("en-ZA")} km` : "—"}
       </Text>
-      {/* Condition */}
       <Text
-        style={[styles.tableCell, styles.tableCellNumeric, { width: TABLE_COLS.cond.w }]}
-        numberOfLines={1}
-      >
-        {row.condition_score != null ? Number(row.condition_score).toFixed(1) : "—"}
-      </Text>
-      {/* M&M code */}
-      <Text
-        style={[styles.tableCell, { width: TABLE_COLS.mm.w }]}
-        numberOfLines={1}
-      >
-        {row.mm_code || "—"}
-      </Text>
-      {/* VIN */}
-      <Text
-        style={[styles.tableCell, styles.tableCellMono, { width: TABLE_COLS.vin.w }]}
-        numberOfLines={1}
-      >
-        {row.vin || "—"}
-      </Text>
-      {/* My Offer */}
-      <Text
-        style={[styles.tableCell, styles.tableCellNumeric, styles.tableCellPrice, { width: TABLE_COLS.myOffer.w }]}
+        style={[styles.tableCell, styles.tableCellNumeric, styles.tableCellPrice, { width: M.cost.w }]}
         numberOfLines={1}
       >
         {fmtZar(row.my_offer_price_zar)}
       </Text>
-      {/* Target (editable if managerial) */}
-      <View style={{ width: TABLE_COLS.target.w }}>
-        {editingTarget ? (
-          <View style={styles.tableTargetEdit}>
-            <TextInput
-              value={targetDraft}
-              onChangeText={onChangeTargetDraft}
-              keyboardType="number-pad"
-              placeholder="0"
-              placeholderTextColor={colors.textDisabled}
-              style={styles.tableTargetInput}
-              autoFocus
-              testID={`stock-target-input-${row.id}`}
-            />
-            <TouchableOpacity
-              onPress={onCommitTarget}
-              disabled={savingTarget}
-              style={styles.tableTargetSave}
-              testID={`stock-target-save-${row.id}`}
-            >
-              {savingTarget ? (
-                <ActivityIndicator size="small" color={colors.onPrimary} />
-              ) : (
-                <Ionicons name="checkmark" size={14} color={colors.onPrimary} />
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity onPress={onCancelEditTarget} style={styles.tableTargetCancel}>
-              <Ionicons name="close" size={14} color={colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <TouchableOpacity
-            onPress={isManagerial ? onStartEditTarget : undefined}
-            activeOpacity={isManagerial ? 0.7 : 1}
-            testID={`stock-target-cell-${row.id}`}
-          >
-            <Text
-              style={[
-                styles.tableCell,
-                styles.tableCellNumeric,
-                styles.tableCellPrice,
-                {
-                  width: TABLE_COLS.target.w,
-                  color: row.target_sell_price_zar != null ? colors.text : colors.textDisabled,
-                },
-                isManagerial ? styles.tableCellEditable : null,
-              ]}
-              numberOfLines={1}
-            >
-              {row.target_sell_price_zar != null ? fmtZar(row.target_sell_price_zar) : "Set…"}
-            </Text>
-          </TouchableOpacity>
-        )}
-      </View>
-      {/* Age pill */}
-      <View style={{ width: TABLE_COLS.age.w, alignItems: "flex-start" }}>
-        <View style={[styles.tableAgePill, { backgroundColor: age.bg }]}>
-          <Text style={[styles.tableAgePillTxt, { color: age.fg }]}>{age.label}</Text>
-        </View>
-      </View>
-      {/* Dealership (admin only) */}
+      <View style={{ width: M.retail.w }}>{retailCell}</View>
+      <View style={{ width: M.age.w, alignItems: "flex-start" }}>{agePill}</View>
       {isAdmin ? (
         <Text
-          style={[styles.tableCell, { width: TABLE_COLS.dship.w, color: colors.textSecondary }]}
+          style={[styles.tableCell, { width: M.dship.w, color: colors.textSecondary }]}
           numberOfLines={1}
         >
           {row.dealership_name || "—"}
         </Text>
       ) : null}
-      {/* Actions */}
-      <View style={[styles.tableActionsCell, { width: TABLE_COLS.actions.w }]}>
-        <TouchableOpacity
-          onPress={onOpenSubmission}
-          style={styles.tableIconBtn}
-          testID={`stock-open-${row.id}`}
-        >
-          <Ionicons name="open-outline" size={14} color={colors.text} />
-        </TouchableOpacity>
-        {isManagerial ? (
-          <TouchableOpacity
-            onPress={onMarkSold}
-            style={[styles.tableIconBtn, { backgroundColor: colors.primary }]}
-            testID={`stock-mark-sold-${row.id}`}
-          >
-            <Ionicons name="cash-outline" size={14} color={colors.onPrimary} />
-          </TouchableOpacity>
-        ) : null}
-      </View>
+      <View style={{ width: M.actions.w }}>{actionsCell}</View>
     </View>
   );
 }
@@ -1198,6 +1335,27 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: colors.paper,
       alignItems: "center",
       justifyContent: "center",
+    },
+    // "Advertised" cell — Yes/No pill styled like a small chip so the
+    // eye can scan a column of ~10-20 stock rows instantly.
+    tableAdvertisedPill: {
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 999,
+      borderWidth: 1,
+    },
+    tableAdvertisedPillYes: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    tableAdvertisedPillNo: {
+      backgroundColor: "transparent",
+      borderColor: colors.border,
+    },
+    tableAdvertisedPillTxt: {
+      fontSize: 10,
+      fontWeight: "800",
+      letterSpacing: 0.4,
     },
 
     header: {

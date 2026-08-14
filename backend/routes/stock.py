@@ -112,6 +112,13 @@ _EDITABLE_VEHICLE_FIELDS: List[str] = [
     "vin",
     "colour",
     "condition_score",
+    # Nov 2026 — extra fields for the detailed web stock table.
+    # `target_sell_price_zar` now represents the RETAIL price shown to
+    # consumers. Kept the field name unchanged (backwards-compatible with
+    # existing DB rows / mobile app) but the web UI relabels it.
+    "floorplan_amount_zar",
+    "expected_recon_cost_zar",
+    "advertised",
 ]
 
 
@@ -149,6 +156,10 @@ class StockPatchIn(BaseModel):
     vin: Optional[str] = Field(default=None, max_length=32)
     colour: Optional[str] = Field(default=None, max_length=40)
     condition_score: Optional[float] = Field(default=None, ge=0, le=10)
+    # Additional editable fields (Nov 2026 — detailed web stock table).
+    floorplan_amount_zar: Optional[int] = Field(default=None, ge=0, le=100_000_000)
+    expected_recon_cost_zar: Optional[int] = Field(default=None, ge=0, le=10_000_000)
+    advertised: Optional[bool] = None
 
 
 class MarkSoldIn(BaseModel):
@@ -235,6 +246,11 @@ def _row_for_api(doc: dict) -> dict:
         "vin": doc.get("vin"),
         "colour": doc.get("colour"),
         "condition_score": doc.get("condition_score"),
+        # Nov 2026 detailed web stock fields (default sensibly so existing
+        # docs without these keys don't turn into an empty table cell).
+        "floorplan_amount_zar": doc.get("floorplan_amount_zar"),
+        "expected_recon_cost_zar": doc.get("expected_recon_cost_zar"),
+        "advertised": bool(doc.get("advertised", False)),
         "purchased_at": purchased_at,
         "days_in_stock": days,
         "dealership_id": doc.get("dealership_id"),
