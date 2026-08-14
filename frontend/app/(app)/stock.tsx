@@ -231,9 +231,19 @@ export default function StockScreen() {
       const nextVal = !item[field];
       const key = `${item.id}:${field}`;
       setTogglingFlag(key);
-      // Optimistic UI update via setItems
-      setItems((prev) =>
-        prev.map((x) => (x.id === item.id ? { ...x, [field]: nextVal } : x))
+      // Optimistic UI update — mutate the real backing store (`data.items`).
+      // Earlier code called a non-existent `setItems` which silently threw
+      // a ReferenceError; that's why the row didn't visibly change until a
+      // manual refresh.
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              items: prev.items.map((x) =>
+                x.id === item.id ? { ...x, [field]: nextVal } : x,
+              ),
+            }
+          : prev,
       );
       try {
         await apiFetch(`/api/stock/${item.id}`, {
@@ -241,9 +251,16 @@ export default function StockScreen() {
           body: JSON.stringify({ [field]: nextVal }),
         });
       } catch (e: any) {
-        // Roll back
-        setItems((prev) =>
-          prev.map((x) => (x.id === item.id ? { ...x, [field]: !nextVal } : x))
+        // Roll back on failure.
+        setData((prev) =>
+          prev
+            ? {
+                ...prev,
+                items: prev.items.map((x) =>
+                  x.id === item.id ? { ...x, [field]: !nextVal } : x,
+                ),
+              }
+            : prev,
         );
         Alert.alert("Couldn't save", e?.message || "Please try again.");
       } finally {
@@ -270,14 +287,31 @@ export default function StockScreen() {
         return;
       }
       const proceed = () => {
+        // OPTIMISTIC removal — the row disappears the moment the user
+        // confirms. Before this fix the row waited for the network
+        // round-trip AND used a non-existent `setItems` setter, so the
+        // dealer had to refresh manually. If the request fails we
+        // restore the row and show a toast.
+        const original = item;
+        setRemovingId(item.id);
+        setData((prev) =>
+          prev
+            ? { ...prev, items: prev.items.filter((x) => x.id !== item.id) }
+            : prev,
+        );
         (async () => {
           try {
-            setRemovingId(item.id);
             await apiFetch(`/api/submissions/${item.submission_id}/untransfer-from-stock`, {
               method: "POST",
             });
-            setItems((prev) => prev.filter((x) => x.id !== item.id));
           } catch (e: any) {
+            // Restore the row in-place so the dealer isn't left
+            // wondering where their car went.
+            setData((prev) =>
+              prev
+                ? { ...prev, items: [original, ...prev.items] }
+                : prev,
+            );
             Alert.alert("Couldn't remove", e?.message || "Please try again.");
           } finally {
             setRemovingId(null);
