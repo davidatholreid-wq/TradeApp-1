@@ -372,33 +372,66 @@ export default function StockScreen() {
               </Text>
             </View>
           ) : (
-            filteredItems.map((row) => (
-              <StockRow
-                key={row.id}
-                row={row}
-                styles={styles}
-                colors={colors}
-                isAdmin={isAdmin}
-                isManagerial={isManagerial}
-                editingTarget={editingTarget === row.id}
-                targetDraft={targetDraft}
-                savingTarget={savingTarget}
-                onStartEditTarget={() => {
-                  setEditingTarget(row.id);
-                  setTargetDraft(
-                    row.target_sell_price_zar != null ? String(row.target_sell_price_zar) : ""
-                  );
-                }}
-                onCancelEditTarget={() => {
-                  setEditingTarget(null);
-                  setTargetDraft("");
-                }}
-                onChangeTargetDraft={setTargetDraft}
-                onCommitTarget={() => commitTarget(row)}
-                onOpenSubmission={() => router.push(`/(app)/vehicle/${row.id}` as never)}
-                onMarkSold={() => setSoldModalFor(row)}
-              />
-            ))
+            // Spreadsheet-style table (per Nov 2026 UX request). Wrapped
+            // in a horizontal ScrollView so on narrow phones the dealer
+            // gets a swipeable wide table rather than cramped wrapped
+            // rows. Sticky header pinned via `stickyHeaderIndices` on
+            // the outer vertical scroll would require a bigger rewrite
+            // — for MVP the header re-renders inside the horizontal
+            // scroller and remains at row 0.
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator
+              contentContainerStyle={{ minWidth: "100%" }}
+              style={{ marginTop: spacing.sm }}
+              testID="stock-table-scroll"
+            >
+              <View style={styles.tableRoot}>
+                <StockTableHeader styles={styles} colors={colors} isAdmin={isAdmin} />
+                {filteredItems.map((row, i) => (
+                  <StockTableRow
+                    key={row.id}
+                    row={row}
+                    zebra={i % 2 === 1}
+                    styles={styles}
+                    colors={colors}
+                    isAdmin={isAdmin}
+                    isManagerial={isManagerial}
+                    editingTarget={editingTarget === row.id}
+                    targetDraft={targetDraft}
+                    savingTarget={savingTarget}
+                    onStartEditTarget={() => {
+                      setEditingTarget(row.id);
+                      setTargetDraft(
+                        row.target_sell_price_zar != null ? String(row.target_sell_price_zar) : ""
+                      );
+                    }}
+                    onCancelEditTarget={() => {
+                      setEditingTarget(null);
+                      setTargetDraft("");
+                    }}
+                    onChangeTargetDraft={setTargetDraft}
+                    onCommitTarget={() => commitTarget(row)}
+                    onOpenSubmission={() => {
+                      // Route to the LINKED submission — `row.id` is the
+                      // stock-item's own UUID, not the vehicle's. Using
+                      // it here caused "Submission expired" on every
+                      // stock row tap because /api/submissions/{stock_id}
+                      // 404s.
+                      if (!row.submission_id) {
+                        Alert.alert(
+                          "Original submission unavailable",
+                          "This stock item is no longer linked to a submission (the underlying submission may have been archived).",
+                        );
+                        return;
+                      }
+                      router.push(`/(app)/vehicle/${row.submission_id}` as never);
+                    }}
+                    onMarkSold={() => setSoldModalFor(row)}
+                  />
+                ))}
+              </View>
+            </ScrollView>
           )}
         </ScrollView>
       )}
@@ -562,10 +595,75 @@ function AgingChart({
 }
 
 // ---------------------------------------------------------------------------
-// StockRow
+// Spreadsheet-style stock table (Nov 2026)
 // ---------------------------------------------------------------------------
-function StockRow({
+// The cards above (`StockRow`) are kept for reference / potential future
+// use, but the live UI now uses this table. Wide-only design — the outer
+// horizontal ScrollView guarantees narrow phones can still see every
+// column via left-right swipe. Column widths sum to ~1100px which comfy
+// on a 13"+ desktop and swipeable on any handset.
+const TABLE_COLS = {
+  stock:  { w: 96,  align: "left"  as const, label: "STOCK #" },
+  year:   { w: 56,  align: "left"  as const, label: "YEAR" },
+  vehicle:{ w: 280, align: "left"  as const, label: "VEHICLE" },
+  km:     { w: 100, align: "right" as const, label: "MILEAGE" },
+  cond:   { w: 60,  align: "right" as const, label: "COND" },
+  mm:     { w: 88,  align: "left"  as const, label: "M&M" },
+  vin:    { w: 156, align: "left"  as const, label: "VIN" },
+  myOffer:{ w: 120, align: "right" as const, label: "MY OFFER" },
+  target: { w: 132, align: "right" as const, label: "TARGET" },
+  age:    { w: 92,  align: "left"  as const, label: "AGE" },
+  dship:  { w: 160, align: "left"  as const, label: "DEALERSHIP" },
+  actions:{ w: 130, align: "right" as const, label: "" },
+} as const;
+
+function StockTableHeader({
+  styles,
+  colors,
+  isAdmin,
+}: {
+  styles: ReturnType<typeof makeStyles>;
+  colors: Palette;
+  isAdmin: boolean;
+}) {
+  const cells: [keyof typeof TABLE_COLS, string][] = [
+    ["stock", TABLE_COLS.stock.label],
+    ["year", TABLE_COLS.year.label],
+    ["vehicle", TABLE_COLS.vehicle.label],
+    ["km", TABLE_COLS.km.label],
+    ["cond", TABLE_COLS.cond.label],
+    ["mm", TABLE_COLS.mm.label],
+    ["vin", TABLE_COLS.vin.label],
+    ["myOffer", TABLE_COLS.myOffer.label],
+    ["target", TABLE_COLS.target.label],
+    ["age", TABLE_COLS.age.label],
+    ...((isAdmin ? [["dship", TABLE_COLS.dship.label]] : []) as [keyof typeof TABLE_COLS, string][]),
+    ["actions", TABLE_COLS.actions.label],
+  ];
+  return (
+    <View style={styles.tableHeaderRow}>
+      {cells.map(([k, label]) => {
+        const meta = TABLE_COLS[k];
+        return (
+          <Text
+            key={k}
+            style={[
+              styles.tableHeaderCell,
+              { width: meta.w, textAlign: meta.align },
+            ]}
+            numberOfLines={1}
+          >
+            {label}
+          </Text>
+        );
+      })}
+    </View>
+  );
+}
+
+function StockTableRow({
   row,
+  zebra,
   styles,
   colors,
   isAdmin,
@@ -581,6 +679,7 @@ function StockRow({
   onMarkSold,
 }: {
   row: StockItem;
+  zebra: boolean;
   styles: ReturnType<typeof makeStyles>;
   colors: Palette;
   isAdmin: boolean;
@@ -596,173 +695,170 @@ function StockRow({
   onMarkSold: () => void;
 }) {
   const age = ageTint(row.days_in_stock);
-  const title = [row.year, row.make_name].filter(Boolean).join(" ");
-  return (
-    <View style={styles.rowCard} testID={`stock-row-${row.stock_number || row.id}`}>
-      <View style={styles.rowTop}>
-        {/* Stock-number badge + age pill — replaces the photo thumbnail
-            (per product spec: no images copied from the submission). */}
-        <View style={styles.rowStockBadgeWrap}>
-          <View style={styles.rowStockBadge}>
-            <Ionicons name="pricetag" size={12} color={colors.primary} />
-            <Text style={styles.rowStockBadgeTxt} numberOfLines={1}>
-              {row.stock_number || "—"}
-            </Text>
-          </View>
-          <View style={[styles.ageBadge, { backgroundColor: age.bg, position: "relative", bottom: undefined, left: undefined, marginTop: 6 }]}>
-            <Text style={[styles.ageBadgeTxt, { color: age.fg }]}>{age.label}</Text>
-          </View>
-        </View>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <TouchableOpacity onPress={onOpenSubmission} activeOpacity={0.85}>
-            <Text style={styles.rowTitle} numberOfLines={1}>{title || "—"}</Text>
-            {row.derivative_name || row.model_name ? (
-              <Text style={styles.rowSub} numberOfLines={2}>
-                {row.derivative_name || row.model_name}
-              </Text>
-            ) : null}
-          </TouchableOpacity>
-          <View style={styles.rowMetaRow}>
-            {row.mm_code ? (
-              <Text style={styles.rowMeta}>M&M {row.mm_code}</Text>
-            ) : null}
-            {row.mileage ? (
-              <Text style={styles.rowMeta}>
-                {row.mm_code ? "· " : ""}
-                {Number(row.mileage).toLocaleString("en-ZA")} km
-              </Text>
-            ) : null}
-            {row.colour ? (
-              <Text style={styles.rowMeta}>· {row.colour}</Text>
-            ) : null}
-            {row.condition_score != null ? (
-              <Text style={styles.rowMeta}>· Cond {Number(row.condition_score).toFixed(1)}</Text>
-            ) : null}
-            {row.vin ? (
-              <Text style={styles.rowMeta} numberOfLines={1}>· VIN {row.vin}</Text>
-            ) : null}
-          </View>
-          {isAdmin && row.dealership_name ? (
-            <View style={styles.rowDshipChip}>
-              <Ionicons name="business" size={10} color={colors.textSecondary} />
-              <Text style={styles.rowDshipTxt} numberOfLines={1}>{row.dealership_name}</Text>
-            </View>
-          ) : null}
-        </View>
-      </View>
+  const vehicleTitle =
+    [row.make_name, row.model_name].filter(Boolean).join(" ") ||
+    row.derivative_name ||
+    "—";
+  const vehicleSub = row.derivative_name && row.derivative_name !== row.model_name
+    ? row.derivative_name
+    : row.colour || "";
 
-      {/* Price grid — My Offer (cost basis) on the left, target sell on
-          the right.  The old "Purchased" cell is gone; My Offer is the
-          only cost basis in the new stock model (per product spec). */}
-      <View style={styles.priceRow}>
-        <PriceCell
-          label="MY OFFER"
-          value={fmtZar(row.my_offer_price_zar)}
-          styles={styles}
-        />
+  return (
+    <View
+      style={[styles.tableBodyRow, zebra && styles.tableBodyRowZebra]}
+      testID={`stock-row-${row.stock_number || row.id}`}
+    >
+      {/* Stock # */}
+      <View style={{ width: TABLE_COLS.stock.w }}>
+        <TouchableOpacity onPress={onOpenSubmission} activeOpacity={0.7}>
+          <Text style={styles.tableCellStock} numberOfLines={1}>
+            {row.stock_number || "—"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+      {/* Year */}
+      <Text
+        style={[styles.tableCell, { width: TABLE_COLS.year.w, textAlign: "left" }]}
+        numberOfLines={1}
+      >
+        {row.year || "—"}
+      </Text>
+      {/* Vehicle */}
+      <View style={{ width: TABLE_COLS.vehicle.w, paddingRight: 8 }}>
+        <TouchableOpacity onPress={onOpenSubmission} activeOpacity={0.7}>
+          <Text style={styles.tableCellVehicle} numberOfLines={1}>
+            {vehicleTitle}
+          </Text>
+          {vehicleSub ? (
+            <Text style={styles.tableCellVehicleSub} numberOfLines={1}>
+              {vehicleSub}
+            </Text>
+          ) : null}
+        </TouchableOpacity>
+      </View>
+      {/* Mileage */}
+      <Text
+        style={[styles.tableCell, styles.tableCellNumeric, { width: TABLE_COLS.km.w }]}
+        numberOfLines={1}
+      >
+        {row.mileage ? `${Number(row.mileage).toLocaleString("en-ZA")} km` : "—"}
+      </Text>
+      {/* Condition */}
+      <Text
+        style={[styles.tableCell, styles.tableCellNumeric, { width: TABLE_COLS.cond.w }]}
+        numberOfLines={1}
+      >
+        {row.condition_score != null ? Number(row.condition_score).toFixed(1) : "—"}
+      </Text>
+      {/* M&M code */}
+      <Text
+        style={[styles.tableCell, { width: TABLE_COLS.mm.w }]}
+        numberOfLines={1}
+      >
+        {row.mm_code || "—"}
+      </Text>
+      {/* VIN */}
+      <Text
+        style={[styles.tableCell, styles.tableCellMono, { width: TABLE_COLS.vin.w }]}
+        numberOfLines={1}
+      >
+        {row.vin || "—"}
+      </Text>
+      {/* My Offer */}
+      <Text
+        style={[styles.tableCell, styles.tableCellNumeric, styles.tableCellPrice, { width: TABLE_COLS.myOffer.w }]}
+        numberOfLines={1}
+      >
+        {fmtZar(row.my_offer_price_zar)}
+      </Text>
+      {/* Target (editable if managerial) */}
+      <View style={{ width: TABLE_COLS.target.w }}>
         {editingTarget ? (
-          <View style={styles.priceCellEdit}>
-            <Text style={styles.priceCellLabel}>TARGET</Text>
-            <View style={styles.targetEditRow}>
-              <Text style={{ color: colors.text, fontSize: 13, fontWeight: "700" }}>R</Text>
-              <TextInput
-                value={targetDraft}
-                onChangeText={onChangeTargetDraft}
-                keyboardType="number-pad"
-                placeholder="0"
-                placeholderTextColor={colors.textDisabled}
-                style={styles.targetEditInput}
-                autoFocus
-                testID={`stock-target-input-${row.id}`}
-              />
-            </View>
-            <View style={styles.targetEditActions}>
-              <TouchableOpacity
-                onPress={onCancelEditTarget}
-                style={styles.targetEditBtn}
-                activeOpacity={0.8}
-              >
-                <Text style={{ color: colors.textSecondary, fontSize: 11, fontWeight: "800" }}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={onCommitTarget}
-                style={[styles.targetEditBtn, styles.targetEditBtnSave]}
-                activeOpacity={0.8}
-                disabled={savingTarget}
-                testID={`stock-target-save-${row.id}`}
-              >
-                {savingTarget ? (
-                  <ActivityIndicator size="small" color={colors.onPrimary} />
-                ) : (
-                  <Text style={{ color: colors.onPrimary, fontSize: 11, fontWeight: "800" }}>Save</Text>
-                )}
-              </TouchableOpacity>
-            </View>
+          <View style={styles.tableTargetEdit}>
+            <TextInput
+              value={targetDraft}
+              onChangeText={onChangeTargetDraft}
+              keyboardType="number-pad"
+              placeholder="0"
+              placeholderTextColor={colors.textDisabled}
+              style={styles.tableTargetInput}
+              autoFocus
+              testID={`stock-target-input-${row.id}`}
+            />
+            <TouchableOpacity
+              onPress={onCommitTarget}
+              disabled={savingTarget}
+              style={styles.tableTargetSave}
+              testID={`stock-target-save-${row.id}`}
+            >
+              {savingTarget ? (
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+              ) : (
+                <Ionicons name="checkmark" size={14} color={colors.onPrimary} />
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onCancelEditTarget} style={styles.tableTargetCancel}>
+              <Ionicons name="close" size={14} color={colors.textSecondary} />
+            </TouchableOpacity>
           </View>
         ) : (
           <TouchableOpacity
             onPress={isManagerial ? onStartEditTarget : undefined}
-            activeOpacity={isManagerial ? 0.8 : 1}
-            style={[styles.priceCell, isManagerial ? styles.priceCellEditable : null]}
+            activeOpacity={isManagerial ? 0.7 : 1}
             testID={`stock-target-cell-${row.id}`}
           >
-            <View style={styles.priceCellLabelRow}>
-              <Text style={styles.priceCellLabel}>TARGET</Text>
-              {isManagerial ? (
-                <Ionicons name="pencil" size={10} color={colors.textSecondary} />
-              ) : null}
-            </View>
             <Text
               style={[
-                styles.priceCellValue,
-                { color: row.target_sell_price_zar != null ? colors.text : colors.textDisabled },
+                styles.tableCell,
+                styles.tableCellNumeric,
+                styles.tableCellPrice,
+                {
+                  width: TABLE_COLS.target.w,
+                  color: row.target_sell_price_zar != null ? colors.text : colors.textDisabled,
+                },
+                isManagerial ? styles.tableCellEditable : null,
               ]}
               numberOfLines={1}
             >
-              {row.target_sell_price_zar != null ? fmtZar(row.target_sell_price_zar) : "Set"}
+              {row.target_sell_price_zar != null ? fmtZar(row.target_sell_price_zar) : "Set…"}
             </Text>
           </TouchableOpacity>
         )}
       </View>
-
-      {isManagerial ? (
-        <View style={styles.rowActions}>
-          <TouchableOpacity
-            onPress={onOpenSubmission}
-            style={styles.actionBtnGhost}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="document-text-outline" size={14} color={colors.textSecondary} />
-            <Text style={[styles.actionBtnGhostTxt, { color: colors.textSecondary }]}>Open</Text>
-          </TouchableOpacity>
+      {/* Age pill */}
+      <View style={{ width: TABLE_COLS.age.w, alignItems: "flex-start" }}>
+        <View style={[styles.tableAgePill, { backgroundColor: age.bg }]}>
+          <Text style={[styles.tableAgePillTxt, { color: age.fg }]}>{age.label}</Text>
+        </View>
+      </View>
+      {/* Dealership (admin only) */}
+      {isAdmin ? (
+        <Text
+          style={[styles.tableCell, { width: TABLE_COLS.dship.w, color: colors.textSecondary }]}
+          numberOfLines={1}
+        >
+          {row.dealership_name || "—"}
+        </Text>
+      ) : null}
+      {/* Actions */}
+      <View style={[styles.tableActionsCell, { width: TABLE_COLS.actions.w }]}>
+        <TouchableOpacity
+          onPress={onOpenSubmission}
+          style={styles.tableIconBtn}
+          testID={`stock-open-${row.id}`}
+        >
+          <Ionicons name="open-outline" size={14} color={colors.text} />
+        </TouchableOpacity>
+        {isManagerial ? (
           <TouchableOpacity
             onPress={onMarkSold}
-            style={[styles.actionBtnPrimary, { backgroundColor: colors.primary }]}
-            activeOpacity={0.85}
+            style={[styles.tableIconBtn, { backgroundColor: colors.primary }]}
             testID={`stock-mark-sold-${row.id}`}
           >
             <Ionicons name="cash-outline" size={14} color={colors.onPrimary} />
-            <Text style={[styles.actionBtnPrimaryTxt, { color: colors.onPrimary }]}>Mark Sold</Text>
           </TouchableOpacity>
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
-function PriceCell({
-  label,
-  value,
-  styles,
-}: {
-  label: string;
-  value: string;
-  styles: ReturnType<typeof makeStyles>;
-}) {
-  return (
-    <View style={styles.priceCell}>
-      <Text style={styles.priceCellLabel}>{label}</Text>
-      <Text style={styles.priceCellValue} numberOfLines={1}>{value}</Text>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -968,6 +1064,142 @@ function Field({
 // ---------------------------------------------------------------------------
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
+    // -----------------------------------------------------------------
+    // Spreadsheet table styles (Nov 2026 stock redesign)
+    // -----------------------------------------------------------------
+    tableRoot: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      overflow: "hidden",
+      backgroundColor: colors.paper,
+      alignSelf: "flex-start", // fit-content so horizontal scroll works cleanly
+    },
+    tableHeaderRow: {
+      flexDirection: "row",
+      backgroundColor: colors.card,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      gap: 12,
+    },
+    tableHeaderCell: {
+      color: colors.textSecondary,
+      fontSize: 10,
+      fontWeight: "800",
+      letterSpacing: 0.5,
+      textTransform: "uppercase",
+    },
+    tableBodyRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      gap: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderLight,
+    },
+    tableBodyRowZebra: {
+      backgroundColor: colors.card,
+    },
+    tableCell: {
+      color: colors.text,
+      fontSize: 12,
+      lineHeight: 15,
+    },
+    tableCellNumeric: {
+      textAlign: "right",
+      fontVariant: ["tabular-nums"],
+    },
+    tableCellPrice: {
+      fontWeight: "700",
+    },
+    tableCellMono: {
+      fontFamily: fonts.mono,
+      color: colors.textSecondary,
+      fontSize: 11,
+    },
+    tableCellStock: {
+      color: colors.primary,
+      fontWeight: "800",
+      fontSize: 12,
+      letterSpacing: 0.3,
+    },
+    tableCellVehicle: {
+      color: colors.text,
+      fontSize: 13,
+      fontWeight: "700",
+    },
+    tableCellVehicleSub: {
+      color: colors.textSecondary,
+      fontSize: 11,
+      marginTop: 1,
+    },
+    tableCellEditable: {
+      textDecorationLine: "underline",
+      textDecorationStyle: "dotted" as any,
+    },
+    tableAgePill: {
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 999,
+    },
+    tableAgePillTxt: {
+      fontSize: 10,
+      fontWeight: "800",
+      letterSpacing: 0.4,
+    },
+    tableTargetEdit: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+    },
+    tableTargetInput: {
+      flex: 1,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 6,
+      paddingHorizontal: 6,
+      paddingVertical: Platform.OS === "ios" ? 4 : 2,
+      color: colors.text,
+      fontSize: 12,
+      fontVariant: ["tabular-nums"],
+      textAlign: "right",
+      minWidth: 60,
+    },
+    tableTargetSave: {
+      width: 24,
+      height: 24,
+      borderRadius: 6,
+      backgroundColor: colors.primary,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    tableTargetCancel: {
+      width: 24,
+      height: 24,
+      borderRadius: 6,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    tableActionsCell: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "flex-end",
+      gap: 6,
+    },
+    tableIconBtn: {
+      width: 30,
+      height: 26,
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.paper,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
     header: {
       paddingHorizontal: spacing.md,
       paddingTop: spacing.sm,
