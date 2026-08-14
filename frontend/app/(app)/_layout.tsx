@@ -83,12 +83,21 @@ export default function AppLayout() {
           }}
         />
         <Tabs.Screen
-          name="submissions"
+          name="history"
           options={{
-            title: isAdmin ? "Submissions" : "My Vehicles",
-            tabBarIcon: ({ color, size }) => <Ionicons name="list" color={color} size={size} />,
+            // Bottom tab now routes dealers/admins straight into the
+            // History screen (priced + archived vehicles) instead of the
+            // legacy submissions inbox. Requested Nov 2026 — "My Vehicles"
+            // was clicking through to submissions.tsx but the dealer
+            // actually wanted the fuller history view.
+            title: "History",
+            tabBarIcon: ({ color, size }) => <Ionicons name="time" color={color} size={size} />,
           }}
         />
+        {/* Legacy submissions inbox — hidden from the tab bar but still
+            reachable via deep-links (e.g. /submissions/... after a
+            push notification) so we don't break any existing routes. */}
+        <Tabs.Screen name="submissions" options={{ href: null }} />
         <Tabs.Screen
           name="submit"
           options={{
@@ -118,7 +127,6 @@ export default function AppLayout() {
         {/* All secondary destinations are hidden from the tab bar and
             reachable via the home-page tiles or their deep-links. */}
         <Tabs.Screen name="dealers" options={{ href: null }} />
-        <Tabs.Screen name="history" options={{ href: null }} />
         <Tabs.Screen name="rewards" options={{ href: null }} />
         <Tabs.Screen name="deal-outcomes" options={{ href: null }} />
         <Tabs.Screen name="vehicle/[id]" options={{ href: null }} />
