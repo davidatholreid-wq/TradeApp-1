@@ -41,6 +41,7 @@ import type {
 import { PHOTO_ORDER } from "@/src/types/vehicle";
 import { makeStyles } from "@/src/styles/vehicleDetailStyles";
 import CollapsibleSection from "@/src/components/vehicle/CollapsibleSection";
+import { CoverOfferTermsButton } from "@/src/components/CoverOfferTerms";
 import DetailRow from "@/src/components/vehicle/DetailRow";
 import HeroPill from "@/src/components/vehicle/HeroPill";
 import ReportResultBody from "@/src/components/vehicle/ReportResultBody";
@@ -2085,10 +2086,17 @@ export default function VehicleDetail() {
         {isCoverMode ? null : sub.status === "priced" ? (
           <View style={styles.fourbuyOfferCard} testID="fourbuy-offer-card">
             <View style={styles.priceBanner} testID="price-banner">
-              <View>
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.priceLabel}>FOURBUY OFFER</Text>
                 <Text style={styles.priceValue}>{formatZAR(sub.price)}</Text>
                 {sub.price_notes ? <Text style={styles.priceNotes}>{sub.price_notes}</Text> : null}
+                {/* Terms & Conditions of Offer — attached exclusively to
+                    the Fourbuy Offer (admin → dealer purchase offer).
+                    Dealer-to-dealer covers are governed by each dealer's
+                    own terms and deliberately don't carry this button. */}
+                <View style={{ marginTop: 8, alignItems: "flex-start" }}>
+                  <CoverOfferTermsButton label="Terms & Conditions of Offer" compact />
+                </View>
               </View>
               <Ionicons name="checkmark-circle" size={40} color={colors.text} />
             </View>

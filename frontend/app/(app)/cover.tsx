@@ -21,7 +21,6 @@ import { TouchableOpacity } from "@/src/components/HapticButtons";
 import { Swipeable } from "react-native-gesture-handler";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import ScreenBackButton from "@/src/components/ScreenBackButton";
-import { CoverOfferTermsButton } from "@/src/components/CoverOfferTerms";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets, SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/src/context/AuthContext";
@@ -293,12 +292,7 @@ export default function GiveCoverScreen() {
     >
       {/* Header — simple, single-line title. Sits below the notch/status
           bar so it never gets clipped on device. */}
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-        <Text style={[styles.heading, { color: colors.text }]}>Give Cover</Text>
-        {/* Cover T&Cs — pricing agents can review the full Subject-to-
-            View Cover Offer terms before placing / reviewing covers. */}
-        <CoverOfferTermsButton compact />
-      </View>
+      <Text style={[styles.heading, { color: colors.text }]}>Give Cover</Text>
 
       {/* Tab switch — Available / Cover given / Declined. Horizontally
           scrollable on narrow screens so all three pills fit even on
