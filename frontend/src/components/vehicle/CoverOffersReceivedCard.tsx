@@ -12,6 +12,7 @@ import { TouchableOpacity } from "@/src/components/HapticButtons";
 import { Ionicons } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
 import type { Submission } from "@/src/types/vehicle";
+import { CoverOfferTermsButton } from "@/src/components/CoverOfferTerms";
 
 export type CoverOffer = {
   id: string;
@@ -164,6 +165,12 @@ export function CoverOffersReceivedCard({
             <Text style={styles.coverOffersDisclaimerText}>
               All Cover Prices are subject to a physical inspection of the vehicle to ensure the vehicle is as per the valuation — please always confirm the cover with the dealer prior to going ahead with the deal.
             </Text>
+          </View>
+          {/* Full T&Cs — opens the shared Cover Offer Terms modal so
+              dealers can review the complete Subject-to-View
+              conditions before accepting a cover. */}
+          <View style={{ marginTop: 10 }}>
+            <CoverOfferTermsButton />
           </View>
         </>
       ) : null}
