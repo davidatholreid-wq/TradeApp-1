@@ -30,6 +30,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from services.outvin_client import fetch_outvin_spec, is_outvin_supported_make
@@ -442,3 +443,233 @@ async def admin_partner_usage(
         "stats": stats,
         "recent_calls": recent,
     }
+
+
+# =============================================================================
+# GET /partner-api/docs.pdf — downloadable API spec (public, no auth)
+# =============================================================================
+def _build_partner_api_docs_pdf() -> bytes:
+    """Render the Fourbuy VIN Data API spec as a printable PDF.
+
+    Public — no auth. Same content as `/kredo-api/docs`, formatted for
+    A4. Kept in sync with the docs page manually (both are short and
+    change rarely).
+    """
+    from io import BytesIO
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors as rl_colors
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Preformatted,
+    )
+
+    styles = getSampleStyleSheet()
+    body   = ParagraphStyle("body", parent=styles["Normal"], fontSize=10, leading=14)
+    small  = ParagraphStyle("small", parent=styles["Normal"], fontSize=8, leading=11, textColor=rl_colors.grey)
+    h2     = ParagraphStyle("h2", parent=styles["Heading2"], fontSize=13, leading=16,
+                            textColor=rl_colors.HexColor("#0F172A"), spaceBefore=12, spaceAfter=6)
+    h3     = ParagraphStyle("h3", parent=styles["Heading3"], fontSize=10, leading=13,
+                            textColor=rl_colors.HexColor("#334155"), spaceBefore=6, spaceAfter=4,
+                            textTransform="uppercase")
+    mono   = ParagraphStyle("mono", parent=styles["Code"], fontSize=9, leading=12,
+                            textColor=rl_colors.HexColor("#0F172A"))
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=18 * mm, rightMargin=18 * mm,
+        topMargin=15 * mm, bottomMargin=18 * mm,
+        title="Fourbuy VIN Data API — Integration Guide",
+        author="Fourbuy Car Buying Co.",
+    )
+    story: list = []
+
+    # ---- Brand header ----
+    hdr = Table([[
+        Paragraph("<font color='white' size='18'><b>FOURBUY VIN DATA API</b></font><br/>"
+                  "<font color='white' size='10'>Integration Guide — v1.0 (November 2026)</font>", body),
+    ]], colWidths=[174 * mm])
+    hdr.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor("#0F172A")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 14),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 14),
+        ("TOPPADDING", (0, 0), (-1, -1), 14),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
+    ]))
+    story.append(hdr)
+    strip = Table([[""]], colWidths=[174 * mm], rowHeights=[3])
+    strip.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor("#22C55E"))]))
+    story.append(strip)
+    story.append(Spacer(1, 4 * mm))
+
+    story.append(Paragraph(
+        "Whitelabel VIN factory-options decode service. "
+        "Base URL: <font color='#2563EB'><b>https://api.fourbuy.co.za/api/partner/v1</b></font>",
+        body,
+    ))
+
+    # ---- Authentication ----
+    story.append(Paragraph("Authentication", h2))
+    story.append(Paragraph(
+        "Every request must include your API key in an <b>Authorization</b> header using the Bearer scheme:",
+        body,
+    ))
+    story.append(Preformatted("Authorization: Bearer fbp_XXXXXXXXXXXX", mono))
+    story.append(Paragraph(
+        "Keys are provisioned per client. Contact your Fourbuy account manager to receive one. "
+        "Keep it server-side — never embed in a browser or mobile app.",
+        body,
+    ))
+
+    # ---- Health ----
+    story.append(Paragraph("Health check", h2))
+    story.append(Preformatted("GET /api/partner/v1/health", mono))
+    story.append(Paragraph("Returns 200 OK if the service is available. No auth required.", body))
+    story.append(Preformatted(
+        '{\n  "ok": true,\n  "service": "Fourbuy VIN Data API",\n  "version": "1.0"\n}',
+        mono,
+    ))
+
+    # ---- VIN lookup ----
+    story.append(Paragraph("VIN Lookup", h2))
+    story.append(Preformatted("GET /api/partner/v1/vin-lookup/{vin}", mono))
+    story.append(Paragraph(
+        "Returns factory-options data (OEM datacard) for the supplied VIN. "
+        "Successful calls are billed to your account at your contracted per-lookup rate. "
+        "Failed calls (404 / 502 / 500) are NOT billed.",
+        body,
+    ))
+
+    story.append(Paragraph("Example", h3))
+    story.append(Preformatted(
+        "curl -H 'Authorization: Bearer $FOURBUY_API_KEY' \\\n"
+        "  https://api.fourbuy.co.za/api/partner/v1/vin-lookup/WVGZZZ5NZJW402485",
+        mono,
+    ))
+
+    story.append(Paragraph("Response 200 OK", h3))
+    story.append(Preformatted(
+        '{\n'
+        '  "vin": "WVGZZZ5NZJW402485",\n'
+        '  "data": {\n'
+        '    "model": "Touareg III",\n'
+        '    "series": "CR7",\n'
+        '    "build_date": "2018-04-11",\n'
+        '    "colour_code": "LB7W",\n'
+        '    "options": [\n'
+        '      { "code": "0YR", "description": "Panoramic sunroof" },\n'
+        '      { "code": "8IU", "description": "LED Matrix headlights" }\n'
+        '    ]\n'
+        '  },\n'
+        '  "source": "Fourbuy VIN Data API",\n'
+        '  "cached": false,\n'
+        '  "call_id": "6a30..."\n'
+        '}',
+        mono,
+    ))
+
+    story.append(Paragraph("Response codes", h3))
+    codes = [
+        ["200 OK",                "Data returned. Call is billed."],
+        ["400 Bad Request",       "VIN missing or malformed (11–25 chars)."],
+        ["401 Unauthorized",      "Missing / invalid / revoked API key."],
+        ["403 Forbidden",         "IP address not on the client's allowlist."],
+        ["404 Not Found",         "No factory data available for this VIN. Not billed."],
+        ["429 Too Many Requests", "Upstream rate limit. Not billed."],
+        ["500 Internal Error",    "Fourbuy-side error. Not billed."],
+        ["502 Bad Gateway",       "Upstream vendor error. Not billed."],
+    ]
+    tbl = Table(
+        [[Paragraph(f"<b>{c}</b>", body), Paragraph(d, body)] for c, d in codes],
+        colWidths=[40 * mm, 134 * mm],
+    )
+    tbl.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.25, rl_colors.HexColor("#E2E8F0")),
+        ("BACKGROUND", (0, 0), (0, -1), rl_colors.HexColor("#F1F5F9")),
+    ]))
+    story.append(tbl)
+
+    # ---- Usage ----
+    story.append(Paragraph("Usage summary", h2))
+    story.append(Preformatted("GET /api/partner/v1/usage/current-month", mono))
+    story.append(Paragraph(
+        "Returns your calling account's usage in the current calendar month so you can reconcile against your invoice.",
+        body,
+    ))
+    story.append(Preformatted(
+        '{\n'
+        '  "client": "Kredo",\n'
+        '  "month": "2026-11",\n'
+        '  "cost_zar_per_lookup": 10,\n'
+        '  "successful_lookups": 1240,\n'
+        '  "failed_lookups": 17,\n'
+        '  "amount_zar": 12400\n'
+        '}',
+        mono,
+    ))
+
+    # ---- Caching / limits / billing ----
+    story.append(Paragraph("Caching", h2))
+    story.append(Paragraph(
+        "Every VIN lookup is cached forever on our side (factory build data does not change for a given VIN). "
+        "Repeat lookups for the same VIN return the same payload with <b>\"cached\": true</b> and are still billed — "
+        "this is the value of the reseller service.",
+        body,
+    ))
+
+    story.append(Paragraph("Rate limits", h2))
+    story.append(Paragraph(
+        "Currently: 30 requests / minute per API key. Contact your account manager if you need higher throughput. "
+        "Bursts above the limit receive HTTP 429 and are not billed.",
+        body,
+    ))
+
+    story.append(Paragraph("Billing", h2))
+    story.append(Paragraph(
+        "Post-paid, invoiced monthly. Only successful lookups (HTTP 200) are counted; "
+        "all failure responses are free of charge.",
+        body,
+    ))
+
+    # ---- Support ----
+    story.append(Paragraph("Support", h2))
+    story.append(Paragraph(
+        "<b>David Reid</b> — WhatsApp only: <font color='#2563EB'><b>+27 84 881 9073</b></font>",
+        body,
+    ))
+    story.append(Paragraph(
+        "Contact for API keys, IP allowlist changes, rate-limit increases, and monthly reconciliation.",
+        body,
+    ))
+
+    story.append(Spacer(1, 8 * mm))
+    story.append(Paragraph(
+        "<font color='#64748B'>&#169; Fourbuy Car Buying Co. — Fourbuy VIN Data API v1.0</font>",
+        small,
+    ))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf.read()
+
+
+@router.get("/partner-api/docs.pdf")
+async def partner_api_docs_pdf():
+    """Public — anyone with the URL can download the integration guide."""
+    try:
+        pdf_bytes = _build_partner_api_docs_pdf()
+    except Exception as e:  # pragma: no cover
+        logger.exception("partner_api docs PDF build failed")
+        raise HTTPException(500, f"Failed to build PDF: {e}")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'inline; filename="fourbuy-vin-data-api-guide.pdf"'},
+    )
+

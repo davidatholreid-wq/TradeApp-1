@@ -170,9 +170,7 @@ export default function AdminPartnerApiScreen() {
       <View style={[styles.docsRow, { borderColor: colors.border, backgroundColor: colors.card }]}>
         <Ionicons name="document-text-outline" size={18} color={colors.primary} />
         <Text style={{ color: colors.text, fontSize: 13, flex: 1 }}>
-          Live partner docs page:
-          {"  "}
-          <Text style={{ color: colors.primary, fontWeight: "800" }}>/kredo-api/docs</Text>
+          Partner integration guide — hand this to any new supplier:
         </Text>
         <TouchableOpacity
           onPress={() => {
@@ -180,7 +178,16 @@ export default function AdminPartnerApiScreen() {
           }}
           style={styles.docsBtn}
         >
-          <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "800" }}>Open</Text>
+          <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "800" }}>View</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => {
+            const url = `${process.env.EXPO_PUBLIC_BACKEND_URL || ""}/api/partner-api/docs.pdf`;
+            if (Platform.OS === "web") window.open(url, "_blank");
+          }}
+          style={[styles.docsBtn, { backgroundColor: colors.primary + "18" }]}
+        >
+          <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "800" }}>Download PDF</Text>
         </TouchableOpacity>
       </View>
 

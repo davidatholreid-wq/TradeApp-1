@@ -9,6 +9,8 @@
  * it (that's the point of API docs). No sensitive data appears.
  */
 import { View, Text, ScrollView, StyleSheet, Platform } from "react-native";
+import { TouchableOpacity } from "@/src/components/HapticButtons";
+import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { spacing, radius } from "@/src/theme";
@@ -16,15 +18,36 @@ import { spacing, radius } from "@/src/theme";
 export default function PartnerApiDocsScreen() {
   const colors = useThemeColors();
   const s = makeStyles(colors);
+  const openPdf = () => {
+    // Docs PDF is public — safe to open directly. Uses expo-router-
+    // friendly URL so it works on both web preview and the deployed
+    // production domain.
+    const url = `${process.env.EXPO_PUBLIC_BACKEND_URL || ""}/api/partner-api/docs.pdf`;
+    if (Platform.OS === "web") {
+      window.open(url, "_blank");
+    } else {
+      // Native — hand off to system browser via Linking would be ideal,
+      // but the docs page is web-only in practice.
+      window.open?.(url);
+    }
+  };
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={["top"]}>
       <ScrollView contentContainerStyle={{ padding: spacing.md, paddingBottom: 96 }}>
-        <Text style={s.title}>Fourbuy VIN Data API</Text>
-        <Text style={s.subtitle}>
-          Whitelabel VIN factory-options decode service. Base URL:
-          {"\n"}
-          <Text style={s.mono}>https://api.fourbuy.co.za/api/partner/v1</Text>
-        </Text>
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 12 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.title}>Fourbuy VIN Data API</Text>
+            <Text style={s.subtitle}>
+              Whitelabel VIN factory-options decode service. Base URL:
+              {"\n"}
+              <Text style={s.mono}>https://api.fourbuy.co.za/api/partner/v1</Text>
+            </Text>
+          </View>
+          <TouchableOpacity style={s.pdfBtn} onPress={openPdf} activeOpacity={0.85}>
+            <Ionicons name="download-outline" size={16} color={colors.onPrimary} />
+            <Text style={s.pdfBtnTxt}>Download PDF</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Auth */}
         <Text style={s.h2}>Authentication</Text>
@@ -161,8 +184,11 @@ export default function PartnerApiDocsScreen() {
         {/* Support */}
         <Text style={s.h2}>Support</Text>
         <Text style={s.p}>
-          Email <Text style={s.mono}>support@fourbuy.co.za</Text> for API
-          keys, IP allowlist changes, or reconciliation questions.
+          <Text style={{ fontWeight: "800", color: colors.text }}>David Reid</Text> — WhatsApp only:{" "}
+          <Text style={s.mono}>+27 84 881 9073</Text>
+        </Text>
+        <Text style={s.p}>
+          Contact for API keys, IP allowlist changes, rate-limit increases, and monthly reconciliation.
         </Text>
 
         <Text style={[s.p, { marginTop: spacing.lg, color: colors.textSecondary, textAlign: "center" }]}>
@@ -243,5 +269,20 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     gap: 12,
+  },
+  pdfBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: radius.md,
+  },
+  pdfBtnTxt: {
+    color: colors.onPrimary,
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 0.3,
   },
 });
