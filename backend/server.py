@@ -8147,6 +8147,7 @@ from routes.public_valuation import router as public_valuation_router
 from routes.suppliers import router as suppliers_router
 from routes.stock import router as stock_router
 from routes.vin_reports import router as vin_reports_router
+from routes.partner_api import router as partner_api_router
 api_router.include_router(ads_router)
 api_router.include_router(rewards_router)
 api_router.include_router(kredo_router)
@@ -8156,6 +8157,7 @@ api_router.include_router(public_valuation_router)
 api_router.include_router(suppliers_router)
 api_router.include_router(stock_router)
 api_router.include_router(vin_reports_router)
+api_router.include_router(partner_api_router)
 
 
 app.include_router(api_router)

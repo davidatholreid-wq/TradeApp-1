@@ -78,7 +78,7 @@ function RootNavigation() {
     const inAuthGroup = segments[0] === "(auth)";
     const inAppGroup = segments[0] === "(app)";
     // Public, unauthenticated routes that are always accessible.
-    const PUBLIC_ROUTES = new Set(["get-valuation", "valuation-success"]);
+    const PUBLIC_ROUTES = new Set(["get-valuation", "valuation-success", "kredo-api"]);
     const inPublic = PUBLIC_ROUTES.has(segments[0] || "");
     if (inPublic) return; // never bounce a public visitor
     if (!user && !inAuthGroup) {
