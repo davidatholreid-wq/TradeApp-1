@@ -34,6 +34,13 @@ const FOURBUY_OFFER_ACCENT = "#94A3B8";     // slate — neutral
 const COVER_OFFER_ACCENT   = "#3B82F6";     // brand blue — external market
 const MY_OFFER_ACCENT      = "#10B981";     // emerald — dealer's own number
 
+// Fixed emerald for the "Done Deal" outcome. Not tied to `colors.success`
+// because the app's monochrome theme swaps success between black/white
+// depending on light/dark mode, which read as washed-out on photo
+// overlays. `#22C55E` is Tailwind's `green-500` — solid, readable on
+// both dark and light backgrounds.
+const DONE_DEAL_GREEN      = "#22C55E";
+
 type Submission = {
   id: string;
   reference?: string;
@@ -242,10 +249,10 @@ export default function DashboardScreen() {
     const dealBucket = computeDealBucket(item);
     const dealBadge =
       dealBucket === "deal_done"
-        ? { label: "DONE DEAL",     tint: colors.success,  icon: "checkmark-circle" as const }
+        ? { label: "DONE DEAL",     tint: DONE_DEAL_GREEN,  icon: "checkmark-circle" as const }
         : dealBucket === "no_deal"
-          ? { label: "NO DEAL",     tint: colors.danger,   icon: "close-circle"     as const }
-          : { label: "DEAL PENDING", tint: colors.warning, icon: "hourglass-outline" as const };
+          ? { label: "NO DEAL",     tint: colors.danger,    icon: "close-circle"     as const }
+          : { label: "DEAL PENDING", tint: colors.warning,  icon: "hourglass-outline" as const };
     return (
     <TouchableOpacity
       testID={`submission-card-${item.id}`}
@@ -283,39 +290,12 @@ export default function DashboardScreen() {
             </View>
           ) : null}
         </View>
-        <View
-          style={[
-            styles.badge,
-            {
-              backgroundColor:
-                item.status === "priced"
-                  ? colors.success + "22"
-                  : item.status === "declined"
-                  ? colors.danger + "22"
-                  : colors.warning + "22",
-            },
-          ]}
-        >
-          <Text
-            style={[
-              styles.badgeText,
-              {
-                color:
-                  item.status === "priced"
-                    ? colors.success
-                    : item.status === "declined"
-                    ? colors.danger
-                    : colors.warning,
-              },
-            ]}
-          >
-            {item.status === "priced"
-              ? "PRICED"
-              : item.status === "declined"
-              ? "NO OFFER"
-              : "PENDING"}
-          </Text>
-        </View>
+      {/* Workflow status badge (PRICED / PENDING / NO OFFER) removed
+          Nov 2026 — it duplicated the more informative deal-outcome pill
+          in the bottom-right of the photo AND was hard to read in dark
+          mode where `colors.success` was pure white on white photo
+          highlights. The dealer's actual signal (their deal outcome +
+          the Fourbuy Offer amount below) is much clearer. */}
       </View>
 
       <View style={styles.metaRow}>
@@ -444,24 +424,22 @@ export default function DashboardScreen() {
   // agent inbox. Tapping any card opens the vehicle detail.
   const renderGridCard = (item: Submission) => {
     const gridColWidth = `${(100 / effectiveGridColumns).toFixed(4)}%` as any;
-    const statusColour =
-      item.status === "priced"
-        ? colors.success
-        : item.status === "declined"
-          ? colors.danger
-          : colors.warning;
     // Deal outcome badge — only meaningful once a submission has been
     // priced (before that it's always "Pending"). We still render for
     // pending items so the visual placeholder is consistent between
     // cards; the chip just says "Deal Pending" until the dealer
     // records an outcome.
+    // Done Deal uses a fixed emerald (#22C55E) rather than
+    // `colors.success` so it reads as a proper green in BOTH themes —
+    // the monochrome theme's success token is black/white which looked
+    // washed out on the photo overlay.
     const dealBucket = computeDealBucket(item);
     const dealBadge =
       dealBucket === "deal_done"
-        ? { label: "DONE DEAL",    tint: colors.success,  icon: "checkmark-circle" as const }
+        ? { label: "DONE DEAL",     tint: DONE_DEAL_GREEN,  icon: "checkmark-circle" as const }
         : dealBucket === "no_deal"
-          ? { label: "NO DEAL",    tint: colors.danger,   icon: "close-circle"     as const }
-          : { label: "DEAL PENDING", tint: colors.warning, icon: "hourglass-outline" as const };
+          ? { label: "NO DEAL",     tint: colors.danger,    icon: "close-circle"     as const }
+          : { label: "DEAL PENDING", tint: colors.warning,  icon: "hourglass-outline" as const };
     return (
       <View
         key={item.id}
@@ -494,26 +472,10 @@ export default function DashboardScreen() {
                 <Text style={styles.gridRefBadgeText}>{item.reference}</Text>
               </View>
             ) : null}
-            <View style={[styles.gridStatusBadge, { backgroundColor: statusColour }]}>
-              <Ionicons
-                name={
-                  item.status === "priced"
-                    ? "shield-checkmark"
-                    : item.status === "declined"
-                      ? "close-circle"
-                      : "time"
-                }
-                size={11}
-                color="#fff"
-              />
-              <Text style={styles.gridStatusBadgeText}>
-                {item.status === "priced"
-                  ? "PRICED"
-                  : item.status === "declined"
-                    ? "NO OFFER"
-                    : "PENDING"}
-              </Text>
-            </View>
+            {/* Workflow status badge (PRICED / PENDING / NO OFFER) removed
+                Nov 2026 — the deal-outcome pill in the bottom-right of
+                the photo now carries all the signal the dealer needs,
+                and the workflow badge was hard to read in dark mode. */}
             {item.unseen ? (
               <View style={styles.gridUnseenBadge}>
                 <Ionicons name="eye-off-outline" size={10} color="#fff" />
@@ -696,7 +658,7 @@ export default function DashboardScreen() {
           {([
             { key: "all",       label: "All",         tint: colors.textSecondary },
             { key: "pending",   label: "Pending",     tint: colors.warning },
-            { key: "deal_done", label: "Done Deal",   tint: colors.success },
+            { key: "deal_done", label: "Done Deal",   tint: DONE_DEAL_GREEN },
             { key: "no_deal",   label: "No Deal Done", tint: colors.danger },
           ] as { key: DealBucket; label: string; tint: string }[]).map((c) => {
             const active = dealFilter === c.key;
