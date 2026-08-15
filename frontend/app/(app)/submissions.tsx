@@ -60,7 +60,25 @@ type Submission = {
   dealer_offer_zar?: number | null;   // dealer's own recorded buy-in
   highest_cover_zar?: number | null;  // max pricing-agent cover on this sub
   cover_count?: number;
+  // Deal-tracking outcome — set by the dealer AFTER pricing lands:
+  //   deal.done === true  → "Done Deal"  (deal_bucket = "deal_done")
+  //   deal.done === false → "No Deal"    (deal_bucket = "no_deal")
+  //   otherwise / missing → "Pending"    (deal_bucket = "pending")
+  deal?: { done?: boolean | null; sold?: boolean | null } | null;
 };
+
+type DealBucket = "all" | "pending" | "deal_done" | "no_deal";
+
+// Map a submission's `deal.done` value into one of the three outcome
+// buckets. Non-priced submissions are always "pending" because there's
+// nothing yet to close a deal against.
+function computeDealBucket(s: Submission): Exclude<DealBucket, "all"> {
+  if (s.status !== "priced") return "pending";
+  const done = s.deal?.done;
+  if (done === true) return "deal_done";
+  if (done === false) return "no_deal";
+  return "pending";
+}
 
 type BucketCounts = { incoming: number; priced: number; archived: number };
 
@@ -80,6 +98,10 @@ export default function DashboardScreen() {
   const [items, setItems] = useState<Submission[]>([]);
   const [counts, setCounts] = useState<BucketCounts>({ incoming: 0, priced: 0, archived: 0 });
   const [bucket, setBucket] = useState<"incoming" | "priced">("incoming");
+  // Deal-tracking outcome filter — orthogonal to the stage bucket. All
+  // priced/completed submissions carry a deal.done value; unpriced ones
+  // are lumped into "pending" so the chip counts stay honest.
+  const [dealFilter, setDealFilter] = useState<DealBucket>("all");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [drafts, setDrafts] = useState<Draft[]>([]);
@@ -198,11 +220,33 @@ export default function DashboardScreen() {
 
   // Filter items by the current silo (admin only). Non-admin sees all their
   // (non-archived) items which are already filtered server-side.
-  const visibleItems = isAdmin
+  // Base list — admins are already scoped by stage bucket, dealers see
+  // every non-archived submission (server-filtered).
+  const baseItems = isAdmin
     ? items.filter((s) => (s.bucket || (s.status === "priced" || s.status === "declined" ? "priced" : "incoming")) === bucket)
     : items;
 
-  const renderItem = ({ item }: { item: Submission }) => (
+  // Roll-up counts across ALL items so the chip counts don't jump around
+  // as the user clicks between filter chips.
+  const dealCounts = useMemo(() => {
+    const c = { all: baseItems.length, pending: 0, deal_done: 0, no_deal: 0 };
+    baseItems.forEach((s) => { c[computeDealBucket(s)] += 1; });
+    return c;
+  }, [baseItems]);
+
+  const visibleItems = dealFilter === "all"
+    ? baseItems
+    : baseItems.filter((s) => computeDealBucket(s) === dealFilter);
+
+  const renderItem = ({ item }: { item: Submission }) => {
+    const dealBucket = computeDealBucket(item);
+    const dealBadge =
+      dealBucket === "deal_done"
+        ? { label: "DONE DEAL",     tint: colors.success,  icon: "checkmark-circle" as const }
+        : dealBucket === "no_deal"
+          ? { label: "NO DEAL",     tint: colors.danger,   icon: "close-circle"     as const }
+          : { label: "DEAL PENDING", tint: colors.warning, icon: "hourglass-outline" as const };
+    return (
     <TouchableOpacity
       testID={`submission-card-${item.id}`}
       style={styles.card}
@@ -286,6 +330,12 @@ export default function DashboardScreen() {
         <View style={styles.metaItem}>
           <Ionicons name="star-outline" size={14} color={colors.textSecondary} />
           <Text style={styles.metaText}>Condition {item.condition}/10</Text>
+        </View>
+        {/* Deal outcome pill — inline with the meta chips so the dealer
+            sees the deal status right alongside vehicle facts. */}
+        <View style={[styles.dealPillList, { backgroundColor: dealBadge.tint + "22", borderColor: dealBadge.tint + "77" }]}>
+          <Ionicons name={dealBadge.icon} size={11} color={dealBadge.tint} />
+          <Text style={[styles.dealPillListTxt, { color: dealBadge.tint }]}>{dealBadge.label}</Text>
         </View>
       </View>
 
@@ -383,7 +433,8 @@ export default function DashboardScreen() {
         );
       })()}
     </TouchableOpacity>
-  );
+    );
+  };
 
   // ---- Grid card renderer (WeBuyCars-style — web only) --------------
   // Image-forward layout with the front photo at the top, title + meta
@@ -399,6 +450,18 @@ export default function DashboardScreen() {
         : item.status === "declined"
           ? colors.danger
           : colors.warning;
+    // Deal outcome badge — only meaningful once a submission has been
+    // priced (before that it's always "Pending"). We still render for
+    // pending items so the visual placeholder is consistent between
+    // cards; the chip just says "Deal Pending" until the dealer
+    // records an outcome.
+    const dealBucket = computeDealBucket(item);
+    const dealBadge =
+      dealBucket === "deal_done"
+        ? { label: "DONE DEAL",    tint: colors.success,  icon: "checkmark-circle" as const }
+        : dealBucket === "no_deal"
+          ? { label: "NO DEAL",    tint: colors.danger,   icon: "close-circle"     as const }
+          : { label: "DEAL PENDING", tint: colors.warning, icon: "hourglass-outline" as const };
     return (
       <View
         key={item.id}
@@ -457,6 +520,13 @@ export default function DashboardScreen() {
                 <Text style={styles.gridUnseenBadgeText}>SUBJECT TO VIEW</Text>
               </View>
             ) : null}
+            {/* Deal-outcome pill — bottom-right of the photo so the
+                dealer sees the deal status alongside the workflow
+                status (PRICED / PENDING / NO OFFER) at a glance. */}
+            <View style={[styles.gridDealBadge, { backgroundColor: dealBadge.tint }]}>
+              <Ionicons name={dealBadge.icon} size={11} color="#fff" />
+              <Text style={styles.gridStatusBadgeText}>{dealBadge.label}</Text>
+            </View>
           </View>
 
           {/* Text stack — title, meta chips. Vehicle title is split
@@ -608,6 +678,55 @@ export default function DashboardScreen() {
                 <Text style={[styles.siloLabel, active && styles.siloLabelActive]}>{label}</Text>
                 <View style={[styles.siloBadge, active && styles.siloBadgeActive]}>
                   <Text style={[styles.siloBadgeText, active && styles.siloBadgeTextActive]}>{n}</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      ) : null}
+
+      {/* Deal-outcome filter chip row — orthogonal to the stage bucket.
+          Priced vehicles carry a `deal.done` outcome recorded by the
+          dealer; unpriced/pending ones show up under "Pending". Chip
+          counts reflect the currently-scoped baseItems so the numbers
+          always add up to the total. Never shown when there's no data
+          yet (loading + empty state handled below). */}
+      {!loading && baseItems.length > 0 ? (
+        <View style={styles.dealFilterRow}>
+          {([
+            { key: "all",       label: "All",         tint: colors.textSecondary },
+            { key: "pending",   label: "Pending",     tint: colors.warning },
+            { key: "deal_done", label: "Done Deal",   tint: colors.success },
+            { key: "no_deal",   label: "No Deal Done", tint: colors.danger },
+          ] as { key: DealBucket; label: string; tint: string }[]).map((c) => {
+            const active = dealFilter === c.key;
+            const n = dealCounts[c.key];
+            return (
+              <TouchableOpacity
+                key={c.key}
+                testID={`deal-filter-${c.key}`}
+                onPress={() => setDealFilter(c.key)}
+                style={[
+                  styles.dealChip,
+                  { borderColor: active ? c.tint : colors.border },
+                  active && { backgroundColor: c.tint + "22" },
+                ]}
+                activeOpacity={0.85}
+              >
+                <View style={[styles.dealChipDot, { backgroundColor: c.tint }]} />
+                <Text style={[
+                  styles.dealChipLabel,
+                  { color: active ? c.tint : colors.textSecondary },
+                ]}>
+                  {c.label}
+                </Text>
+                <View style={[styles.dealChipCount, { backgroundColor: (active ? c.tint : colors.border) + (active ? "" : "") }]}>
+                  <Text style={[
+                    styles.dealChipCountTxt,
+                    { color: active ? colors.onPrimary : colors.text },
+                  ]}>
+                    {n}
+                  </Text>
                 </View>
               </TouchableOpacity>
             );
@@ -872,6 +991,51 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     borderRadius: radius.sm,
   },
   newBtnText: { color: colors.onPrimary, fontWeight: "800", letterSpacing: 0.5 },
+
+  // Deal-outcome filter chip row — sits directly below the greeting/new
+  // header. Chips are subtle by default; the active one lights up in
+  // the outcome's tint (amber for Pending, emerald for Done Deal, red
+  // for No Deal). Count badges make the split obvious at a glance.
+  dealFilterRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  dealChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderRadius: 999,
+    backgroundColor: colors.card,
+  },
+  dealChipDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  dealChipLabel: {
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+  },
+  dealChipCount: {
+    minWidth: 20,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dealChipCountTxt: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+  },
 
   silosRow: {
     flexDirection: "row",
@@ -1153,6 +1317,38 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     color: "#fff",
     fontSize: 10,
     fontWeight: "800",
+  },
+  // Deal-outcome pill — bottom-right of the photo. Mirrors the shape of
+  // the workflow status badge (top-right) but uses outcome colours
+  // (emerald / red / amber). Compact so it doesn't fight for space with
+  // the "SUBJECT TO VIEW" indicator (bottom-left).
+  gridDealBadge: {
+    position: "absolute" as any,
+    bottom: 8,
+    right: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  // Deal outcome pill for the LIST card metaRow. Softer than the grid
+  // overlay pill — uses translucent background + coloured border so it
+  // sits in-flow with the other meta chips without dominating.
+  dealPillList: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  dealPillListTxt: {
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.3,
   },
   gridUnseenBadge: {
     position: "absolute" as any,
