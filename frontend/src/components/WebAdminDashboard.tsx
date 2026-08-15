@@ -12,6 +12,7 @@ import DealersScreen from "@/app/(app)/dealers";
 import KredoTestScreen from "@/app/(app)/kredo-test";
 import AdminRewardsScreen from "@/src/components/AdminRewardsScreen";
 import AdminAdvertisingScreen from "@/src/components/AdminAdvertisingScreen";
+import AdminPartnerApiScreen from "@/src/components/AdminPartnerApiScreen";
 import AdminCatalogueScreen from "@/src/components/AdminCatalogueScreen";
 import AdminPublicLeadsScreen from "@/src/components/AdminPublicLeadsScreen";
 import VinHistoryCompareModal from "@/src/components/VinHistoryCompareModal";
@@ -228,7 +229,7 @@ function formatReportName(type: string): string {
 }
 
 type Bucket = "incoming" | "priced" | "archived";
-type CockpitView = "home" | "submissions" | "dealers" | "billing" | "rewards" | "kredo" | "ads" | "catalogue" | "public-leads";
+type CockpitView = "home" | "submissions" | "dealers" | "billing" | "rewards" | "kredo" | "ads" | "catalogue" | "public-leads" | "partner-api";
 
 export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }) {
   const colors = useThemeColors();
@@ -1166,6 +1167,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
               { key: "ads", label: "Advertising", hint: "Manage home-page ad tiles", icon: "megaphone" as const, tint: "#A78BFA" },
               { key: "catalogue", label: "Make Catalogue", hint: "Choose which makes & models dealers can pick", icon: "car-sport" as const, tint: "#0EA5E9" },
               { key: "public-leads", label: "Public Leads", hint: "Anonymous public valuations from /get-valuation", icon: "planet" as const, tint: "#EC4899" },
+              { key: "partner-api", label: "Partner API", hint: "Kredo & other resellers · keys, IPs, billing", icon: "git-network" as const, tint: "#14B8A6" },
             ].map((t) => (
               <TouchableOpacity
                 key={t.key}
@@ -1531,6 +1533,10 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
       ) : view === "public-leads" ? (
         <View style={{ flex: 1 }}>
           <AdminPublicLeadsScreen />
+        </View>
+      ) : view === "partner-api" ? (
+        <View style={{ flex: 1 }}>
+          <AdminPartnerApiScreen />
         </View>
       ) : (
       <View style={styles.body}>
