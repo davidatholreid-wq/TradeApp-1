@@ -159,6 +159,16 @@ async def _fetch_raw(vin: str) -> dict[str, Any]:
                 )
             if r.status_code == 404:
                 return {"__outvin_status__": "not_found"}
+            if r.status_code == 402:
+                # Vendor-reported "Payment Required" — the Outvin
+                # subscription has run out of credits. Distinct from 429
+                # (rate-limit) because 402 needs a manual top-up on
+                # outvin.com and the caller can't retry their way out.
+                raise RuntimeError(
+                    "outvin: no API credits remaining on your subscription. "
+                    "Top up at https://www.outvin.com/dashboard "
+                    "(or contact support@outvin.com) before ordering more decodes."
+                )
             if r.status_code == 429:
                 raise RuntimeError(
                     "outvin: quota exhausted — top up your Outvin account or wait for reset."
