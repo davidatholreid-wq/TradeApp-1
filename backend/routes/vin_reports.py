@@ -278,6 +278,7 @@ async def order_vin_report(
 
     # Success — bill the caller and persist the payload.
     billed = int(entry["cost_zar"] or 0) > 0
+    completed_at = now_utc()
     await db.vin_report_orders.update_one(
         {"id": order_id},
         {"$set": {
@@ -285,12 +286,46 @@ async def order_vin_report(
             "cost_zar": entry["cost_zar"],
             "billed": billed,
             "result_data": result,
-            "completed_at": now_utc(),
+            "completed_at": completed_at,
         }},
     )
+
+    # Mirror the completed order into `db.report_orders` — the canonical
+    # billing collection queried by BOTH the dealer's `/api/billing/my`
+    # and admin's `/api/admin/billing` endpoints. Without this mirror
+    # row the charge would silently disappear from every invoice /
+    # monthly tally. `submission_id` is deliberately null (this is a
+    # standalone VIN order, not tied to a valuation) — the billing
+    # renderer already handles that case cleanly. Idempotent on the
+    # vin_report_orders `id` so a retry never double-bills.
+    if dealer_id:
+        await db.report_orders.update_one(
+            {"vin_report_order_id": order_id},
+            {"$setOnInsert": {
+                "id": order_id,
+                "vin_report_order_id": order_id,   # link back for audit
+                "submission_id": None,
+                "dealer_id": current["id"],
+                "dealership_id": dealer_id,
+                "vin": vin,
+                "make": make,
+                "type": f"vin_reports.{entry['id']}",
+                "name": entry["label"],
+                "cost_zar": entry["cost_zar"],
+                "status": "delivered",
+                "ordered_at": completed_at,
+                "ordered_by": current["id"],
+                "ordered_by_name": current.get("name") or current.get("email"),
+                "delivered_at": completed_at,
+                "note": "Standalone VIN Report — no submission attached.",
+                "billed": billed,
+            }},
+            upsert=True,
+        )
+
     logger.info(
-        "vin_reports: order %s completed — %s / %s / %s (R%s)",
-        order_id, entry["id"], make, vin, entry["cost_zar"],
+        "vin_reports: order %s completed — %s / %s / %s (R%s, billed=%s)",
+        order_id, entry["id"], make, vin, entry["cost_zar"], billed,
     )
 
     row = await db.vin_report_orders.find_one({"id": order_id}, {"_id": 0})
