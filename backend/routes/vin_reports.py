@@ -21,9 +21,11 @@ lightweight flow.
 from __future__ import annotations
 
 import uuid
+from io import BytesIO
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 # Vendor clients — reused verbatim from the full-valuation flow.
@@ -38,7 +40,7 @@ from services.outvin_client import (
 
 # Late-import from `server` — safe because this file is only imported
 # at the bottom of `server.py` once all these names are defined.
-from server import db, get_current_user, now_utc, logger
+from server import db, get_current_user, get_user_flexible, now_utc, logger
 
 # Reuse the same normalisation helper the /kredo/vin-history route uses
 # so the shape stored on the order matches what the app already knows
@@ -252,17 +254,27 @@ async def order_vin_report(
         raise HTTPException(502, f"Report failed: {error}")
 
     # Some vendors return empty payloads for VINs they don't have —
-    # treat those as failed so we don't bill for nothing.
-    if not result:
+    # treat those as failed so we don't bill for nothing. Bimmervin /
+    # MBTools / Outvin also return `{"status": "error", "error": "..."}`
+    # dicts (truthy but semantically failed) — recognise those too.
+    if not result or (isinstance(result, dict) and str(result.get("status") or "").lower() == "error"):
+        err_msg = "The vendor has no data for this VIN."
+        if isinstance(result, dict):
+            vendor_err = result.get("error") or result.get("message")
+            if vendor_err:
+                err_msg = str(vendor_err)
         await db.vin_report_orders.update_one(
             {"id": order_id},
             {"$set": {
                 "status": "failed",
-                "error": "Vendor returned no data for this VIN.",
+                "error": err_msg,
                 "completed_at": now_utc(),
             }},
         )
-        raise HTTPException(404, "The vendor has no data for this VIN.")
+        # 404 so the client can present a clear "no data — not billed"
+        # message. Bill status is unchanged from the initial insert
+        # (billed=false, cost_zar=0), so the caller is never charged.
+        raise HTTPException(404, err_msg)
 
     # Success — bill the caller and persist the payload.
     billed = int(entry["cost_zar"] or 0) > 0
@@ -320,3 +332,253 @@ async def get_order(
     if current.get("role") != "admin" and row.get("user_id") != current["id"]:
         raise HTTPException(403, "You cannot access this order")
     return {"order": row}
+
+
+
+# ---------------------------------------------------------------------------
+# GET /api/vin-reports/{order_id}/pdf — downloadable / previewable PDF
+# ---------------------------------------------------------------------------
+def _build_vin_report_pdf(order: dict) -> bytes:
+    """Render a completed VIN report order as a single-file PDF.
+
+    The layout is deliberately simple + consistent across all four
+    vendors so dealers get a predictable printable document:
+        1. Dark brand header with report title + VIN
+        2. Meta grid — Make, Report Type, Ordered By, Ordered At, Cost
+        3. Body — vendor-specific structured tables (claims list for
+           Kredo; factory-option tables for Bimmervin/MBTools/Outvin)
+    """
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors as rl_colors
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+        KeepTogether, PageBreak,
+    )
+
+    styles = getSampleStyleSheet()
+    body = ParagraphStyle("body", parent=styles["Normal"], fontSize=10, leading=13)
+    small = ParagraphStyle("small", parent=styles["Normal"], fontSize=8, leading=11, textColor=rl_colors.grey)
+    h_section = ParagraphStyle(
+        "h_section", parent=styles["Heading2"],
+        fontSize=11, leading=14, textColor=rl_colors.HexColor("#0F172A"),
+        spaceBefore=10, spaceAfter=6, textTransform="uppercase",
+    )
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=15 * mm, rightMargin=15 * mm,
+        topMargin=12 * mm, bottomMargin=15 * mm,
+        title=f"{order.get('report_label') or 'VIN Report'} · {order.get('vin') or ''}",
+        author="Fourbuy Car Buying Co.",
+    )
+    story: list = []
+
+    # ---- Brand header ----
+    header_rows = [[
+        Paragraph(
+            "<font color='white' size='16'><b>FOURBUY VIN REPORT</b></font><br/>"
+            f"<font color='white' size='10'>{order.get('report_label') or order.get('report_type') or ''}</font>",
+            body,
+        ),
+        Paragraph(
+            "<font color='white' size='8'>VIN</font><br/>"
+            f"<font color='white' size='11'><b>{order.get('vin') or '—'}</b></font>",
+            body,
+        ),
+    ]]
+    header_tbl = Table(header_rows, colWidths=[120 * mm, 60 * mm])
+    header_tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor("#0F172A")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 12),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+        ("TOPPADDING", (0, 0), (-1, -1), 12),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    story.append(header_tbl)
+
+    # Accent strip
+    strip = Table([[""]], colWidths=[180 * mm], rowHeights=[3])
+    strip.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor("#22C55E"))]))
+    story.append(strip)
+    story.append(Spacer(1, 4 * mm))
+
+    # ---- Meta grid ----
+    ordered_at = (order.get("ordered_at") or "")
+    if hasattr(ordered_at, "isoformat"):
+        ordered_at = ordered_at.isoformat()
+    ordered_at_display = str(ordered_at)[:19].replace("T", " ")
+    cost = int(order.get("cost_zar") or 0)
+    cost_display = f"R{cost}" if cost > 0 else "Free"
+    meta = [
+        [Paragraph("<b>MAKE</b>", small), Paragraph((order.get("make") or "—"), body)],
+        [Paragraph("<b>REPORT TYPE</b>", small), Paragraph(order.get("report_label") or order.get("report_type") or "—", body)],
+        [Paragraph("<b>ORDERED BY</b>", small), Paragraph(order.get("ordered_by_name") or "—", body)],
+        [Paragraph("<b>ORDERED AT</b>", small), Paragraph(ordered_at_display, body)],
+        [Paragraph("<b>COST</b>", small), Paragraph(cost_display, body)],
+    ]
+    meta_tbl = Table(meta, colWidths=[45 * mm, 135 * mm])
+    meta_tbl.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("BACKGROUND", (0, 0), (0, -1), rl_colors.HexColor("#F1F5F9")),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.25, rl_colors.HexColor("#E2E8F0")),
+    ]))
+    story.append(meta_tbl)
+    story.append(Spacer(1, 6 * mm))
+
+    # ---- Body — per report type ----
+    rd = order.get("result_data") or {}
+    rtype = order.get("report_type") or ""
+
+    def _kv_table(pairs: list[tuple[str, Any]]) -> Table:
+        rows = [[Paragraph(f"<b>{k}</b>", small), Paragraph(str(v) if v is not None else "—", body)] for k, v in pairs]
+        t = Table(rows, colWidths=[55 * mm, 125 * mm])
+        t.setStyle(TableStyle([
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.25, rl_colors.HexColor("#E2E8F0")),
+        ]))
+        return t
+
+    if rtype == "vin_history":
+        claims = rd.get("claims") or []
+        story.append(Paragraph(f"Claims on file: {len(claims)}", h_section))
+        if not claims:
+            story.append(Paragraph(
+                "No accident or insurance claim history recorded for this VIN.",
+                body,
+            ))
+        else:
+            hdr = [
+                Paragraph("<b>Date</b>", small),
+                Paragraph("<b>Vehicle</b>", small),
+                Paragraph("<b>Mileage</b>", small),
+                Paragraph("<b>Damage</b>", small),
+            ]
+            rows = [hdr]
+            for c in claims:
+                veh = f"{c.get('manufacturer') or ''} {c.get('model') or ''}".strip() or "—"
+                mileage = c.get("mileage_at_claim")
+                mileage_txt = f"{int(mileage):,} km" if mileage not in (None, "") else "—"
+                dmg = ", ".join(c.get("damage_locations") or []) or ("Glass" if c.get("glass_damage") else "—")
+                rows.append([
+                    Paragraph(str(c.get("accident_date") or c.get("creation_date") or "—")[:10], body),
+                    Paragraph(veh, body),
+                    Paragraph(mileage_txt, body),
+                    Paragraph(dmg, body),
+                ])
+            t = Table(rows, colWidths=[28 * mm, 68 * mm, 30 * mm, 54 * mm], repeatRows=1)
+            t.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), rl_colors.HexColor("#F1F5F9")),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("LINEBELOW", (0, 0), (-1, -1), 0.25, rl_colors.HexColor("#E2E8F0")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]))
+            story.append(t)
+    else:
+        # OEM datacard style — build meta first, then options table.
+        summary = rd.get("summary") or rd.get("header") or rd.get("vehicle") or {}
+        model_line = " ".join(str(x) for x in [rd.get("model"), rd.get("series"), rd.get("type_key")] if x)
+        build = rd.get("build_date") or rd.get("first_registration")
+        story.append(Paragraph("Vehicle build data", h_section))
+        pairs: list[tuple[str, Any]] = []
+        if model_line:
+            pairs.append(("Model", model_line))
+        if build:
+            pairs.append(("Build / First Reg", str(build)[:10]))
+        # Common Outvin/MBTools fields
+        for k in ("colour_code", "fabric_code", "engine_number", "engine_type", "transmission", "fa_version"):
+            v = rd.get(k) or (summary.get(k) if isinstance(summary, dict) else None)
+            if v:
+                pairs.append((k.replace("_", " ").title(), v))
+        # Anything from summary block
+        if isinstance(summary, dict):
+            for k, v in list(summary.items())[:8]:
+                if v not in (None, "", []) and (k, v) not in pairs:
+                    pairs.append((str(k).replace("_", " ").title(), v))
+        if pairs:
+            story.append(_kv_table(pairs))
+            story.append(Spacer(1, 4 * mm))
+
+        # Options / equipment table
+        options = rd.get("options") or rd.get("factory_options") or rd.get("equipment") or []
+        if isinstance(options, list) and options:
+            story.append(Paragraph(f"Factory options ({len(options)})", h_section))
+            rows = [[
+                Paragraph("<b>Code</b>", small),
+                Paragraph("<b>Description</b>", small),
+            ]]
+            for opt in options[:400]:
+                if isinstance(opt, dict):
+                    code = opt.get("code") or opt.get("option_code") or opt.get("id") or "—"
+                    desc = opt.get("description") or opt.get("name") or opt.get("label") or ""
+                    rows.append([
+                        Paragraph(str(code), body),
+                        Paragraph(str(desc), body),
+                    ])
+                else:
+                    rows.append([Paragraph("—", body), Paragraph(str(opt), body)])
+            t = Table(rows, colWidths=[30 * mm, 150 * mm], repeatRows=1)
+            t.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), rl_colors.HexColor("#F1F5F9")),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("LINEBELOW", (0, 0), (-1, -1), 0.25, rl_colors.HexColor("#E2E8F0")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]))
+            story.append(t)
+        elif not pairs:
+            story.append(Paragraph("No structured data returned by the vendor.", body))
+
+    # Footer note
+    story.append(Spacer(1, 6 * mm))
+    story.append(Paragraph(
+        "<font color='#64748B'>Generated by Fourbuy Car Buying Co. · Data provided by third-party vendors.</font>",
+        small,
+    ))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf.read()
+
+
+@router.get("/vin-reports/{order_id}/pdf")
+async def get_order_pdf(
+    order_id: str,
+    access_token: Optional[str] = Query(None, description="JWT via URL for direct WebBrowser opens."),
+    current: dict = Depends(get_user_flexible),
+):
+    row = await db.vin_report_orders.find_one({"id": order_id}, {"_id": 0})
+    if not row:
+        raise HTTPException(404, "Order not found")
+    if current.get("role") != "admin" and row.get("user_id") != current["id"]:
+        raise HTTPException(403, "You cannot access this order")
+    if (row.get("status") or "") != "completed":
+        raise HTTPException(400, "Report is not ready yet.")
+    try:
+        pdf_bytes = _build_vin_report_pdf(row)
+    except Exception as e:  # pragma: no cover
+        logger.exception("vin_reports: PDF build failed")
+        raise HTTPException(500, f"Failed to build PDF: {e}")
+    fn_report = (row.get("report_type") or "report").replace("_", "-")
+    fn = f"vin-report_{fn_report}_{row.get('vin') or order_id[:8]}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{fn}"'},
+    )

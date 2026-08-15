@@ -18,13 +18,16 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { TouchableOpacity } from "@/src/components/HapticButtons";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import * as WebBrowser from "expo-web-browser";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 import { storage } from "@/src/utils/storage";
 import { SCAN_BUFFER_KEY, SCAN_PARSED_KEY } from "../scan";
 
 import ScreenBackButton from "@/src/components/ScreenBackButton";
 import { spacing, radius } from "@/src/theme";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
-import { apiFetch } from "@/src/api";
+import { apiFetch, TOKEN_KEY } from "@/src/api";
 import { decodeLicenseDisk } from "@/src/utils/licenseDisk";
 
 type ReportEntry = {
@@ -53,6 +56,73 @@ export default function VinReportsNewScreen() {
   // a previously completed order rather than starting a new one.
   const [viewOrder, setViewOrder] = useState<any | null>(null);
   const [viewLoading, setViewLoading] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState<"view" | "download" | null>(null);
+
+  const openPdf = useCallback(async (mode: "view" | "download") => {
+    if (!viewOrder?.id) return;
+    setPdfBusy(mode);
+    try {
+      const backend = process.env.EXPO_PUBLIC_BACKEND_URL || "";
+      const path = `/api/vin-reports/${viewOrder.id}/pdf`;
+      const token = await storage.secureGet<string>(TOKEN_KEY, "");
+      const filename = `vin-report_${(viewOrder.report_type || "report").replace("_", "-")}_${viewOrder.vin || viewOrder.id.slice(0, 8)}.pdf`;
+
+      if (Platform.OS === "web") {
+        const res = await fetch(`${backend}${path}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
+        const blob = await res.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        if (mode === "download") {
+          const a = document.createElement("a");
+          a.href = objectUrl;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        } else {
+          window.open(objectUrl, "_blank");
+        }
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      } else {
+        const url = `${backend}${path}?access_token=${encodeURIComponent(token || "")}`;
+        if (mode === "view") {
+          await WebBrowser.openBrowserAsync(url, {
+            dismissButtonStyle: "close",
+            controlsColor: colors.text,
+            toolbarColor: colors.paper,
+            enableBarCollapsing: true,
+          });
+        } else {
+          const cacheDir = FileSystem.cacheDirectory || FileSystem.documentDirectory;
+          if (!cacheDir) throw new Error("No cache directory available.");
+          const target = `${cacheDir}${filename}`;
+          const dl = await FileSystem.downloadAsync(`${backend}${path}`, target, {
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          });
+          if (dl.status >= 200 && dl.status < 300) {
+            const canShare = await Sharing.isAvailableAsync();
+            if (canShare) {
+              await Sharing.shareAsync(dl.uri, {
+                mimeType: "application/pdf",
+                dialogTitle: "VIN Report",
+                UTI: "com.adobe.pdf",
+              });
+            } else {
+              Alert.alert("Saved", `PDF saved to ${dl.uri}`);
+            }
+          } else {
+            throw new Error(`Download failed (HTTP ${dl.status})`);
+          }
+        }
+      }
+    } catch (e: any) {
+      Alert.alert("Could not open PDF", String(e?.message || e));
+    } finally {
+      setPdfBusy(null);
+    }
+  }, [viewOrder, colors]);
 
   // Load makes on mount.
   useEffect(() => {
@@ -104,36 +174,41 @@ export default function VinReportsNewScreen() {
   useFocusEffect(useCallback(() => {
     (async () => {
       try {
+        // Two keys can carry the disk data:
+        //   • SCAN_PARSED_KEY  → server-decoded (OCR path) — JSON with
+        //     structured fields (vin, make, model, …). Preferred.
+        //   • SCAN_BUFFER_KEY  → raw barcode payload (live camera path).
+        //     Fed through `decodeLicenseDisk()` client-side. Older callers
+        //     with only a VIN string also land here.
+        const parsedRaw = await storage.getItem<string>(SCAN_PARSED_KEY, "");
         const buf = await storage.getItem<string>(SCAN_BUFFER_KEY, "");
-        if (!buf) return;
-        // Try to decode the license-disk barcode first so we can also
-        // auto-fill the make. Falls back to using the raw scan as a VIN
-        // if it isn't a full PDF-417 payload (e.g. QR-only OCR result).
-        try {
-          const parsed = decodeLicenseDisk(buf);
-          if (parsed?.vin) {
-            setVin(parsed.vin.toUpperCase());
-            if (parsed.make && !selectedMake) {
-              // Case-normalise so we match a make in our list. Try a
-              // fuzzy match first — the license disc encodes short-form
-              // makes (e.g. "TOYOTA") whereas our list uses title-case.
-              const target = String(parsed.make).trim();
-              const found = makes.find((m) => m.toUpperCase() === target.toUpperCase());
-              if (found) setSelectedMake(found);
-            }
-            setScanNotice(`License disc decoded — VIN ${parsed.vin.toUpperCase()}`);
-          } else if (buf.length >= 6 && buf.length <= 25) {
-            setVin(buf.toUpperCase());
-            setScanNotice(`VIN captured from scan.`);
-          }
-        } catch {
-          if (buf.length >= 6 && buf.length <= 25) {
-            setVin(buf.toUpperCase());
-            setScanNotice(`VIN captured from scan.`);
+        let parsed: any = null;
+        if (parsedRaw) {
+          try { parsed = JSON.parse(parsedRaw); } catch { parsed = null; }
+        }
+        if (!parsed && buf) {
+          try { parsed = decodeLicenseDisk(buf); } catch { parsed = null; }
+        }
+        // If we STILL don't have a VIN but the raw looks VIN-shaped (a
+        // short 6–25-char string) treat it directly as a VIN.
+        if ((!parsed || !parsed.vin) && buf && buf.length >= 6 && buf.length <= 25 && !buf.includes("%")) {
+          setVin(buf.toUpperCase());
+          setScanNotice("VIN captured from scan.");
+        } else if (parsed?.vin) {
+          setVin(String(parsed.vin).toUpperCase());
+          setScanNotice(`License disc decoded — VIN ${String(parsed.vin).toUpperCase()}`);
+          if (parsed.make && !selectedMake) {
+            const target = String(parsed.make).trim();
+            const found = makes.find((m) => m.toUpperCase() === target.toUpperCase());
+            if (found) setSelectedMake(found);
           }
         }
-        await storage.removeItem(SCAN_BUFFER_KEY);
-        await storage.removeItem(SCAN_PARSED_KEY);
+        // Only clear the buffers if we actually consumed something so a
+        // deep-linked entry with no scan sitting in storage stays quiet.
+        if (parsed || buf) {
+          await storage.removeItem(SCAN_BUFFER_KEY);
+          await storage.removeItem(SCAN_PARSED_KEY);
+        }
       } catch { /* no-op */ }
     })();
   }, [makes, selectedMake]));
@@ -166,15 +241,18 @@ export default function VinReportsNewScreen() {
       });
       const orderId = r?.order?.id;
       const cost = entry.cost_zar || 0;
+      const notice = cost > 0
+        ? `Report ready — you were billed R${cost}.`
+        : "Report ready — no charge for this report.";
+      // Clear the form so a fresh order can be placed immediately.
+      setSelectedMake("");
+      setVin("");
+      setAvailable([]);
+      setScanNotice(null);
       if (Platform.OS === "web") {
-        (globalThis as any).alert?.(cost > 0
-          ? `Report ordered — you were billed R${cost}.`
-          : `Report ordered — no charge for this report.`);
+        (globalThis as any).alert?.(notice);
       } else {
-        Alert.alert(
-          "Report ready",
-          cost > 0 ? `Order complete — you were billed R${cost}.` : "Order complete — no charge for this report."
-        );
+        Alert.alert("Report ready", notice);
       }
       if (orderId) {
         router.replace({ pathname: "/(app)/vin-reports/new", params: { orderId } } as any);
@@ -182,8 +260,23 @@ export default function VinReportsNewScreen() {
         router.replace("/(app)/vin-reports" as any);
       }
     } catch (e: any) {
-      const msg = String(e?.message || e || "Order failed.");
-      Alert.alert("Order failed", msg);
+      // Two distinct error paths we want to communicate clearly:
+      //   • 404 — vendor had NO data for this VIN. Reassure the user
+      //     they were NOT billed and invite them to try a different VIN.
+      //   • Anything else — surface the vendor's message but still
+      //     highlight that they weren't billed (the backend only bills
+      //     on `status: completed`, never on failure).
+      const raw = String(e?.message || e || "");
+      const isNoData = /404|no data|not found/i.test(raw);
+      const title = isNoData ? "No report available" : "Report couldn't be ordered";
+      const detail = isNoData
+        ? "The vendor has no record for this VIN. You have NOT been billed for this attempt — please double-check the VIN and try again."
+        : `${raw}\n\nYou have NOT been billed — we only charge on a successful report.`;
+      if (Platform.OS === "web") {
+        (globalThis as any).alert?.(`${title}\n\n${detail}`);
+      } else {
+        Alert.alert(title, detail);
+      }
     } finally {
       setOrdering(null);
     }
@@ -237,12 +330,52 @@ export default function VinReportsNewScreen() {
                   </Text>
                 </View>
               ) : viewOrder.status === "completed" ? (
-                <View style={[styles.card, { borderColor: colors.border, backgroundColor: colors.card, marginTop: spacing.md }]}>
-                  <Text style={{ color: colors.textSecondary, fontSize: 11, letterSpacing: 1.2, fontWeight: "800", textTransform: "uppercase", marginBottom: 8 }}>
-                    Report payload
-                  </Text>
-                  <ResultBody data={viewOrder.result_data} reportType={viewOrder.report_type} colors={colors} />
-                </View>
+                <>
+                  <View style={[styles.card, { borderColor: colors.border, backgroundColor: colors.card, marginTop: spacing.md }]}>
+                    <Text style={{ color: colors.textSecondary, fontSize: 11, letterSpacing: 1.2, fontWeight: "800", textTransform: "uppercase", marginBottom: 8 }}>
+                      Report payload
+                    </Text>
+                    <ResultBody data={viewOrder.result_data} reportType={viewOrder.report_type} colors={colors} />
+                  </View>
+
+                  {/* View / Download PDF actions — every completed order
+                      can be re-opened by the caller from here as an
+                      inline PDF or downloaded to their device. */}
+                  <View style={styles.pdfActionRow}>
+                    <TouchableOpacity
+                      testID="vin-report-view-pdf"
+                      style={[styles.pdfBtn, { backgroundColor: colors.primary }]}
+                      onPress={() => openPdf("view")}
+                      disabled={pdfBusy !== null}
+                      activeOpacity={0.85}
+                    >
+                      {pdfBusy === "view" ? (
+                        <ActivityIndicator color={colors.onPrimary} />
+                      ) : (
+                        <>
+                          <Ionicons name="eye-outline" size={18} color={colors.onPrimary} />
+                          <Text style={[styles.pdfBtnTxt, { color: colors.onPrimary }]}>View PDF</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      testID="vin-report-download-pdf"
+                      style={[styles.pdfBtn, { borderWidth: 1, borderColor: colors.primary, backgroundColor: "transparent" }]}
+                      onPress={() => openPdf("download")}
+                      disabled={pdfBusy !== null}
+                      activeOpacity={0.85}
+                    >
+                      {pdfBusy === "download" ? (
+                        <ActivityIndicator color={colors.primary} />
+                      ) : (
+                        <>
+                          <Ionicons name="download-outline" size={18} color={colors.primary} />
+                          <Text style={[styles.pdfBtnTxt, { color: colors.primary }]}>Download</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </>
               ) : (
                 <Text style={{ color: colors.textSecondary, textAlign: "center", marginTop: spacing.md }}>
                   Order is still pending. Pull down to refresh.
@@ -628,5 +761,24 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     color: colors.text,
     fontSize: 14,
     fontWeight: "800",
+  },
+  pdfActionRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: spacing.md,
+  },
+  pdfBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderRadius: radius.md,
+    paddingVertical: 12,
+  },
+  pdfBtnTxt: {
+    fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: 0.2,
   },
 });
