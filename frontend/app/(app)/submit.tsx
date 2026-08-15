@@ -179,6 +179,27 @@ export default function SubmitVehicle() {
   const params = useLocalSearchParams<{ draft?: string }>();
   const [loadedDraftId, setLoadedDraftId] = useState<string | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
+  // 3-option modal replacement for Alert.alert (which is single-button-only
+  // on React Native Web — the multi-button variant is silently ignored).
+  const [resetPromptOpen, setResetPromptOpen] = useState(false);
+  // Inline drafts list rendered at the top of the Submit screen so dealers
+  // can pick up where they left off without hunting through History.
+  type DraftRow = { id: string; label?: string; updated_at?: string; data?: any };
+  const [drafts, setDrafts] = useState<DraftRow[]>([]);
+  const [draftsLoading, setDraftsLoading] = useState(false);
+
+  /** Fetch the dealer's most recent drafts. Silent on failure. */
+  const reloadDrafts = useCallback(async () => {
+    setDraftsLoading(true);
+    try {
+      const res = await apiFetch("/api/drafts");
+      setDrafts(Array.isArray(res?.drafts) ? res.drafts : []);
+    } catch {
+      // Silent — drafts list is a convenience, not a blocker.
+    } finally {
+      setDraftsLoading(false);
+    }
+  }, []);
 
   /**
    * Wipe every editable field back to its initial state. Called after either
@@ -343,9 +364,59 @@ export default function SubmitVehicle() {
     })();
   }, [params?.draft, applyDraft]);
 
+  // Load the drafts list whenever the Submit screen gains focus. This covers
+  // both the first mount and any subsequent return from a nested screen.
+  useFocusEffect(useCallback(() => {
+    reloadDrafts();
+  }, [reloadDrafts]));
+
+  /** Load a specific draft into the form (used by the inline drafts card). */
+  const openDraft = useCallback(async (id: string) => {
+    try {
+      const res = await apiFetch(`/api/drafts/${id}`);
+      if (res?.draft?.data) {
+        applyDraft(res.draft.data);
+        setLoadedDraftId(res.draft.id);
+      }
+    } catch {
+      Alert.alert("Draft not found", "This draft may have been deleted.");
+      reloadDrafts();
+    }
+  }, [applyDraft, reloadDrafts]);
+
+  /** Delete a draft from the inline card (with a lightweight confirm). */
+  const deleteDraft = useCallback(async (id: string) => {
+    // A single-button confirm works on web; for a destructive prompt we
+    // use window.confirm on web and Alert.alert on native.
+    const proceed = Platform.OS === "web"
+      ? (typeof window !== "undefined" ? window.confirm("Delete this draft? This cannot be undone.") : true)
+      : await new Promise<boolean>((resolve) => {
+          Alert.alert(
+            "Delete draft?",
+            "This cannot be undone.",
+            [
+              { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+              { text: "Delete", style: "destructive", onPress: () => resolve(true) },
+            ],
+            { cancelable: true, onDismiss: () => resolve(false) },
+          );
+        });
+    if (!proceed) return;
+    try {
+      await apiFetch(`/api/drafts/${id}`, { method: "DELETE" });
+      // If the currently-loaded draft was deleted, drop the tracking id
+      // so the next save creates a fresh document.
+      if (loadedDraftId === id) setLoadedDraftId(null);
+      reloadDrafts();
+    } catch (e: any) {
+      Alert.alert("Could not delete draft", e?.message || "Please try again.");
+    }
+  }, [loadedDraftId, reloadDrafts]);
+
   /** Save the current in-progress form as a draft and then reset the form. */
   const saveAsDraft = useCallback(async () => {
     setSavingDraft(true);
+    setResetPromptOpen(false);
     try {
       const body: any = { data: collectDraftPayload() };
       if (loadedDraftId) body.id = loadedDraftId;
@@ -354,35 +425,34 @@ export default function SubmitVehicle() {
         body: JSON.stringify(body),
       });
       resetAll();
-      Alert.alert("Saved", "Your progress has been saved as a draft. Open it from your dashboard when you're ready to continue.");
+      // Refresh the inline drafts list so the new entry appears immediately.
+      reloadDrafts();
+      Alert.alert("Saved", "Your progress has been saved as a draft. You can pick it up from the Drafts card at the top of this screen.");
     } catch (e: any) {
       Alert.alert("Could not save draft", e?.message || "Please try again.");
     } finally {
       setSavingDraft(false);
     }
-  }, [collectDraftPayload, loadedDraftId, resetAll]);
+  }, [collectDraftPayload, loadedDraftId, resetAll, reloadDrafts]);
 
-  /** Prompt: Reset (wipe) vs Save-to-Drafts vs Cancel. */
+  /**
+   * Prompt: Reset (wipe) vs Save-to-Drafts vs Cancel.
+   *
+   * Uses a custom Modal instead of Alert.alert because React Native Web's
+   * Alert implementation ignores the buttons array (it only shows the
+   * title/message via window.alert), making 3-option prompts non-functional
+   * on the web platform. The modal renders identically on iOS, Android and
+   * Web.
+   */
   const handleResetPress = useCallback(() => {
-    // Native Alert prompt (works on iOS/Android, and RN Web maps to window.confirm
-    // for the primary action). We provide 3 options.
-    Alert.alert(
-      "Reset submission?",
-      "Would you like to save your progress as a draft or reset the form?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Save to Drafts",
-          onPress: saveAsDraft,
-        },
-        {
-          text: "Reset",
-          style: "destructive",
-          onPress: resetAll,
-        },
-      ],
-    );
-  }, [saveAsDraft, resetAll]);
+    setResetPromptOpen(true);
+  }, []);
+
+  /** Confirm-reset action from the modal. */
+  const confirmHardReset = useCallback(() => {
+    setResetPromptOpen(false);
+    resetAll();
+  }, [resetAll]);
 
   // Fetch options with current filters applied. Called before opening each wheel.
   const fetchOptions = useCallback(async (partial: Partial<Record<string, any>>) => {
@@ -827,6 +897,56 @@ export default function SubmitVehicle() {
         </View>
 
         <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + 40 }]} keyboardShouldPersistTaps="handled">
+          {/* Inline drafts — dealers can resume any in-progress submission
+              directly from the top of the Submit screen. Hidden when the
+              user is already editing a draft (no need to switch mid-edit)
+              or when the list is empty. */}
+          {!loadedDraftId && drafts.length > 0 ? (
+            <View style={styles.inlineDraftsCard} testID="submit-inline-drafts">
+              <View style={styles.inlineDraftsHeader}>
+                <View style={styles.inlineDraftsBadge}>
+                  <Ionicons name="bookmark-outline" size={14} color={colors.onPrimary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inlineDraftsTitle}>PICK UP WHERE YOU LEFT OFF</Text>
+                  <Text style={styles.inlineDraftsSub}>
+                    {drafts.length} saved draft{drafts.length === 1 ? "" : "s"}
+                  </Text>
+                </View>
+                {draftsLoading ? <ActivityIndicator size="small" color={colors.text} /> : null}
+              </View>
+              <View style={styles.inlineDraftsList}>
+                {drafts.slice(0, 5).map((d) => (
+                  <View key={d.id} style={styles.inlineDraftRow} testID={`inline-draft-${d.id}`}>
+                    <TouchableOpacity
+                      style={{ flex: 1 }}
+                      onPress={() => openDraft(d.id)}
+                      testID={`inline-draft-open-${d.id}`}
+                    >
+                      <Text style={styles.inlineDraftLabel} numberOfLines={1}>
+                        {d.label || "Untitled draft"}
+                      </Text>
+                      <Text style={styles.inlineDraftMeta}>
+                        Updated {d.updated_at ? new Date(d.updated_at).toLocaleString() : "recently"}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.inlineDraftDelete}
+                      onPress={() => deleteDraft(d.id)}
+                      testID={`inline-draft-delete-${d.id}`}
+                      accessibilityLabel="Delete draft"
+                    >
+                      <Ionicons name="trash-outline" size={16} color={colors.danger} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                {drafts.length > 5 ? (
+                  <Text style={styles.inlineDraftsMore}>+ {drafts.length - 5} more in History</Text>
+                ) : null}
+              </View>
+            </View>
+          ) : null}
+
           <Text style={styles.sectionTitle}>VEHICLE SPECIFICATION</Text>
           <Field label="Make" value={make} onPress={() => openWheel("make")} testID="pick-make" />
           <Field label="Fuel Type" value={fuelType} onPress={() => make ? openWheel("fuel_type") : setError("Choose Make first")} testID="pick-fuel" />
@@ -1335,6 +1455,58 @@ export default function SubmitVehicle() {
           </View>
         </View>
       </Modal>
+      {/* Reset / Save-to-Drafts prompt — replaces Alert.alert so it renders
+          on iOS, Android AND React Native Web (which ignores Alert buttons). */}
+      <Modal
+        visible={resetPromptOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setResetPromptOpen(false)}
+      >
+        <View style={styles.resetBackdrop}>
+          <View style={styles.resetCard} testID="reset-prompt-modal">
+            <View style={styles.resetHeader}>
+              <Ionicons name="refresh-circle-outline" size={22} color={colors.text} />
+              <Text style={styles.resetTitle}>RESET SUBMISSION?</Text>
+            </View>
+            <View style={{ padding: spacing.md }}>
+              <Text style={styles.resetBody}>
+                Would you like to save your progress as a draft so you can come back to it later, or discard everything and start again?
+              </Text>
+            </View>
+            <View style={styles.resetFooter}>
+              <TouchableOpacity
+                style={styles.resetCancel}
+                onPress={() => setResetPromptOpen(false)}
+                testID="reset-prompt-cancel"
+              >
+                <Text style={styles.resetCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.resetDiscard}
+                onPress={confirmHardReset}
+                testID="reset-prompt-discard"
+              >
+                <Ionicons name="trash-outline" size={14} color={colors.danger} />
+                <Text style={styles.resetDiscardText}>Discard</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.resetSave}
+                onPress={saveAsDraft}
+                disabled={savingDraft}
+                testID="reset-prompt-save-draft"
+              >
+                {savingDraft ? (
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
+                ) : (
+                  <Ionicons name="bookmark-outline" size={14} color={colors.onPrimary} />
+                )}
+                <Text style={styles.resetSaveText}>Save Draft</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1705,4 +1877,177 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   billCancelText: { color: colors.textSecondary, fontWeight: "700" },
   billOk: { flex: 2, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12, borderRadius: radius.md, backgroundColor: colors.primary },
   billOkText: { color: colors.onPrimary, fontWeight: "800", letterSpacing: 1, textTransform: "uppercase" },
+
+  // Inline drafts card at the top of the Submit screen
+  inlineDraftsCard: {
+    marginBottom: spacing.md,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    borderRadius: radius.md,
+    overflow: "hidden",
+  },
+  inlineDraftsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  inlineDraftsBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  inlineDraftsTitle: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 1.5,
+  },
+  inlineDraftsSub: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  inlineDraftsList: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  inlineDraftRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  inlineDraftLabel: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  inlineDraftMeta: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  inlineDraftDelete: {
+    padding: 8,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  inlineDraftsMore: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    textAlign: "center",
+    paddingVertical: 8,
+  },
+
+  // Reset / Save-to-Drafts modal (custom because Alert.alert multi-button
+  // is not supported on React Native Web).
+  resetBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.85)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: spacing.lg,
+  },
+  resetCard: {
+    width: "100%",
+    maxWidth: 440,
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    overflow: "hidden",
+  },
+  resetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.paper,
+  },
+  resetTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "800",
+    letterSpacing: 2,
+  },
+  resetBody: {
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  resetFooter: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.paper,
+    flexWrap: "wrap",
+  },
+  resetCancel: {
+    flex: 1,
+    minWidth: 90,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    backgroundColor: colors.card,
+  },
+  resetCancelText: {
+    color: colors.textSecondary,
+    fontWeight: "700",
+  },
+  resetDiscard: {
+    flex: 1,
+    minWidth: 90,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.danger,
+    backgroundColor: colors.card,
+  },
+  resetDiscardText: {
+    color: colors.danger,
+    fontWeight: "800",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    fontSize: 12,
+  },
+  resetSave: {
+    flex: 1.4,
+    minWidth: 110,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+  },
+  resetSaveText: {
+    color: colors.onPrimary,
+    fontWeight: "800",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    fontSize: 12,
+  },
 });
