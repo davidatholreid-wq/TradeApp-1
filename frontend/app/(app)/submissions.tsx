@@ -158,11 +158,13 @@ export default function DashboardScreen() {
     AsyncStorage.setItem("submissions.gridColumns", String(next)).catch(() => {});
   }, []);
 
-  // The grid can't render at 6 columns on medium-width web (900-1400px)
-  // without cards becoming too skinny — auto-clamp to 3 columns in that
-  // window so the layout never looks broken even if a user stored 6.
+  // The grid can't render at 6 columns on narrow web (< 1280px) without
+  // cards becoming too skinny to read the offer amounts — auto-clamp
+  // to 3 columns below that threshold. 1280px is chosen so a MacBook
+  // Air 13" (~1440px) still allows 6 cols; anything smaller (11" MBA,
+  // tablet-web, portrait iPad) drops back to 3.
   const effectiveGridColumns: 3 | 6 =
-    viewMode === "grid" && gridColumns === 6 && width < 1500 ? 3 : gridColumns;
+    viewMode === "grid" && gridColumns === 6 && width < 1280 ? 3 : gridColumns;
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
@@ -852,10 +854,11 @@ export default function DashboardScreen() {
               {viewMode === "grid" ? (
                 <View style={[styles.viewToggle, { borderColor: colors.border }]}>
                   {([3, 6] as const).map((n) => {
-                    // 6-column mode needs at least 1500px of viewport to
+                    // 6-column mode needs at least 1280px of viewport to
                     // avoid cards becoming too skinny — greyed out on
-                    // narrower windows so the intent is obvious.
-                    const disabled = n === 6 && width < 1500;
+                    // narrower windows so the intent is obvious. 1280
+                    // lets MacBook Air 13" (~1440px) use 6 cols.
+                    const disabled = n === 6 && width < 1280;
                     const active = effectiveGridColumns === n;
                     return (
                       <TouchableOpacity
