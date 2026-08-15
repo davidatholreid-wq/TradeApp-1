@@ -26,7 +26,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query
@@ -147,6 +147,47 @@ async def partner_vin_lookup(
     call_id = str(uuid.uuid4())
     started_at = now_utc()
     cost = int(client.get("cost_zar_per_lookup") or 0)
+
+    # -----------------------------------------------------------------
+    # Rate limit — sliding 60-second window keyed by client. Default 30
+    # req/min (matches the published docs); configurable per client via
+    # `rate_limit_per_min`. Rejected requests return 429 and are NOT
+    # billed. Bots hitting the limit hard don't burn Outvin credits.
+    # -----------------------------------------------------------------
+    limit_per_min = int(client.get("rate_limit_per_min") or 30)
+    if limit_per_min > 0:
+        window_start_iso = (datetime.now(timezone.utc) - timedelta(seconds=60)).isoformat()
+        recent = await db.partner_api_calls.count_documents({
+            "client_id": client["id"],
+            "started_at": {"$gte": window_start_iso},
+        })
+        if recent >= limit_per_min:
+            # Log the throttle so the admin can see them in the usage
+            # audit trail. cost_billed_zar stays 0 — rejected calls are
+            # never billed.
+            try:
+                await db.partner_api_calls.insert_one({
+                    "id": call_id,
+                    "client_id": client["id"],
+                    "client_name": client.get("name"),
+                    "vin": vin,
+                    "endpoint": "vin-lookup",
+                    "status_code": 429,
+                    "served_from_cache": False,
+                    "outvin_hit": False,
+                    "cost_billed_zar": 0,
+                    "error": f"Rate limit exceeded ({limit_per_min}/min)",
+                    "ip": (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or (request.client.host if request.client else ""),
+                    "started_at": started_at,
+                    "completed_at": now_utc(),
+                })
+            except Exception:  # pragma: no cover
+                pass
+            raise HTTPException(
+                429,
+                f"Rate limit exceeded — {limit_per_min} requests per minute. Try again shortly.",
+            )
+
     served_from_cache = False
     payload: Optional[dict] = None
     error: Optional[str] = None
@@ -288,6 +329,7 @@ async def partner_usage_current_month(
 class PartnerClientCreate(BaseModel):
     name: str = Field(..., min_length=1)
     cost_zar_per_lookup: int = Field(10, ge=0)
+    rate_limit_per_min: int = Field(30, ge=0, description="0 disables the limit; default 30")
     ip_allowlist: list[str] = Field(default_factory=list)
     contact_email: Optional[str] = None
     notes: Optional[str] = None
@@ -300,16 +342,15 @@ async def admin_create_partner_client(
 ):
     if current.get("role") != "admin":
         raise HTTPException(403, "Admin only")
-    # Generate a strong random key. We hash it before storing but return
-    # the raw one exactly once — the admin must save it now.
     raw_key = "fbp_" + secrets.token_urlsafe(32)
     client_id = str(uuid.uuid4())
     doc = {
         "id": client_id,
         "name": payload.name,
         "api_key_hash": _hash_key(raw_key),
-        "api_key_prefix": raw_key[:8] + "…" + raw_key[-4:],  # for admin display
+        "api_key_prefix": raw_key[:8] + "…" + raw_key[-4:],
         "cost_zar_per_lookup": payload.cost_zar_per_lookup,
+        "rate_limit_per_min": payload.rate_limit_per_min,
         "ip_allowlist": payload.ip_allowlist,
         "contact_email": payload.contact_email,
         "notes": payload.notes,
@@ -324,6 +365,7 @@ async def admin_create_partner_client(
         "api_key": raw_key,
         "api_key_prefix": doc["api_key_prefix"],
         "cost_zar_per_lookup": payload.cost_zar_per_lookup,
+        "rate_limit_per_min": payload.rate_limit_per_min,
         "warning": "This is the ONLY time the raw API key is shown. Save it now — it cannot be retrieved later.",
     }
 
@@ -380,6 +422,36 @@ async def admin_revoke_partner_client(
     if r.matched_count == 0:
         raise HTTPException(404, "Client not found")
     return {"ok": True}
+
+
+class PartnerClientUpdate(BaseModel):
+    """Fields the admin can adjust on an existing client without rotating
+    the key. All fields optional — only supplied ones are updated."""
+    cost_zar_per_lookup: Optional[int] = Field(None, ge=0)
+    rate_limit_per_min: Optional[int] = Field(None, ge=0)
+    ip_allowlist: Optional[list[str]] = None
+    contact_email: Optional[str] = None
+    notes: Optional[str] = None
+    active: Optional[bool] = None
+
+
+@router.patch("/admin/partner-clients/{client_id}")
+async def admin_update_partner_client(
+    client_id: str,
+    payload: PartnerClientUpdate,
+    current: dict = Depends(get_current_user),
+):
+    if current.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    updates = {k: v for k, v in payload.dict(exclude_none=True).items()}
+    if not updates:
+        raise HTTPException(400, "No fields to update.")
+    updates["updated_at"] = now_utc()
+    r = await db.partner_api_clients.update_one({"id": client_id}, {"$set": updates})
+    if r.matched_count == 0:
+        raise HTTPException(404, "Client not found")
+    row = await db.partner_api_clients.find_one({"id": client_id}, {"_id": 0, "api_key_hash": 0})
+    return {"client": row}
 
 
 @router.get("/admin/partner-clients/{client_id}/usage")

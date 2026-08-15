@@ -30,6 +30,7 @@ type PartnerClient = {
   name: string;
   api_key_prefix?: string;
   cost_zar_per_lookup: number;
+  rate_limit_per_min?: number;
   contact_email?: string | null;
   ip_allowlist?: string[];
   active?: boolean;
@@ -200,7 +201,7 @@ export default function AdminPartnerApiScreen() {
             No partner clients yet
           </Text>
           <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4, textAlign: "center" }}>
-            Tap "Add Partner" to onboard your first API consumer (e.g. Kredo).
+            Tap &quot;Add Partner&quot; to onboard your first API consumer (e.g. Kredo).
           </Text>
         </View>
       ) : (
@@ -224,6 +225,14 @@ export default function AdminPartnerApiScreen() {
               <View style={styles.kv}>
                 <Text style={styles.kvLabel}>Rate</Text>
                 <Text style={styles.kvValue}>R{c.cost_zar_per_lookup} / lookup</Text>
+              </View>
+              <View style={styles.kv}>
+                <Text style={styles.kvLabel}>Rate limit</Text>
+                <Text style={styles.kvValue}>
+                  {c.rate_limit_per_min && c.rate_limit_per_min > 0
+                    ? `${c.rate_limit_per_min} req/min`
+                    : "Unlimited"}
+                </Text>
               </View>
               {c.contact_email ? (
                 <View style={styles.kv}>
@@ -419,12 +428,13 @@ function CreatePartnerModal({
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [name, setName] = useState("");
   const [rate, setRate] = useState("10");
+  const [rateLimit, setRateLimit] = useState("30");
   const [contact, setContact] = useState("");
   const [ips, setIps] = useState("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const reset = () => { setName(""); setRate("10"); setContact(""); setIps(""); setNotes(""); };
+  const reset = () => { setName(""); setRate("10"); setRateLimit("30"); setContact(""); setIps(""); setNotes(""); };
 
   const submit = async () => {
     if (!name.trim()) { Alert.alert("Name required"); return; }
@@ -436,6 +446,7 @@ function CreatePartnerModal({
         body: JSON.stringify({
           name: name.trim(),
           cost_zar_per_lookup: parseInt(rate, 10) || 0,
+          rate_limit_per_min: parseInt(rateLimit, 10) || 0,
           ip_allowlist: ips.split(",").map((s) => s.trim()).filter(Boolean),
           contact_email: contact.trim() || undefined,
           notes: notes.trim() || undefined,
@@ -461,6 +472,8 @@ function CreatePartnerModal({
           <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Kredo" placeholderTextColor={colors.textDisabled} />
           <Text style={styles.formLbl}>Rate (R per lookup) *</Text>
           <TextInput style={styles.input} value={rate} onChangeText={setRate} keyboardType="number-pad" />
+          <Text style={styles.formLbl}>Rate limit (requests / minute — 0 = unlimited)</Text>
+          <TextInput style={styles.input} value={rateLimit} onChangeText={setRateLimit} keyboardType="number-pad" placeholder="30" placeholderTextColor={colors.textDisabled} />
           <Text style={styles.formLbl}>Contact email</Text>
           <TextInput style={styles.input} value={contact} onChangeText={setContact} placeholder="integrations@partner.com" placeholderTextColor={colors.textDisabled} autoCapitalize="none" />
           <Text style={styles.formLbl}>IP allowlist (comma-separated, optional)</Text>
