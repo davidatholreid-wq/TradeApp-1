@@ -77,7 +77,10 @@ export default function ScanScreen() {
       } as any);
       return;
     }
-    const target = params?.returnPath === "submit" ? "/(app)/submit" : null;
+    const target =
+      params?.returnPath === "submit" ? "/(app)/submit" :
+      params?.returnPath === "vinReports" ? "/(app)/vin-reports/new" :
+      null;
     if (target) {
       router.replace(target as any);
     } else {

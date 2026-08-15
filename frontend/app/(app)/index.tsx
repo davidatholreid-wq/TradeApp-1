@@ -416,6 +416,7 @@ export default function HomeScreen() {
         { key: "rewards", label: "Rewards", hint: "Points, referrals & vouchers", icon: "gift", to: "/(app)/rewards", tint: "#F97316" },
         { key: "history", label: "History", hint: "Priced & archived vehicles", icon: "time", to: "/(app)/history", tint: "#A78BFA" },
         { key: "kredo", label: "Kredo", hint: "VIN reports & CarTrust tools", icon: "pricetag", to: "/(app)/kredo-test", tint: "#F43F5E" },
+        { key: "vin-reports", label: "VIN Reports", hint: "Order OEM & history reports for any VIN", icon: "document-text", to: "/(app)/vin-reports", tint: "#22C55E" },
       ]
     : [
         // ============ TOP ROW (dealer home) ============
@@ -457,6 +458,10 @@ export default function HomeScreen() {
         { key: "stock", label: "Stock List", hint: "Vehicles in stock · aging & pricing", icon: "cube" as const, to: "/(app)/stock", tint: "#8B5CF6" },
         { key: "rewards", label: "Rewards", hint: "Earn points & vouchers", icon: "gift" as const, to: "/(app)/rewards", tint: "#F97316" },
         { key: "suppliers", label: "Suppliers", hint: "Recon suppliers · dealership catalog", icon: "briefcase" as const, to: "/(app)/suppliers", tint: "#0EA5E9" },
+        // "VIN Reports" — standalone (no-submission) vendor report
+        // ordering. Every user can access it regardless of pricing-
+        // agent status. Sits as the 6th tile per Nov 2026 spec.
+        { key: "vin-reports", label: "VIN Reports", hint: "Order OEM & history reports for any VIN", icon: "document-text" as const, to: "/(app)/vin-reports", tint: "#22C55E" },
       ];
 
   const tiles: Tile[] = dynamicTiles;
