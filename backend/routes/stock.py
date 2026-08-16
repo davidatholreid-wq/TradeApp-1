@@ -464,6 +464,9 @@ async def list_stock(current: dict = Depends(get_current_user)):
     query["sold"] = {"$ne": True}
     items: List[dict] = []
     total_capital = 0
+    total_floorplan = 0
+    total_gp = 0
+    total_gp_items = 0  # only rows that carry enough data to compute a GP
     ages: List[int] = []
     buckets = {"0-30": 0, "31-60": 0, "61-90": 0, "90+": 0, "unknown": 0}
     over_60 = 0
@@ -475,6 +478,27 @@ async def list_stock(current: dict = Depends(get_current_user)):
             total_capital += int(cap or 0)
         except Exception:
             pass
+        # Floorplan running total — nullable, treat missing as 0 for
+        # the total but only bump when we actually have a value so the
+        # summary card can distinguish "no floorplan captured" from
+        # "R0 floorplan".
+        fp = row.get("floorplan_amount_zar")
+        if isinstance(fp, (int, float)):
+            total_floorplan += int(fp)
+        # Estimated Gross Profit = Sell Price - (Cost + Expected Recon).
+        # We only include rows where BOTH the sell price and the cost
+        # are set (recon is treated as 0 when missing since a lot of
+        # dealers only capture it once they've actually spent the money).
+        sell = row.get("target_sell_price_zar")
+        cost = row.get("my_offer_price_zar")
+        if isinstance(sell, (int, float)) and isinstance(cost, (int, float)):
+            recon = row.get("expected_recon_cost_zar") or 0
+            try:
+                gp = int(sell) - (int(cost) + int(recon))
+                total_gp += gp
+                total_gp_items += 1
+            except Exception:
+                pass
         d = row.get("days_in_stock")
         if isinstance(d, int):
             ages.append(d)
@@ -487,6 +511,12 @@ async def list_stock(current: dict = Depends(get_current_user)):
         "summary": {
             "total_units": len(items),
             "total_capital_zar": total_capital,
+            "total_floorplan_zar": total_floorplan,
+            "total_expected_gp_zar": total_gp,
+            # Also surface how many rows contributed to the GP total
+            # so the UI can add a "on N of M priced units" footnote
+            # if the difference is meaningful.
+            "gp_priced_units": total_gp_items,
             "avg_age_days": avg_age,
             "over_60_days": over_60,
             "buckets": buckets,

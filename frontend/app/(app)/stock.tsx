@@ -77,6 +77,12 @@ type StockResponse = {
   summary: {
     total_units: number;
     total_capital_zar: number;
+    // Nov 2026 — Stock report enhancements: total floorplan liability
+    // and total expected Gross Profit (sell − cost − recon) surfaced
+    // as tiles at the top of the stock list.
+    total_floorplan_zar?: number;
+    total_expected_gp_zar?: number;
+    gp_priced_units?: number;
     avg_age_days: number | null;
     over_60_days: number;
     buckets: { [k: string]: number };
@@ -136,6 +142,12 @@ export default function StockScreen() {
   // Target-price inline edit --------------------------------------------
   const [editingTarget, setEditingTarget] = useState<string | null>(null);
   const [targetDraft, setTargetDraft] = useState<string>("");
+  // Editable Floorplan — same pattern as target-sell price. Only one
+  // cell across the whole table can be in edit mode at a time so we
+  // key by stock-item id.
+  const [editingFloorplan, setEditingFloorplan] = useState<string | null>(null);
+  const [floorplanDraft, setFloorplanDraft] = useState<string>("");
+  const [savingFloorplan, setSavingFloorplan] = useState(false);
   const [savingTarget, setSavingTarget] = useState<boolean>(false);
 
   const load = useCallback(async () => {
@@ -221,6 +233,35 @@ export default function StockScreen() {
       setSavingTarget(false);
     }
   }, [load, targetDraft]);
+
+  /**
+   * Commit the floorplan-amount edit. Mirrors {@link commitTarget} —
+   * validates the input, PATCHes the stock item, refreshes the list
+   * (so the summary totals reflect the new floorplan liability) and
+   * closes the inline edit UI.
+   */
+  const commitFloorplan = useCallback(async (item: StockItem) => {
+    const raw = (floorplanDraft || "").replace(/[^\d]/g, "");
+    const n = raw ? parseInt(raw, 10) : null;
+    if (raw && (!Number.isFinite(n as number) || (n as number) < 0)) {
+      Alert.alert("Invalid amount", "Please enter a positive number in Rands.");
+      return;
+    }
+    setSavingFloorplan(true);
+    try {
+      await apiFetch(`/api/stock/${item.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ floorplan_amount_zar: n }),
+      });
+      setEditingFloorplan(null);
+      setFloorplanDraft("");
+      await load();
+    } catch (e: any) {
+      Alert.alert("Couldn't save", e?.message || "Please try again.");
+    } finally {
+      setSavingFloorplan(false);
+    }
+  }, [load, floorplanDraft]);
 
   // Optimistic toggle for boolean stock fields (advertised, fully_reconditioned).
   // We flip the local state immediately for snappy UX, PATCH in the
@@ -539,6 +580,21 @@ export default function StockScreen() {
                     }}
                     onChangeTargetDraft={setTargetDraft}
                     onCommitTarget={() => commitTarget(row)}
+                    editingFloorplan={editingFloorplan === row.id}
+                    floorplanDraft={floorplanDraft}
+                    savingFloorplan={savingFloorplan}
+                    onStartEditFloorplan={() => {
+                      setEditingFloorplan(row.id);
+                      setFloorplanDraft(
+                        row.floorplan_amount_zar != null ? String(row.floorplan_amount_zar) : ""
+                      );
+                    }}
+                    onCancelEditFloorplan={() => {
+                      setEditingFloorplan(null);
+                      setFloorplanDraft("");
+                    }}
+                    onChangeFloorplanDraft={setFloorplanDraft}
+                    onCommitFloorplan={() => commitFloorplan(row)}
                     onToggleFlag={(field) => toggleFlag(row, field)}
                     togglingFlag={togglingFlag}
                     removing={removingId === row.id}
@@ -595,7 +651,14 @@ function SummaryStrip({
   styles: ReturnType<typeof makeStyles>;
   colors: Palette;
 }) {
-  const s = summary || { total_units: 0, total_capital_zar: 0, avg_age_days: null, over_60_days: 0, buckets: {} };
+  const s = summary || { total_units: 0, total_capital_zar: 0, total_floorplan_zar: 0, total_expected_gp_zar: 0, gp_priced_units: 0, avg_age_days: null, over_60_days: 0, buckets: {} };
+  // GP colour cue — green when positive, red when the total dips below
+  // zero. Neutral grey when nothing's been priced yet so the tile
+  // doesn't scream at dealers who haven't set target prices yet.
+  const gp = s.total_expected_gp_zar || 0;
+  const gpTint = (s.gp_priced_units || 0) === 0
+    ? "#6B7280"
+    : gp >= 0 ? "#22C55E" : "#DC2626";
   return (
     <View style={styles.summaryWrap} testID="stock-summary">
       <SummaryCell
@@ -611,6 +674,27 @@ function SummaryStrip({
         icon="wallet"
         tint="#22C55E"
         styles={styles}
+      />
+      <SummaryCell
+        label="FLOORPLAN"
+        value={fmtZar(s.total_floorplan_zar || 0)}
+        icon="business"
+        tint="#0EA5E9"
+        styles={styles}
+      />
+      <SummaryCell
+        label="EXP. GP"
+        value={fmtZar(gp)}
+        icon="trending-up"
+        tint={gpTint}
+        styles={styles}
+        // Footnote surfaces when only a subset of the fleet has target
+        // prices set, so the total isn't misread as covering every unit.
+        subtext={
+          (s.gp_priced_units || 0) > 0 && s.gp_priced_units !== s.total_units
+            ? `on ${s.gp_priced_units}/${s.total_units}`
+            : undefined
+        }
       />
       <SummaryCell
         label="AVG AGE"
@@ -636,12 +720,17 @@ function SummaryCell({
   icon,
   tint,
   styles,
+  subtext,
 }: {
   label: string;
   value: string;
   icon: keyof typeof Ionicons.glyphMap;
   tint: string;
   styles: ReturnType<typeof makeStyles>;
+  /** Optional caption rendered below the value in muted text —
+   *  used to disclose partial coverage (e.g. "on 3/12") on the
+   *  Expected GP tile. */
+  subtext?: string;
 }) {
   return (
     <View style={styles.summaryCell}>
@@ -652,6 +741,9 @@ function SummaryCell({
       <Text style={styles.summaryValue} numberOfLines={1} adjustsFontSizeToFit>
         {value}
       </Text>
+      {subtext ? (
+        <Text style={styles.summarySubtext} numberOfLines={1}>{subtext}</Text>
+      ) : null}
     </View>
   );
 }
@@ -751,8 +843,13 @@ const TABLE_COLS_WEB = {
   mm:         { w: 90,  align: "left"  as const, label: "M&M" },
   vin:        { w: 156, align: "left"  as const, label: "VIN" },
   cost:       { w: 118, align: "right" as const, label: "COST (MY OFFER)" },
-  floorplan:  { w: 118, align: "right" as const, label: "FLOORPLAN" },
+  floorplan:  { w: 128, align: "right" as const, label: "FLOORPLAN" },
   reconCost:  { w: 108, align: "right" as const, label: "EXP. RECON" },
+  // Nov 2026 — Estimated Gross Profit column. Value = target sell
+  // price - (My Offer cost + Expected Recon). Shows both the ZAR
+  // amount and a percentage (GP / sell). Colour-coded green /
+  // amber / red for at-a-glance triage.
+  expGp:      { w: 130, align: "right" as const, label: "EXP. GP (%)" },
   // Two clickable YES/NO chips — advertised + fully-reconditioned.
   advertised: { w: 84,  align: "center"as const, label: "ADVERT." },
   reconDone:  { w: 84,  align: "center"as const, label: "RECON" },
@@ -793,7 +890,7 @@ function StockTableHeader({
   const order: string[] = isWeb
     ? [
         "stock", "year", "make", "derivative", "mileage", "colour",
-        "mm", "vin", "cost", "floorplan", "reconCost",
+        "mm", "vin", "cost", "floorplan", "reconCost", "expGp",
         "advertised", "reconDone",
         "retail", "age",
         ...(isAdmin ? ["dship"] : []),
@@ -840,6 +937,13 @@ function StockTableRow({
   onCancelEditTarget,
   onChangeTargetDraft,
   onCommitTarget,
+  editingFloorplan,
+  floorplanDraft,
+  savingFloorplan,
+  onStartEditFloorplan,
+  onCancelEditFloorplan,
+  onChangeFloorplanDraft,
+  onCommitFloorplan,
   onOpenSubmission,
   onMarkSold,
   onDelete,
@@ -860,6 +964,13 @@ function StockTableRow({
   onCancelEditTarget: () => void;
   onChangeTargetDraft: (v: string) => void;
   onCommitTarget: () => void;
+  editingFloorplan: boolean;
+  floorplanDraft: string;
+  savingFloorplan: boolean;
+  onStartEditFloorplan: () => void;
+  onCancelEditFloorplan: () => void;
+  onChangeFloorplanDraft: (v: string) => void;
+  onCommitFloorplan: () => void;
   onOpenSubmission: () => void;
   onMarkSold: () => void;
   onToggleFlag: (field: "advertised" | "fully_reconditioned") => void;
@@ -961,6 +1072,105 @@ function StockTableRow({
         {row.target_sell_price_zar != null ? fmtZar(row.target_sell_price_zar) : "Set…"}
       </Text>
     </TouchableOpacity>
+  );
+
+  // ------- Floorplan editable cell (mirrors retail-price pattern) ----
+  // Any active user can edit the floorplan amount so dealers can keep
+  // their bank/floorplan liability in sync as loans are drawn or
+  // settled. Managerial-only gating isn't applied here — floorplan is
+  // a working cost input, not a pricing decision.
+  const floorplanCell = editingFloorplan ? (
+    <View style={styles.tableTargetEdit}>
+      <TextInput
+        value={floorplanDraft}
+        onChangeText={onChangeFloorplanDraft}
+        keyboardType="number-pad"
+        placeholder="0"
+        placeholderTextColor={colors.textDisabled}
+        style={styles.tableTargetInput}
+        autoFocus
+        testID={`stock-floorplan-input-${row.id}`}
+      />
+      <TouchableOpacity
+        onPress={onCommitFloorplan}
+        disabled={savingFloorplan}
+        style={styles.tableTargetSave}
+        testID={`stock-floorplan-save-${row.id}`}
+      >
+        {savingFloorplan ? (
+          <ActivityIndicator size="small" color={colors.onPrimary} />
+        ) : (
+          <Ionicons name="checkmark" size={14} color={colors.onPrimary} />
+        )}
+      </TouchableOpacity>
+      <TouchableOpacity onPress={onCancelEditFloorplan} style={styles.tableTargetCancel}>
+        <Ionicons name="close" size={14} color={colors.textSecondary} />
+      </TouchableOpacity>
+    </View>
+  ) : (
+    <TouchableOpacity
+      onPress={onStartEditFloorplan}
+      activeOpacity={0.7}
+      testID={`stock-floorplan-cell-${row.id}`}
+    >
+      <Text
+        style={[
+          styles.tableCell,
+          styles.tableCellNumeric,
+          {
+            color: row.floorplan_amount_zar != null ? colors.text : colors.textDisabled,
+          },
+          styles.tableCellEditable,
+        ]}
+        numberOfLines={1}
+      >
+        {row.floorplan_amount_zar != null ? fmtZar(row.floorplan_amount_zar) : "Set…"}
+      </Text>
+    </TouchableOpacity>
+  );
+
+  // ------- Expected Gross Profit cell (read-only, computed) ----------
+  // GP = sell − (cost + recon). Only rendered when the two required
+  // inputs (sell price + cost) are present; recon is treated as 0
+  // when missing since a lot of dealers don't set it until they've
+  // actually spent the money.
+  const sell = row.target_sell_price_zar ?? null;
+  const cost = row.my_offer_price_zar ?? null;
+  const recon = row.expected_recon_cost_zar ?? 0;
+  let expGp: number | null = null;
+  let expGpPct: number | null = null;
+  if (typeof sell === "number" && typeof cost === "number") {
+    expGp = sell - (cost + recon);
+    expGpPct = sell > 0 ? (expGp / sell) * 100 : null;
+  }
+  const gpColor =
+    expGp == null ? colors.textDisabled
+    : expGp >= 0 ? "#22C55E"
+    : "#DC2626";
+  const expGpCell = (
+    <View style={{ paddingVertical: 2 }}>
+      <Text
+        style={[
+          styles.tableCell,
+          styles.tableCellNumeric,
+          styles.tableCellPrice,
+          { color: gpColor },
+        ]}
+        numberOfLines={1}
+      >
+        {expGp != null ? fmtZar(expGp) : "—"}
+      </Text>
+      <Text
+        style={[
+          styles.tableCell,
+          styles.tableCellNumeric,
+          { color: gpColor, fontSize: 11, opacity: 0.85 },
+        ]}
+        numberOfLines={1}
+      >
+        {expGpPct != null ? `${expGpPct.toFixed(1)}%` : ""}
+      </Text>
+    </View>
   );
 
   // ------- Age pill (shared) -----------------------------------------
@@ -1073,17 +1283,8 @@ function StockTableRow({
         >
           {fmtZar(row.my_offer_price_zar)}
         </Text>
-        {/* Floorplan Amount */}
-        <Text
-          style={[
-            styles.tableCell,
-            styles.tableCellNumeric,
-            { width: C.floorplan.w, color: row.floorplan_amount_zar ? colors.text : colors.textDisabled },
-          ]}
-          numberOfLines={1}
-        >
-          {row.floorplan_amount_zar != null ? fmtZar(row.floorplan_amount_zar) : "—"}
-        </Text>
+        {/* Floorplan Amount — editable, click-to-edit pattern */}
+        <View style={{ width: C.floorplan.w }}>{floorplanCell}</View>
         {/* Expected Recon Cost */}
         <Text
           style={[
@@ -1095,6 +1296,8 @@ function StockTableRow({
         >
           {row.expected_recon_cost_zar != null ? fmtZar(row.expected_recon_cost_zar) : "—"}
         </Text>
+        {/* Expected Gross Profit (computed) */}
+        <View style={{ width: C.expGp.w }}>{expGpCell}</View>
         {/* Advertised — tap to toggle */}
         <View style={{ width: C.advertised.w, alignItems: "center" }}>
           <YesNoToggle
@@ -1623,6 +1826,13 @@ const makeStyles = (colors: Palette) =>
       fontWeight: "900",
       fontFamily: fonts.number,
       letterSpacing: -0.3,
+    },
+    summarySubtext: {
+      color: colors.textSecondary,
+      fontSize: 10,
+      fontWeight: "700",
+      marginTop: 2,
+      letterSpacing: 0.4,
     },
 
     // Aging chart -------------------------------------------------------
