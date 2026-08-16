@@ -353,6 +353,28 @@ export default function HomeScreen() {
   useEffect(() => { loadCoversAvailable(); }, [loadCoversAvailable]);
   useFocusEffect(useCallback(() => { loadCoversAvailable(); }, [loadCoversAvailable]));
 
+  // Admin-only — count of incoming (still-to-be-priced) submissions.
+  // Powers the badge on the "Submissions" home tile so admins see at
+  // a glance whether there's fresh work in the queue. Uses the tiny
+  // `/api/admin/submissions/counts` endpoint (no submission payload)
+  // so it's safe to refresh on every focus.
+  const [incomingCount, setIncomingCount] = useState<number | null>(null);
+  const loadIncomingCount = useCallback(async () => {
+    if (user?.role !== "admin") {
+      setIncomingCount(null);
+      return;
+    }
+    try {
+      const r = await apiFetch("/api/admin/submissions/counts");
+      const n = (r as any)?.counts?.incoming;
+      if (typeof n === "number") setIncomingCount(n);
+    } catch {
+      // Non-fatal — the tile falls back to the base hint.
+    }
+  }, [user?.role]);
+  useEffect(() => { loadIncomingCount(); }, [loadIncomingCount]);
+  useFocusEffect(useCallback(() => { loadIncomingCount(); }, [loadIncomingCount]));
+
   // Live-loaded advertising slots — replace the hardcoded 3 ads on the
   // "Advertising" tile with whatever the admin has configured via the
   // Admin Cockpit → Advertising module. If none are configured yet we
@@ -414,7 +436,24 @@ export default function HomeScreen() {
         { key: "dealers", label: "Dealers", hint: "Approve, edit & manage accounts", icon: "people", to: "/(app)/dealers", tint: "#5B8DEF" },
         { key: "billing", label: "Billing", hint: "Invoices, credits & receipts", icon: "cash", to: "/(app)/billing", tint: "#22C55E" },
         { key: "rewards", label: "Rewards", hint: "Points, referrals & vouchers", icon: "gift", to: "/(app)/rewards", tint: "#F97316" },
-        { key: "history", label: "History", hint: "Priced & archived vehicles", icon: "time", to: "/(app)/history", tint: "#A78BFA" },
+        // Submissions tile — replaces the old "History" tile on the
+        // admin cockpit (History is already reachable from the bottom
+        // tab bar). Badge surfaces the live count of "incoming"
+        // submissions still waiting to be priced so admins see the
+        // work queue at a glance.
+        {
+          key: "submissions",
+          label: "Submissions",
+          hint: incomingCount != null && incomingCount > 0
+            ? `${incomingCount} incoming · tap to review`
+            : incomingCount === 0
+              ? "No incoming submissions"
+              : "Incoming · priced · archived",
+          icon: "car-sport",
+          to: "/(app)/submissions",
+          tint: "#A78BFA",
+          badge: incomingCount && incomingCount > 0 ? String(incomingCount) : undefined,
+        },
         { key: "kredo", label: "Kredo", hint: "VIN reports & CarTrust tools", icon: "pricetag", to: "/(app)/kredo-test", tint: "#F43F5E" },
         { key: "vin-reports", label: "VIN Reports", hint: "Order OEM & history reports for any VIN", icon: "document-text", to: "/(app)/vin-reports", tint: "#22C55E" },
       ]

@@ -2675,6 +2675,24 @@ async def admin_list_submissions(
     return {"submissions": subs, "counts": counts, "archive_after_days": ARCHIVE_AFTER_DAYS}
 
 
+@api_router.get("/admin/submissions/counts")
+async def admin_submission_counts(current: dict = Depends(require_admin)):
+    """Lightweight counts-only endpoint for the admin cockpit home tile.
+
+    Returns just the per-bucket counts (incoming / priced / archived)
+    without shipping every submission over the wire. Used by the home
+    screen's "Submissions" tile to render the "N incoming" badge on
+    every focus without re-loading the entire dataset.
+    """
+    subs = await db.submissions.find(
+        {}, {"_id": 0, "status": 1, "priced_at": 1, "archived_at": 1}
+    ).to_list(4000)
+    counts = {"incoming": 0, "priced": 0, "archived": 0}
+    for s in subs:
+        counts[compute_bucket(s)] += 1
+    return {"counts": counts}
+
+
 @api_router.post("/admin/submissions/{sub_id}/price")
 async def admin_price(sub_id: str, offer: PriceOffer, current: dict = Depends(require_admin)):
     sub = await db.submissions.find_one({"id": sub_id})
