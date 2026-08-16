@@ -864,6 +864,13 @@ class VehicleSubmission(BaseModel):
     # was registered after this variant was discontinued.
     registered_after_discontinued: Optional[bool] = None
 
+    # Free-text / classic-vehicle submissions. When true, the dealer
+    # bypassed the wheel-picker entirely because the vehicle predates
+    # the M&M catalogue (e.g. 1981 Ferrari) or is a rare import not on
+    # file. Backend stamps a sentinel `FREETEXT` M&M code, skips the
+    # Kredo variant lookup, and flags the submission for admin review.
+    manual_entry: Optional[bool] = False
+
     # Auto-filled from the license disc scan (may be "TBC")
     colour: str
     vin: Optional[str] = "TBC"
@@ -2108,6 +2115,14 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         # on the pricing screen without recomputing.
         "variant_manufacture_range": payload.variant_manufacture_range,
         "registered_after_discontinued": bool(payload.registered_after_discontinued),
+        # Free-text / classic-vehicle path. When true, the dealer
+        # bypassed the wheel-picker for a vehicle not in the M&M
+        # catalogue (e.g. pre-1990 exotics). We stamp a sentinel
+        # `FREETEXT` M&M code so downstream code paths that expect a
+        # non-null `mm_code` don't crash, and mark the submission so
+        # the pricing pipeline skips Kredo variant lookups.
+        "manual_entry": bool(payload.manual_entry),
+        "mm_code": "FREETEXT" if payload.manual_entry else None,
         # Identity
         "vin": payload.vin or "TBC",
         "engine_number": payload.engine_number or "TBC",

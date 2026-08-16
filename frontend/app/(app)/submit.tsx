@@ -179,6 +179,14 @@ export default function SubmitVehicle() {
   const params = useLocalSearchParams<{ draft?: string }>();
   const [loadedDraftId, setLoadedDraftId] = useState<string | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
+  // Free-text vehicle entry — turned on when the dealer taps "Enter
+  // vehicle manually" at the bottom of the Vehicle Specification
+  // section. Used for pre-M&M-catalogue classics (e.g. 1981 Ferrari)
+  // and rare imports where the wheel-picker options simply don't
+  // exist. Manual submissions are stamped with a sentinel M&M code
+  // (`FREETEXT`) on the backend and skip the Kredo variant-range
+  // discontinuation notice entirely.
+  const [manualEntry, setManualEntry] = useState(false);
   // 3-option modal replacement for Alert.alert (which is single-button-only
   // on React Native Web — the multi-button variant is silently ignored).
   const [resetPromptOpen, setResetPromptOpen] = useState(false);
@@ -681,7 +689,10 @@ export default function SubmitVehicle() {
   const validate = (): string | null => {
     if (!make || !fuelType || !yearOfProduction || !transmission || !model || !derivative) return "Please complete all vehicle spec fields.";
     if (!yearRegistered) return "Please choose year registered.";
-    if (variantYearRange && yearRegistered < variantYearRange.min) {
+    // Kredo variant-range guard doesn't apply to free-text entries —
+    // they explicitly bypass the M&M catalogue so there's no manufacture
+    // range to compare against.
+    if (!manualEntry && variantYearRange && yearRegistered < variantYearRange.min) {
       return `Registration year cannot be earlier than ${variantYearRange.min} — the first year this variant was built.`;
     }
     if (!mileage || isNaN(parseInt(mileage.replace(/,/g, "")))) return "Enter mileage.";
@@ -729,6 +740,14 @@ export default function SubmitVehicle() {
         body: JSON.stringify({
           make, fuel_type: fuelType, year_of_production: yearOfProduction, transmission,
           model, derivative, year_registered: yearRegistered,
+          // Free-text / classic-vehicle path. Sending this flag tells
+          // the backend to stamp the submission with a sentinel M&M
+          // code and skip the Kredo variant lookup entirely (no
+          // discontinuation notice, no manufacture-range validation,
+          // no auto-populated market values). Manual entries are
+          // flagged in every admin view so they're prioritised for
+          // human pricing.
+          manual_entry: manualEntry,
           // Kredo manufacture range for the selected variant + whether the
           // registration year falls after the model was discontinued. Kept
           // as an explicit field so admins can see the discrepancy on the
@@ -805,6 +824,53 @@ export default function SubmitVehicle() {
       </View>
       <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
     </TouchableOpacity>
+  );
+
+  /**
+   * Free-text sibling of {@link Field} — used when the dealer has
+   * toggled "Enter vehicle manually" for cars that are older than the
+   * M&M catalogue coverage (pre-1990 classics, ultra-rare imports,
+   * grey imports, etc.). The label styling matches Field so the whole
+   * form stays visually consistent between picker and free-text mode.
+   *
+   * Numeric props use `numeric` keyboards + digit-only sanitising so
+   * the year fields still submit as ints downstream.
+   */
+  const TextField = ({
+    label,
+    value,
+    onChange,
+    testID,
+    hint,
+    numeric,
+    maxLength,
+    autoCapitalize = "words",
+  }: {
+    label: string;
+    value: string | null;
+    onChange: (v: string) => void;
+    testID?: string;
+    hint?: string;
+    numeric?: boolean;
+    maxLength?: number;
+    autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  }) => (
+    <View style={styles.field} testID={testID}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.fieldLabel}>{label.toUpperCase()}</Text>
+        <TextInput
+          value={value ?? ""}
+          onChangeText={(t) => onChange(numeric ? t.replace(/[^0-9]/g, "") : t)}
+          placeholder={hint || "Type here"}
+          placeholderTextColor={colors.textSecondary}
+          keyboardType={numeric ? "number-pad" : "default"}
+          maxLength={maxLength}
+          autoCapitalize={numeric ? "none" : autoCapitalize}
+          style={styles.fieldValueInput}
+          testID={testID ? `${testID}-input` : undefined}
+        />
+      </View>
+    </View>
   );
 
   const RatingDots = ({ value, onChange }: { value: number | null; onChange: (n: number) => void }) => {
@@ -948,16 +1014,95 @@ export default function SubmitVehicle() {
           ) : null}
 
           <Text style={styles.sectionTitle}>VEHICLE SPECIFICATION</Text>
-          <Field label="Make" value={make} onPress={() => openWheel("make")} testID="pick-make" />
-          <Field label="Fuel Type" value={fuelType} onPress={() => make ? openWheel("fuel_type") : setError("Choose Make first")} testID="pick-fuel" />
-          <Field label="Year of Production" value={yearOfProduction?.toString() ?? null} onPress={() => fuelType ? openWheel("year_of_production") : setError("Choose Fuel first")} testID="pick-yop" />
-          <Field label="Transmission" value={transmission} onPress={() => yearOfProduction ? openWheel("transmission") : setError("Choose Year first")} testID="pick-trans" />
-          <Field label="Model" value={model} onPress={() => transmission ? openWheel("model") : setError("Choose Transmission first")} testID="pick-model" />
-          <Field label="Derivative" value={derivative} onPress={() => model ? openWheel("derivative") : setError("Choose Model first")} testID="pick-deriv" />
-          <Field label="Year Registered" value={yearRegistered?.toString() ?? null} onPress={() => openWheel("year_registered")} testID="pick-yr-reg" />
+          {manualEntry ? (
+            <>
+              {/* Manual / free-text mode — for vehicles older than the
+                  M&M catalogue or rare imports not in the picker.
+                  Values are typed straight into the payload; the
+                  backend stamps them with a sentinel `FREETEXT` M&M
+                  code so the valuation pipeline knows to skip the
+                  Kredo variant lookup. */}
+              <View style={styles.manualBanner} testID="manual-entry-banner">
+                <Ionicons name="create-outline" size={16} color={colors.warning} />
+                <Text style={styles.manualBannerText}>
+                  Manual entry — this submission won&apos;t carry an M&amp;M code and will be tagged for admin review.
+                </Text>
+              </View>
+              <TextField label="Make" value={make} onChange={setMake} testID="pick-make" hint="e.g. Ferrari" />
+              <TextField label="Fuel Type" value={fuelType} onChange={setFuelType} testID="pick-fuel" hint="e.g. Petrol" />
+              <TextField
+                label="Year of Production"
+                value={yearOfProduction?.toString() ?? null}
+                onChange={(v) => setYearOfProduction(v ? parseInt(v, 10) : null)}
+                testID="pick-yop"
+                hint="e.g. 1981"
+                numeric
+                maxLength={4}
+              />
+              <TextField label="Transmission" value={transmission} onChange={setTransmission} testID="pick-trans" hint="Manual / Automatic" />
+              <TextField label="Model" value={model} onChange={setModel} testID="pick-model" hint="e.g. 308 GTSi" />
+              <TextField label="Derivative" value={derivative} onChange={setDerivative} testID="pick-deriv" hint="e.g. 2.9 V8 Coupe" />
+              <TextField
+                label="Year Registered"
+                value={yearRegistered?.toString() ?? null}
+                onChange={(v) => setYearRegistered(v ? parseInt(v, 10) : null)}
+                testID="pick-yr-reg"
+                hint="e.g. 1981"
+                numeric
+                maxLength={4}
+              />
+            </>
+          ) : (
+            <>
+              <Field label="Make" value={make} onPress={() => openWheel("make")} testID="pick-make" />
+              <Field label="Fuel Type" value={fuelType} onPress={() => make ? openWheel("fuel_type") : setError("Choose Make first")} testID="pick-fuel" />
+              <Field label="Year of Production" value={yearOfProduction?.toString() ?? null} onPress={() => fuelType ? openWheel("year_of_production") : setError("Choose Fuel first")} testID="pick-yop" />
+              <Field label="Transmission" value={transmission} onPress={() => yearOfProduction ? openWheel("transmission") : setError("Choose Year first")} testID="pick-trans" />
+              <Field label="Model" value={model} onPress={() => transmission ? openWheel("model") : setError("Choose Transmission first")} testID="pick-model" />
+              <Field label="Derivative" value={derivative} onPress={() => model ? openWheel("derivative") : setError("Choose Model first")} testID="pick-deriv" />
+              <Field label="Year Registered" value={yearRegistered?.toString() ?? null} onPress={() => openWheel("year_registered")} testID="pick-yr-reg" />
+            </>
+          )}
+          {/* Manual-entry toggle — sits at the very end of the Vehicle
+              Specification group so it doesn't distract from the
+              picker path for the 99% case. */}
+          <TouchableOpacity
+            style={styles.manualToggle}
+            onPress={() => {
+              // Flipping mode clears any half-completed picker state
+              // so we never send a "make from picker + year_of_production
+              // typed in" hybrid payload the backend can't square with
+              // the Kredo catalogue.
+              setManualEntry((v) => {
+                const next = !v;
+                setMake(null); setFuelType(null); setYearOfProduction(null);
+                setTransmission(null); setModel(null); setDerivative(null);
+                setYearRegistered(null);
+                setVariantYearRange(null);
+                setError(null);
+                return next;
+              });
+            }}
+            testID="toggle-manual-entry"
+            activeOpacity={0.75}
+          >
+            <Ionicons
+              name={manualEntry ? "list-outline" : "create-outline"}
+              size={16}
+              color={colors.primary}
+            />
+            <Text style={styles.manualToggleText}>
+              {manualEntry
+                ? "Switch back to the model picker"
+                : "Can't find your vehicle? Enter manually"}
+            </Text>
+          </TouchableOpacity>
           {(() => {
             // Show a contextual notice about registration year vs the
-            // variant's actual manufacture range from Kredo.
+            // variant's actual manufacture range from Kredo. Skipped
+            // entirely for free-text entries since they don't carry
+            // an M&M variant reference.
+            if (manualEntry) return null;
             if (!yearRegistered || !variantYearRange) return null;
             const { min, max } = variantYearRange;
             if (yearRegistered < min) {
@@ -1562,6 +1707,65 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   fieldLabel: { color: colors.textSecondary, fontSize: 10, fontWeight: "800", letterSpacing: 1.5, marginBottom: 3 },
   fieldValue: { color: colors.text, fontSize: 15, fontWeight: "700" },
   fieldValuePlaceholder: { color: colors.textDisabled, fontWeight: "500" },
+  // Free-text TextInput used inside the Field row when manual entry
+  // is on — inherits the same colour + weight as fieldValue so the
+  // form doesn't visually shift between modes.
+  fieldValueInput: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700",
+    padding: 0,
+    margin: 0,
+    // Removes the default web outline on RN Web without touching iOS
+    ...Platform.select({
+      web: { /* @ts-ignore */ outlineStyle: "none" as any },
+      default: {},
+    }),
+  },
+  // Amber banner shown above the free-text spec fields explaining
+  // what manual entry means to the dealer.
+  manualBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.warningSoft || "rgba(245,158,11,0.12)",
+    borderWidth: 1,
+    borderColor: colors.warning,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  manualBannerText: {
+    color: colors.text,
+    fontSize: 12,
+    flex: 1,
+    fontWeight: "600",
+    lineHeight: 16,
+  },
+  // Toggle at the bottom of the Vehicle Spec section — swaps the six
+  // wheel-pickers for free-text inputs and back.
+  manualToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.card,
+    marginTop: 4,
+    marginBottom: 10,
+  },
+  manualToggleText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
 
   scanBtn: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: 14, marginBottom: 8 },
   scanText: { color: colors.text, fontSize: 14, fontWeight: "700" },
