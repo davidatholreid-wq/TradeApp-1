@@ -527,17 +527,20 @@ export default function ComparableListingsCard(props: Props) {
         activeOpacity={0.85}
         style={styles.actionBtnPress}
       >
-        {/* AutoTrader SA brand — signature bold red gradient with white
-            text and a rounded white "logo pip". Renders identically on
-            iOS, Android and Web via expo-linear-gradient. */}
+        {/* AutoTrader SA brand — the marque is a red-over-blue
+            parallelogram on white. We echo that by using a diagonal
+            red → blue gradient with white text and a white brand chip
+            + arrow pip. Reads as unmistakably AutoTrader without the
+            white split cutting through the CTA text. */}
         <LinearGradient
-          colors={["#F25C05", "#EE1F26", "#B71119"]}
+          colors={["#E4002B", "#B10021", "#0072CE", "#0092D5"]}
+          locations={[0, 0.5, 0.5, 1]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.actionBtn}
         >
-          <View style={styles.brandChip}>
-            <Text style={styles.brandChipTxt}>AT</Text>
+          <View style={styles.brandChipAT}>
+            <Text style={styles.brandChipTxtAT}>AT</Text>
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.btnTitleBright}>Open AutoTrader.co.za</Text>
@@ -551,8 +554,8 @@ export default function ComparableListingsCard(props: Props) {
               ].filter(Boolean).join(" · ") || "Model listing"}
             </Text>
           </View>
-          <View style={styles.arrowPip}>
-            <Ionicons name="arrow-forward" size={16} color="#EE1F26" />
+          <View style={styles.arrowPipAT}>
+            <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
           </View>
         </LinearGradient>
       </TouchableOpacity>
@@ -716,20 +719,19 @@ function makeStyles(colors: Palette) {
     actionBtnPress: {
       marginTop: 4,
       borderRadius: radius.md,
-      // Subtle branded shadow so the CTA visually lifts off the card.
-      // Shadow colour matches AutoTrader's dominant red so it feels
-      // like a proper "AutoTrader button".
+      // Blue-tinted shadow — matches the lower half of the AutoTrader
+      // gradient so the CTA "lifts" in-brand.
       ...Platform.select({
         ios: {
-          shadowColor: "#EE1F26",
+          shadowColor: "#0072CE",
           shadowOffset: { width: 0, height: 6 },
-          shadowOpacity: 0.35,
+          shadowOpacity: 0.4,
           shadowRadius: 12,
         },
         android: { elevation: 4 },
         web: {
           // @ts-ignore — RN-Web only property
-          boxShadow: "0 6px 16px rgba(238,31,38,0.28)",
+          boxShadow: "0 6px 18px rgba(0,114,206,0.32)",
         },
       }),
     },
@@ -741,45 +743,52 @@ function makeStyles(colors: Palette) {
       paddingVertical: 14,
       borderRadius: radius.md,
     },
-    // Rounded white pip in the top-right of the CTA, holds an arrow
-    // icon in the button's brand colour. Same treatment reused on the
-    // WBC button so the two comparisons feel visually paired.
-    arrowPip: {
+    // White rounded chips (left brand + right arrow) contrast cleanly
+    // against the red/blue AutoTrader gradient behind them. Icon
+    // colour flips to the closer brand red on the arrow pip.
+    arrowPipAT: {
       width: 30,
       height: 30,
+      borderRadius: 15,
+      backgroundColor: "rgba(255,255,255,0.22)",
+      borderWidth: 1,
+      borderColor: "rgba(255,255,255,0.6)",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    brandChipAT: {
+      minWidth: 42,
+      height: 30,
+      paddingHorizontal: 10,
       borderRadius: 15,
       backgroundColor: "#FFFFFF",
       alignItems: "center",
       justifyContent: "center",
     },
-    // Rounded "AT" / "WBC" brand chip that sits on the left of the CTA
-    // — provides an unmistakable brand identifier even before the
-    // dealer reads the button copy.
-    brandChip: {
-      minWidth: 42,
-      height: 30,
-      paddingHorizontal: 10,
-      borderRadius: 15,
-      backgroundColor: "rgba(255,255,255,0.22)",
-      borderWidth: 1,
-      borderColor: "rgba(255,255,255,0.55)",
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    brandChipTxt: {
-      color: "#FFFFFF",
+    brandChipTxtAT: {
+      color: "#0072CE",
       fontSize: 12,
       fontWeight: "900",
-      letterSpacing: 1.2,
+      letterSpacing: 1.4,
     },
     btnTitleBright: {
       color: "#FFFFFF",
       fontSize: 15,
       fontWeight: "800",
       letterSpacing: 0.2,
+      // Slight text-shadow so the title stays legible across the
+      // red-to-blue gradient handoff on both AT and WBC buttons.
+      ...Platform.select({
+        web: { /* @ts-ignore */ textShadow: "0 1px 2px rgba(0,0,0,0.35)" as any },
+        default: {
+          textShadowColor: "rgba(0,0,0,0.35)",
+          textShadowOffset: { width: 0, height: 1 },
+          textShadowRadius: 2,
+        },
+      }),
     },
     btnSubBright: {
-      color: "rgba(255,255,255,0.92)",
+      color: "rgba(255,255,255,0.94)",
       fontSize: 11,
       marginTop: 2,
       fontWeight: "600",

@@ -550,12 +550,13 @@ export default function WeBuyCarsListingsCard(props: Props) {
         accessibilityLabel="Open comparable listings on WeBuyCars.co.za"
         activeOpacity={0.85}
       >
-        {/* WeBuyCars brand — deep royal-blue gradient with the signature
-            yellow arrow pip. Yellow (#FFD400) is WBC's primary accent
-            and pairs against the navy `#0B1F70 → #071451` for a
-            recognisable "WBC blue-and-yellow" CTA. */}
+        {/* WeBuyCars brand — dark navy background with a bright orange
+            accent. Palette taken from the WBC app icon: navy
+            `#1B2432 → #0F1826` for the body, orange `#F26522` for the
+            brand chip and arrow pip so the CTA is instantly
+            recognisable as "the WBC button". */}
         <LinearGradient
-          colors={["#0F2A9C", "#0B1F70", "#071451"]}
+          colors={["#1B2432", "#131C29", "#0F1826"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.actionBtn}
@@ -576,7 +577,7 @@ export default function WeBuyCarsListingsCard(props: Props) {
             </Text>
           </View>
           <View style={styles.arrowPip}>
-            <Ionicons name="arrow-forward" size={16} color="#071451" />
+            <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
           </View>
         </LinearGradient>
       </TouchableOpacity>
@@ -730,19 +731,19 @@ function makeStyles(colors: Palette) {
     actionBtnPress: {
       marginTop: 4,
       borderRadius: radius.md,
-      // Deep blue-tinted shadow — matches WeBuyCars' navy so the CTA
-      // reads as a proper "WBC button" even in dark themes.
+      // Dark-navy shadow — matches the WBC card body so the CTA lifts
+      // cleanly against both light and dark themes.
       ...Platform.select({
         ios: {
-          shadowColor: "#0B1F70",
+          shadowColor: "#1B2432",
           shadowOffset: { width: 0, height: 6 },
-          shadowOpacity: 0.35,
+          shadowOpacity: 0.45,
           shadowRadius: 12,
         },
         android: { elevation: 4 },
         web: {
           // @ts-ignore — RN-Web only property
-          boxShadow: "0 6px 16px rgba(11,31,112,0.32)",
+          boxShadow: "0 6px 18px rgba(27,36,50,0.55)",
         },
       }),
     },
@@ -753,31 +754,37 @@ function makeStyles(colors: Palette) {
       paddingHorizontal: spacing.md,
       paddingVertical: 14,
       borderRadius: radius.md,
+      // Bright orange outline echoes the WBC logo's orange
+      // parallelogram-outline motif so the CTA reads as clearly
+      // "WeBuyCars" even before you read the label.
+      borderWidth: 1.5,
+      borderColor: "#F26522",
     },
-    // Yellow arrow pip on the right — echoes WeBuyCars' signature
-    // yellow accent (their site's primary CTA colour).
+    // Orange arrow pip on the right — WBC's signature accent colour.
     arrowPip: {
       width: 30,
       height: 30,
       borderRadius: 15,
-      backgroundColor: "#FFD400",
+      backgroundColor: "#F26522",
       alignItems: "center",
       justifyContent: "center",
     },
+    // Orange brand chip on the left, white "WBC" text on top so it
+    // matches the WBC icon's white lettering on the orange outline.
     brandChip: {
       minWidth: 46,
       height: 30,
       paddingHorizontal: 10,
       borderRadius: 15,
-      backgroundColor: "#FFD400",
+      backgroundColor: "#F26522",
       alignItems: "center",
       justifyContent: "center",
     },
     brandChipTxt: {
-      color: "#071451",
+      color: "#FFFFFF",
       fontSize: 11,
       fontWeight: "900",
-      letterSpacing: 1.2,
+      letterSpacing: 1.4,
     },
     btnTitleBright: {
       color: "#FFFFFF",
@@ -786,7 +793,7 @@ function makeStyles(colors: Palette) {
       letterSpacing: 0.2,
     },
     btnSubBright: {
-      color: "rgba(255,255,255,0.92)",
+      color: "rgba(255,255,255,0.94)",
       fontSize: 11,
       marginTop: 2,
       fontWeight: "600",
