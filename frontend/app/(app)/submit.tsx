@@ -86,6 +86,62 @@ type WheelField =
   // Each recon row's category picker uses "recon_category:<index>".
   | `recon_category:${number}`;
 
+/**
+ * Free-text spec field used when the dealer is entering a vehicle
+ * manually (see the "Enter manually" toggle on the Submit screen).
+ *
+ * NOTE: This is intentionally defined at MODULE scope (not inline
+ * inside SubmitVehicle) — RN unmounts/remounts a fresh component on
+ * every parent render if it's declared inside the parent function,
+ * which drops the TextInput's focus and dismisses the on-screen
+ * keyboard after every keystroke on real devices. Hoisting it here
+ * keeps the component identity stable across re-renders so typing
+ * stays smooth. The `styles`/`colors` are passed as props so the
+ * component still respects the active theme.
+ */
+type ManualTextFieldProps = {
+  label: string;
+  value: string | null;
+  onChange: (v: string) => void;
+  testID?: string;
+  hint?: string;
+  numeric?: boolean;
+  maxLength?: number;
+  autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  styles: any;
+  colors: any;
+};
+
+const ManualTextField = ({
+  label,
+  value,
+  onChange,
+  testID,
+  hint,
+  numeric,
+  maxLength,
+  autoCapitalize = "words",
+  styles,
+  colors,
+}: ManualTextFieldProps) => (
+  <View style={styles.field} testID={testID}>
+    <View style={{ flex: 1 }}>
+      <Text style={styles.fieldLabel}>{label.toUpperCase()}</Text>
+      <TextInput
+        value={value ?? ""}
+        onChangeText={(t) => onChange(numeric ? t.replace(/[^0-9]/g, "") : t)}
+        placeholder={hint || "Type here"}
+        placeholderTextColor={colors.textSecondary}
+        keyboardType={numeric ? "number-pad" : "default"}
+        maxLength={maxLength}
+        autoCapitalize={numeric ? "none" : autoCapitalize}
+        style={styles.fieldValueInput}
+        testID={testID ? `${testID}-input` : undefined}
+      />
+    </View>
+  </View>
+);
+
 export default function SubmitVehicle() {
   const colors = useThemeColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -826,52 +882,6 @@ export default function SubmitVehicle() {
     </TouchableOpacity>
   );
 
-  /**
-   * Free-text sibling of {@link Field} — used when the dealer has
-   * toggled "Enter vehicle manually" for cars that are older than the
-   * M&M catalogue coverage (pre-1990 classics, ultra-rare imports,
-   * grey imports, etc.). The label styling matches Field so the whole
-   * form stays visually consistent between picker and free-text mode.
-   *
-   * Numeric props use `numeric` keyboards + digit-only sanitising so
-   * the year fields still submit as ints downstream.
-   */
-  const TextField = ({
-    label,
-    value,
-    onChange,
-    testID,
-    hint,
-    numeric,
-    maxLength,
-    autoCapitalize = "words",
-  }: {
-    label: string;
-    value: string | null;
-    onChange: (v: string) => void;
-    testID?: string;
-    hint?: string;
-    numeric?: boolean;
-    maxLength?: number;
-    autoCapitalize?: "none" | "sentences" | "words" | "characters";
-  }) => (
-    <View style={styles.field} testID={testID}>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.fieldLabel}>{label.toUpperCase()}</Text>
-        <TextInput
-          value={value ?? ""}
-          onChangeText={(t) => onChange(numeric ? t.replace(/[^0-9]/g, "") : t)}
-          placeholder={hint || "Type here"}
-          placeholderTextColor={colors.textSecondary}
-          keyboardType={numeric ? "number-pad" : "default"}
-          maxLength={maxLength}
-          autoCapitalize={numeric ? "none" : autoCapitalize}
-          style={styles.fieldValueInput}
-          testID={testID ? `${testID}-input` : undefined}
-        />
-      </View>
-    </View>
-  );
 
   const RatingDots = ({ value, onChange }: { value: number | null; onChange: (n: number) => void }) => {
     const activeColor = ratingColor(value, colors);
@@ -1028,9 +1038,10 @@ export default function SubmitVehicle() {
                   Manual entry — this submission won&apos;t carry an M&amp;M code and will be tagged for admin review.
                 </Text>
               </View>
-              <TextField label="Make" value={make} onChange={setMake} testID="pick-make" hint="e.g. Ferrari" />
-              <TextField label="Fuel Type" value={fuelType} onChange={setFuelType} testID="pick-fuel" hint="e.g. Petrol" />
-              <TextField
+              <ManualTextField styles={styles} colors={colors} label="Make" value={make} onChange={setMake} testID="pick-make" hint="e.g. Ferrari" />
+              <ManualTextField styles={styles} colors={colors} label="Fuel Type" value={fuelType} onChange={setFuelType} testID="pick-fuel" hint="e.g. Petrol" />
+              <ManualTextField
+                styles={styles} colors={colors}
                 label="Year of Production"
                 value={yearOfProduction?.toString() ?? null}
                 onChange={(v) => setYearOfProduction(v ? parseInt(v, 10) : null)}
@@ -1039,10 +1050,11 @@ export default function SubmitVehicle() {
                 numeric
                 maxLength={4}
               />
-              <TextField label="Transmission" value={transmission} onChange={setTransmission} testID="pick-trans" hint="Manual / Automatic" />
-              <TextField label="Model" value={model} onChange={setModel} testID="pick-model" hint="e.g. 308 GTSi" />
-              <TextField label="Derivative" value={derivative} onChange={setDerivative} testID="pick-deriv" hint="e.g. 2.9 V8 Coupe" />
-              <TextField
+              <ManualTextField styles={styles} colors={colors} label="Transmission" value={transmission} onChange={setTransmission} testID="pick-trans" hint="Manual / Automatic" />
+              <ManualTextField styles={styles} colors={colors} label="Model" value={model} onChange={setModel} testID="pick-model" hint="e.g. 308 GTSi" />
+              <ManualTextField styles={styles} colors={colors} label="Derivative" value={derivative} onChange={setDerivative} testID="pick-deriv" hint="e.g. 2.9 V8 Coupe" />
+              <ManualTextField
+                styles={styles} colors={colors}
                 label="Year Registered"
                 value={yearRegistered?.toString() ?? null}
                 onChange={(v) => setYearRegistered(v ? parseInt(v, 10) : null)}
