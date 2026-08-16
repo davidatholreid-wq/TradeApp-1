@@ -16,7 +16,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { useVideoPlayer } from "expo-video";
 import { LinearGradient } from "expo-linear-gradient";
 import AppIconTile from "@/src/components/home/AppIconTile";
-import DataBitsHero from "@/src/components/DataBitsHero";
 import { useFocusEffect, useRouter } from "expo-router";
 
 import { spacing, radius, fonts, BRAND } from "@/src/theme";
@@ -560,12 +559,24 @@ export default function HomeScreen() {
               styling. */}
           <View>
             <View style={styles.heroWrap}>
-              {/* Data-bit assembly animation — 40 cyan chips scatter
-                  in and coalesce into a grid that resolves to the
-                  TRADE AI wordmark. Same component used on iOS,
-                  Android and Web so the old video + web-only Image
-                  fallback are both gone. */}
-              <DataBitsHero height={220} />
+              {/* Clean static hero — the TRADE AI wordmark centred on a
+                  subtle dark panel with a soft cyan glow. Same layout
+                  on iOS, Android and Web. Video / animated variants
+                  can slot in here later without touching the
+                  surrounding grid. */}
+              <View style={styles.heroPanel}>
+                <View style={styles.heroGlow} />
+                <Image
+                  source={BRAND.logo}
+                  style={styles.heroLogoImg}
+                  resizeMode="contain"
+                  accessibilityLabel="TRADE AI powered by FOURBUY"
+                />
+                <View style={styles.heroDivider} />
+                <Text style={styles.heroTagline}>
+                  AI-POWERED VEHICLE VALUATIONS
+                </Text>
+              </View>
             </View>
           </View>
 
@@ -1458,22 +1469,61 @@ const makeStyles = (colors: Palette, isWide: boolean, windowWidth: number = 0) =
     },
     hero: { width: "100%", height: "100%" },
     heroPoster: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, width: "100%", height: "100%" },
-    // Web-only fallback — a full-bleed brand lockup replaces the video
-    // there because muted autoplay is unreliable across browsers /
-    // power modes. Dark backdrop matches the app's cinematic feel and
-    // lets the white-text logo read cleanly.
-    heroLogoBg: {
+    // Clean static hero — TRADE AI wordmark centred on a dark panel
+    // with a soft cyan radial-style glow behind it. Consistent look
+    // across iOS, Android and Web; a future video / animation can
+    // slot in without touching the surrounding grid.
+    heroPanel: {
       width: "100%",
       height: "100%",
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: "#0A0A0A",
+      backgroundColor: "#0A0F1E",
       paddingHorizontal: spacing.xl,
+      paddingVertical: spacing.md,
+      position: "relative",
+      overflow: "hidden",
+    },
+    // Soft cyan halo positioned behind the logo — pure View with
+    // border-radius so it renders identically everywhere. Acts as a
+    // subtle "spotlight" without needing shaders or gradients.
+    heroGlow: {
+      position: "absolute",
+      width: "70%",
+      aspectRatio: 1,
+      borderRadius: 999,
+      backgroundColor: "#22D3EE",
+      opacity: 0.12,
+      // Web-only extra soft-blur for a nicer halo when supported;
+      // native platforms already look great without it.
+      ...Platform.select({
+        // @ts-ignore — RN-Web only property
+        web: { filter: "blur(40px)" } as any,
+        default: {},
+      }),
     },
     heroLogoImg: {
-      width: "70%",
-      height: "70%",
-      maxWidth: 520,
+      width: "62%",
+      height: "62%",
+      maxWidth: 260,
+      maxHeight: 260,
+      minHeight: 120,
+    },
+    heroDivider: {
+      width: 48,
+      height: 2,
+      backgroundColor: "#22D3EE",
+      borderRadius: 1,
+      marginTop: spacing.sm,
+      marginBottom: 8,
+      opacity: 0.75,
+    },
+    heroTagline: {
+      color: "rgba(255,255,255,0.72)",
+      fontSize: 11,
+      fontWeight: "800",
+      letterSpacing: 3,
+      textAlign: "center",
     },
 
     // "Value of Cars Covered" banner --------------------------------
