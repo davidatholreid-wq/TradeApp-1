@@ -13,6 +13,7 @@
 // -----------------------------------------------------------------------------
 import { useMemo, useState, useEffect } from "react";
 import { View, Text, StyleSheet, Linking, Platform, Image, TextInput, ScrollView } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { TouchableOpacity } from "@/src/components/HapticButtons";
 import { Ionicons } from "@expo/vector-icons";
 import { spacing, radius, fonts } from "@/src/theme";
@@ -543,24 +544,41 @@ export default function WeBuyCarsListingsCard(props: Props) {
 
       <TouchableOpacity
         testID="open-webuycars"
-        style={styles.actionBtn}
+        style={styles.actionBtnPress}
         onPress={() => open(url)}
         accessibilityRole="link"
         accessibilityLabel="Open comparable listings on WeBuyCars.co.za"
+        activeOpacity={0.85}
       >
-        <View style={{ flex: 1 }}>
-          <Text style={styles.btnTitle}>Open WeBuyCars.co.za</Text>
-          <Text style={styles.btnSub} numberOfLines={2}>
-            {[
-              [effectiveMake, effectiveModel].filter(Boolean).join(" ") || null,
-              yearStr,
-              fuel,
-              trans,
-              "Sorted cheapest first",
-            ].filter(Boolean).join(" · ")}
-          </Text>
-        </View>
-        <Ionicons name="open-outline" size={18} color={colors.primary} />
+        {/* WeBuyCars brand — deep royal-blue gradient with the signature
+            yellow arrow pip. Yellow (#FFD400) is WBC's primary accent
+            and pairs against the navy `#0B1F70 → #071451` for a
+            recognisable "WBC blue-and-yellow" CTA. */}
+        <LinearGradient
+          colors={["#0F2A9C", "#0B1F70", "#071451"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.actionBtn}
+        >
+          <View style={styles.brandChip}>
+            <Text style={styles.brandChipTxt}>WBC</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.btnTitleBright}>Open WeBuyCars.co.za</Text>
+            <Text style={styles.btnSubBright} numberOfLines={2}>
+              {[
+                [effectiveMake, effectiveModel].filter(Boolean).join(" ") || null,
+                yearStr,
+                fuel,
+                trans,
+                "Sorted cheapest first",
+              ].filter(Boolean).join(" · ")}
+            </Text>
+          </View>
+          <View style={styles.arrowPip}>
+            <Ionicons name="arrow-forward" size={16} color="#071451" />
+          </View>
+        </LinearGradient>
       </TouchableOpacity>
 
       <View style={styles.disclaimerWrap}>
@@ -709,17 +727,69 @@ function makeStyles(colors: Palette) {
     },
     chipTxt: { color: colors.text, fontSize: 11, fontWeight: "700", letterSpacing: 0.4 },
 
+    actionBtnPress: {
+      marginTop: 4,
+      borderRadius: radius.md,
+      // Deep blue-tinted shadow — matches WeBuyCars' navy so the CTA
+      // reads as a proper "WBC button" even in dark themes.
+      ...Platform.select({
+        ios: {
+          shadowColor: "#0B1F70",
+          shadowOffset: { width: 0, height: 6 },
+          shadowOpacity: 0.35,
+          shadowRadius: 12,
+        },
+        android: { elevation: 4 },
+        web: {
+          // @ts-ignore — RN-Web only property
+          boxShadow: "0 6px 16px rgba(11,31,112,0.32)",
+        },
+      }),
+    },
     actionBtn: {
       flexDirection: "row",
       alignItems: "center",
       gap: 12,
       paddingHorizontal: spacing.md,
-      paddingVertical: 12,
+      paddingVertical: 14,
       borderRadius: radius.md,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.card,
-      marginTop: 4,
+    },
+    // Yellow arrow pip on the right — echoes WeBuyCars' signature
+    // yellow accent (their site's primary CTA colour).
+    arrowPip: {
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      backgroundColor: "#FFD400",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    brandChip: {
+      minWidth: 46,
+      height: 30,
+      paddingHorizontal: 10,
+      borderRadius: 15,
+      backgroundColor: "#FFD400",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    brandChipTxt: {
+      color: "#071451",
+      fontSize: 11,
+      fontWeight: "900",
+      letterSpacing: 1.2,
+    },
+    btnTitleBright: {
+      color: "#FFFFFF",
+      fontSize: 15,
+      fontWeight: "800",
+      letterSpacing: 0.2,
+    },
+    btnSubBright: {
+      color: "rgba(255,255,255,0.92)",
+      fontSize: 11,
+      marginTop: 2,
+      fontWeight: "600",
     },
     badge: {
       width: 32, height: 32,

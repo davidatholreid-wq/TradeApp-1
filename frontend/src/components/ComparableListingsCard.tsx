@@ -25,6 +25,7 @@
 // -----------------------------------------------------------------------------
 import { useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, Linking, Platform, Image, TextInput, ScrollView } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { TouchableOpacity } from "@/src/components/HapticButtons";
 import { Ionicons } from "@expo/vector-icons";
 import { spacing, radius, fonts } from "@/src/theme";
@@ -520,24 +521,40 @@ export default function ComparableListingsCard(props: Props) {
 
       <TouchableOpacity
         testID="open-autotrader"
-        style={styles.actionBtn}
         onPress={() => open(autoTrader)}
         accessibilityRole="link"
         accessibilityLabel="Open comparable listings on AutoTrader.co.za"
+        activeOpacity={0.85}
+        style={styles.actionBtnPress}
       >
-        <View style={{ flex: 1 }}>
-          <Text style={styles.btnTitle}>Open AutoTrader.co.za</Text>
-          <Text style={styles.btnSub} numberOfLines={2}>
-            {[
-              [effectiveMake, effectiveModel].filter(Boolean).join(" ") ||
-                (kwTokens.length ? kwTokens.join(" · ") : null),
-              range ? (range.from === range.to ? `Year ${range.from}` : `Years ${range.from}–${range.to}`) : null,
-              fuel,
-              trans,
-            ].filter(Boolean).join(" · ") || "Model listing"}
-          </Text>
-        </View>
-        <Ionicons name="open-outline" size={18} color={colors.primary} />
+        {/* AutoTrader SA brand — signature bold red gradient with white
+            text and a rounded white "logo pip". Renders identically on
+            iOS, Android and Web via expo-linear-gradient. */}
+        <LinearGradient
+          colors={["#F25C05", "#EE1F26", "#B71119"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.actionBtn}
+        >
+          <View style={styles.brandChip}>
+            <Text style={styles.brandChipTxt}>AT</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.btnTitleBright}>Open AutoTrader.co.za</Text>
+            <Text style={styles.btnSubBright} numberOfLines={2}>
+              {[
+                [effectiveMake, effectiveModel].filter(Boolean).join(" ") ||
+                  (kwTokens.length ? kwTokens.join(" · ") : null),
+                range ? (range.from === range.to ? `Year ${range.from}` : `Years ${range.from}–${range.to}`) : null,
+                fuel,
+                trans,
+              ].filter(Boolean).join(" · ") || "Model listing"}
+            </Text>
+          </View>
+          <View style={styles.arrowPip}>
+            <Ionicons name="arrow-forward" size={16} color="#EE1F26" />
+          </View>
+        </LinearGradient>
       </TouchableOpacity>
 
       <View style={styles.disclaimerWrap}>
@@ -696,17 +713,76 @@ function makeStyles(colors: Palette) {
       fontStyle: "italic",
     },
 
+    actionBtnPress: {
+      marginTop: 4,
+      borderRadius: radius.md,
+      // Subtle branded shadow so the CTA visually lifts off the card.
+      // Shadow colour matches AutoTrader's dominant red so it feels
+      // like a proper "AutoTrader button".
+      ...Platform.select({
+        ios: {
+          shadowColor: "#EE1F26",
+          shadowOffset: { width: 0, height: 6 },
+          shadowOpacity: 0.35,
+          shadowRadius: 12,
+        },
+        android: { elevation: 4 },
+        web: {
+          // @ts-ignore — RN-Web only property
+          boxShadow: "0 6px 16px rgba(238,31,38,0.28)",
+        },
+      }),
+    },
     actionBtn: {
       flexDirection: "row",
       alignItems: "center",
       gap: 12,
       paddingHorizontal: spacing.md,
-      paddingVertical: 12,
+      paddingVertical: 14,
       borderRadius: radius.md,
+    },
+    // Rounded white pip in the top-right of the CTA, holds an arrow
+    // icon in the button's brand colour. Same treatment reused on the
+    // WBC button so the two comparisons feel visually paired.
+    arrowPip: {
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      backgroundColor: "#FFFFFF",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    // Rounded "AT" / "WBC" brand chip that sits on the left of the CTA
+    // — provides an unmistakable brand identifier even before the
+    // dealer reads the button copy.
+    brandChip: {
+      minWidth: 42,
+      height: 30,
+      paddingHorizontal: 10,
+      borderRadius: 15,
+      backgroundColor: "rgba(255,255,255,0.22)",
       borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.card,
-      marginTop: 4,
+      borderColor: "rgba(255,255,255,0.55)",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    brandChipTxt: {
+      color: "#FFFFFF",
+      fontSize: 12,
+      fontWeight: "900",
+      letterSpacing: 1.2,
+    },
+    btnTitleBright: {
+      color: "#FFFFFF",
+      fontSize: 15,
+      fontWeight: "800",
+      letterSpacing: 0.2,
+    },
+    btnSubBright: {
+      color: "rgba(255,255,255,0.92)",
+      fontSize: 11,
+      marginTop: 2,
+      fontWeight: "600",
     },
     badge: {
       width: 32, height: 32,
