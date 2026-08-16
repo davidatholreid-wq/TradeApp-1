@@ -727,27 +727,9 @@ export default function HomeScreen() {
                   </Text>
                 </Pressable>
               </View>
-              {dealOutcomes.sold > 0 ? (
-                <View style={styles.dealStatProfitStrip}>
-                  <Ionicons
-                    name={dealOutcomes.gross_profit_zar >= 0 ? "trending-up" : "trending-down"}
-                    size={14}
-                    color={dealOutcomes.gross_profit_zar >= 0 ? "#1F7A3A" : "#B3261E"}
-                  />
-                  <Text style={styles.dealStatProfitLbl}>
-                    {dealOutcomes.gross_profit_zar >= 0 ? "Gross profit on sold cars" : "Loss on sold cars"}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.dealStatProfitVal,
-                      { color: dealOutcomes.gross_profit_zar >= 0 ? "#1F7A3A" : "#B3261E" },
-                    ]}
-                    testID="deal-outcome-profit"
-                  >
-                    R{Math.abs(dealOutcomes.gross_profit_zar).toLocaleString("en-ZA")}
-                  </Text>
-                </View>
-              ) : null}
+              {/* Gross-profit strip removed Nov 2026 — the number was
+                  informational rather than actionable and dealers found
+                  it distracting under the primary Deal Outcomes counts. */}
             </View>
           ) : null}
 
