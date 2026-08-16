@@ -37,6 +37,7 @@ from services.outvin_client import (
     is_outvin_supported_make,
     OUTVIN_SUPPORTED_MAKES,
 )
+from services.porsche_vin import decode_porsche_vin, is_porsche_supported_make
 
 # Late-import from `server` — safe because this file is only imported
 # at the bottom of `server.py` once all these names are defined.
@@ -92,6 +93,13 @@ REPORT_CATALOG: list[dict[str, Any]] = [
         "blurb": "Outvin multi-make OEM datacard — supports 30+ marques.",
         "supports": is_outvin_supported_make,
     },
+    {
+        "id": "porsche_vin",
+        "label": "Porsche VIN Decode",
+        "cost_zar": 20,
+        "blurb": "Rule-based Porsche VIN decode — model, generation, model year, factory and production sequence.",
+        "supports": is_porsche_supported_make,
+    },
 ]
 
 
@@ -130,11 +138,18 @@ async def list_supported_makes(_: dict = Depends(get_current_user)):
     """Return a de-duplicated list of makes any vendor supports.
     Currently just Outvin's list is authoritative (broadest) — BMW /
     Mercedes-Benz are already in it — plus `vin_history` which is
-    always-True. Frontend shows this as a dropdown.
+    always-True, plus Porsche which has its own rule-based decoder.
+    Frontend shows this as a dropdown.
     """
     # Outvin's list is title-case; we return it verbatim so the UI can
-    # display "Mercedes-Benz" exactly as the vendor sees it.
-    return {"makes": OUTVIN_SUPPORTED_MAKES}
+    # display "Mercedes-Benz" exactly as the vendor sees it. Porsche
+    # isn't in Outvin's dataset (see conversation with the user
+    # 2026-08-15) so we append it separately.
+    makes = list(OUTVIN_SUPPORTED_MAKES)
+    if not any(str(m).strip().upper() == "PORSCHE" for m in makes):
+        makes.append("Porsche")
+        makes.sort()
+    return {"makes": makes}
 
 
 @router.get("/vin-reports/available")
@@ -229,6 +244,14 @@ async def order_vin_report(
             result = await fetch_mb_datacard(vin)
         elif entry["id"] == "outvin":
             result = await fetch_outvin_spec(vin)
+        elif entry["id"] == "porsche_vin":
+            # Pure rule-based decode — no external call, no failure
+            # mode beyond "malformed VIN" which we surface as a 400
+            # via the catalog dispatch machinery below.
+            decoded = decode_porsche_vin(vin)
+            if decoded.get("status") != "ok":
+                raise HTTPException(400, decoded.get("error") or "Could not decode VIN.")
+            result = decoded
         else:
             raise RuntimeError(f"Report dispatcher missing for {entry['id']}")
     except KredoAPIError as e:
@@ -523,6 +546,87 @@ def _build_vin_report_pdf(order: dict) -> bytes:
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ]))
             story.append(t)
+    elif rtype == "porsche_vin":
+        # Porsche VIN Decode — no options / equipment list (that would
+        # require the option label from the actual car). We render the
+        # decoded identity fields plus a position-by-position VIN
+        # breakdown so the dealer can see exactly what each digit means.
+        pairs: list[tuple[str, Any]] = [
+            ("Model", rd.get("model")),
+            ("Generation", rd.get("generation") or "—"),
+            ("Model Year", rd.get("model_year") or "—"),
+            ("Type Code", rd.get("model_code") or "—"),
+            ("Vehicle Class", rd.get("vehicle_class") or "—"),
+            ("Market", rd.get("market") or "—"),
+            ("Manufacturer Country", rd.get("country") or "—"),
+            ("Factory", rd.get("factory") or "—"),
+            ("Production Serial", rd.get("serial") or "—"),
+        ]
+        if rd.get("check_digit_valid") is not None:
+            pairs.append((
+                "NA Check Digit",
+                "Valid" if rd.get("check_digit_valid") else f"Invalid (computed {rd.get('check_digit_computed')} vs printed {rd.get('check_digit')})",
+            ))
+        story.append(Paragraph("Decoded identity", h_section))
+        story.append(_kv_table(pairs))
+        story.append(Spacer(1, 4 * mm))
+
+        # VIN-position breakdown
+        story.append(Paragraph("VIN position-by-position", h_section))
+        pos = rd.get("positions") or {}
+        pos_rows = [[
+            Paragraph("<b>Position</b>", small),
+            Paragraph("<b>Character(s)</b>", small),
+            Paragraph("<b>Meaning</b>", small),
+        ]]
+        pos_meta = [
+            ("1", "Country of origin (WMI)"),
+            ("2", "Manufacturer (P = Porsche)"),
+            ("3", "Vehicle class (0 = sports car, 1 = SUV)"),
+            ("4-6", "ROW filler or NA body / engine / restraint"),
+            ("7", "Model code high (ROW) / era identifier (NA)"),
+            ("8", "Model code middle"),
+            ("9", "ROW filler / NA check digit"),
+            ("10", "Model year code"),
+            ("11", "Factory / assembly plant"),
+            ("12", "Model code low"),
+            ("13-17", "Production serial sequence"),
+        ]
+        for key, meaning in pos_meta:
+            if key == "4-6":
+                val = f"{pos.get('4', '')}{pos.get('5', '')}{pos.get('6', '')}"
+            elif key == "13-17":
+                val = pos.get("13-17") or ""
+            else:
+                val = pos.get(key) or ""
+            pos_rows.append([
+                Paragraph(key, body),
+                Paragraph(str(val), body),
+                Paragraph(meaning, body),
+            ])
+        t = Table(pos_rows, colWidths=[22 * mm, 30 * mm, 128 * mm], repeatRows=1)
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), rl_colors.HexColor("#F1F5F9")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.25, rl_colors.HexColor("#E2E8F0")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]))
+        story.append(t)
+
+        if rd.get("warnings"):
+            story.append(Spacer(1, 4 * mm))
+            story.append(Paragraph("Notes", h_section))
+            for w in rd["warnings"]:
+                story.append(Paragraph(f"• {w}", body))
+
+        story.append(Spacer(1, 4 * mm))
+        story.append(Paragraph(
+            f"<font color='#64748B'>{rd.get('disclaimer') or ''}</font>",
+            small,
+        ))
     else:
         # OEM datacard style — build meta first, then options table.
         summary = rd.get("summary") or rd.get("header") or rd.get("vehicle") or {}

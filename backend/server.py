@@ -262,6 +262,18 @@ REPORT_CATALOG = {
         "name": "Accident / Claim History (Kredo VIN)",
         "cost_zar": 100.0,
     },
+    # Porsche VIN Decode — 100% rule-based, no external vendor. Uses
+    # the static tables in services/porsche_vin.py (WMI, ROW/NA
+    # structure, model/type code, model-year cycles, factory codes,
+    # NA check-digit maths). Priced at R20 to match the other OEM
+    # datacard tiers even though there's no per-lookup cost — the
+    # margin funds ongoing maintenance of the lookup tables as
+    # Porsche publishes new codes.
+    "porsche_vin": {
+        "name": "Porsche VIN Decode",
+        "cost_zar": 20.0,
+        "supported_makes": ["PORSCHE", "Porsche"],
+    },
 }
 
 
@@ -975,7 +987,7 @@ class DealerPhotoUpload(BaseModel):
 
 
 class ReportOrderCreate(BaseModel):
-    type: Literal["lightstone_verification", "lightstone_repair", "car_vertical", "bmw_options", "mb_options", "outvin_spec", "landrover_osh"]
+    type: Literal["lightstone_verification", "lightstone_repair", "car_vertical", "bmw_options", "mb_options", "outvin_spec", "landrover_osh", "porsche_vin"]
     accepted_charge: bool = False
 
 
@@ -3238,6 +3250,38 @@ async def order_submission_report(
         )
         result_data = spec
         note = "Sourced live from osh.landrover.com (JLR Online Service History)."
+        mocked = False
+    elif payload.type == "porsche_vin":
+        # Porsche VIN Decode — pure rule-based, zero external calls.
+        # Same "on-failure don't bill" contract as the other OEM
+        # reports: a malformed VIN or non-Porsche WMI returns a 400
+        # and no charge is incurred. Successful decodes are mirrored
+        # onto the submission so the valuation PDF and the mobile
+        # Porsche card render without needing to walk the report_orders
+        # collection.
+        from services.porsche_vin import decode_porsche_vin, is_porsche_supported_make
+
+        # Additional make guard — even though the catalog gates this to
+        # Porsche, admins ordering on behalf of a mis-tagged submission
+        # would otherwise burn a decode on non-Porsche data.
+        make_now = (sub.get("make_name") or sub.get("make") or "").strip()
+        if not is_porsche_supported_make(make_now):
+            raise HTTPException(
+                400,
+                "Porsche VIN Decode is only available on Porsche-make submissions.",
+            )
+        spec = decode_porsche_vin(vin)
+        if spec.get("status") != "ok":
+            raise HTTPException(
+                400,
+                spec.get("error") or "Could not decode this Porsche VIN.",
+            )
+        await db.submissions.update_one(
+            {"id": sub_id},
+            {"$set": {"porsche_vin_decode": spec}},
+        )
+        result_data = spec
+        note = "Decoded from the Porsche VIN structure — no external vendor call."
         mocked = False
     else:
         # MOCKED: real Lightstone / CarVertical APIs will replace this generator.
@@ -5619,6 +5663,82 @@ async def _build_report_pdf(sub: dict, order: dict) -> bytes:
                     story.append(Paragraph(f"•&nbsp;&nbsp;<b>{code}</b>", body))
         else:
             story.append(Paragraph("No factory options returned for this VIN.", body))
+
+    elif report_type == "porsche_vin" and isinstance(data, dict):
+        # Porsche VIN Decode — rule-based (no vendor). Renders identity
+        # rows plus a position-by-position VIN breakdown.
+        story.append(Paragraph("DECODED IDENTITY", h_section))
+        ident_rows: list[list[Any]] = []
+        for lbl, key in [
+            ("Model", "model"),
+            ("Generation", "generation"),
+            ("Model Year", "model_year"),
+            ("Type Code", "model_code"),
+            ("Vehicle Class", "vehicle_class"),
+            ("Market", "market"),
+            ("Manufacturer Country", "country"),
+            ("Factory", "factory"),
+            ("Production Serial", "serial"),
+        ]:
+            val = data.get(key)
+            if val not in (None, ""):
+                ident_rows.append([lbl, Paragraph(str(val), body)])
+        if data.get("check_digit_valid") is not None:
+            cd = "Valid" if data.get("check_digit_valid") else (
+                f"Invalid (computed {data.get('check_digit_computed')} vs "
+                f"printed {data.get('check_digit')})"
+            )
+            ident_rows.append(["NA Check Digit", Paragraph(cd, body)])
+        if ident_rows:
+            t_id = Table(ident_rows, colWidths=[50 * mm, 125 * mm])
+            t_id.setStyle(_sub_row_style())
+            story.append(t_id)
+
+        story.append(Paragraph("VIN POSITION-BY-POSITION", h_section))
+        pos = data.get("positions") or {}
+        pos_meta = [
+            ("1", "Country of origin (WMI)"),
+            ("2", "Manufacturer (P = Porsche)"),
+            ("3", "Vehicle class (0 = sports car, 1 = SUV)"),
+            ("4-6", "ROW filler or NA body / engine / restraint"),
+            ("7", "Model code high (ROW) / era identifier (NA)"),
+            ("8", "Model code middle"),
+            ("9", "Filler (ROW) / check digit (NA)"),
+            ("10", "Model year code"),
+            ("11", "Factory / assembly plant"),
+            ("12", "Model code low"),
+            ("13-17", "Production serial sequence"),
+        ]
+        pos_rows: list[list[Any]] = [["Position", "Value", "Meaning"]]
+        for key, meaning in pos_meta:
+            if key == "4-6":
+                val = f"{pos.get('4', '')}{pos.get('5', '')}{pos.get('6', '')}"
+            elif key == "13-17":
+                val = pos.get("13-17") or ""
+            else:
+                val = pos.get(key) or ""
+            pos_rows.append([key, val, Paragraph(meaning, body)])
+        t_pos = Table(pos_rows, colWidths=[20 * mm, 25 * mm, 130 * mm], repeatRows=1)
+        t_pos.setStyle(TableStyle([
+            ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 9),
+            ("BACKGROUND", (0, 0), (-1, 0), rl_colors.HexColor("#F1F5F9")),
+            ("FONT", (0, 1), (-1, -1), "Helvetica", 9),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.25, rl_colors.lightgrey),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]))
+        story.append(t_pos)
+
+        warnings = data.get("warnings") or []
+        if warnings:
+            story.append(Paragraph("NOTES", h_section))
+            for w in warnings:
+                story.append(Paragraph(f"•&nbsp;&nbsp;{w}", body))
+
+        if data.get("disclaimer"):
+            story.append(Spacer(1, 4))
+            story.append(Paragraph(f"<i>{data['disclaimer']}</i>", small))
 
     # Summary paragraph
     if data.get("summary"):

@@ -228,6 +228,15 @@ export default function VehicleDetail() {
     return ["BMW", "MINI"].includes(mk);
   }, [sub?.make_name]);
 
+  // Porsche VIN Decode — pure rule-based decoder, no external vendor.
+  // Offered exclusively on Porsche-tagged submissions and coexists
+  // with the (non-existent for Porsche) Outvin row. Backend catalog is
+  // the source of truth via `supported_makes: ["Porsche"]`.
+  const isPorscheSupported = useMemo(() => {
+    const mk = (sub?.make_name || (sub as any)?.make || "").toString().toUpperCase();
+    return mk === "PORSCHE";
+  }, [sub?.make_name]);
+
   // JLR OSH service-history report — offered on Land Rover / Range Rover
   // / Jaguar submissions. Mirrors the backend catalog's `supported_makes`
   // list so admins never see the row on non-JLR vehicles.
@@ -1264,6 +1273,10 @@ export default function VehicleDetail() {
     // JLR Online Service History — live osh.landrover.com scrape, only
     // offered on Land Rover / Range Rover / Jaguar vehicles.
     landrover_osh: { name: "Land Rover / Jaguar Service History", cost_zar: 20 },
+    // Porsche VIN Decode — rule-based decoder, no external API. Sold
+    // at R20 to match the other OEM-datacard tier since Outvin doesn't
+    // carry Porsche data.
+    porsche_vin: { name: "Porsche VIN Decode", cost_zar: 20 },
     // Kredo VIN accident / claim history — R100 live lookup, one charge
     // per submission, billed to the dealer's next invoice.
     kredo_vin_history: { name: "Accident / Claim History (Kredo VIN)", cost_zar: KREDO_VIN_HISTORY_DEALER_COST_ZAR },
@@ -2511,6 +2524,7 @@ export default function VehicleDetail() {
           isOutvinSupported={isOutvinSupported}
           outvinReportLabel={outvinReportLabel}
           isLandroverSupported={isLandroverSupported}
+          isPorscheSupported={isPorscheSupported}
           reportCatalog={REPORT_CATALOG}
           orderedReportTypes={orderedReportTypes}
           orderingReportType={orderingReportType}

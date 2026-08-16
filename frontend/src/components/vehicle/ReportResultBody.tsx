@@ -101,6 +101,112 @@ export function ReportResultBody({ data }: { data: Record<string, any> }) {
     );
   }
 
+  // Porsche VIN Decode — rule-based decoder result. Payload has:
+  //   { status, vin, model, generation, model_year, model_code,
+  //     vehicle_class, market, factory, country, serial,
+  //     check_digit, check_digit_computed, check_digit_valid,
+  //     positions:{...}, warnings:[], disclaimer }
+  const isPorscheVin =
+    data && !sections && data.status === "ok" && data.manufacturer === "Porsche"
+    && data.model_code && data.positions;
+  if (isPorscheVin) {
+    const positions = (data.positions || {}) as Record<string, string>;
+    const posMeta: { key: string; label: string }[] = [
+      { key: "1", label: "Country of origin (WMI)" },
+      { key: "2", label: "Manufacturer (P = Porsche)" },
+      { key: "3", label: "Vehicle class (0 = sports car, 1 = SUV)" },
+      { key: "4-6", label: "ROW filler / NA body-engine-restraint" },
+      { key: "7", label: "Model code high (ROW) / era (NA)" },
+      { key: "8", label: "Model code middle" },
+      { key: "9", label: "Filler (ROW) / check digit (NA)" },
+      { key: "10", label: "Model year code" },
+      { key: "11", label: "Factory / assembly plant" },
+      { key: "12", label: "Model code low" },
+      { key: "13-17", label: "Production serial sequence" },
+    ];
+    const identityRows: [string, any][] = [
+      ["Model", data.model],
+      ["Generation", data.generation || "—"],
+      ["Model Year", data.model_year != null ? String(data.model_year) : "—"],
+      ["Type Code", data.model_code],
+      ["Vehicle Class", data.vehicle_class],
+      ["Market", data.market],
+      ["Manufacturer Country", data.country],
+      ["Factory", data.factory],
+      ["Production Serial", data.serial],
+    ];
+    if (data.check_digit_valid !== null && data.check_digit_valid !== undefined) {
+      identityRows.push([
+        "NA Check Digit",
+        data.check_digit_valid
+          ? "Valid"
+          : `Invalid (computed ${data.check_digit_computed} vs printed ${data.check_digit})`,
+      ]);
+    }
+    const getPosVal = (k: string) => {
+      if (k === "4-6") {
+        return `${positions["4"] || ""}${positions["5"] || ""}${positions["6"] || ""}`;
+      }
+      if (k === "13-17") return positions["13-17"] || "";
+      return positions[k] || "";
+    };
+    return (
+      <View>
+        <Text style={styles.reportSectionHeader}>Decoded identity</Text>
+        {identityRows.map(([k, v]) => (
+          <View key={k} style={styles.reportRow}>
+            <Text style={styles.reportRowLabel}>{k}</Text>
+            <Text style={styles.reportRowValue}>{renderValue(v)}</Text>
+          </View>
+        ))}
+        <Text style={styles.reportSectionHeader}>
+          VIN position-by-position
+        </Text>
+        {posMeta.map(({ key, label }) => (
+          <View key={key} style={styles.reportRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.reportRowLabel}>
+                Pos {key} · {label}
+              </Text>
+            </View>
+            <Text style={styles.reportRowValue}>
+              {getPosVal(key) || "—"}
+            </Text>
+          </View>
+        ))}
+        {Array.isArray(data.warnings) && data.warnings.length > 0 ? (
+          <>
+            <Text style={styles.reportSectionHeader}>Notes</Text>
+            {data.warnings.map((w: string, i: number) => (
+              <View
+                key={`w-${i}`}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "flex-start",
+                  gap: 6,
+                  paddingVertical: 6,
+                }}
+              >
+                <Ionicons name="alert-circle-outline" size={14} color={colors.warning} />
+                <Text style={[styles.reportBullet, { flex: 1 }]}>{w}</Text>
+              </View>
+            ))}
+          </>
+        ) : null}
+        {data.disclaimer ? (
+          <Text
+            style={[
+              styles.viewReportBody,
+              { marginTop: spacing.md, opacity: 0.7, fontSize: 11, fontStyle: "italic" },
+            ]}
+          >
+            {String(data.disclaimer)}
+          </Text>
+        ) : null}
+      </View>
+    );
+  }
+
   // Kredo VIN accident / claim history — real payload shape from
   // services/kredo_client.py is:
   //   { claim_count, claims: [{ id, creation_date, accident_date,
