@@ -469,15 +469,22 @@ async def list_stock(current: dict = Depends(get_current_user)):
     total_gp_items = 0  # only rows that carry enough data to compute a GP
     ages: List[int] = []
     buckets = {"0-30": 0, "31-60": 0, "61-90": 0, "90+": 0, "unknown": 0}
+    # Per-bucket cost + expected-GP roll-ups so the aging silos can
+    # show the same "tied-up capital vs profit-on-the-line" split as
+    # the top-line totals. Only rows with a target sell price
+    # contribute to the bucket GP (same rule as the fleet total).
+    bucket_cost: dict[str, int] = {k: 0 for k in buckets}
+    bucket_gp: dict[str, int] = {k: 0 for k in buckets}
     over_60 = 0
     async for s in db.stock_items.find(query, {"_id": 0}):
         row = _row_for_api(s)
         items.append(row)
         cap = row.get("my_offer_price_zar") or 0
         try:
-            total_capital += int(cap or 0)
+            cap_int = int(cap or 0)
+            total_capital += cap_int
         except Exception:
-            pass
+            cap_int = 0
         # Floorplan running total — nullable, treat missing as 0 for
         # the total but only bump when we actually have a value so the
         # summary card can distinguish "no floorplan captured" from
@@ -491,20 +498,25 @@ async def list_stock(current: dict = Depends(get_current_user)):
         # dealers only capture it once they've actually spent the money).
         sell = row.get("target_sell_price_zar")
         cost = row.get("my_offer_price_zar")
+        row_gp: Optional[int] = None
         if isinstance(sell, (int, float)) and isinstance(cost, (int, float)):
             recon = row.get("expected_recon_cost_zar") or 0
             try:
-                gp = int(sell) - (int(cost) + int(recon))
-                total_gp += gp
+                row_gp = int(sell) - (int(cost) + int(recon))
+                total_gp += row_gp
                 total_gp_items += 1
             except Exception:
-                pass
+                row_gp = None
         d = row.get("days_in_stock")
         if isinstance(d, int):
             ages.append(d)
             if d > 60:
                 over_60 += 1
-        buckets[_bucket_days(d)] += 1
+        bkt = _bucket_days(d)
+        buckets[bkt] += 1
+        bucket_cost[bkt] += cap_int
+        if row_gp is not None:
+            bucket_gp[bkt] += row_gp
     items.sort(key=lambda r: r.get("purchased_at") or "", reverse=True)
     avg_age = int(sum(ages) / len(ages)) if ages else None
     return {
@@ -520,6 +532,11 @@ async def list_stock(current: dict = Depends(get_current_user)):
             "avg_age_days": avg_age,
             "over_60_days": over_60,
             "buckets": buckets,
+            # Cost + expected GP per aging bucket so the silos on the
+            # front-end can show the profit-on-the-line beside the
+            # unit count. Same keys as ``buckets``.
+            "bucket_cost_zar": bucket_cost,
+            "bucket_gp_zar": bucket_gp,
         },
         "items": items,
     }

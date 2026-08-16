@@ -86,6 +86,10 @@ type StockResponse = {
     avg_age_days: number | null;
     over_60_days: number;
     buckets: { [k: string]: number };
+    // Nov 2026 — cost + expected GP roll-ups per aging bucket so the
+    // silos below the totals surface the profit-on-the-line.
+    bucket_cost_zar?: { [k: string]: number };
+    bucket_gp_zar?: { [k: string]: number };
   };
   items: StockItem[];
 };
@@ -466,6 +470,8 @@ export default function StockScreen() {
           {data?.summary?.buckets ? (
             <AgingChart
               buckets={data.summary.buckets}
+              bucketCost={data.summary.bucket_cost_zar}
+              bucketGp={data.summary.bucket_gp_zar}
               styles={styles}
               colors={colors}
               activeFilter={ageFilter}
@@ -669,7 +675,7 @@ function SummaryStrip({
         styles={styles}
       />
       <SummaryCell
-        label="CAPITAL"
+        label="TOTAL COST"
         value={fmtZar(s.total_capital_zar)}
         icon="wallet"
         tint="#22C55E"
@@ -701,13 +707,6 @@ function SummaryStrip({
         value={s.avg_age_days != null ? `${s.avg_age_days}d` : "—"}
         icon="hourglass"
         tint="#F97316"
-        styles={styles}
-      />
-      <SummaryCell
-        label="60+ DAYS"
-        value={String(s.over_60_days)}
-        icon="alert-circle"
-        tint={s.over_60_days > 0 ? "#DC2626" : "#6B7280"}
         styles={styles}
       />
     </View>
@@ -749,16 +748,23 @@ function SummaryCell({
 }
 
 // ---------------------------------------------------------------------------
-// AgingChart — clickable bars per age bucket
+// AgingChart — clickable bars per age bucket. Each bar shows the
+// unit count above, plus a two-line breakdown below (tied-up cost +
+// expected GP) so dealers see the profit-on-the-line for each
+// aging silo without leaving the chart.
 // ---------------------------------------------------------------------------
 function AgingChart({
   buckets,
+  bucketCost,
+  bucketGp,
   styles,
   colors,
   activeFilter,
   onSelect,
 }: {
   buckets: { [k: string]: number };
+  bucketCost?: { [k: string]: number };
+  bucketGp?: { [k: string]: number };
   styles: ReturnType<typeof makeStyles>;
   colors: Palette;
   activeFilter: AgeFilter;
@@ -781,6 +787,9 @@ function AgingChart({
         {order.map((o) => {
           const n = buckets[o.k] || 0;
           const active = activeFilter === o.k;
+          const cost = bucketCost?.[o.k] || 0;
+          const gp = bucketGp?.[o.k] || 0;
+          const gpColor = gp > 0 ? "#22C55E" : gp < 0 ? "#DC2626" : colors.textSecondary;
           return (
             <Pressable
               key={o.k}
@@ -809,6 +818,22 @@ function AgingChart({
                 {n}
               </Text>
               <Text style={styles.chartBarLabel}>{o.label}</Text>
+              {/* Bucket cost + GP breakdown. Only rendered when there's
+                  at least one unit in the bucket so empty silos stay
+                  visually calm. */}
+              {n > 0 ? (
+                <View style={styles.chartBarStats}>
+                  <Text style={styles.chartBarStatCost} numberOfLines={1}>
+                    {fmtZar(cost)}
+                  </Text>
+                  <Text
+                    style={[styles.chartBarStatGp, { color: gpColor }]}
+                    numberOfLines={1}
+                  >
+                    GP {fmtZar(gp)}
+                  </Text>
+                </View>
+              ) : null}
             </Pressable>
           );
         })}
@@ -1864,13 +1889,15 @@ const makeStyles = (colors: Palette) =>
       flexDirection: "row",
       alignItems: "flex-end",
       gap: 8,
-      height: 96,
+      height: 128,
     },
     chartBarCol: {
       flex: 1,
       alignItems: "center",
       gap: 4,
       height: "100%",
+      // Room for the cost + GP stats footer under each bar
+      paddingBottom: 2,
     },
     chartBarTrack: {
       width: "80%",
@@ -1893,6 +1920,26 @@ const makeStyles = (colors: Palette) =>
       fontSize: 9,
       fontWeight: "700",
       letterSpacing: 0.4,
+    },
+    // Cost + GP breakdown under each bucket bar. Two lines: total
+    // cost tied up in that silo (in muted colour) plus the expected
+    // GP (green/red/grey based on sign).
+    chartBarStats: {
+      marginTop: 2,
+      alignItems: "center",
+      gap: 1,
+    },
+    chartBarStatCost: {
+      color: colors.text,
+      fontSize: 10,
+      fontFamily: fonts.number,
+      fontWeight: "700",
+    },
+    chartBarStatGp: {
+      fontSize: 9,
+      fontFamily: fonts.number,
+      fontWeight: "700",
+      letterSpacing: 0.2,
     },
 
     // Search + sort -----------------------------------------------------
