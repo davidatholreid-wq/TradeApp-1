@@ -13,9 +13,10 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
-import { useVideoPlayer, VideoView } from "expo-video";
+import { useVideoPlayer } from "expo-video";
 import { LinearGradient } from "expo-linear-gradient";
 import AppIconTile from "@/src/components/home/AppIconTile";
+import DataBitsHero from "@/src/components/DataBitsHero";
 import { useFocusEffect, useRouter } from "expo-router";
 
 import { spacing, radius, fonts, BRAND } from "@/src/theme";
@@ -559,29 +560,12 @@ export default function HomeScreen() {
               styling. */}
           <View>
             <View style={styles.heroWrap}>
-              {Platform.OS === "web" ? (
-                <View style={styles.heroLogoBg}>
-                  <Image
-                    source={BRAND.logo}
-                    style={styles.heroLogoImg}
-                    resizeMode="contain"
-                    accessibilityLabel="TRADE AI powered by FOURBUY"
-                  />
-                </View>
-              ) : (
-                <>
-                  <Image source={HERO_POSTER} style={styles.heroPoster} resizeMode="cover" />
-                  <VideoView
-                    player={heroPlayer}
-                    style={styles.hero}
-                    contentFit="cover"
-                    nativeControls={false}
-                    allowsFullscreen={false}
-                    allowsPictureInPicture={false}
-                    accessibilityLabel="TRADE AI powered by FOURBUY hero video"
-                  />
-                </>
-              )}
+              {/* Data-bit assembly animation — 40 cyan chips scatter
+                  in and coalesce into a grid that resolves to the
+                  TRADE AI wordmark. Same component used on iOS,
+                  Android and Web so the old video + web-only Image
+                  fallback are both gone. */}
+              <DataBitsHero height={220} />
             </View>
           </View>
 
