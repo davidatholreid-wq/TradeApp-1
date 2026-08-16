@@ -18,7 +18,8 @@
  *   4. Modal for viewing a client's monthly usage with a month picker
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, Alert, Modal, Platform } from "react-native";
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, Alert, Modal, Platform, Linking } from "react-native";
+import { router } from "expo-router";
 import { TouchableOpacity } from "@/src/components/HapticButtons";
 import { Ionicons } from "@expo/vector-icons";
 import { apiFetch } from "@/src/api";
@@ -175,18 +176,41 @@ export default function AdminPartnerApiScreen() {
         </Text>
         <TouchableOpacity
           onPress={() => {
-            if (Platform.OS === "web") window.open("/kredo-api/docs", "_blank");
+            // In-app route on both web (opens new tab) and native (opens
+            // the docs screen inside the Expo Router stack).
+            if (Platform.OS === "web") {
+              window.open("/kredo-api/docs", "_blank");
+            } else {
+              router.push("/kredo-api/docs" as never);
+            }
           }}
           style={styles.docsBtn}
+          testID="partner-docs-view"
         >
           <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "800" }}>View</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          onPress={() => {
-            const url = `${process.env.EXPO_PUBLIC_BACKEND_URL || ""}/api/partner-api/docs.pdf`;
-            if (Platform.OS === "web") window.open(url, "_blank");
+          onPress={async () => {
+            // Backend PDF endpoint — public, no auth. On web we pop a
+            // new tab (native download UI); on iOS/Android we use
+            // Linking.openURL so the system opens the PDF in the
+            // default viewer / browser.
+            const base = process.env.EXPO_PUBLIC_BACKEND_URL || "";
+            const url = `${base}/api/partner-api/docs.pdf`;
+            try {
+              if (Platform.OS === "web") {
+                window.open(url, "_blank");
+              } else {
+                const ok = await Linking.canOpenURL(url);
+                if (ok) await Linking.openURL(url);
+                else Alert.alert("Could not open PDF", "Please try again in a moment.");
+              }
+            } catch (e: any) {
+              Alert.alert("PDF unavailable", e?.message || "Please try again.");
+            }
           }}
           style={[styles.docsBtn, { backgroundColor: colors.primary + "18" }]}
+          testID="partner-docs-download"
         >
           <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "800" }}>Download PDF</Text>
         </TouchableOpacity>
