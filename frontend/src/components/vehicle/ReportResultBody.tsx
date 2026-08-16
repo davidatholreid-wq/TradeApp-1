@@ -207,6 +207,106 @@ export function ReportResultBody({ data }: { data: Record<string, any> }) {
     );
   }
 
+  // Ferrari VIN Decode — rule-based decoder result. Same shape as
+  // isPorscheVin above with the added engine / safety / market
+  // sub-fields carried by Ferrari's VDS.
+  const isFerrariVin =
+    data && !sections && data.status === "ok" && data.manufacturer === "Ferrari"
+    && data.model_code && data.positions;
+  if (isFerrariVin) {
+    const positions = (data.positions || {}) as Record<string, string>;
+    const posMeta: { key: string; label: string }[] = [
+      { key: "1-3", label: "WMI (world manufacturer identifier)" },
+      { key: "4", label: "Model or engine (era-dependent)" },
+      { key: "5", label: "Model or safety system (era-dependent)" },
+      { key: "6", label: "Engine or model (era-dependent)" },
+      { key: "7", label: "Safety system or model (era-dependent)" },
+      { key: "8", label: "Market" },
+      { key: "9", label: "Check digit (NA) / filler" },
+      { key: "10", label: "Model year code" },
+      { key: "11", label: "Assembly plant" },
+      { key: "12-17", label: "Production serial sequence" },
+    ];
+    const identityRows: [string, any][] = [
+      ["Model", data.model],
+      ["Era", data.era || "—"],
+      ["Model Year", data.model_year != null ? String(data.model_year) : "—"],
+      ["Type Code", data.model_code],
+      ["Engine Code", data.engine_code || "—"],
+      ["Safety System Code", data.safety_code || "—"],
+      ["Market", data.market],
+      ["Manufacturer Country", data.country],
+      ["WMI", data.wmi],
+      ["Plant", data.plant],
+      ["VIN Layout", data.layout],
+      ["Production Serial", data.serial],
+    ];
+    if (data.check_digit_valid !== null && data.check_digit_valid !== undefined) {
+      identityRows.push([
+        "NA Check Digit",
+        data.check_digit_valid
+          ? "Valid"
+          : `Invalid (computed ${data.check_digit_computed} vs printed ${data.check_digit})`,
+      ]);
+    }
+    const getPosVal = (k: string) => {
+      if (k === "1-3") {
+        return `${positions["1"] || ""}${positions["2"] || ""}${positions["3"] || ""}`;
+      }
+      if (k === "12-17") return positions["12-17"] || "";
+      return positions[k] || "";
+    };
+    return (
+      <View>
+        <Text style={styles.reportSectionHeader}>Decoded identity</Text>
+        {identityRows.map(([k, v]) => (
+          <View key={k} style={styles.reportRow}>
+            <Text style={styles.reportRowLabel}>{k}</Text>
+            <Text style={styles.reportRowValue}>{renderValue(v)}</Text>
+          </View>
+        ))}
+        <Text style={styles.reportSectionHeader}>VIN position-by-position</Text>
+        {posMeta.map(({ key, label }) => (
+          <View key={key} style={styles.reportRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.reportRowLabel}>Pos {key} · {label}</Text>
+            </View>
+            <Text style={styles.reportRowValue}>{getPosVal(key) || "—"}</Text>
+          </View>
+        ))}
+        {Array.isArray(data.warnings) && data.warnings.length > 0 ? (
+          <>
+            <Text style={styles.reportSectionHeader}>Notes</Text>
+            {data.warnings.map((w: string, i: number) => (
+              <View
+                key={`w-${i}`}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "flex-start",
+                  gap: 6,
+                  paddingVertical: 6,
+                }}
+              >
+                <Ionicons name="alert-circle-outline" size={14} color={colors.warning} />
+                <Text style={[styles.reportBullet, { flex: 1 }]}>{w}</Text>
+              </View>
+            ))}
+          </>
+        ) : null}
+        {data.disclaimer ? (
+          <Text
+            style={[
+              styles.viewReportBody,
+              { marginTop: spacing.md, opacity: 0.7, fontSize: 11, fontStyle: "italic" },
+            ]}
+          >
+            {String(data.disclaimer)}
+          </Text>
+        ) : null}
+      </View>
+    );
+  }
+
   // Kredo VIN accident / claim history — real payload shape from
   // services/kredo_client.py is:
   //   { claim_count, claims: [{ id, creation_date, accident_date,

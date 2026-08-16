@@ -82,7 +82,8 @@ export type ReportOrder = {
     | "outvin_spec"
     | "landrover_osh"
     | "kredo_vin_history"
-    | "porsche_vin";
+    | "porsche_vin"
+    | "ferrari_vin";
   name: string;
   cost_zar: number;
   status: "pending" | "delivered" | "failed";

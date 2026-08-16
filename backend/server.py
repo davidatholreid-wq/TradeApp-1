@@ -274,6 +274,15 @@ REPORT_CATALOG = {
         "cost_zar": 20.0,
         "supported_makes": ["PORSCHE", "Porsche"],
     },
+    # Ferrari VIN Decode — same rule-based approach as Porsche (no
+    # external vendor call). Sold at R20 because Ferrari doesn't
+    # appear in Outvin's dataset and there's no OEM datacard endpoint
+    # to hit — the value is the curated model / era / plant lookup.
+    "ferrari_vin": {
+        "name": "Ferrari VIN Decode",
+        "cost_zar": 20.0,
+        "supported_makes": ["FERRARI", "Ferrari"],
+    },
 }
 
 
@@ -994,7 +1003,7 @@ class DealerPhotoUpload(BaseModel):
 
 
 class ReportOrderCreate(BaseModel):
-    type: Literal["lightstone_verification", "lightstone_repair", "car_vertical", "bmw_options", "mb_options", "outvin_spec", "landrover_osh", "porsche_vin"]
+    type: Literal["lightstone_verification", "lightstone_repair", "car_vertical", "bmw_options", "mb_options", "outvin_spec", "landrover_osh", "porsche_vin", "ferrari_vin"]
     accepted_charge: bool = False
 
 
@@ -3315,6 +3324,32 @@ async def order_submission_report(
         )
         result_data = spec
         note = "Decoded from the Porsche VIN structure — no external vendor call."
+        mocked = False
+    elif payload.type == "ferrari_vin":
+        # Ferrari VIN Decode — rule-based mirror of the Porsche flow.
+        # Same "on-failure don't bill" contract; the decoder handles
+        # both the "AA00" (older) and "00AA" (modern) VDS layouts and
+        # emits warnings for unknown model codes without failing.
+        from services.ferrari_vin import decode_ferrari_vin, is_ferrari_supported_make
+
+        make_now = (sub.get("make_name") or sub.get("make") or "").strip()
+        if not is_ferrari_supported_make(make_now):
+            raise HTTPException(
+                400,
+                "Ferrari VIN Decode is only available on Ferrari-make submissions.",
+            )
+        spec = decode_ferrari_vin(vin)
+        if spec.get("status") != "ok":
+            raise HTTPException(
+                400,
+                spec.get("error") or "Could not decode this Ferrari VIN.",
+            )
+        await db.submissions.update_one(
+            {"id": sub_id},
+            {"$set": {"ferrari_vin_decode": spec}},
+        )
+        result_data = spec
+        note = "Decoded from the Ferrari VIN structure — no external vendor call."
         mocked = False
     else:
         # MOCKED: real Lightstone / CarVertical APIs will replace this generator.
@@ -5748,6 +5783,84 @@ async def _build_report_pdf(sub: dict, order: dict) -> bytes:
                 val = f"{pos.get('4', '')}{pos.get('5', '')}{pos.get('6', '')}"
             elif key == "13-17":
                 val = pos.get("13-17") or ""
+            else:
+                val = pos.get(key) or ""
+            pos_rows.append([key, val, Paragraph(meaning, body)])
+        t_pos = Table(pos_rows, colWidths=[20 * mm, 25 * mm, 130 * mm], repeatRows=1)
+        t_pos.setStyle(TableStyle([
+            ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 9),
+            ("BACKGROUND", (0, 0), (-1, 0), rl_colors.HexColor("#F1F5F9")),
+            ("FONT", (0, 1), (-1, -1), "Helvetica", 9),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.25, rl_colors.lightgrey),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]))
+        story.append(t_pos)
+
+        warnings = data.get("warnings") or []
+        if warnings:
+            story.append(Paragraph("NOTES", h_section))
+            for w in warnings:
+                story.append(Paragraph(f"•&nbsp;&nbsp;{w}", body))
+
+        if data.get("disclaimer"):
+            story.append(Spacer(1, 4))
+            story.append(Paragraph(f"<i>{data['disclaimer']}</i>", small))
+
+    elif report_type == "ferrari_vin" and isinstance(data, dict):
+        # Ferrari VIN Decode — mirrors the Porsche renderer but adds
+        # the extra engine / safety / market sub-fields.
+        story.append(Paragraph("DECODED IDENTITY", h_section))
+        ident_rows: list[list[Any]] = []
+        for lbl, key in [
+            ("Model", "model"),
+            ("Era", "era"),
+            ("Model Year", "model_year"),
+            ("Type Code", "model_code"),
+            ("Engine Code", "engine_code"),
+            ("Safety System Code", "safety_code"),
+            ("Market", "market"),
+            ("Manufacturer Country", "country"),
+            ("WMI", "wmi"),
+            ("Plant", "plant"),
+            ("VIN Layout", "layout"),
+            ("Production Serial", "serial"),
+        ]:
+            val = data.get(key)
+            if val not in (None, ""):
+                ident_rows.append([lbl, Paragraph(str(val), body)])
+        if data.get("check_digit_valid") is not None:
+            cd = "Valid" if data.get("check_digit_valid") else (
+                f"Invalid (computed {data.get('check_digit_computed')} vs "
+                f"printed {data.get('check_digit')})"
+            )
+            ident_rows.append(["NA Check Digit", Paragraph(cd, body)])
+        if ident_rows:
+            t_id = Table(ident_rows, colWidths=[50 * mm, 125 * mm])
+            t_id.setStyle(_sub_row_style())
+            story.append(t_id)
+
+        story.append(Paragraph("VIN POSITION-BY-POSITION", h_section))
+        pos = data.get("positions") or {}
+        pos_meta = [
+            ("1-3", "WMI (world manufacturer identifier)"),
+            ("4", "Model or engine (era-dependent)"),
+            ("5", "Model or safety system (era-dependent)"),
+            ("6", "Engine or model (era-dependent)"),
+            ("7", "Safety system or model (era-dependent)"),
+            ("8", "Market"),
+            ("9", "Check digit (NA) / filler"),
+            ("10", "Model year code"),
+            ("11", "Assembly plant"),
+            ("12-17", "Production serial sequence"),
+        ]
+        pos_rows: list[list[Any]] = [["Position", "Value", "Meaning"]]
+        for key, meaning in pos_meta:
+            if key == "1-3":
+                val = f"{pos.get('1', '')}{pos.get('2', '')}{pos.get('3', '')}"
+            elif key == "12-17":
+                val = pos.get("12-17") or ""
             else:
                 val = pos.get(key) or ""
             pos_rows.append([key, val, Paragraph(meaning, body)])

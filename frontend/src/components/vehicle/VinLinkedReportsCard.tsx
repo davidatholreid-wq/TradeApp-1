@@ -56,6 +56,7 @@ export type VinLinkedReportsCardProps = {
   outvinReportLabel?: string;
   isLandroverSupported: boolean;
   isPorscheSupported: boolean;
+  isFerrariSupported: boolean;
   reportCatalog: ReportCatalog;
   orderedReportTypes: Set<string>;
   orderingReportType: string | null;
@@ -81,6 +82,7 @@ export function VinLinkedReportsCard({
   outvinReportLabel,
   isLandroverSupported,
   isPorscheSupported,
+  isFerrariSupported,
   reportCatalog,
   orderedReportTypes,
   orderingReportType,
@@ -158,6 +160,7 @@ export function VinLinkedReportsCard({
             if (isOutvinSupported) baseTypes.push("outvin_spec");
             if (isLandroverSupported) baseTypes.push("landrover_osh");
             if (isPorscheSupported) baseTypes.push("porsche_vin");
+            if (isFerrariSupported) baseTypes.push("ferrari_vin");
             if (sub.vin && sub.vin.trim() && sub.vin.toUpperCase() !== "TBC") {
               baseTypes.push("kredo_vin_history");
             }

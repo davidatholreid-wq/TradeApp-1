@@ -38,6 +38,7 @@ from services.outvin_client import (
     OUTVIN_SUPPORTED_MAKES,
 )
 from services.porsche_vin import decode_porsche_vin, is_porsche_supported_make
+from services.ferrari_vin import decode_ferrari_vin, is_ferrari_supported_make
 
 # Late-import from `server` — safe because this file is only imported
 # at the bottom of `server.py` once all these names are defined.
@@ -100,6 +101,13 @@ REPORT_CATALOG: list[dict[str, Any]] = [
         "blurb": "Rule-based Porsche VIN decode — model, generation, model year, factory and production sequence.",
         "supports": is_porsche_supported_make,
     },
+    {
+        "id": "ferrari_vin",
+        "label": "Ferrari VIN Decode",
+        "cost_zar": 20,
+        "blurb": "Rule-based Ferrari VIN decode — model family, era, model year, plant and production sequence.",
+        "supports": is_ferrari_supported_make,
+    },
 ]
 
 
@@ -143,12 +151,13 @@ async def list_supported_makes(_: dict = Depends(get_current_user)):
     """
     # Outvin's list is title-case; we return it verbatim so the UI can
     # display "Mercedes-Benz" exactly as the vendor sees it. Porsche
-    # isn't in Outvin's dataset (see conversation with the user
-    # 2026-08-15) so we append it separately.
+    # and Ferrari aren't in Outvin's dataset (see conversation with
+    # the user 2026-08-15 / 2026-08-16) so we append them separately.
     makes = list(OUTVIN_SUPPORTED_MAKES)
-    if not any(str(m).strip().upper() == "PORSCHE" for m in makes):
-        makes.append("Porsche")
-        makes.sort()
+    for extra in ("Porsche", "Ferrari"):
+        if not any(str(m).strip().upper() == extra.upper() for m in makes):
+            makes.append(extra)
+    makes.sort()
     return {"makes": makes}
 
 
@@ -249,6 +258,11 @@ async def order_vin_report(
             # mode beyond "malformed VIN" which we surface as a 400
             # via the catalog dispatch machinery below.
             decoded = decode_porsche_vin(vin)
+            if decoded.get("status") != "ok":
+                raise HTTPException(400, decoded.get("error") or "Could not decode VIN.")
+            result = decoded
+        elif entry["id"] == "ferrari_vin":
+            decoded = decode_ferrari_vin(vin)
             if decoded.get("status") != "ok":
                 raise HTTPException(400, decoded.get("error") or "Could not decode VIN.")
             result = decoded
@@ -597,6 +611,87 @@ def _build_vin_report_pdf(order: dict) -> bytes:
                 val = f"{pos.get('4', '')}{pos.get('5', '')}{pos.get('6', '')}"
             elif key == "13-17":
                 val = pos.get("13-17") or ""
+            else:
+                val = pos.get(key) or ""
+            pos_rows.append([
+                Paragraph(key, body),
+                Paragraph(str(val), body),
+                Paragraph(meaning, body),
+            ])
+        t = Table(pos_rows, colWidths=[22 * mm, 30 * mm, 128 * mm], repeatRows=1)
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), rl_colors.HexColor("#F1F5F9")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.25, rl_colors.HexColor("#E2E8F0")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]))
+        story.append(t)
+
+        if rd.get("warnings"):
+            story.append(Spacer(1, 4 * mm))
+            story.append(Paragraph("Notes", h_section))
+            for w in rd["warnings"]:
+                story.append(Paragraph(f"• {w}", body))
+
+        story.append(Spacer(1, 4 * mm))
+        story.append(Paragraph(
+            f"<font color='#64748B'>{rd.get('disclaimer') or ''}</font>",
+            small,
+        ))
+    elif rtype == "ferrari_vin":
+        # Ferrari VIN Decode — same shape as porsche_vin but with the
+        # extra engine / safety / market codes surfaced separately
+        # because Ferrari's VDS carries three distinct sub-fields.
+        pairs: list[tuple[str, Any]] = [
+            ("Model", rd.get("model")),
+            ("Era", rd.get("era") or "—"),
+            ("Model Year", rd.get("model_year") or "—"),
+            ("Type Code", rd.get("model_code") or "—"),
+            ("Engine Code", rd.get("engine_code") or "—"),
+            ("Safety System Code", rd.get("safety_code") or "—"),
+            ("Market", rd.get("market") or "—"),
+            ("Manufacturer Country", rd.get("country") or "—"),
+            ("WMI", rd.get("wmi") or "—"),
+            ("Plant", rd.get("plant") or "—"),
+            ("VIN Layout", rd.get("layout") or "—"),
+            ("Production Serial", rd.get("serial") or "—"),
+        ]
+        if rd.get("check_digit_valid") is not None:
+            pairs.append((
+                "NA Check Digit",
+                "Valid" if rd.get("check_digit_valid") else f"Invalid (computed {rd.get('check_digit_computed')} vs printed {rd.get('check_digit')})",
+            ))
+        story.append(Paragraph("Decoded identity", h_section))
+        story.append(_kv_table(pairs))
+        story.append(Spacer(1, 4 * mm))
+
+        story.append(Paragraph("VIN position-by-position", h_section))
+        pos = rd.get("positions") or {}
+        pos_rows = [[
+            Paragraph("<b>Position</b>", small),
+            Paragraph("<b>Character(s)</b>", small),
+            Paragraph("<b>Meaning</b>", small),
+        ]]
+        pos_meta = [
+            ("1-3", "WMI (world manufacturer identifier)"),
+            ("4", "Model or engine (era-dependent)"),
+            ("5", "Model or safety system (era-dependent)"),
+            ("6", "Engine or model (era-dependent)"),
+            ("7", "Safety system or model (era-dependent)"),
+            ("8", "Market"),
+            ("9", "Check digit (NA cars) / filler"),
+            ("10", "Model year code"),
+            ("11", "Assembly plant"),
+            ("12-17", "Production serial sequence"),
+        ]
+        for key, meaning in pos_meta:
+            if key == "1-3":
+                val = f"{pos.get('1', '')}{pos.get('2', '')}{pos.get('3', '')}"
+            elif key == "12-17":
+                val = pos.get("12-17") or ""
             else:
                 val = pos.get(key) or ""
             pos_rows.append([
