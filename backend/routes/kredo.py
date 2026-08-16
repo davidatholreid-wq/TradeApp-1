@@ -1601,7 +1601,7 @@ def _render_cartrust_pdf_from_json(cartrust_json: str, sub: dict) -> bytes:
         leftMargin=15 * mm, rightMargin=15 * mm,
         topMargin=15 * mm, bottomMargin=15 * mm,
         title=f"CarTrust {sub.get('reference') or ''}".strip(),
-        author="Fourbuy Car Buying Co.",
+        author="TRADE AI powered by FOURBUY",
     )
     doc.build(story)
     return buf.getvalue()

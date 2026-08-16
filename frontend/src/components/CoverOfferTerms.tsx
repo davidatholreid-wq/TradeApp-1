@@ -119,7 +119,7 @@ export function CoverOfferTermsModal({
             </View>
 
             <Text style={styles.footerNote}>
-              Last revised: {COVER_OFFER_TERMS_LAST_REV} · Fourbuy Car Buying Co.
+              Last revised: {COVER_OFFER_TERMS_LAST_REV} · TRADE AI powered by FOURBUY
             </Text>
           </ScrollView>
 

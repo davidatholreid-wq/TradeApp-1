@@ -553,7 +553,7 @@ def _build_partner_api_docs_pdf() -> bytes:
         leftMargin=18 * mm, rightMargin=18 * mm,
         topMargin=15 * mm, bottomMargin=18 * mm,
         title="Fourbuy VIN Data API — Integration Guide",
-        author="Fourbuy Car Buying Co.",
+        author="TRADE AI powered by FOURBUY",
     )
     story: list = []
 
@@ -722,7 +722,7 @@ def _build_partner_api_docs_pdf() -> bytes:
 
     story.append(Spacer(1, 8 * mm))
     story.append(Paragraph(
-        "<font color='#64748B'>&#169; Fourbuy Car Buying Co. — Fourbuy VIN Data API v1.0</font>",
+        "<font color='#64748B'>&#169; TRADE AI powered by FOURBUY — Fourbuy VIN Data API v1.0</font>",
         small,
     ))
 

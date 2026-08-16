@@ -40,9 +40,9 @@ const HEIGHTS: Record<NonNullable<Props["size"]>, number> = {
   xl: 96,
 };
 
-// The source PNG is landscape 617×215 (aspect ~2.87:1). Height is the input;
-// width is derived so the wordmark never stretches regardless of container.
-const ASPECT = 617 / 215;
+// New TRADE AI wordmark is a square 1254×1254 lockup (was 617×215 landscape).
+// Kept as a constant so a future rebrand is still a one-file change.
+const ASPECT = 1;
 
 // Single source of truth for rendering the Fourbuy wordmark. Keep every logo
 // insertion in the app routed through this component so a future rebrand is
@@ -64,7 +64,7 @@ export default function BrandLogo({ size = "md", style, containerStyle, testID, 
       source={src}
       style={[{ height: h, width: h * ASPECT }, style]}
       resizeMode="contain"
-      accessibilityLabel="Fourbuy Car Buying Co."
+      accessibilityLabel="TRADE AI powered by FOURBUY"
     />
   );
   if (linkToHome) {
@@ -79,7 +79,7 @@ export default function BrandLogo({ size = "md", style, containerStyle, testID, 
         }}
         activeOpacity={0.75}
         accessibilityRole="link"
-        accessibilityLabel="Go to Fourbuy home"
+        accessibilityLabel="Go to TRADE AI home"
         style={[styles.wrap, containerStyle]}
         testID={testID ?? "brand-logo-home-link"}
         hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}

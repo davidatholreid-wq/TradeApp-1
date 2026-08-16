@@ -152,7 +152,7 @@ const defaultWaTemplate = (sub: PublicSubmission) => {
   return (
     `Hi ${sub.seller.full_name.split(" ")[0] || "there"} 👋
 
-Thanks for requesting a valuation from Fourbuy Car Buying Co.
+Thanks for requesting a valuation from TRADE AI powered by FOURBUY
 
 For your ${y} ${mk} ${md} we're offering:
 ${price}
@@ -163,7 +163,7 @@ Full valuation PDF (valid 30 days):
 If you'd like to accept, just reply to this WhatsApp. We'll come to you, pay you on the spot and take care of all the admin.
 
 Ref: ${sub.reference}
-— Fourbuy Car Buying Co.`
+— TRADE AI powered by FOURBUY`
   );
 };
 
@@ -174,7 +174,7 @@ const defaultEmailBody = (sub: PublicSubmission) => {
   return (
     `Hi ${sub.seller.full_name},
 
-Thank you for requesting a valuation from Fourbuy Car Buying Co.
+Thank you for requesting a valuation from TRADE AI powered by FOURBUY
 
 Vehicle: ${sub.vehicle.year} ${sub.vehicle.make} ${sub.vehicle.model}${sub.vehicle.derivative ? " " + sub.vehicle.derivative : ""}
 Mileage: ${fmtKm(sub.vehicle.mileage)}

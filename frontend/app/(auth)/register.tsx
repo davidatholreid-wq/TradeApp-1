@@ -67,7 +67,7 @@ export default function RegisterInvitationOnly() {
       : "";
     const message =
       `Hi Fourbuy 👋\n\n` +
-      `I'd like to request a dealer account on the Fourbuy Car Buying Co. app.\n\n` +
+      `I'd like to request a dealer account on the TRADE AI powered by FOURBUY app.\n\n` +
       `• Dealership: ${dealerClean}\n` +
       `• My name: ${nameClean}\n` +
       referralLine +

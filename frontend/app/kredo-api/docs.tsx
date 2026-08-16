@@ -192,7 +192,7 @@ export default function PartnerApiDocsScreen() {
         </Text>
 
         <Text style={[s.p, { marginTop: spacing.lg, color: colors.textSecondary, textAlign: "center" }]}>
-          © Fourbuy Car Buying Co. · Fourbuy VIN Data API v1.0
+          © TRADE AI powered by FOURBUY · Fourbuy VIN Data API v1.0
         </Text>
       </ScrollView>
     </SafeAreaView>

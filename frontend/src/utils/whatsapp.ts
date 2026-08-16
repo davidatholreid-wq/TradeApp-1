@@ -31,6 +31,6 @@ export function buildDealerMessage(opts: {
   } else {
     parts.push("We're finalising a price for you shortly.");
   }
-  parts.push("— Fourbuy Car Buying Co.");
+  parts.push("— TRADE AI powered by FOURBUY");
   return parts.join(" ");
 }

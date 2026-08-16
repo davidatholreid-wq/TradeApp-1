@@ -847,7 +847,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
             source={themeMode === "light" ? BRAND.logoLight : BRAND.logo}
             style={styles.logo}
             resizeMode="contain"
-            accessibilityLabel="Fourbuy Car Buying Co."
+            accessibilityLabel="TRADE AI powered by FOURBUY"
           />
           <View style={styles.divider} />
           <Text style={styles.topbarSub}>ADMIN COCKPIT</Text>

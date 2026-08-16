@@ -17,7 +17,7 @@
  */
 
 export const COVER_OFFER_TERMS_TITLE = "Subject to View Cover Offer";
-export const COVER_OFFER_TERMS_SUBTITLE = "Fourbuy Car Buying Co. — Terms & Conditions";
+export const COVER_OFFER_TERMS_SUBTITLE = "TRADE AI powered by FOURBUY — Terms & Conditions";
 export const COVER_OFFER_TERMS_LAST_REV = "November 2026";
 
 export type TermsSection = {
@@ -32,7 +32,7 @@ export const COVER_OFFER_TERMS_SECTIONS: TermsSection[] = [
     n: "1",
     heading: "Introduction",
     paragraphs: [
-      "These Terms and Conditions apply to any Cover Price / Subject to View Offer (\"Cover\") issued by Fourbuy Car Buying Co. (\"Fourbuy\") to a motor dealer (\"Dealer\") in respect of a vehicle submitted for valuation through the Fourbuy Car Buying Co. platform.",
+      "These Terms and Conditions apply to any Cover Price / Subject to View Offer (\"Cover\") issued by TRADE AI powered by FOURBUY (\"Fourbuy\") to a motor dealer (\"Dealer\") in respect of a vehicle submitted for valuation through the TRADE AI powered by FOURBUY platform.",
       "By accepting a Cover Price, the Dealer confirms that it has read, understood and accepted these Terms and Conditions and warrants that all information supplied in respect of the vehicle is true, complete and accurate.",
       "A Cover Price is a conditional offer to purchase and is based entirely on the information, declarations, photographs, vehicle details and condition information supplied by the Dealer.",
       "The Cover Price remains subject to physical inspection, verification of the vehicle, verification of ownership and documentation, and compliance with all of the conditions contained herein.",
@@ -105,7 +105,7 @@ export const COVER_OFFER_TERMS_SECTIONS: TermsSection[] = [
     ],
     bullets: [
       "5.1 Fourbuy Inspection — Present the vehicle for inspection at the nominated Fourbuy dealership in Fourways, Johannesburg; or",
-      "5.2 VIEW4YOU Inspection — Request an inspection through VIEW4YOU, which will be coordinated by Fourbuy Car Buying Co.",
+      "5.2 VIEW4YOU Inspection — Request an inspection through VIEW4YOU, which will be coordinated by TRADE AI powered by FOURBUY",
     ],
     // Note: extra explanatory paragraphs after the bullets are rendered as
     // a second paragraph block via the concatenation below in the modal.
@@ -123,7 +123,7 @@ export const COVER_OFFER_TERMS_SECTIONS: TermsSection[] = [
     n: "6",
     heading: "Additional or Specialist Inspection",
     paragraphs: [
-      "Fourbuy Car Buying Co. reserves the right, at its discretion, to require a vehicle to undergo an additional or specialist inspection where Fourbuy believes further investigation is reasonably required. This may include inspection by:",
+      "TRADE AI powered by FOURBUY reserves the right, at its discretion, to require a vehicle to undergo an additional or specialist inspection where Fourbuy believes further investigation is reasonably required. This may include inspection by:",
     ],
     bullets: [
       "An authorised OEM dealership;",
@@ -278,7 +278,7 @@ export const COVER_OFFER_TERMS_SECTIONS: TermsSection[] = [
     n: "13",
     heading: "Right to Revise or Withdraw Cover",
     paragraphs: [
-      "Fourbuy Car Buying Co. reserves the right to revise or withdraw a Cover Price where:",
+      "TRADE AI powered by FOURBUY reserves the right to revise or withdraw a Cover Price where:",
     ],
     bullets: [
       "The vehicle differs materially from the description submitted;",
@@ -421,7 +421,7 @@ export const COVER_OFFER_TERMS_SECTIONS: TermsSection[] = [
     n: "20",
     heading: "Electronic Acceptance",
     paragraphs: [
-      "Acceptance of the Cover Price electronically through the Fourbuy Car Buying Co. website, application or other approved electronic process shall constitute the Dealer's acceptance of these Terms and Conditions.",
+      "Acceptance of the Cover Price electronically through the TRADE AI powered by FOURBUY website, application or other approved electronic process shall constitute the Dealer's acceptance of these Terms and Conditions.",
       "The person accepting the Cover warrants that he or she has the necessary authority to accept these Terms and Conditions on behalf of the relevant Dealer entity.",
     ],
   },
@@ -430,4 +430,4 @@ export const COVER_OFFER_TERMS_SECTIONS: TermsSection[] = [
 // Final acceptance declaration shown BELOW the numbered clauses, both
 // in the modal footer and in the eventual "I agree" acceptance flow.
 export const COVER_OFFER_ACCEPTANCE_DECLARATION =
-  "By selecting \"Accept Cover\", I confirm that I am authorised to act on behalf of the Dealer, that the vehicle has been fully and accurately described, and that I have read, understood and agree to the Fourbuy Car Buying Co. Subject to View Cover Offer Terms & Conditions. I understand that the Cover Price remains subject to inspection, document verification, vehicle history verification and final approval by Fourbuy Car Buying Co.";
+  "By selecting \"Accept Cover\", I confirm that I am authorised to act on behalf of the Dealer, that the vehicle has been fully and accurately described, and that I have read, understood and agree to the TRADE AI powered by FOURBUY Subject to View Cover Offer Terms & Conditions. I understand that the Cover Price remains subject to inspection, document verification, vehicle history verification and final approval by TRADE AI powered by FOURBUY";

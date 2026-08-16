@@ -546,7 +546,7 @@ export default function HomeScreen() {
           {/* Hero panel — capped height on wide screens so it stops swallowing
               the whole viewport, and full-bleed 16:9 on phones.
               • Native (iOS / Android): looping cinematic video.
-              • Web: static Fourbuy Car Buying Co. logo on a solid brand
+              • Web: static TRADE AI powered by FOURBUY logo on a solid brand
                 backdrop. Web video autoplay is unreliable across
                 browsers / power modes, and the client asked to fall
                 back to a clean logo lockup there.
@@ -565,7 +565,7 @@ export default function HomeScreen() {
                     source={BRAND.logo}
                     style={styles.heroLogoImg}
                     resizeMode="contain"
-                    accessibilityLabel="Fourbuy Car Buying Co."
+                    accessibilityLabel="TRADE AI powered by FOURBUY"
                   />
                 </View>
               ) : (
@@ -578,7 +578,7 @@ export default function HomeScreen() {
                     nativeControls={false}
                     allowsFullscreen={false}
                     allowsPictureInPicture={false}
-                    accessibilityLabel="Fourbuy Car Buying Co. hero video"
+                    accessibilityLabel="TRADE AI powered by FOURBUY hero video"
                   />
                 </>
               )}

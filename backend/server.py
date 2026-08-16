@@ -3495,7 +3495,7 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
         leftMargin=12 * mm, rightMargin=12 * mm,
         topMargin=22 * mm, bottomMargin=16 * mm,
         title=f"Valuation {sub.get('reference') or sub.get('id')}",
-        author="Fourbuy Car Buying Co.",
+        author="TRADE AI powered by FOURBUY",
     )
     styles = getSampleStyleSheet()
 
@@ -4971,7 +4971,7 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
     story.append(Spacer(1, 6))
     story.append(Paragraph(
         "This document is generated for the dealer's internal record. Offer prices are indicative and "
-        "subject to a physical inspection at Fourbuy premises. Fourbuy Car Buying Co. — Quality Used Cars at Wholesale Prices.",
+        "subject to a physical inspection at Fourbuy premises. TRADE AI powered by FOURBUY — Quality Used Cars at Wholesale Prices.",
         small,
     ))
 
@@ -5061,7 +5061,7 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
             self.setFont("Helvetica", 7)
             self.drawString(
                 12 * mm, foot_y,
-                "Fourbuy Car Buying Co.  ·  Confidential  ·  Offer prices are indicative and subject to physical inspection.",
+                "TRADE AI powered by FOURBUY  ·  Confidential  ·  Offer prices are indicative and subject to physical inspection.",
             )
             self.setFont("Helvetica-Bold", 7)
             self.setFillColor(INK)
@@ -5182,7 +5182,7 @@ async def _build_reconditioning_pdf(sub: dict) -> bytes:
         leftMargin=12 * mm, rightMargin=12 * mm,
         topMargin=14 * mm, bottomMargin=14 * mm,
         title=f"Reconditioning {ref}",
-        author="Fourbuy Car Buying Co.",
+        author="TRADE AI powered by FOURBUY",
     )
     styles = getSampleStyleSheet()
     body = ParagraphStyle("body", parent=styles["Normal"], fontName="Helvetica",
@@ -5409,7 +5409,7 @@ async def _build_report_pdf(sub: dict, order: dict) -> bytes:
         leftMargin=16*mm, rightMargin=16*mm,
         topMargin=10*mm, bottomMargin=14*mm,
         title=f"{order.get('name') or report_type} - {sub.get('reference') or ''}",
-        author="Fourbuy Car Buying Co.",
+        author="TRADE AI powered by FOURBUY",
     )
     styles = getSampleStyleSheet()
     body = ParagraphStyle("body", parent=styles["Normal"], fontSize=10, leading=14)
@@ -5914,7 +5914,7 @@ async def _build_report_pdf(sub: dict, order: dict) -> bytes:
     # Footer
     story.append(Spacer(1, 16))
     story.append(Paragraph(
-        f"Delivered via Fourbuy Car Buying Co. · Report Cost: R{order.get('cost_zar', 0):.0f} · Order ID: {order.get('id')}",
+        f"Delivered via TRADE AI powered by FOURBUY · Report Cost: R{order.get('cost_zar', 0):.0f} · Order ID: {order.get('id')}",
         small,
     ))
 
@@ -6308,7 +6308,7 @@ async def _build_profit_pdf(sub: dict, deal: dict) -> bytes:
         leftMargin=14 * mm, rightMargin=14 * mm,
         topMargin=16 * mm, bottomMargin=14 * mm,
         title=f"Profit Analysis {ref}",
-        author="Fourbuy Car Buying Co.",
+        author="TRADE AI powered by FOURBUY",
     )
     styles = getSampleStyleSheet()
     BLACK = rl_colors.HexColor("#0A0A0A")
@@ -6479,7 +6479,7 @@ async def _build_profit_pdf(sub: dict, deal: dict) -> bytes:
 
     now_str = datetime.now(timezone.utc).strftime("%d %b %Y %H:%M UTC")
     story.append(Paragraph(
-        f"Generated {now_str} · Fourbuy Car Buying Co. · Confidential — for the "
+        f"Generated {now_str} · TRADE AI powered by FOURBUY · Confidential — for the "
         "submitting dealership and Fourbuy admin only.",
         muted,
     ))
@@ -8392,7 +8392,7 @@ async def admin_home_mtd_stats(current: dict = Depends(require_admin)):
 # ============ Health (real) ============
 @api_router.get("/")
 async def root():
-    return {"message": "Fourbuy Car Buying Co. API", "status": "ok"}
+    return {"message": "TRADE AI powered by FOURBUY API", "status": "ok"}
 
 
 # ============ Extracted route modules ============
@@ -8459,7 +8459,7 @@ async def seed_data():
             "password_hash": hash_password(ADMIN_PASSWORD),
             "role": "admin",
             "dealer_info": {"first_name": "Fourbuy", "last_name": "Admin", "phone": ""},
-            "company_info": {"company_name": "Fourbuy Car Buying Co.", "company_address": ""},
+            "company_info": {"company_name": "TRADE AI powered by FOURBUY", "company_address": ""},
             "created_at": now_utc(),
         }
         await db.users.insert_one(admin_doc)

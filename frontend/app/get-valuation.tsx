@@ -1,5 +1,5 @@
 /**
- * PUBLIC VALUATION PORTAL — Fourbuy Car Buying Co.
+ * PUBLIC VALUATION PORTAL — TRADE AI powered by FOURBUY
  *
  * Anonymous, no-login funnel for members of the public to submit their
  * vehicle for a free valuation. Route lives at `/get-valuation`. Uses the
@@ -575,7 +575,7 @@ export default function GetValuationScreen() {
           source={brandLogo}
           style={styles.headerLogo}
           resizeMode="contain"
-          accessibilityLabel="Fourbuy Car Buying Co."
+          accessibilityLabel="TRADE AI powered by FOURBUY"
         />
       </View>
 
@@ -1078,7 +1078,7 @@ function SuccessCard({ colors, styles, brandLogo, reference, message }: any) {
           source={brandLogo}
           style={styles.headerLogo}
           resizeMode="contain"
-          accessibilityLabel="Fourbuy Car Buying Co."
+          accessibilityLabel="TRADE AI powered by FOURBUY"
         />
       </View>
       <ScrollView contentContainerStyle={styles.successScroll}>

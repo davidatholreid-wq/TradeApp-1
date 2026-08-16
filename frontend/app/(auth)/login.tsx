@@ -81,7 +81,7 @@ export default function Login() {
           source={BRAND.logo}
           style={styles.heroLogo}
           resizeMode="contain"
-          accessibilityLabel="Fourbuy Car Buying Co."
+          accessibilityLabel="TRADE AI powered by FOURBUY"
         />
         {layout !== "phone" ? (
           <>

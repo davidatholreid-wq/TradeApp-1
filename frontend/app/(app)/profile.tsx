@@ -204,7 +204,7 @@ export default function Profile() {
     try {
       const url = buildShareUrl(referralCode);
       const message =
-        `Join Fourbuy Car Buying Co. — the vehicle valuation app for dealers.\n\n` +
+        `Join TRADE AI powered by FOURBUY — the vehicle valuation app for dealers.\n\n` +
         `Use my referral code when you sign up:  ${referralCode}\n\n` +
         `${url}`;
       // React Native's cross-platform Share API — falls back to the OS
@@ -215,7 +215,7 @@ export default function Profile() {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const nav: any = (globalThis as any).navigator;
           if (nav?.share) {
-            await nav.share({ title: "Fourbuy Car Buying Co.", text: message, url });
+            await nav.share({ title: "TRADE AI powered by FOURBUY", text: message, url });
           } else if (nav?.clipboard?.writeText) {
             await nav.clipboard.writeText(message);
             // eslint-disable-next-line no-alert
@@ -225,7 +225,7 @@ export default function Profile() {
           /* user cancelled — no-op */
         }
       } else {
-        await Share.share({ message, url, title: "Fourbuy Car Buying Co." });
+        await Share.share({ message, url, title: "TRADE AI powered by FOURBUY" });
       }
     } finally {
       setSharing(false);

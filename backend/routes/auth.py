@@ -225,7 +225,7 @@ async def _send_password_reset_email(
     caller's response must be identical regardless (to avoid email
     enumeration)."""
     email_key = (os.environ.get("EMERGENT_EMAIL_KEY") or "").strip()
-    from_name = (os.environ.get("EMAIL_FROM_NAME") or "Fourbuy Car Buying Co.").strip()
+    from_name = (os.environ.get("EMAIL_FROM_NAME") or "TRADE AI powered by FOURBUY").strip()
     if not email_key:
         logger.error("EMERGENT_EMAIL_KEY not configured — cannot send reset email")
         return
@@ -242,7 +242,7 @@ async def _send_password_reset_email(
             <tr>
               <td style="font-size:14px;color:#D1D5DB;line-height:1.5;padding-bottom:20px;">
                 {greeting}<br><br>
-                We received a request to reset the password for your Fourbuy Car Buying Co. account. Click the button below to choose a new one. This link is valid for 30 minutes and can only be used once.
+                We received a request to reset the password for your TRADE AI powered by FOURBUY account. Click the button below to choose a new one. This link is valid for 30 minutes and can only be used once.
               </td>
             </tr>
             <tr>
@@ -266,7 +266,7 @@ async def _send_password_reset_email(
             </tr>
           </table>
           <div style="font-size:11px;color:#6B7280;padding-top:16px;">
-            © Fourbuy Car Buying Co.
+            © TRADE AI powered by FOURBUY
           </div>
         </td>
       </tr>

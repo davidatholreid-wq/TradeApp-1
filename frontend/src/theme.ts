@@ -1,4 +1,4 @@
-// Design tokens for Fourbuy Car Buying Co.
+// Design tokens for TRADE AI powered by FOURBUY
 // Monochrome luxury: pure black, white and grey — no colour accents.
 // Headings use the same system font as the body, uppercase with wide letter
 // spacing for a clean editorial feel.
@@ -94,7 +94,7 @@ export const type = {
 };
 
 export const BRAND = {
-  name: "Fourbuy Car Buying Co.",
+  name: "TRADE AI powered by FOURBUY",
   short: "Fourbuy",
   tagline: "Quality Used Cars at Wholesale Prices",
   // Dark-background monochrome (white text + car icon) — used in dark mode.
