@@ -562,7 +562,12 @@ export default function WeBuyCarsListingsCard(props: Props) {
           style={styles.actionBtn}
         >
           <View style={styles.brandChip}>
-            <Text style={styles.brandChipTxt}>WBC</Text>
+            <Image
+              source={require("../../assets/brands/webuycars.png")}
+              style={styles.brandLogo}
+              resizeMode="contain"
+              accessibilityLabel="WeBuyCars logo"
+            />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.btnTitleBright}>Open WeBuyCars.co.za</Text>
@@ -769,16 +774,24 @@ function makeStyles(colors: Palette) {
       alignItems: "center",
       justifyContent: "center",
     },
-    // Orange brand chip on the left, white "WBC" text on top so it
-    // matches the WBC icon's white lettering on the orange outline.
+    // Orange rounded chip on the left holds the WeBuyCars partner
+    // icon — the icon itself already contains the WBC wordmark on a
+    // navy background, so we render it full-bleed inside the chip and
+    // drop the orange fill.
     brandChip: {
-      minWidth: 46,
-      height: 30,
-      paddingHorizontal: 10,
-      borderRadius: 15,
-      backgroundColor: "#F26522",
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      backgroundColor: "#FFFFFF",
       alignItems: "center",
       justifyContent: "center",
+      overflow: "hidden",
+      borderWidth: 1,
+      borderColor: "#F26522",
+    },
+    brandLogo: {
+      width: 28,
+      height: 28,
     },
     brandChipTxt: {
       color: "#FFFFFF",

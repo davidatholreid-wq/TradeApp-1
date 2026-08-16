@@ -540,7 +540,12 @@ export default function ComparableListingsCard(props: Props) {
           style={styles.actionBtn}
         >
           <View style={styles.brandChipAT}>
-            <Text style={styles.brandChipTxtAT}>AT</Text>
+            <Image
+              source={require("../../assets/brands/autotrader.png")}
+              style={styles.brandLogoAT}
+              resizeMode="contain"
+              accessibilityLabel="AutoTrader logo"
+            />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.btnTitleBright}>Open AutoTrader.co.za</Text>
@@ -756,14 +761,24 @@ function makeStyles(colors: Palette) {
       alignItems: "center",
       justifyContent: "center",
     },
+    // White rounded chip on the left holds the AutoTrader partner
+    // icon so the CTA reads as unmistakably AutoTrader without a
+    // plain "AT" placeholder.
     brandChipAT: {
-      minWidth: 42,
-      height: 30,
-      paddingHorizontal: 10,
-      borderRadius: 15,
+      width: 34,
+      height: 34,
+      borderRadius: 17,
       backgroundColor: "#FFFFFF",
       alignItems: "center",
       justifyContent: "center",
+      overflow: "hidden",
+      // Subtle inner ring so the icon appears set into a proper pill.
+      borderWidth: 1,
+      borderColor: "rgba(255,255,255,0.9)",
+    },
+    brandLogoAT: {
+      width: 22,
+      height: 22,
     },
     brandChipTxtAT: {
       color: "#0072CE",
