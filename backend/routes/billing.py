@@ -696,18 +696,12 @@ async def admin_generate_monthly_invoice(
         "generated_by": current["id"],
     }
     pdf_bytes = _build_invoice_pdf(doc, d, company)
-    pdf_url = None
-    if _upload_pdf_to_cloudinary:
-        try:
-            pdf_url = _upload_pdf_to_cloudinary(
-                pdf_bytes,
-                folder=f"fourbuy/billing/invoices/{dealership_id}",
-                public_id=reference,
-            )
-        except Exception as e:
-            logger.warning("Invoice PDF upload failed: %s", e)
-    if pdf_url:
-        doc["pdf_url"] = pdf_url
+    # Cloudinary blocks raw PDFs by default (401 deny), so we skip
+    # the upload and rely on the streaming endpoint
+    # `/api/admin/dealerships/{id}/invoices/{id}.pdf` for in-app
+    # viewing. The PDF bytes are regenerated on demand from the
+    # persisted line items — cheap and always in sync with the
+    # current company branding.
     await _db.dealer_invoices.insert_one(doc)
 
     to_addr = payload.email_to or ((d.get("accounts_contact") or {}).get("email"))
@@ -716,7 +710,7 @@ async def admin_generate_monthly_invoice(
             await _send_email(
                 to=to_addr,
                 subject=f"Invoice {reference} — {doc['period_label']} — {company['trading_name']}",
-                html=_invoice_email_html(doc, d, company, pdf_url),
+                html=_invoice_email_html(doc, d, company, None),
             )
             await _db.dealer_invoices.update_one(
                 {"id": doc["id"]},
@@ -766,6 +760,56 @@ async def admin_resend_invoice_email(
     )
     logger.info("Admin %s re-sent invoice %s to %s", current.get("email"), inv["reference"], to_addr)
     return {"emailed_to": to_addr, "emailed_at": _now_utc()}
+
+
+# ---------------------------------------------------------------------------
+# Invoice PDF stream endpoints (Aug 2026).
+#
+# Cloudinary's default policy blocks raw PDFs (401 "deny or ACL
+# failure"), so we can't rely on the stored `pdf_url` for in-app
+# viewing. Instead these endpoints re-render the PDF from the
+# invoice's stored line items on demand and stream it back to the
+# authenticated caller. The regeneration is cheap (<100 ms) and
+# guarantees the document always reflects the current company
+# settings/branding.
+# ---------------------------------------------------------------------------
+async def _stream_invoice_pdf_response(invoice_id: str, dealership_id: str) -> Response:
+    d = await _db.dealerships.find_one({"id": dealership_id})
+    if not d:
+        raise HTTPException(404, "Dealership not found")
+    inv = await _db.dealer_invoices.find_one({"id": invoice_id, "dealership_id": dealership_id}, {"_id": 0})
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+    company = await _get_company_settings()
+    pdf = _build_invoice_pdf(inv, d, company)
+    filename = f"invoice_{inv['reference']}_{inv['period_label'].replace(' ', '_')}.pdf"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"inline; filename={filename}"},
+    )
+
+
+@router.get("/admin/dealerships/{dealership_id}/invoices/{invoice_id}.pdf")
+async def admin_invoice_pdf(
+    dealership_id: str,
+    invoice_id: str,
+    current: dict = Depends(_dep_require_admin),
+):
+    return await _stream_invoice_pdf_response(invoice_id, dealership_id)
+
+
+@router.get("/billing/my-invoice/{invoice_id}.pdf")
+async def dealer_invoice_pdf(
+    invoice_id: str,
+    current: dict = Depends(_dep_current_user),
+):
+    """Dealer-scoped PDF stream — the caller can only view their own
+    dealership's invoices."""
+    dealership_id = current.get("dealership_id")
+    if not dealership_id:
+        raise HTTPException(403, "Not linked to a dealership.")
+    return await _stream_invoice_pdf_response(invoice_id, dealership_id)
 
 
 async def _generate_invoice_for_dealer(dealership_id: str, year: int, month: int, current_user_id: str) -> Optional[dict]:
@@ -829,16 +873,8 @@ async def _generate_invoice_for_dealer(dealership_id: str, year: int, month: int
         "total_paid_cents": 0, "status": "outstanding",
         "generated_at": _now_utc(), "generated_by": current_user_id,
     }
-    pdf_bytes = _build_invoice_pdf(doc, d, company)
-    if _upload_pdf_to_cloudinary:
-        try:
-            pdf_url = _upload_pdf_to_cloudinary(
-                pdf_bytes, folder=f"fourbuy/billing/invoices/{dealership_id}", public_id=reference,
-            )
-            if pdf_url:
-                doc["pdf_url"] = pdf_url
-        except Exception as e:
-            logger.warning("Invoice PDF upload failed: %s", e)
+    # PDF is regenerated on demand via the streaming endpoint; skip
+    # Cloudinary (raw PDFs are 401-blocked by default policy).
     await _db.dealer_invoices.insert_one(doc)
     to_addr = (d.get("accounts_contact") or {}).get("email")
     if to_addr and _send_email:
@@ -846,7 +882,7 @@ async def _generate_invoice_for_dealer(dealership_id: str, year: int, month: int
             await _send_email(
                 to=to_addr,
                 subject=f"Invoice {reference} — {doc['period_label']} — {company['trading_name']}",
-                html=_invoice_email_html(doc, d, company, doc.get("pdf_url")),
+                html=_invoice_email_html(doc, d, company, None),
             )
             await _db.dealer_invoices.update_one({"id": doc["id"]},
                 {"$set": {"emailed_to": to_addr, "emailed_at": _now_utc()}})
@@ -937,13 +973,24 @@ def _build_invoice_pdf(invoice: dict, dealership: dict, company: dict) -> bytes:
 
 
 def _invoice_email_html(invoice: dict, dealership: dict, company: dict, pdf_url: Optional[str]) -> str:
-    link = f"<p><a href='{pdf_url}'>Download invoice PDF</a></p>" if pdf_url else ""
+    # `pdf_url` is now always None (Cloudinary blocks raw PDF
+    # delivery). The dealer downloads the PDF from within the app
+    # instead — the streaming endpoint requires auth so we can't
+    # embed a public link in the email. If in future we add a
+    # public signed-URL flow it can be passed here.
+    app_url = os.environ.get("EXPO_PUBLIC_APP_URL") or os.environ.get("APP_PUBLIC_URL") or ""
+    link = ""
+    if app_url:
+        base = app_url.rstrip("/")
+        link = f"<p><a href='{base}/billing'>Log in and open the Billing tab to download your PDF</a></p>"
+    elif pdf_url:
+        link = f"<p><a href='{pdf_url}'>Download invoice PDF</a></p>"
     contact_name = (dealership.get("accounts_contact") or {}).get("name") or "there"
     return f"""
 <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#0F172A;">
   <h2 style="margin:0 0 10px;">Invoice {invoice['reference']}</h2>
   <p>Hello {contact_name},</p>
-  <p>Please find attached your invoice for the period <b>{invoice['period_label']}</b>.</p>
+  <p>Please find your invoice for the period <b>{invoice['period_label']}</b> below.</p>
   <p><b>Total due:</b> {_rand(invoice['total_cents'])}<br/>
      <b>Reference to use:</b> {invoice['reference']}</p>
   {link}

@@ -116,7 +116,6 @@ export default function AdminBillingCockpit() {
 
   // Modals
   const [loadPaymentOpen, setLoadPaymentOpen] = useState(false);
-  const [invoiceGenOpen, setInvoiceGenOpen] = useState(false);
   const [refundOpen, setRefundOpen] = useState(false);
   const [companySettingsOpen, setCompanySettingsOpen] = useState(false);
   const [editDealerOpen, setEditDealerOpen] = useState(false);
@@ -260,7 +259,6 @@ export default function AdminBillingCockpit() {
               {/* Action buttons */}
               <View style={styles.actionRow}>
                 <ActionButton icon="cash-outline" label="Record Payment" onPress={() => setLoadPaymentOpen(true)} colors={colors} styles={styles} testID="btn-load-payment" primary />
-                <ActionButton icon="document-text-outline" label="Generate Invoice Now" onPress={() => setInvoiceGenOpen(true)} colors={colors} styles={styles} testID="btn-generate-invoice" />
                 <ActionButton icon="return-up-back-outline" label="Refund" onPress={() => setRefundOpen(true)} colors={colors} styles={styles} testID="btn-refund" />
                 <ActionButton
                   icon="print-outline"
@@ -274,6 +272,10 @@ export default function AdminBillingCockpit() {
                   testID="btn-statement"
                 />
               </View>
+
+              <Text style={styles.autoInvoiceHint}>
+                Invoices are generated automatically on the 1st of every month for the prior month&apos;s billable activity.
+              </Text>
 
               {/* Tabs */}
               <View style={styles.tabsRow}>
@@ -336,14 +338,6 @@ export default function AdminBillingCockpit() {
             onClose={() => setLoadPaymentOpen(false)}
             dealership={summary.dealership}
             invoices={summary.invoices}
-            onSaved={refreshAll}
-            colors={colors}
-            styles={styles}
-          />
-          <GenerateInvoiceModal
-            open={invoiceGenOpen}
-            onClose={() => setInvoiceGenOpen(false)}
-            dealership={summary.dealership}
             onSaved={refreshAll}
             colors={colors}
             styles={styles}
@@ -472,11 +466,15 @@ function InvoiceLedger({ invoices, dealershipId, onResent, styles, colors }: {
           <View style={{ alignItems: "flex-end", gap: 4 }}>
             <Text style={styles.ledgerAmount}>{cents(i.total_cents)}</Text>
             <View style={{ flexDirection: "row", gap: 8 }}>
-              {i.pdf_url ? (
-                <TouchableOpacity onPress={() => openPdf(i.pdf_url!)}>
-                  <Text style={styles.ledgerLink}>PDF</Text>
-                </TouchableOpacity>
-              ) : null}
+              <TouchableOpacity
+                testID={`invoice-pdf-${i.reference}`}
+                onPress={() => openAuthedPdf(
+                  `/api/admin/dealerships/${dealershipId}/invoices/${i.id}.pdf`,
+                  `invoice_${i.reference}.pdf`,
+                ).catch((e) => Alert.alert("Couldn't open PDF", e?.message || ""))}
+              >
+                <Text style={styles.ledgerLink}>PDF</Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 testID={`resend-invoice-${i.reference}`}
                 onPress={() => resend(i)}
@@ -599,55 +597,6 @@ function LoadPaymentModal({ open, onClose, dealership, invoices, onSaved, colors
         </Text>
       )}
       <PrimaryButton testID="load-payment-submit" label={busy ? "Saving…" : "Record Payment"} onPress={save} disabled={busy} styles={styles} />
-    </MinimalModal>
-  );
-}
-
-function GenerateInvoiceModal({ open, onClose, dealership, onSaved, colors, styles }: any) {
-  const now = new Date();
-  const { values, set, setValues, busy, setBusy } = useForm({
-    year: String(now.getFullYear()),
-    month: String(now.getMonth() + 1),  // 1..12
-  });
-  useEffect(() => {
-    if (open) {
-      const d = new Date();
-      setValues({ year: String(d.getFullYear()), month: String(d.getMonth() + 1) });
-    }
-  }, [open, setValues]);
-  const save = async () => {
-    const y = parseInt(values.year, 10), m = parseInt(values.month, 10);
-    if (!y || m < 1 || m > 12) { Alert.alert("Enter a valid year + month (1-12)"); return; }
-    setBusy(true);
-    try {
-      const res = await apiFetch(`/api/admin/dealerships/${dealership.id}/invoices/generate`, {
-        method: "POST", body: JSON.stringify({ year: y, month: m }),
-      });
-      onSaved(); onClose();
-      Alert.alert(
-        "Invoice generated",
-        `Invoice ${res?.invoice?.reference} created${res?.invoice?.emailed_to ? ` and emailed to ${res.invoice.emailed_to}` : " (no accounts contact email on file)"}.`,
-      );
-    } catch (e: any) {
-      const msg = String(e?.message || "");
-      if (msg.includes("No billable activity")) {
-        Alert.alert("Nothing to invoice", msg);
-      } else {
-        Alert.alert("Failed", msg);
-      }
-    }
-    finally { setBusy(false); }
-  };
-  return (
-    <MinimalModal open={open} onClose={onClose} title="Generate Monthly Invoice" styles={styles}>
-      <Text style={styles.formHint}>
-        The invoice will include every submission with a priced_at inside the calendar month, plus any VIN reports created in that month. Existing invoices are not modified.
-      </Text>
-      <View style={{ flexDirection: "row", gap: 10 }}>
-        <FormField label="Year" value={values.year} onChangeText={(v) => set("year", v)} keyboardType="number-pad" styles={styles} style={{ flex: 1 }} />
-        <FormField label="Month (1-12)" value={values.month} onChangeText={(v) => set("month", v)} keyboardType="number-pad" styles={styles} style={{ flex: 1 }} />
-      </View>
-      <PrimaryButton testID="generate-invoice-submit" label={busy ? "Generating…" : "Generate & Email"} onPress={save} disabled={busy} styles={styles} />
     </MinimalModal>
   );
 }
@@ -861,6 +810,14 @@ const makeStyles = (colors: any) =>
     },
     walletDealer: { color: colors.text, fontSize: 15, fontWeight: "800" },
     walletMeta: { color: colors.textSecondary, fontSize: 12, marginTop: 2, marginBottom: spacing.md },
+    autoInvoiceHint: {
+      color: colors.textSecondary,
+      fontSize: 11,
+      fontStyle: "italic",
+      marginTop: -6,
+      marginBottom: spacing.sm,
+      lineHeight: 16,
+    },
     walletKpiRow: { flexDirection: "row", gap: spacing.sm, flexWrap: "wrap" },
     kpi: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderLight, backgroundColor: colors.card, minWidth: 130 },
     kpiDanger: { borderColor: "#B91C1C", backgroundColor: "#FEE2E2" },

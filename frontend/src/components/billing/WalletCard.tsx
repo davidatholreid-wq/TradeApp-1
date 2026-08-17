@@ -12,12 +12,12 @@
  *                             surfaces the depleted state.
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, ActivityIndicator, Linking, Platform } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { TouchableOpacity } from "@/src/components/HapticButtons";
 import { useThemeColors } from "@/src/theme/ThemeContext";
 import { spacing, radius, fonts } from "@/src/theme";
-import { apiFetch } from "@/src/api";
+import { apiFetch, openAuthedPdf } from "@/src/api";
 import { useAuth } from "@/src/context/AuthContext";
 
 type Wallet = {
@@ -65,13 +65,11 @@ async function fetchMySummary(): Promise<MySummary | null> {
   }
 }
 
-function openPdf(url?: string | null) {
-  if (!url) return;
-  if (Platform.OS === "web" && typeof window !== "undefined") {
-    window.open(url, "_blank");
-  } else {
-    Linking.openURL(url).catch(() => {});
-  }
+function openInvoicePdf(invoiceId: string, reference: string) {
+  openAuthedPdf(
+    `/api/billing/my-invoice/${invoiceId}.pdf`,
+    `invoice_${reference}.pdf`,
+  ).catch((e) => Alert.alert("Couldn't open PDF", e?.message || ""));
 }
 
 // ---------------------------------------------------------------------------
@@ -126,11 +124,12 @@ export function WalletCard() {
           </View>
           <View style={{ alignItems: "flex-end" }}>
             <Text style={styles.rowAmount}>{cents(inv.total_cents)}</Text>
-            {inv.pdf_url ? (
-              <TouchableOpacity onPress={() => openPdf(inv.pdf_url)}>
-                <Text style={styles.rowLink}>PDF</Text>
-              </TouchableOpacity>
-            ) : null}
+            <TouchableOpacity
+              testID={`invoice-pdf-${inv.reference}`}
+              onPress={() => openInvoicePdf(inv.id, inv.reference)}
+            >
+              <Text style={styles.rowLink}>PDF</Text>
+            </TouchableOpacity>
           </View>
         </View>
       ))}
