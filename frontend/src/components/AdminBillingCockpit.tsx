@@ -23,6 +23,7 @@ import { TouchableOpacity } from "@/src/components/HapticButtons";
 import { spacing, radius, fonts } from "@/src/theme";
 import { useThemeColors } from "@/src/theme/ThemeContext";
 import { apiFetch, openAuthedPdf } from "@/src/api";
+import EditDealershipDetailsModal from "@/src/components/EditDealershipDetailsModal";
 
 type Contact = { name?: string | null; phone?: string | null; email?: string | null };
 
@@ -396,13 +397,11 @@ export default function AdminBillingCockpit() {
             colors={colors}
             styles={styles}
           />
-          <EditDealershipModal
+          <EditDealershipDetailsModal
             open={editDealerOpen}
             onClose={() => setEditDealerOpen(false)}
-            dealership={summary.dealership}
+            dealership={summary.dealership as any}
             onSaved={refreshAll}
-            colors={colors}
-            styles={styles}
           />
         </>
       )}
@@ -645,72 +644,6 @@ function RefundModal({ open, onClose, dealership, onSaved, colors, styles }: any
       <FormField label="Bank reference" value={values.bank_reference} onChangeText={(v) => set("bank_reference", v)} styles={styles} />
       <FormField label="Notes (optional)" value={values.notes} onChangeText={(v) => set("notes", v)} multiline styles={styles} />
       <PrimaryButton testID="refund-submit" label={busy ? "Saving…" : "Record Refund"} onPress={save} disabled={busy} styles={styles} />
-    </MinimalModal>
-  );
-}
-
-function EditDealershipModal({ open, onClose, dealership, onSaved, colors, styles }: any) {
-  const [values, setValues] = useState<any>({});
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    // Prefill from the summary payload. The admin can edit every
-    // dealership-level field including the accounts_contact block.
-    const c = dealership?.accounts_contact || {};
-    setValues({
-      name: dealership?.name || "",
-      address: dealership?.address || "",
-      company_reg_no: dealership?.company_reg_no || "",
-      vat_no: dealership?.vat_no || "",
-      accounts_contact_name: c.name || "",
-      accounts_contact_phone: c.phone || "",
-      accounts_contact_email: c.email || "",
-    });
-  }, [open, dealership]);
-  const set = (k: string, v: any) => setValues((s: any) => ({ ...s, [k]: v }));
-  const save = async () => {
-    if (!values.name?.trim()) { Alert.alert("Name is required"); return; }
-    setBusy(true);
-    try {
-      await apiFetch(`/api/admin/dealerships/${dealership.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          name: values.name.trim(),
-          address: values.address?.trim(),
-          company_reg_no: values.company_reg_no?.trim() || null,
-          vat_no: values.vat_no?.trim() || null,
-          accounts_contact_name: values.accounts_contact_name?.trim() || null,
-          accounts_contact_phone: values.accounts_contact_phone?.trim() || null,
-          accounts_contact_email: values.accounts_contact_email?.trim() || null,
-        }),
-      });
-      onSaved();
-      onClose();
-      Alert.alert("Saved", "Dealership details updated.");
-    } catch (e: any) {
-      Alert.alert("Failed", e?.message || "");
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <MinimalModal open={open} onClose={onClose} title="Edit Dealership Details" styles={styles} wide>
-      <Text style={styles.formHint}>
-        These details appear on every invoice, deposit request and statement PDF for this dealership. The accounts contact receives all billing email correspondence.
-      </Text>
-      <FormField label="Dealership name" value={values.name} onChangeText={(v: string) => set("name", v)} styles={styles} />
-      <FormField label="Address" value={values.address} onChangeText={(v: string) => set("address", v)} multiline styles={styles} />
-      <View style={{ flexDirection: "row", gap: 10 }}>
-        <FormField label="Company reg no." value={values.company_reg_no} onChangeText={(v: string) => set("company_reg_no", v)} styles={styles} style={{ flex: 1 }} />
-        <FormField label="VAT no." value={values.vat_no} onChangeText={(v: string) => set("vat_no", v)} styles={styles} style={{ flex: 1 }} />
-      </View>
-      <Text style={[styles.formLabel, { marginTop: spacing.md }]}>ACCOUNTS CONTACT</Text>
-      <FormField label="Full name" value={values.accounts_contact_name} onChangeText={(v: string) => set("accounts_contact_name", v)} styles={styles} placeholder="e.g. Jane Smith" />
-      <View style={{ flexDirection: "row", gap: 10 }}>
-        <FormField label="Phone" value={values.accounts_contact_phone} onChangeText={(v: string) => set("accounts_contact_phone", v)} keyboardType="phone-pad" styles={styles} style={{ flex: 1 }} placeholder="+27 82 …" />
-        <FormField label="Email" value={values.accounts_contact_email} onChangeText={(v: string) => set("accounts_contact_email", v)} keyboardType="email-address" styles={styles} style={{ flex: 1 }} placeholder="accounts@…" />
-      </View>
-      <PrimaryButton testID="edit-dealership-submit" label={busy ? "Saving…" : "Save"} onPress={save} disabled={busy} styles={styles} />
     </MinimalModal>
   );
 }

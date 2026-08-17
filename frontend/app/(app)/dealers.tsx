@@ -11,6 +11,7 @@ import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { apiFetch } from "@/src/api";
 import DealerPhotosModal from "@/src/components/DealerPhotosModal";
 import BrandLogo from "@/src/components/BrandLogo";
+import EditDealershipDetailsModal from "@/src/components/EditDealershipDetailsModal";
 
 type Dealer = {
   id: string;
@@ -72,6 +73,10 @@ export default function Dealers() {
   const [busyId, setBusyId] = useState<string | null>(null);
   // Add-user-to-dealership modal state
   const [invitingDealership, setInvitingDealership] = useState<{ id: string; name: string } | null>(null);
+  // Edit-dealership-details modal (Aug 2026 billing) — reused from the
+  // Billing Cockpit so admins can edit dealership address / VAT /
+  // accounts contact from either screen.
+  const [editingDealership, setEditingDealership] = useState<{ id: string; name: string } | null>(null);
   const [inviteForm, setInviteForm] = useState({ first_name: "", last_name: "", phone: "", job_title: "", email: "", password: "", sa_id_number: "", referred_by_code: "" });
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -800,6 +805,16 @@ export default function Dealers() {
                 <View style={styles.groupToggleWrap}>
                   {!isSolo ? (
                     <TouchableOpacity
+                      testID={`group-edit-details-${g.dealership_id}`}
+                      onPress={() => setEditingDealership({ id: g.dealership_id, name: g.dealership_name })}
+                      style={styles.groupAddBtn}
+                      accessibilityLabel="Edit dealership details"
+                    >
+                      <Ionicons name="create-outline" size={16} color={colors.text} />
+                    </TouchableOpacity>
+                  ) : null}
+                  {!isSolo ? (
+                    <TouchableOpacity
                       testID={`group-add-user-${g.dealership_id}`}
                       onPress={() => setInvitingDealership({ id: g.dealership_id, name: g.dealership_name })}
                       style={styles.groupAddBtn}
@@ -844,6 +859,16 @@ export default function Dealers() {
           setDealers((prev) => prev.map((d) => (d.id === fresh.id ? { ...d, ...fresh } : d)));
           setEditing(null);
         }}
+      />
+
+      {/* Edit DEALERSHIP details (name, address, VAT, accounts contact).
+          Reused shared component — same modal shown in the Billing
+          Cockpit. */}
+      <EditDealershipDetailsModal
+        open={!!editingDealership}
+        onClose={() => setEditingDealership(null)}
+        dealership={editingDealership ? { id: editingDealership.id, name: editingDealership.name } : null}
+        onSaved={() => { load(); }}
       />
 
       {/* Add-user-to-existing-dealership modal (admin only). All users of a
