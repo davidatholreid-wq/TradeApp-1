@@ -189,12 +189,14 @@ export default function Profile() {
     | undefined;
 
   const buildShareUrl = (code: string): string => {
-    // In dev we rely on the packager proxy URL; in production this becomes
-    // the deployed domain (rewritten by Publish). Either way the /register
-    // route accepts a `ref` query param to prefill the referrer name.
-    const base =
-      (process.env as any).EXPO_PUBLIC_BACKEND_URL ||
-      "https://fourbuy-admin.preview.emergentagent.com";
+    // In dev this comes from the packager proxy URL; in production it
+    // is the deployed domain (rewritten by Emergent's Publish step).
+    // We deliberately have NO hardcoded fallback here — falling back
+    // to a specific preview URL would send referral links to the wrong
+    // domain post-deploy, so if the env var is missing we return an
+    // empty string and the Share sheet will surface the code alone.
+    const base = (process.env as any).EXPO_PUBLIC_BACKEND_URL;
+    if (!base) return "";
     return `${base.replace(/\/$/, "")}/register?ref=${encodeURIComponent(code)}`;
   };
 

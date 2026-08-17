@@ -201,8 +201,10 @@ def _app_base_url_from_request(request: Optional[Request]) -> str:
     """Resolve the customer-facing origin for building the reset link.
     Priority:
       1. `APP_BASE_URL` env var (explicit override, wins in production)
-      2. `Origin` request header (works both in dev and preview)
-      3. Fallback constant for local dev
+      2. `Origin` / `Referer` request header (works both in dev and preview)
+      3. Empty string — the caller MUST handle this case (we deliberately
+         don't fall back to a `localhost` URL because a mobile user
+         receiving a reset email can't hit localhost).
     """
     env_url = (os.environ.get("APP_BASE_URL") or "").strip().rstrip("/")
     if env_url:
@@ -214,7 +216,7 @@ def _app_base_url_from_request(request: Optional[Request]) -> str:
             m = re.match(r"^(https?://[^/]+)", origin)
             if m:
                 return m.group(1)
-    return "http://localhost:3000"
+    return ""
 
 
 async def _send_password_reset_email(
@@ -349,6 +351,16 @@ async def forgot_password(payload: ForgotPasswordRequest, request: Request):
             "request_ip": request.client.host if request and request.client else None,
         })
         base = _app_base_url_from_request(request)
+        if not base:
+            # No safe origin could be resolved — skip sending the email
+            # entirely rather than deliver an unusable link. The generic
+            # 200 response is still returned so we don't leak the fact
+            # to the caller.
+            logger.warning(
+                "Password reset for %s skipped: no APP_BASE_URL / Origin header available.",
+                email,
+            )
+            return generic
         # `/reset-password?token=...` — file lives at
         # /app/frontend/app/(auth)/reset-password.tsx (the auth group
         # is a routing convenience, the URL doesn't include it).

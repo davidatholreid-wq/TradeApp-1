@@ -33,10 +33,27 @@ load_dotenv(ROOT_DIR / '.env')
 
 MONGO_URL = os.environ['MONGO_URL']
 DB_NAME = os.environ['DB_NAME']
-JWT_SECRET = os.environ.get('JWT_SECRET', 'dev_secret')
+# JWT signing secret MUST come from the environment — no fallback,
+# because a predictable "dev_secret" default in production would
+# undermine every session token. Local dev provides this via backend/.env.
+JWT_SECRET = os.environ.get('JWT_SECRET')
+if not JWT_SECRET:
+    raise RuntimeError(
+        "JWT_SECRET environment variable is required. Set a long random "
+        "string in backend/.env (dev) or the deployment env panel (prod)."
+    )
 JWT_EXPIRES_IN = int(os.environ.get('JWT_EXPIRES_IN', '604800'))
-ADMIN_EMAIL = os.environ.get('ADMIN_EMAIL', 'admin@autopricepro.com')
-ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
+ADMIN_EMAIL = os.environ.get('ADMIN_EMAIL', 'admin@fourbuy.co.za')
+# The initial admin password MUST be provided via the environment. We do
+# NOT fall back to a hardcoded default so production boots fail-fast if
+# the operator forgets to set it (vs silently seeding a well-known
+# admin credential). Local dev provides this via backend/.env.
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD')
+if not ADMIN_PASSWORD:
+    raise RuntimeError(
+        "ADMIN_PASSWORD environment variable is required. Set it in "
+        "backend/.env (dev) or the deployment env panel (prod) before starting the API."
+    )
 
 PUSH_BASE_URL = "https://integrations.emergentagent.com"
 PUSH_KEY = os.environ.get("EMERGENT_PUSH_KEY", "placeholder")
@@ -2935,6 +2952,43 @@ async def admin_submission_counts(current: dict = Depends(require_admin)):
         b = compute_bucket(s)
         counts[b] = counts.get(b, 0) + 1
     return {"counts": counts}
+
+
+@api_router.post("/admin/vehicle-specs/reseed")
+async def admin_vehicle_specs_reseed(current: dict = Depends(require_admin)):
+    """Explicit, admin-only reseed of the `vehicle_specs` collection
+    from the bundled Kredo flat-file.
+
+    This is intentionally OFF the startup path (Emergent's deployment
+    checks reject any code path that can destructively delete records
+    on boot) — so if the vendor ships a refreshed flat-file we run this
+    once from the admin cockpit to replace the seed. Dealer-owned rows
+    with a custom `spec_source` are preserved; only rows tagged
+    `mock`, `kredo` or `None` are wiped and reinserted.
+    """
+    from pathlib import Path
+    import json as _json
+    kredo_specs_path = Path(__file__).with_name("vehicle_specs_kredo.json")
+    if not kredo_specs_path.exists():
+        raise HTTPException(404, "vehicle_specs_kredo.json is not bundled with this build")
+    with open(kredo_specs_path) as f:
+        rows = _json.load(f)
+    deleted = (await db.vehicle_specs.delete_many(
+        {"spec_source": {"$in": ["mock", "kredo", None]}}
+    )).deleted_count
+    for r in rows:
+        r["id"] = str(uuid.uuid4())
+        r["spec_source"] = "kredo"
+    BATCH = 2000
+    inserted = 0
+    for i in range(0, len(rows), BATCH):
+        result = await db.vehicle_specs.insert_many(rows[i:i + BATCH])
+        inserted += len(result.inserted_ids)
+    logger.info(
+        "Admin reseed of vehicle_specs by %s: removed %s, inserted %s",
+        current.get("email"), deleted, inserted,
+    )
+    return {"deleted": deleted, "inserted": inserted}
 
 
 @api_router.post("/admin/submissions/{sub_id}/price")
@@ -8846,13 +8900,32 @@ async def seed_data():
 
     kredo_specs_path = Path(__file__).with_name("vehicle_specs_kredo.json")
 
-    async def _reseed_from_kredo() -> None:
+    # -------------------------------------------------------------
+    # Vehicle-spec startup strategy (Aug 2026).
+    #
+    # `vehicle_specs` is a reference-data collection (~22k rows from a
+    # Kredo flat-file). To honour Emergent's "no destructive startup"
+    # rule the collection is now handled as follows:
+    #
+    #   • Empty collection      → insert every row from the flat-file
+    #                             (first-boot bootstrap; nothing to
+    #                             destroy).
+    #   • Non-empty collection  → NO-OP. We NEVER call `delete_many`
+    #                             on startup. If the operator later
+    #                             wants to refresh from a new flat-file
+    #                             they run the admin endpoint
+    #                             `POST /api/admin/vehicle-specs/reseed`
+    #                             (documented in ADMIN_API.md).
+    #
+    # This means redeploys are always idempotent — the flat-file is
+    # only touched when the collection is genuinely empty.
+    # -------------------------------------------------------------
+
+    async def _bootstrap_from_kredo() -> None:
+        """First-boot bootstrap only — assumes an EMPTY collection."""
         import json as _json
         with open(kredo_specs_path) as f:
             rows = _json.load(f)
-        # Wipe any previous seed (mock or old Kredo) so we don't leave
-        # duplicate variants around when the flatfile is refreshed.
-        await db.vehicle_specs.delete_many({})
         for r in rows:
             r["id"] = str(uuid.uuid4())
             r["spec_source"] = "kredo"
@@ -8861,43 +8934,21 @@ async def seed_data():
         BATCH = 2000
         for i in range(0, len(rows), BATCH):
             await db.vehicle_specs.insert_many(rows[i:i + BATCH])
-        logger.info(f"Seeded {len(rows)} vehicle_specs rows from Kredo flatfile")
+        logger.info(f"Bootstrap-seeded {len(rows)} vehicle_specs rows from Kredo flatfile")
 
     try:
+        total = await db.vehicle_specs.count_documents({})
         if kredo_specs_path.exists():
-            # Re-seed when:
-            #  a) collection is empty, OR
-            #  b) it has non-Kredo (mock) rows, OR
-            #  c) it has Kredo rows but they were imported before we started
-            #     preserving `mm_code` on each variant, OR
-            #  d) the flatfile on disk has a materially different row count
-            #     from what's in Mongo — i.e. someone re-imported the Excel
-            #     with additional makes / years. We compare the row counts
-            #     with a small tolerance to avoid churn on trivial diffs.
-            existing_kredo = await db.vehicle_specs.count_documents({"spec_source": "kredo"})
-            total = await db.vehicle_specs.count_documents({})
-            needs_mm = False
-            if existing_kredo:
-                probe = await db.vehicle_specs.find_one(
-                    {"spec_source": "kredo"}, {"mm_code": 1, "_id": 0}
+            if total == 0:
+                # Empty collection → safe bootstrap. No delete required.
+                await _bootstrap_from_kredo()
+            else:
+                logger.info(
+                    "vehicle_specs already populated (%s rows) — skipping startup seed. "
+                    "Use POST /api/admin/vehicle-specs/reseed to refresh from the flatfile.",
+                    total,
                 )
-                if not probe or "mm_code" not in probe:
-                    needs_mm = True
-
-            # Check flatfile row-count vs seeded row-count.
-            import json as _json_probe
-            with open(kredo_specs_path) as _fh:
-                file_row_count = len(_json_probe.load(_fh))
-            row_count_stale = abs(existing_kredo - file_row_count) > max(50, int(file_row_count * 0.01))
-
-            if total == 0 or existing_kredo == 0 or needs_mm or row_count_stale:
-                if row_count_stale and not (total == 0 or existing_kredo == 0 or needs_mm):
-                    logger.info(
-                        "Kredo flatfile row count changed (%s → %s) — reseeding vehicle_specs.",
-                        existing_kredo, file_row_count,
-                    )
-                await _reseed_from_kredo()
-        elif await db.vehicle_specs.count_documents({}) == 0:
+        elif total == 0:
             from vehicle_specs_seed import expand_specs
             rows = expand_specs()
             if rows:
