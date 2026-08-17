@@ -1,0 +1,41 @@
+{
+  "summary": "Phase 2 (Admin Billing UI) reviewed. Backend endpoints already 100% green in iter 61 (/app/test_reports/iteration_61.json). Playwright UI testing BLOCKED at login step — the RN-Web 'SIGN IN' TouchableOpacity could not be triggered via text/role/regex selectors in 3 attempts (loop-prevention threshold hit). Deep code review of /app/frontend/src/components/AdminBillingCockpit.tsx and /app/frontend/app/(app)/dealers.tsx completed and 2 concrete bugs + 3 minor UX issues surfaced. Backend Phase 1 contract is intact so once main-agent verifies UI mounts, all 5 modals should function.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "dealers.tsx (create-dealership modal)", "issue": "Line 709: `setNewDealershipForm({ name:'', address:'', company_reg_no:'', vat_no:'' })` in the New-Dealership button onPress is MISSING the 3 new keys `accounts_contact_name`, `accounts_contact_phone`, `accounts_contact_email`. Result: (a) when admin re-opens the modal after a previous session, those 3 TextInputs become `undefined` -> React will emit the controlled/uncontrolled input warning and any residual value from the prior submission may leak into the next. (b) TypeScript should be complaining if strict — the state object shape drops keys. FIX: mirror the initial-state literal exactly (include the 3 accounts_contact_* keys).", "testID": "dealers-new-dealership-btn", "priority": "HIGH"},
+      {"component": "AdminBillingCockpit.tsx (Load Payment button)", "issue": "The 'Load Payment' action button is rendered with `primary` variant -> style `actionBtnPrimary { backgroundColor: colors.primary, borderColor: colors.primary }` + text color `#fff`. If `colors.primary` in the light theme is the neon/lime brand accent, white text on it has WCAG AA contrast risk (< 4.5:1). Matches the main-agent's own visual flag. Suggest either forcing dark text on light-primary buttons or using a distinctly darker CTA colour.", "testID": "btn-load-payment", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "AdminBillingCockpit / right column", "issues": [
+        "Ledger tabs row (`tabsRow`) has only `paddingBottom: 4` and no top padding — tab buttons sit almost flush against the action-button row above and against the ledger below. Recommend `paddingVertical: spacing.sm` and `marginTop: spacing.sm` for the tabs bar to match the main-agent's visual note.",
+        "Action buttons (`actionRow`) uses `gap: 8` + `flexWrap: 'wrap'` but no `rowGap`. On narrower cockpit widths the wrapped row collides with the tabs row underneath.",
+        "`MinimalModal` uses inline CSS strings like `width: 'min(520px, 92vw)' as any` and `maxHeight: '85vh' as any` — works on web only; on native these are silently ignored. Non-blocking for an admin-web-only screen but worth flagging."
+      ]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_61.json (backend already green)"],
+  "action_items": [
+    "Fix dealers.tsx line 709: include the 3 accounts_contact_* keys in the form-reset object so the state shape stays consistent when the modal is re-opened.",
+    "Confirm/fix Load Payment CTA contrast: either drop `primary` variant or set `actionBtnTextPrimary` to `colors.onPrimary` (which is likely `#000` for the neon brand) instead of hard-coded `#fff`.",
+    "Add vertical padding + margin around the ledger `tabsRow` for breathing room (main agent's own visual note).",
+    "RETEST UI end-to-end with Playwright once login-selector issue is worked around (e.g. add a proper `testID` on the SIGN IN button so future testing agents can click reliably). Currently the login screen's primary CTA has no data-testid, and RN-Web renders the TouchableOpacity as a `<div>` (not `<button>`), so `get_by_role('button')` and `get_by_text('SIGN IN', exact=True)` both fail to resolve.",
+    "Manually verify: (1) Deposit Request modal round-trip creates DEP-NNNNNN row, (2) Load Payment allocation to 'deposit' updates left-column balance, (3) Generate Invoice raises 'Nothing to invoice' alert when there's no billable activity, (4) Refund debits balance, (5) Statement PDF opens as application/pdf, (6) Company Details PUT persists trading_name/bank_*/vat_number, (7) New-Dealership form persists accounts_contact_* on POST /admin/dealerships and echoes back on billing-summary."
+  ],
+  "critical_code_review_comments": [
+    "dealers.tsx:709 — state-shape mismatch on form reset (see ui_bugs #1).",
+    "AdminBillingCockpit.tsx:264-278 — ActionButton onPress for Statement PDF chains `.catch(...)` on `openAuthedPdf` but does NOT handle the promise return; if openAuthedPdf is fire-and-forget the catch is fine, but the surrounding synchronous onPress won't await the download — non-blocking as long as openAuthedPdf itself opens `window.open(blobUrl)` internally.",
+    "AdminBillingCockpit.tsx:700 — `<Pressable onPress={(e:any)=>e.stopPropagation && e.stopPropagation()}>` for the modal card: on RN-Web `e.stopPropagation` exists but the outer Pressable already renders as a native div, so click-through works; on iOS/Android native this stopPropagation call is a no-op — again web-only screen so acceptable.",
+    "AdminBillingCockpit.tsx:643 — CompanySettingsModal `useEffect` depends only on `[open]` and ignores exhaustive-deps for setValues/apiFetch. Minor.",
+    "AdminBillingCockpit.tsx:264 — `ActionButton` re-fires the onClick handler synchronously even while a mutation is in-flight; no debounce guard on Statement PDF button. Could produce duplicate PDF downloads if admin double-clicks."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (18/18, iter 61)", "frontend": "not tested — Playwright blocked at login step; code review completed"},
+  "seed_data_creation": "No seed data created this iteration. iter 61 fixture already has TEST_Billing_5af6e7e2 (ACTIVE, R4500) and TEST_Billing_5fe7121c (SUSPENDED, -R500). Reused for read-only review only.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Login screen's SIGN IN CTA has no data-testid — this is the root cause of my UI test-run failing (RN-Web div, not a native <button>). Please either (a) ask main-agent to add `testID='login-submit'` on the SIGN IN TouchableOpacity, or (b) use JS token seeding via `page.evaluate(() => localStorage.setItem('token', <admin JWT>))` before navigating to the app root. Once past login, everything is testID-tagged (`cockpit-view-billing`, `billing-row-<id>`, `btn-request-deposit`, `btn-load-payment`, `btn-generate-invoice`, `btn-refund`, `btn-statement`, `billing-company-settings-btn`, `new-dealership-name/…/accounts_contact_email`). Backend Phase 1 already 100% green — no need to re-run pytest.",
+  "rca_of_issue": "Blocker for UI-flow verification is a missing testID on the login CTA. RCA: /app/frontend/app/(auth)/login.tsx (or equivalent) renders SIGN IN inside a TouchableOpacity that has no `testID` and no `role='button'` — on RN-Web this becomes `<div class=…>SIGN IN</div>` which Playwright's `get_by_role('button')` / `get_by_text('SIGN IN', exact=True)` cannot pin because the outer div contains other text nodes and no accessible name. Mitigation: add `testID='login-submit'` (renders as `data-testid='login-submit'` on web) OR set an `aria-role='button'` prop. This is a testability regression, not a functional bug — real users click it fine."
+}

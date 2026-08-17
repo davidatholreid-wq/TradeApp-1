@@ -77,7 +77,13 @@ export default function Dealers() {
   const [inviteError, setInviteError] = useState<string | null>(null);
   // Create-new-dealership modal state (admin-only quick onboarding)
   const [creatingDealership, setCreatingDealership] = useState(false);
-  const [newDealershipForm, setNewDealershipForm] = useState({ name: "", address: "", company_reg_no: "", vat_no: "" });
+  const [newDealershipForm, setNewDealershipForm] = useState({
+    name: "", address: "", company_reg_no: "", vat_no: "",
+    // Accounts contact (Aug 2026 billing) — the person who receives
+    // monthly invoices, statements and deposit requests. Optional at
+    // create-time; can be filled in via PATCH later.
+    accounts_contact_name: "", accounts_contact_phone: "", accounts_contact_email: "",
+  });
   const [newDealershipSubmitting, setNewDealershipSubmitting] = useState(false);
   const [newDealershipError, setNewDealershipError] = useState<string | null>(null);
 
@@ -97,13 +103,19 @@ export default function Dealers() {
           address: newDealershipForm.address.trim(),
           company_reg_no: newDealershipForm.company_reg_no.trim() || undefined,
           vat_no: newDealershipForm.vat_no.trim() || undefined,
+          accounts_contact_name: newDealershipForm.accounts_contact_name.trim() || undefined,
+          accounts_contact_phone: newDealershipForm.accounts_contact_phone.trim() || undefined,
+          accounts_contact_email: newDealershipForm.accounts_contact_email.trim() || undefined,
         }),
       });
       const created = res?.dealership;
       // Close the create modal and immediately open the Add-User modal for the
       // brand-new dealership so the admin can complete the onboarding in one flow.
       setCreatingDealership(false);
-      setNewDealershipForm({ name: "", address: "", company_reg_no: "", vat_no: "" });
+      setNewDealershipForm({
+        name: "", address: "", company_reg_no: "", vat_no: "",
+        accounts_contact_name: "", accounts_contact_phone: "", accounts_contact_email: "",
+      });
       // Refresh the dealers list so the empty dealership header appears too.
       await load(showArchived);
       if (created?.id) {
@@ -694,7 +706,10 @@ export default function Dealers() {
             testID="dealers-new-dealership-btn"
             onPress={() => {
               setNewDealershipError(null);
-              setNewDealershipForm({ name: "", address: "", company_reg_no: "", vat_no: "" });
+              setNewDealershipForm({
+                name: "", address: "", company_reg_no: "", vat_no: "",
+                accounts_contact_name: "", accounts_contact_phone: "", accounts_contact_email: "",
+              });
               setCreatingDealership(true);
             }}
             style={[styles.archTgl, styles.newDealershipBtn]}
@@ -947,6 +962,12 @@ export default function Dealers() {
                 ["Address (optional)", "address", "e.g. 123 Main Rd, Bryanston"],
                 ["Company Reg No (optional)", "company_reg_no", "e.g. 2020/123456/07"],
                 ["VAT No (optional)", "vat_no", "e.g. 4520123456"],
+                // Accounts contact — the person who will receive monthly
+                // invoices, statements and deposit-request emails. Blank
+                // is fine at create time; admin can edit later.
+                ["Accounts Contact Name (optional)", "accounts_contact_name", "e.g. Jane Smith"],
+                ["Accounts Contact Phone (optional)", "accounts_contact_phone", "e.g. +27 82 123 4567"],
+                ["Accounts Contact Email (optional)", "accounts_contact_email", "accounts@hatfieldford.co.za"],
               ].map(([label, key, placeholder]) => (
                 <View key={key} style={styles.modalField}>
                   <Text style={styles.modalLabel}>{label}</Text>
@@ -954,7 +975,20 @@ export default function Dealers() {
                     style={styles.modalInput}
                     value={(newDealershipForm as any)[key]}
                     onChangeText={(v) => setNewDealershipForm((f) => ({ ...f, [key]: v }))}
-                    autoCapitalize={key === "name" || key === "address" ? "words" : "characters"}
+                    autoCapitalize={
+                      key === "name" || key === "address" || key === "accounts_contact_name"
+                        ? "words"
+                        : key === "accounts_contact_email"
+                          ? "none"
+                          : "characters"
+                    }
+                    keyboardType={
+                      key === "accounts_contact_email"
+                        ? "email-address"
+                        : key === "accounts_contact_phone"
+                          ? "phone-pad"
+                          : "default"
+                    }
                     placeholder={placeholder}
                     placeholderTextColor={colors.textDisabled}
                     testID={`new-dealership-${key}`}

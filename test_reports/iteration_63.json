@@ -1,0 +1,37 @@
+{
+  "summary": "Phase 2 Admin Billing UI end-to-end retest against admin@fourbuy.co.za on TEST_Billing_5af6e7e2. Login blocker from iter 62 is resolved (testID='login-submit-button' is present and works). All 5 cockpit action buttons and 6 primary testIDs are FOUND. Verified flows: Deposit Request (DEPOSITS 2→3 with note 'TEST_deposit_request_new' persisted), Load Payment R1000+bank_ref=TEST-01 (Balance R4500→R5500 in the left column after refresh — PASS), Refund R500 (Balance R5500→R5000, REFUNDS 1→2 — PASS), Generate Invoice modal (year=2026,month=8 render cleanly, no crash), Statement PDF (HTTP 200, Content-Type: application/pdf, opened new blob tab — PASS), Company Settings PUT persisted trading_name='TRADE AI powered by FOURBUY (test)' across reload — PASS. Dealer create modal: all 3 accounts_contact_* testIDs present. State-reset regression from iter 62 bug #1 is FIXED — filling accounts_contact_email, closing via Cancel, reopening yields a blank field. Full dealership persistence via API not completed because the modal has a 2-step flow ('Create & Add User') that requires user details before the dealership is written; main agent should verify via a full flow.  CRITICAL NEW BUG DISCOVERED: every modal PrimaryButton renders with invisible label (white text on the neon-white brand primary background). Affected across Deposit Request 'Create & Email', Load Payment 'Record Payment', Generate Invoice 'Generate & Email', Refund 'Record Refund', and Company Settings 'Save' — the buttons are functional but the caption is unreadable. Root cause: /app/frontend/src/components/AdminBillingCockpit.tsx line 835: `primaryBtnText: { color: '#fff' }` — same class of bug already fixed on `actionBtnTextPrimary` (line 800 uses colors.onPrimary). Should be `color: colors.onPrimary || '#000'`.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AdminBillingCockpit.tsx PrimaryButton (all modals)", "issue": "primaryBtnText hard-codes color:'#fff' on line 835 while backgroundColor uses colors.primary (light/neon on the current theme). Result: the submit button in EVERY billing modal (Deposit Request, Load Payment, Generate Invoice, Refund, Company Settings) shows a blank white bar with no visible label — WCAG contrast failure and a UX blocker. Fix: change to `color: colors.onPrimary || '#fff'` to mirror the actionBtnTextPrimary fix at line 800. Reference: /app/frontend/src/components/AdminBillingCockpit.tsx:835.", "testID": "N/A (no testID on PrimaryButton)", "priority": "HIGH"},
+      {"component": "AdminBillingCockpit.tsx PrimaryButton", "issue": "PrimaryButton has no testID prop, forcing testing agents to fall back to get_by_text('Create & Email'/'Record Payment'/etc). Suggest passing a `testID` prop into PrimaryButton (e.g. testID='modal-submit-deposit', 'modal-submit-load-pay', ...) so future regression tests are deterministic.", "testID": "N/A", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "New Dealership modal", "issues": [
+        "Submit button is labelled 'Create & Add User' which is a 2-step flow — a Cancel-only user-form step should be allowed so admins can create a dealership WITHOUT immediately provisioning a user. Consider a secondary 'Create dealership only' action."
+      ]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_62.json", "/app/test_reports/iteration_61.json (backend baseline)"],
+  "action_items": [
+    "HIGH: Fix invisible modal submit label — /app/frontend/src/components/AdminBillingCockpit.tsx line 835: change `primaryBtnText: { color: '#fff', ... }` to `primaryBtnText: { color: colors.onPrimary || '#fff', ... }`.",
+    "LOW: Add a `testID` prop to `PrimaryButton` (line 752-757) and thread through unique IDs from each of the 5 call-sites (Deposit / Load Payment / Generate Invoice / Refund / Save Company).",
+    "OPTIONAL: In dealers.tsx 'New Dealership' modal, wire a dedicated `testID='new-dealership-submit-btn'` on the 'Create & Add User' TouchableOpacity so a scripted E2E can drive it without get_by_text.",
+    "Main-agent may run a manual dealership+user creation and verify GET /api/admin/dealerships/{id}.accounts_contact echoes name/phone/email — the field-level plumbing (testIDs, state reset) is confirmed working, only the multi-step submit was not driven end-to-end by this agent."
+  ],
+  "critical_code_review_comments": [
+    "AdminBillingCockpit.tsx:834-835 — primaryBtn uses colors.primary background but primaryBtnText hard-codes '#fff'. This is exactly the same anti-pattern that was fixed on actionBtnTextPrimary at line 800. Cover ALL primary buttons with the theme-provided onPrimary token.",
+    "AdminBillingCockpit.tsx:752 PrimaryButton — no testID prop. Add for deterministic Playwright regression coverage.",
+    "AdminBillingCockpit.tsx:499 LoadPaymentModal — useEffect deps `[open, setValues]` triggers resetValues on every mount; harmless but useCallback the setter for clarity.",
+    "dealers.tsx:709 — state-reset FIX from iter 62 confirmed present and working; TEST verified blank field on reopen after cancel."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (previously verified iter 61)", "frontend": "7/8 flows PASS — 1 UX blocker (invisible submit label)"},
+  "seed_data_creation": "1 extra deposit request (R600, notes='TEST_deposit_request_new'), 1 payment (R1000, bank_ref='TEST-01'), 1 refund (R500, notes='TEST_refund') added to TEST_Billing_5af6e7e2 dealership (id 9b679b7d-d69e-4c77-ac04-37a52a55a7e8). New Balance now R5000 (was R4500). No new dealerships persisted (2-step 'Create & Add User' flow not completed). Company Settings trading_name was updated to 'TRADE AI powered by FOURBUY (test)' — main agent may want to revert to 'TRADE AI powered by FOURBUY' after verification.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Login: testID='login-submit-button' works. All 6 cockpit testIDs (btn-request-deposit, btn-load-payment, btn-generate-invoice, btn-refund, btn-statement, billing-company-settings-btn) resolve correctly. TEST_Billing_5af6e7e2 (id 9b679b7d-d69e-4c77-ac04-37a52a55a7e8) is the reliable ACTIVE fixture with R5000 balance after this test. Modal submit buttons have no testID and their captions are invisible until iter 63 bug is fixed — click via get_by_text('Create & Email' / 'Record Payment' / 'Record Refund' / 'Generate & Email' / 'Save'). PDF opens as blob in new tab (application/pdf verified 200). Dealer accounts_contact_* testIDs work; the create button is 'Create & Add User' (2-step) — supply user details or add a testID to short-circuit.",
+  "rca_of_issue": "Invisible modal submit label: /app/frontend/src/components/AdminBillingCockpit.tsx line 834-835. Style `primaryBtn` sets backgroundColor to `colors.primary` (light neon-white brand accent); `primaryBtnText` sets color to hard-coded '#fff'. On light-primary themes the two collapse into white-on-white and the label becomes invisible. Same problem was already remediated for actionBtnTextPrimary (line 800: `color: colors.onPrimary || '#fff'`). Mitigation: mirror the fix so every primary CTA text respects `colors.onPrimary`. Reproduction: any admin login → Billing → click any of the 5 modal open buttons → observe the bottom CTA renders as a plain white rectangle."
+}

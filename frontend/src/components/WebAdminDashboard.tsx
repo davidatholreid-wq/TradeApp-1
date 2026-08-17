@@ -7,7 +7,10 @@ import { useThemeColors, useThemeMode, type Palette } from "@/src/theme/ThemeCon
 import { decodeLicenseDisk } from "@/src/utils/licenseDisk";
 import { apiFetch } from "@/src/api";
 import { buildWhatsappUrl, buildDealerMessage } from "@/src/utils/whatsapp";
-import BillingScreen from "@/app/(app)/billing";
+// BillingScreen (dealer usage-stats view) — no longer used by the admin
+// dashboard. Kept out of the import graph for clarity; the dealer app
+// still resolves it via its own /(app)/billing route.
+import AdminBillingCockpit from "@/src/components/AdminBillingCockpit";
 import DealersScreen from "@/app/(app)/dealers";
 import KredoTestScreen from "@/app/(app)/kredo-test";
 import AdminRewardsScreen from "@/src/components/AdminRewardsScreen";
@@ -1508,7 +1511,10 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
         </ScrollView>
       ) : view === "billing" ? (
         <View style={{ flex: 1 }}>
-          <BillingScreen />
+          {/* Admin billing = the new deposits / invoices / payments
+              cockpit (Aug 2026). The historical BillingScreen still
+              renders inside the dealer app for read-only usage stats. */}
+          <AdminBillingCockpit />
         </View>
       ) : view === "dealers" ? (
         <View style={{ flex: 1 }}>
