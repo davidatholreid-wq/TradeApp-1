@@ -28,21 +28,46 @@ SplashScreen.preventAutoHideAsync();
 // the user. Filter those specific rejections out so real errors still bubble.
 // -----------------------------------------------------------------------------
 if (Platform.OS === "web" && typeof window !== "undefined") {
-  const isFontTimeout = (msg: unknown): boolean => {
-    if (!msg) return false;
-    const s = typeof msg === "string" ? msg : (msg as any).message || String(msg);
-    return typeof s === "string" && s.includes("ms timeout exceeded");
+  const looksLikeFontTimeout = (payload: unknown): boolean => {
+    if (!payload) return false;
+    const anyP = payload as any;
+    const msg =
+      (typeof payload === "string" ? payload : anyP?.message) ||
+      String(payload);
+    const stack: string = anyP?.stack || "";
+    return (
+      typeof msg === "string" &&
+      (msg.includes("ms timeout exceeded") ||
+        stack.includes("fontfaceobserver"))
+    );
   };
   window.addEventListener("unhandledrejection", (event) => {
-    if (isFontTimeout((event as any).reason)) {
+    if (looksLikeFontTimeout((event as any).reason)) {
       event.preventDefault();
+      (event as any).stopImmediatePropagation?.();
     }
   });
   window.addEventListener("error", (event) => {
-    if (isFontTimeout((event as any).error) || isFontTimeout((event as any).message)) {
+    if (
+      looksLikeFontTimeout((event as any).error) ||
+      looksLikeFontTimeout((event as any).message)
+    ) {
       event.preventDefault();
+      (event as any).stopImmediatePropagation?.();
     }
   });
+  // Expo Dev Client's red-box overlay hooks into React Native's global
+  // ErrorUtils.reportError / reportFatalError. Wrap those so the same
+  // font-timeout swallow rule applies before the overlay ever renders.
+  const eu: any = (globalThis as any).ErrorUtils;
+  if (eu && typeof eu.setGlobalHandler === "function") {
+    const prevHandler = eu.getGlobalHandler ? eu.getGlobalHandler() : null;
+    eu.setGlobalHandler((error: any, isFatal?: boolean) => {
+      if (looksLikeFontTimeout(error)) return;
+      if (typeof prevHandler === "function") prevHandler(error, isFatal);
+      else if (isFatal) throw error;
+    });
+  }
 }
 
 // Push notification: foreground handler (module scope)

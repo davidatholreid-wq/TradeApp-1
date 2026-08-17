@@ -13,12 +13,12 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
-import { useVideoPlayer } from "expo-video";
+import { useVideoPlayer, VideoView } from "expo-video";
 import { LinearGradient } from "expo-linear-gradient";
 import AppIconTile from "@/src/components/home/AppIconTile";
 import { useFocusEffect, useRouter } from "expo-router";
 
-import { spacing, radius, fonts, BRAND } from "@/src/theme";
+import { spacing, radius, fonts } from "@/src/theme";
 import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { useAuth } from "@/src/context/AuthContext";
 import { apiFetch } from "@/src/api";
@@ -29,11 +29,17 @@ import { apiFetch } from "@/src/api";
 // cycles through pages on tap (front → point 1 → point 2 → ... → loop).
 // ---------------------------------------------------------------------------
 
-// Bundled hero video (H.264 on native, VP9 on web).
-const HERO_VIDEO = Platform.OS === "web"
-  ? require("../../assets/video/home_banner.webm")
-  : require("../../assets/video/home_banner.mp4");
-const HERO_POSTER = require("../../assets/video/home_banner_poster.jpg");
+// Bundled hero video — client-supplied cinematic (Aug 2026).
+// Native (iOS / Android): render the looping H.264 .mp4 via expo-video.
+// Web: skip the video entirely and show a clean static TRADE AI logo
+//      on a black backdrop. The web preview environment surfaces a
+//      transient "6000ms timeout exceeded" font-loading warning while
+//      the cinematic buffers, and the client prefers a rock-solid
+//      still-image hero on the browser anyway.
+const HERO_VIDEO = require("../../assets/video/hero.mp4");
+// Static logo lockup used as the web hero and as a fallback poster
+// behind the native VideoView so the panel is never a blank rectangle.
+const HERO_LOGO = require("../../assets/brands/tradeai_hero.png");
 
 // Advertising rotation — bundled bitmaps, cycled per-tap.
 const AD_TCS = require("../../assets/brands/ad_tcs.jpeg");
@@ -202,23 +208,24 @@ export default function HomeScreen() {
     (user?.email ? user.email.split("@")[0] : "");
 
   const heroPlayer = useVideoPlayer(HERO_VIDEO, (p) => {
-    // Client-supplied 10-second cinematic. We loop it so the hero panel
-    // is always showing motion rather than freezing on the (dark) final
-    // frame — especially important on web, where the tab may sit on
-    // Home for extended periods and a static black rectangle reads as
-    // "video is broken".
+    // Client-supplied 10-second cinematic. Native (iOS/Android) only —
+    // the web hero renders a static TRADE AI logo instead. Guard the
+    // .play() call so the web preview never actually kicks off the
+    // media pipeline.
     p.loop = true;
     p.muted = true;
-    p.play();
+    if (Platform.OS !== "web") {
+      p.play();
+    }
   });
 
   // Watchdog: some web browsers (Safari, and Chrome in restricted power
-  // modes) opportunistically pause muted background <video> elements. On
-  // web we now render a static brand logo instead of the video (see the
-  // hero panel below), so this watchdog only runs on native — where the
-  // OS video pipeline generally honours `loop = true`, but a belt-and-
-  // braces re-play() keeps the panel alive if the player is ever paused
-  // by a system-level interruption (incoming call, PiP switch, etc.).
+  // modes) opportunistically pause muted background <video> elements.
+  // On web we render a static logo instead of the video so this watchdog
+  // only runs on native — where the OS video pipeline generally honours
+  // `loop = true`, but a belt-and-braces re-play() keeps the panel alive
+  // if the player is ever paused by a system-level interruption
+  // (incoming call, PiP switch, etc.).
   useEffect(() => {
     if (Platform.OS === "web") return;
     const id = setInterval(() => {
@@ -233,9 +240,9 @@ export default function HomeScreen() {
     useCallback(() => {
       // Rewind and play once every time the Home tab is re-focused so
       // dealers see the intro from the start, not mid-way through.
-      // NOTE: we intentionally do NOT pause on unfocus — pausing here
-      // was causing the hero panel to sometimes stay stopped when
-      // React Navigation re-focused the tab out-of-order on web.
+      // Web renders a static logo — skip the seek/play on that platform
+      // to avoid unnecessary media-pipeline work.
+      if (Platform.OS === "web") return;
       try {
         heroPlayer.currentTime = 0;
         heroPlayer.play();
@@ -543,40 +550,45 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          {/* Hero panel — capped height on wide screens so it stops swallowing
-              the whole viewport, and full-bleed 16:9 on phones.
+          {/* Hero panel — capped height on wide screens so it stops
+              swallowing the whole viewport, and full-bleed 16:9 on
+              phones.
               • Native (iOS / Android): looping cinematic video.
-              • Web: static TRADE AI powered by FOURBUY logo on a solid brand
-                backdrop. Web video autoplay is unreliable across
-                browsers / power modes, and the client asked to fall
-                back to a clean logo lockup there.
-              On wide screens (`isWide`) we wrap the panel in a two-
-              column row and dock the Advertising flip-tile to its
-              right — moved to the BOTTOM of the page on 2026-08 per
-              user feedback: the side-by-side layout felt cramped and
-              broke the app's vertical rhythm. Ads now live in a
-              dedicated bottom banner that matches the rest of the app
-              styling. */}
+              • Web: static TRADE AI logo lockup on a black backdrop.
+                The client asked to keep the browser hero as a rock-solid
+                still image (Aug 2026) — the video-player pipeline was
+                also triggering a transient fontfaceobserver "6000ms
+                timeout exceeded" overlay in dev-mode, which the still
+                image sidesteps entirely.
+              Stands alone — no wordmark / tagline overlay. */}
           <View>
             <View style={styles.heroWrap}>
-              {/* Clean static hero — the TRADE AI wordmark centred on a
-                  subtle dark panel with a soft cyan glow. Same layout
-                  on iOS, Android and Web. Video / animated variants
-                  can slot in here later without touching the
-                  surrounding grid. */}
-              <View style={styles.heroPanel}>
-                <View style={styles.heroGlow} />
+              {Platform.OS === "web" ? (
                 <Image
-                  source={BRAND.logo}
-                  style={styles.heroLogoImg}
+                  source={HERO_LOGO}
+                  style={styles.hero}
                   resizeMode="contain"
                   accessibilityLabel="TRADE AI powered by FOURBUY"
                 />
-                <View style={styles.heroDivider} />
-                <Text style={styles.heroTagline}>
-                  AI-POWERED VEHICLE VALUATIONS
-                </Text>
-              </View>
+              ) : (
+                <>
+                  <Image
+                    source={HERO_LOGO}
+                    style={styles.heroPoster}
+                    resizeMode="contain"
+                    accessibilityLabel="TRADE AI hero poster"
+                  />
+                  <VideoView
+                    player={heroPlayer}
+                    style={styles.hero}
+                    contentFit="cover"
+                    nativeControls={false}
+                    allowsFullscreen={false}
+                    allowsPictureInPicture={false}
+                    accessibilityLabel="TRADE AI powered by FOURBUY"
+                  />
+                </>
+              )}
             </View>
           </View>
 
@@ -1432,7 +1444,10 @@ const makeStyles = (colors: Palette, isWide: boolean, windowWidth: number = 0) =
       maxHeight: isWide ? 360 : undefined,
       borderRadius: radius.lg,
       overflow: "hidden",
-      backgroundColor: colors.paper,
+      // Solid black so the "contain"-fit logo image on web blends with
+      // the artwork's own black background instead of showing a paper
+      // stripe on either side.
+      backgroundColor: "#000",
       ...Platform.select({
         ios: { shadowColor: "#000", shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } },
         android: { elevation: 3 },
