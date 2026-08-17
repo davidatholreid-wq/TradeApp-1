@@ -725,6 +725,11 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
     user = await db.users.find_one({"id": decoded["sub"]}, {"_id": 0, "password_hash": 0})
     if not user:
         raise HTTPException(401, "User not found")
+    # Soft-deleted accounts cannot use the API — enforced at the
+    # dependency layer so no downstream endpoint accidentally serves
+    # a tombstoned user.
+    if user.get("deleted_at"):
+        raise HTTPException(401, "Account has been deleted")
     return user
 
 

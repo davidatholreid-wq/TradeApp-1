@@ -84,6 +84,11 @@ async def login(payload: LoginRequest):
     user = await db.users.find_one({"email": payload.email.lower()})
     if not user or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(401, "Invalid email or password")
+    # Soft-deleted accounts (self-service deletion, 30-day tombstone)
+    # cannot log in — the sensitive Auth path fails ambiguously so we
+    # never leak whether the email exists in the tombstone table.
+    if user.get("deleted_at"):
+        raise HTTPException(401, "Invalid email or password")
     # Suspended or archived dealers cannot log in. Admins are always allowed.
     if user.get("role") == "dealer":
         if user.get("archived_at"):
@@ -551,6 +556,93 @@ async def update_me(
             "Please contact your Fourbuy admin to update your details."
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Delete My Account (Aug 2026 — Apple / Google Play requirement).
+# ---------------------------------------------------------------------------
+class DeleteMyAccountBody(BaseModel):
+    password: str
+    reason: Optional[str] = None
+
+
+@router.delete("/auth/me")
+async def delete_my_account(
+    payload: DeleteMyAccountBody,
+    current: dict = Depends(get_current_user),
+):
+    """Self-service soft-delete of the caller's own user account.
+
+    Sets `deleted_at` (now) + `purge_after` (+30 days) on the user
+    document. The account is immediately unusable — login and every
+    Bearer-auth'd request return 401 from here on — but the row stays
+    in Mongo for 30 days so Fourbuy support can recover it on request.
+
+    Guards:
+      • Requires the caller's current password (defense against a
+        stolen-token deletion).
+      • Blocks the LAST active admin of a dealership from deleting so
+        the dealership doesn't end up ownerless (the caller is asked
+        to contact Fourbuy support to close the dealership instead).
+      • Admins with `role == 'admin'` cannot self-delete via this
+        endpoint — Fourbuy staff accounts are managed off-platform.
+    """
+    # Re-verify the password so a stolen token can't nuke the account.
+    fresh = await db.users.find_one({"id": current["id"]})
+    if not fresh:
+        raise HTTPException(404, "User not found")
+    if not verify_password(payload.password, fresh["password_hash"]):
+        raise HTTPException(401, "Password does not match — please re-enter it and try again.")
+    if fresh.get("role") == "admin":
+        raise HTTPException(
+            403,
+            "Admin accounts cannot self-delete from the app. Please contact Fourbuy support.",
+        )
+    # Last-active-user-of-dealership guard.
+    dealership_id = fresh.get("dealership_id")
+    if dealership_id:
+        # Count all OTHER active, non-deleted, non-archived users in
+        # the same dealership. If zero, we refuse — closing the
+        # dealership needs an admin's hand.
+        # NOTE: use `None` (matches both missing AND explicitly null) rather
+        # than `$exists: False` — the admin-invite endpoint sets
+        # `archived_at: None` on every fresh user, so `$exists: False` was
+        # excluding perfectly-active teammates and mis-firing the last-user
+        # guard for two-person dealerships. Same rationale for `deleted_at`.
+        remaining = await db.users.count_documents({
+            "dealership_id": dealership_id,
+            "id": {"$ne": fresh["id"]},
+            "deleted_at": None,
+            "archived_at": None,
+            "active": {"$ne": False},
+        })
+        if remaining == 0:
+            raise HTTPException(
+                409,
+                "You are the last remaining user on this dealership. "
+                "Please contact Fourbuy support to close the dealership account.",
+            )
+    now = datetime.now(timezone.utc).isoformat()
+    purge_after = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+    await db.users.update_one(
+        {"id": fresh["id"]},
+        {"$set": {
+            "deleted_at": now,
+            "purge_after": purge_after,
+            "deleted_reason": (payload.reason or "").strip() or None,
+            "active": False,  # extra safety belt so any legacy code that
+                              # checks .active also sees the account as off.
+        }},
+    )
+    logger.info("User %s soft-deleted (purge_after=%s)", fresh.get("email"), purge_after)
+    return {
+        "deleted": True,
+        "purge_after": purge_after,
+        "message": (
+            "Your account has been marked for deletion. "
+            "Contact Fourbuy support within 30 days if you'd like it restored."
+        ),
+    }
 
 
 __all__ = ["router"]

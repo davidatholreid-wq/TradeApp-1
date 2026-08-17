@@ -10,6 +10,7 @@ import { useThemeColors, type Palette } from "@/src/theme/ThemeContext";
 import { apiFetch } from "@/src/api";
 import { useAuth } from "@/src/context/AuthContext";
 import BrandLogo from "@/src/components/BrandLogo";
+import { WalletCard } from "@/src/components/billing/WalletCard";
 
 type BillingItem = {
   id: string;
@@ -255,6 +256,12 @@ export default function BillingScreen() {
             />
           }
         >
+          {/* Wallet card — dealer-only. Shows current deposit balance,
+              usage-to-date and links to invoice/deposit PDFs. Renders
+              above the historical usage report so a dealer sees their
+              live wallet first thing. Admins keep the pre-existing
+              wallet-agnostic report layout below. */}
+          {!isAdmin ? <WalletCard /> : null}
           {isAdmin ? (
             <>
               {(data?.rows || []).length === 0 ? (

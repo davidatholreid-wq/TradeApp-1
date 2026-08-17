@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { TouchableOpacity } from "@/src/components/HapticButtons";
-import { View, Text, StyleSheet, ScrollView, Image, Share, Platform, useWindowDimensions, Modal, TextInput, ActivityIndicator, KeyboardAvoidingView, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Image, Share, Platform, useWindowDimensions, Modal, TextInput, ActivityIndicator, KeyboardAvoidingView, Alert, Pressable } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
@@ -57,6 +57,7 @@ export default function Profile() {
     invoice_notes?: string | null;
   };
   const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [dealership, setDealership] = useState<DealershipInvoiceFields | null>(null);
   const [invoiceForm, setInvoiceForm] = useState<DealershipInvoiceFields>({});
   const [invoiceLoading, setInvoiceLoading] = useState(false);
@@ -539,7 +540,33 @@ export default function Profile() {
           <Ionicons name="log-out-outline" size={20} color={colors.danger} />
           <Text style={styles.logoutText}>Sign Out</Text>
         </TouchableOpacity>
+
+        {/* Delete My Account — Apple / Google Play require in-app self
+            deletion for accounts created in the app. We soft-delete
+            with a 30-day recovery window; the actual purge is done
+            off-band. Admins are blocked at the backend so this button
+            is hidden for admins here as a UX nicety. */}
+        {user?.role !== "admin" ? (
+          <TouchableOpacity
+            testID="delete-account-button"
+            style={styles.deleteAccountBtn}
+            onPress={() => setDeleteAccountOpen(true)}
+          >
+            <Ionicons name="trash-outline" size={16} color="#B91C1C" />
+            <Text style={styles.deleteAccountText}>Delete My Account</Text>
+          </TouchableOpacity>
+        ) : null}
       </ScrollView>
+      <DeleteAccountModal
+        visible={deleteAccountOpen}
+        onClose={() => setDeleteAccountOpen(false)}
+        onDeleted={async () => {
+          setDeleteAccountOpen(false);
+          await logout();
+          router.replace("/(auth)/login" as any);
+        }}
+        colors={colors}
+      />
       {/* Company Invoice Details editor — modal so we don't blow up
           the profile scroll surface for the many dealers who won't
           need this every session. */}
@@ -691,6 +718,93 @@ export default function Profile() {
         </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DeleteAccountModal — password re-entry gate for self-service account
+// deletion (Aug 2026). Calls DELETE /api/auth/me with { password, reason }.
+// Success → onDeleted() (parent will logout + navigate to login).
+// ---------------------------------------------------------------------------
+function DeleteAccountModal({
+  visible, onClose, onDeleted, colors,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onDeleted: () => void;
+  colors: any;
+}) {
+  const styles = useMemo(() => makeStyles(colors, false), [colors]);
+  const [password, setPassword] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (visible) { setPassword(""); setReason(""); setBusy(false); } }, [visible]);
+  const confirm = async () => {
+    if (!password) { Alert.alert("Please enter your current password."); return; }
+    setBusy(true);
+    try {
+      await apiFetch("/api/auth/me", {
+        method: "DELETE",
+        body: JSON.stringify({ password, reason: reason.trim() || undefined }),
+      });
+      Alert.alert(
+        "Account marked for deletion",
+        "Your account has been disabled. Contact Fourbuy support within 30 days to restore it.",
+      );
+      onDeleted();
+    } catch (e: any) {
+      Alert.alert("Couldn't delete account", e?.message || "Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.deleteModalBg} onPress={onClose}>
+        <Pressable style={styles.deleteModalCard} onPress={(e: any) => e.stopPropagation && e.stopPropagation()}>
+          <Text style={styles.deleteModalTitle}>Delete Your Account</Text>
+          <Text style={styles.deleteModalBody}>
+            This will disable your account immediately. Your data is kept for 30 days in case you want to restore it — contact Fourbuy support within that window.
+            {"\n\n"}
+            The dealership itself is not deleted (only your user account). Any monthly invoices already generated remain on record.
+            {"\n\n"}
+            Please re-enter your password to confirm.
+          </Text>
+          <TextInput
+            testID="delete-account-password"
+            style={styles.deleteInput}
+            value={password}
+            onChangeText={setPassword}
+            placeholder="Current password"
+            placeholderTextColor="#94A3B8"
+            secureTextEntry
+            autoCapitalize="none"
+          />
+          <TextInput
+            testID="delete-account-reason"
+            style={[styles.deleteInput, { minHeight: 60, textAlignVertical: "top" }]}
+            value={reason}
+            onChangeText={setReason}
+            placeholder="Reason (optional — helps us improve)"
+            placeholderTextColor="#94A3B8"
+            multiline
+          />
+          <View style={styles.deleteBtnRow}>
+            <TouchableOpacity style={styles.deleteCancelBtn} onPress={onClose} disabled={busy}>
+              <Text style={styles.deleteCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="delete-account-confirm"
+              style={[styles.deleteConfirmBtn, busy && { opacity: 0.6 }]}
+              onPress={confirm}
+              disabled={busy}
+            >
+              <Text style={styles.deleteConfirmText}>{busy ? "Deleting…" : "Delete My Account"}</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -1164,4 +1278,31 @@ const makeStyles = (colors: Palette, isWide: boolean) => StyleSheet.create({
     marginTop: spacing.md,
   },
   logoutText: { color: colors.danger, fontWeight: "700", fontSize: 15 },
+  // Delete-my-account CTA — deliberately styled as a low-emphasis
+  // destructive action so the primary Sign Out button retains focus.
+  // Same amber-warning tone as other retract-y controls in the app.
+  deleteAccountBtn: {
+    marginTop: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: "#B91C1C" + "55",
+    backgroundColor: "#FEE2E2" + "44",
+  },
+  deleteAccountText: { color: "#B91C1C", fontWeight: "700", fontSize: 13 },
+  deleteModalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", alignItems: "center", justifyContent: "center", padding: spacing.md },
+  deleteModalCard: { width: "min(460px, 92vw)" as any, backgroundColor: colors.card, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.borderLight },
+  deleteModalTitle: { color: colors.text, fontSize: 16, fontWeight: "800", marginBottom: 8 },
+  deleteModalBody: { color: colors.textSecondary, fontSize: 13, lineHeight: 18, marginBottom: spacing.md },
+  deleteInput: { color: colors.text, fontSize: 14, paddingVertical: 10, paddingHorizontal: 12, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderLight, backgroundColor: colors.bg, marginBottom: 10 },
+  deleteBtnRow: { flexDirection: "row", gap: 10, marginTop: 4 },
+  deleteCancelBtn: { flex: 1, alignItems: "center", paddingVertical: 12, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderLight, backgroundColor: colors.bg },
+  deleteCancelText: { color: colors.text, fontWeight: "700", fontSize: 13 },
+  deleteConfirmBtn: { flex: 1, alignItems: "center", paddingVertical: 12, borderRadius: radius.md, backgroundColor: "#B91C1C" },
+  deleteConfirmText: { color: "#fff", fontWeight: "800", fontSize: 13 },
 });

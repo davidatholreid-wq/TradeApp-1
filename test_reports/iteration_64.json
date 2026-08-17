@@ -1,0 +1,43 @@
+{
+  "summary": "Phase 3 (Dealer WalletCard + WalletSuspendBanner + DELETE /api/auth/me) end-to-end tested. BACKEND: 6/6 pytest cases pass in /app/backend/tests/test_phase3_delete_account.py after I fixed ONE genuine bug in the last-remaining-user guard (see rca_of_issue). Verified: admin self-delete blocked 403; wrong password 401; solo user 409; two-user dealership sequential delete (first 200, then old bearer 401 'Account has been deleted', login of deleted user 401 'Invalid email or password' — no tombstone leak); PATCH /api/auth/me still 403 regression; GET /api/auth/me still 200. FRONTEND: WalletCard renders on dealer /(app)/billing (testID='wallet-card') with DEPOSIT BALANCE, deposits/usage meta, MY INVOICES, DEPOSIT REQUESTS. WalletSuspendBanner (testID='wallet-suspend-banner') is globally mounted in (app) layout and correctly appears on Home, Billing AND Profile when the dealership wallet is R0 (verified with a freshly-created R0 dealership). Admin correctly does NOT see wallet-card on /billing and does NOT see delete-account-button on /profile. Delete My Account modal: password + reason inputs render, wrong password path shows Alert (RN Alert.alert visible on web via window.alert channel), correct password deletes the account, auto-logs out, redirects to /login. Attempting to log in as the just-deleted user returns 'Invalid email or password' on the login screen.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "DELETE /api/auth/me", "issue": "Last-user guard used `archived_at: {$exists: false}` but /api/admin/dealerships/{id}/users explicitly sets `archived_at: null` on new users — every 2+ user dealership therefore mis-fired 409 on the first user's delete. Fixed in /app/backend/routes/auth.py by switching to `archived_at: None` (matches missing OR null). Applied same treatment to `deleted_at` for symmetry."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Delete Account modal (Alert.alert on web)", "issues": [
+        "React Native Alert.alert on web falls back to window.alert which auto-blocks Playwright and is not driveable by testID. Success/error paths still worked end-to-end (verified via redirect + re-login 401) but consider replacing Alert.alert with an in-DOM banner or Modal so QA/automation can assert on success/failure text deterministically. Reference: /app/frontend/app/(app)/profile.tsx:750-756 (Alert.alert('Couldn\\'t delete account', ...) and Alert.alert('Account marked for deletion', ...))."
+      ]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase3_delete_account.py",
+    "/app/test_reports/pytest/iteration_64_delete_account.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: Replace Alert.alert in DeleteAccountModal with an in-DOM error banner/toast so success/failure text is visible in the DOM for automation.",
+    "OPTIONAL: Add testID on the Alert OK button OR add a data-testid='delete-account-error' element rendered from state so wrong-password error text is directly asserted by Playwright.",
+    "OPTIONAL: In backend, consider also normalising `active` field so `active: {$ne: False}` never mis-classifies a user during count queries (currently OK because invite defaults active=True)."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/routes/auth.py:606-613 — last-user guard used MongoDB `$exists: False` on `archived_at`/`deleted_at`. The admin-invite endpoint sets `archived_at: None` explicitly on every fresh user, so `$exists: False` was excluding them. Fixed to use `None` which matches missing OR null in Mongo. Root cause of an incorrectly-firing 409 on the FIRST user of any pair.",
+    "/app/frontend/app/(app)/profile.tsx:750,756 — Alert.alert-based error/success is hard to assert with Playwright. Replace with in-DOM state-driven banners for testability.",
+    "/app/frontend/app/(app)/_layout.tsx:40 — WalletSuspendBanner is correctly mounted OUTSIDE the <Tabs> and above the tab bar so it persists across every tab route."
+  ],
+  "updated_files": [
+    "/app/backend/routes/auth.py (fixed last-user guard mongo query)",
+    "/app/backend/tests/test_phase3_delete_account.py (new pytest module — 6 tests, all passing)"
+  ],
+  "success_rate": {"backend": "100% (6/6 pytest cases after 1-line mongo fix)", "frontend": "100% (all 4 required flows verified: WalletCard, global SuspendBanner on 3 screens, admin-hidden delete button, dealer delete flow → auto-logout → login rejected)"},
+  "seed_data_creation": "Created dealership TEST_ui_del_XXXXXX (id 35f1e8ef-b202-408a-88cf-f1fe03a8e2c1) with two users ui_a_d6cd40@test.co.za (DELETED — soft-tombstoned) and ui_b_2f2645@test.co.za (still active, R0 wallet — kept for future banner tests). Also created ~3 dealerships (TEST_del_wrongpw_*, TEST_solo_*, TEST_pair_*) inside pytest module — leftover dealerships have soft-deleted users and can be swept by admin when convenient.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend last-user guard now uses `None` semantics (not `$exists: False`) — matches invite defaults. Any future addition of new-user fields that default to `null` will keep working with this guard. The Alert.alert modal on web auto-dismisses via window.alert channel; use `page.on('dialog', lambda d: d.accept())` to programmatically clear it. Fresh test dealership 35f1e8ef-b202-408a-88cf-f1fe03a8e2c1 has R0 wallet — use it if you need to reproduce the suspend banner without touching dave's balance.",
+  "rca_of_issue": "MongoDB filter mismatch in last-active-user guard. /app/backend/routes/auth.py delete_my_account counted OTHER users with filter {archived_at: {$exists: False}, deleted_at: {$exists: False}, ...}. But /api/admin/dealerships/{id}/users creates users with `archived_at: null` explicitly (see server.py:7767). In Mongo, {$exists: False} does NOT match documents where the field is set to null. Result: every fresh user was skipped by the count → the count was always 0 → the FIRST user of a 2-person dealership got 409 'last remaining' even when their teammate was fully active. Reproduction: create dealership + 2 users via /api/admin/dealerships/{id}/users, log in as either, DELETE /api/auth/me → 409. Fix: replace `{$exists: False}` with `None` (matches BOTH missing and explicitly-null fields in MongoDB) for both `archived_at` and `deleted_at` in the count filter. After fix, pytest test_first_deletes_then_second_blocked passes and all six phase-3 delete-account cases go green."
+}

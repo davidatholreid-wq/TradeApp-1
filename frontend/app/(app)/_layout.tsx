@@ -6,6 +6,7 @@ import { useThemeColors } from "@/src/theme/ThemeContext";
 import { useAuth } from "@/src/context/AuthContext";
 import WebAdminDashboard from "@/src/components/WebAdminDashboard";
 import AgreementModal from "@/src/components/AgreementModal";
+import { WalletSuspendBanner } from "@/src/components/billing/WalletCard";
 
 export default function AppLayout() {
   const colors = useThemeColors();
@@ -30,13 +31,13 @@ export default function AppLayout() {
     );
   }
 
-  // Streamlined bottom tab bar — only the three primary destinations
-  // (My Vehicles, Submit, Profile) live in the bar so it stays uncluttered
+  // Streamlined bottom tab bar — only the three primary destinations  // (My Vehicles, Submit, Profile) live in the bar so it stays uncluttered
   // and thumb-friendly. Everything else (Billing, History, Rewards, Dealers,
   // Kredo, Give Cover, Advertising) is surfaced as flip-tiles on the home
   // screen — see /app/(app)/index.tsx for the tile grid.
   return (
     <View style={{ flex: 1 }}>
+      <WalletSuspendBanner />
       <Tabs
         screenOptions={{
           headerShown: false,
