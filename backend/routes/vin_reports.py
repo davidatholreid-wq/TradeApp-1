@@ -196,6 +196,12 @@ async def order_vin_report(
     Auto-debit — the caller is charged immediately on success. Failed
     vendor calls are stored as `status=failed` and NOT billed.
     """
+    # Suspension guard — dealerships with a depleted wallet balance
+    # cannot pull new VIN reports. Applied at the top so we don't burn
+    # a Kredo/Bimmervin API call before failing.
+    from routes.billing import assert_dealership_active as _assert_active_billing
+    if current.get("role") == "dealer" and current.get("dealership_id"):
+        await _assert_active_billing(current["dealership_id"], feature="VIN reports")
     make = payload.make.strip()
     vin = (payload.vin or "").strip().upper()
     if len(vin) < 6:
@@ -316,16 +322,26 @@ async def order_vin_report(
     # Success — bill the caller and persist the payload.
     billed = int(entry["cost_zar"] or 0) > 0
     completed_at = now_utc()
+    # Stamp `billing_charge_cents` so the billing wallet debits this
+    # amount when it recomputes. Aug 2026 wallet-based billing.
+    billing_charge_cents = int(round(float(entry["cost_zar"] or 0) * 100))
     await db.vin_report_orders.update_one(
         {"id": order_id},
         {"$set": {
             "status": "completed",
             "cost_zar": entry["cost_zar"],
+            "billing_charge_cents": billing_charge_cents,
             "billed": billed,
             "result_data": result,
             "completed_at": completed_at,
         }},
     )
+    if dealer_id and billing_charge_cents:
+        try:
+            from routes.billing import _recompute_wallet as _bill_recompute
+            await _bill_recompute(dealer_id)
+        except Exception as e:
+            logger.warning("VIN report wallet debit stamp failed (non-blocking): %s", e)
 
     # Mirror the completed order into `db.report_orders` — the canonical
     # billing collection queried by BOTH the dealer's `/api/billing/my`

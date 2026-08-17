@@ -336,6 +336,11 @@ async def place_cover_offer(
             403,
             "Your account has been suspended. Please contact Fourbuy to reactivate before placing covers.",
         )
+    # Wallet-balance guard — a dealership with a depleted deposit
+    # cannot place new covers (Aug 2026 billing).
+    from routes.billing import assert_dealership_active as _assert_active_billing
+    if current.get("dealership_id"):
+        await _assert_active_billing(current["dealership_id"], feature="Give Cover")
     sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
     if not sub:
         raise HTTPException(404, "Submission not found")

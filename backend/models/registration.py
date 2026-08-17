@@ -26,6 +26,14 @@ class CompanyInfo(BaseModel):
     company_address: str
     company_reg_no: Optional[str] = None
     vat_no: Optional[str] = None
+    # Accounts contact — the person at the dealership who receives
+    # billing correspondence (invoices, statements, deposit requests).
+    # All three fields are optional at registration so the sign-up flow
+    # stays lightweight; the admin can top them up later in the Billing
+    # section. Aug 2026.
+    accounts_contact_name: Optional[str] = None
+    accounts_contact_phone: Optional[str] = None
+    accounts_contact_email: Optional[str] = None
 
 
 class RegisterRequest(BaseModel):
@@ -76,6 +84,12 @@ class DealershipUpdate(BaseModel):
     bank_account_type: Optional[str] = None
     bank_swift: Optional[str] = None
     invoice_notes: Optional[str] = None
+    # Accounts contact — the person at the dealership who receives
+    # monthly invoices, statements and deposit requests. Editable by
+    # admin from the Billing screen. Aug 2026.
+    accounts_contact_name: Optional[str] = None
+    accounts_contact_phone: Optional[str] = None
+    accounts_contact_email: Optional[str] = None
 
 
 class DealershipCreate(BaseModel):
@@ -87,6 +101,12 @@ class DealershipCreate(BaseModel):
     company_reg_no: Optional[str] = None
     vat_no: Optional[str] = None
     active: bool = True
+    # Optional accounts contact at create time — pre-populates the
+    # dealership doc so the admin doesn't have to open a second dialog
+    # to key it in.
+    accounts_contact_name: Optional[str] = None
+    accounts_contact_phone: Optional[str] = None
+    accounts_contact_email: Optional[str] = None
 
 
 __all__ = [

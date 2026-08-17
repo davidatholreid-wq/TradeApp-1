@@ -159,6 +159,78 @@ def upload_photos_dict_to_cloudinary(
             out[key] = val
     return out
 
+
+def upload_pdf_bytes_to_cloudinary(
+    pdf_bytes: bytes,
+    folder: str,
+    public_id: Optional[str] = None,
+) -> Optional[str]:
+    """Upload a PDF (raw bytes) to Cloudinary and return the secure_url.
+
+    Used by the billing module (deposit request PDFs, invoice PDFs,
+    statement PDFs). Returns None if Cloudinary isn't configured or the
+    upload fails — the caller keeps a copy of the bytes so nothing is
+    lost.
+    """
+    if not CLOUDINARY_ENABLED or not pdf_bytes:
+        return None
+    import base64
+    data_url = "data:application/pdf;base64," + base64.b64encode(pdf_bytes).decode("ascii")
+    try:
+        params = {
+            "folder": folder,
+            "resource_type": "raw",
+            "overwrite": True,
+            "unique_filename": public_id is None,
+        }
+        if public_id:
+            params["public_id"] = f"{public_id}.pdf"
+        res = cloudinary.uploader.upload(data_url, **params)
+        return res.get("secure_url")
+    except Exception as e:
+        logging.getLogger(__name__).error(
+            "Cloudinary PDF upload failed (folder=%s, public_id=%s): %s",
+            folder, public_id, e,
+        )
+        return None
+
+
+async def send_email_via_emergent(
+    *,
+    to: str,
+    subject: str,
+    html: str,
+    from_name: Optional[str] = None,
+) -> bool:
+    """Fire-and-forget email dispatch via the Emergent-managed Resend
+    proxy. Attachments are not supported — pass a PDF link in the HTML
+    body instead. Returns True on 2xx, False otherwise.
+    """
+    import httpx
+    email_key = (os.environ.get("EMERGENT_EMAIL_KEY") or "").strip()
+    if not email_key:
+        logging.getLogger(__name__).warning("EMERGENT_EMAIL_KEY not set — skipping email to %s", to)
+        return False
+    payload = {
+        "to": [to],
+        "subject": subject,
+        "html": html,
+        "from_name": (from_name or os.environ.get("EMAIL_FROM_NAME") or "TRADE AI powered by FOURBUY").strip(),
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                "https://integrations.emergentagent.com/api/v1/email/send",
+                headers={"X-Email-Key": email_key},
+                json=payload,
+            )
+            resp.raise_for_status()
+        return True
+    except Exception as e:
+        logging.getLogger(__name__).warning("send_email_via_emergent failed to %s: %s", to, e)
+        return False
+
+
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
@@ -2072,6 +2144,13 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
     # Per-submission acceptance popup ("R50 incl. VAT / no fee if not priced within 24h").
     if not payload.billing_accepted:
         raise HTTPException(400, "Billing acceptance is required for each submission")
+    # Suspension guard — block new submissions when the dealership's
+    # prepaid wallet is depleted. Read-side endpoints (list/detail) are
+    # NOT gated so dealers can still see their existing valuations.
+    from routes.billing import assert_dealership_active as _assert_active_billing
+    dealership_for_billing = await _get_user_dealership_id(current)
+    if dealership_for_billing:
+        await _assert_active_billing(dealership_for_billing, feature="new submissions")
     # Guardrail — every 1-10 rating we actually care about. Skipped when
     # the submission is flagged as `unseen` (dealer hasn't inspected).
     if not payload.unseen:
@@ -2168,6 +2247,11 @@ async def resubmit_submission(
     # on TOP of any R50 already invoiced against the retracted original.
     if not payload.billing_accepted:
         raise HTTPException(400, "Billing acceptance is required for each submission")
+    # Suspension guard — same rule as new submissions.
+    from routes.billing import assert_dealership_active as _assert_active_billing
+    dealership_for_billing = await _get_user_dealership_id(current)
+    if dealership_for_billing:
+        await _assert_active_billing(dealership_for_billing, feature="Edit & Re-submit")
     if not payload.unseen:
         for rating, name in [
             (payload.mechanical_condition, "mechanical"),
@@ -3056,6 +3140,22 @@ async def admin_price(sub_id: str, offer: PriceOffer, current: dict = Depends(re
             await award_reward_point_for_submission(fresh_sub)
         except Exception as e:
             logger.warning("Reward point award failed (non-blocking): %s", e)
+        # Stamp the wallet-debit amount on the submission if it became
+        # billable (priced within the 24h SLA). This is what the billing
+        # wallet aggregates against — the write is idempotent because
+        # a re-price only re-updates the same field.
+        try:
+            if is_billable(fresh_sub):
+                charge_cents = int(round(BILLING_FEE_ZAR * 100))
+                await db.submissions.update_one(
+                    {"id": sub_id},
+                    {"$set": {"billing_charge_cents": charge_cents}},
+                )
+                if fresh_sub.get("dealership_id"):
+                    from routes.billing import _recompute_wallet as _bill_recompute
+                    await _bill_recompute(fresh_sub["dealership_id"])
+        except Exception as e:
+            logger.warning("Wallet debit stamp failed (non-blocking): %s", e)
     try:
         push_title = "Price Updated" if is_update else "Price Offer Received"
         await send_push_gated(
@@ -7528,6 +7628,15 @@ async def admin_create_dealership(
         "company_reg_no": (payload.company_reg_no or None),
         "vat_no": (payload.vat_no or None),
         "active": bool(payload.active),
+        "accounts_contact": {
+            "name": (payload.accounts_contact_name or "").strip() or None,
+            "phone": (payload.accounts_contact_phone or "").strip() or None,
+            "email": (payload.accounts_contact_email or "").strip() or None,
+        },
+        "wallet_balance_cents": 0,
+        "wallet_credits_cents": 0,
+        "wallet_usage_cents": 0,
+        "wallet_refunds_cents": 0,
         "created_at": now_utc(),
         "created_by_admin_id": current["id"],
     }
@@ -7571,6 +7680,21 @@ async def admin_update_dealership(
     updates = {k: v for k, v in payload.dict(exclude_none=True).items()}
     if not updates:
         raise HTTPException(400, "No fields to update")
+    # Fold accounts_contact_* fields into a nested `accounts_contact`
+    # subdocument so downstream consumers (billing PDFs, list rows,
+    # dealer-profile screen) can read the block with a single lookup.
+    contact_updates = {}
+    for src, dst in (
+        ("accounts_contact_name", "name"),
+        ("accounts_contact_phone", "phone"),
+        ("accounts_contact_email", "email"),
+    ):
+        if src in updates:
+            contact_updates[dst] = (updates.pop(src) or "").strip() or None
+    if contact_updates:
+        existing_contact = (d.get("accounts_contact") or {})
+        existing_contact.update(contact_updates)
+        updates["accounts_contact"] = existing_contact
     updates["updated_at"] = now_utc()
     await db.dealerships.update_one({"id": dealership_id}, {"$set": updates})
     # If the admin toggled `active`, cascade to every user in the dealership
@@ -8698,6 +8822,23 @@ api_router.include_router(suppliers_router)
 api_router.include_router(stock_router)
 api_router.include_router(vin_reports_router)
 api_router.include_router(partner_api_router)
+
+# Billing / deposits / invoices / payments (Aug 2026 — see backend/routes/billing.py)
+from routes.billing import router as billing_router, init_billing_module as _init_billing
+_init_billing(
+    db=db,
+    require_admin=require_admin,
+    get_current_user=get_current_user,
+    upload_pdf_to_cloudinary=upload_pdf_bytes_to_cloudinary,
+    send_email=lambda to, subject, html, from_name=None: send_email_via_emergent(
+        to=to, subject=subject, html=html, from_name=from_name,
+    ),
+    now_utc=now_utc,
+)
+# Billing router has its OWN /api prefix baked in (so it can be mounted
+# from anywhere). Include it on the app directly instead of via api_router
+# to avoid a double-prefix.
+app.include_router(billing_router)
 
 
 app.include_router(api_router)

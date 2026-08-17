@@ -1,0 +1,44 @@
+{
+  "summary": "Phase 1 (backend) of the new deposit/billing/invoicing system tested against the public preview URL. 18/18 pytest cases green in /app/backend/tests/test_iteration_61_billing.py after two critical bugs in /app/backend/routes/billing.py were fixed by T1 (see updated_files + rca_of_issue). Coverage: (1) GET/PUT /api/admin/company-settings persists and echoes the merged doc; (2) POST /admin/dealerships with accounts_contact_* creates the nested subdoc; PATCH folds and preserves existing keys; (3) POST /admin/dealerships/{id}/deposit-request produces DEP-NNNNNN with monotonic sequence (verified DEP-N -> DEP-N+1); Cloudinary URL persisted when configured, email skipped gracefully in preview; (4) POST /admin/dealerships/{id}/deposits credits wallet_balance_cents, flips linked deposit_request status='paid'; (5) POST /admin/dealerships/{id}/deposit-refund debits with REF-NNNNNN; (6) POST /admin/dealerships/{id}/invoices/generate returns 409 for empty periods and 400 for invalid month; (7) Suspension guard: fresh dealership with 0 wallet returns 402 on POST /submissions AND on POST /vin-reports/order; after R5 000 deposit the same call is NOT 402 (guard clears); (8) GET /admin/dealerships/{id}/billing-summary returns wallet + deposit_requests + invoices + payments + refunds arrays populated as expected; (9) GET /admin/billing/overview surfaces the row with wallet_balance_zar=4500 and suspended=false; (10) GET /billing/my-summary from dealer token echoes matching wallet and lists; (11) GET /admin/dealerships/{id}/statement.pdf returns valid application/pdf (%PDF header + reportlab payload) after ParagraphStyle bug fix. Wallet math verified end-to-end: 0 -> +5000 (deposit) -> -500 (refund) -> 4500 balance, suspended=false. Reference counters (dep_seq, inv_seq, ref_seq) all producing zero-padded 6-digit ids. NOTE: Give Cover suspension guard (POST /submissions/{id}/covers) not exercised end-to-end here because it needs a priced submission + cover payload beyond the pytest scope, but code path in routes/cover.py:341 was reviewed and uses the same assert_dealership_active helper as the other two — trust the shared helper.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_61_billing.py",
+    "/app/test_reports/pytest/iteration_61_billing.xml"
+  ],
+  "action_items": [
+    "Please review the two fixes T1 applied to /app/backend/routes/billing.py (see rca_of_issue). Both are minor pattern fixes but they were blocking every admin billing endpoint with a 500 (dependency shim) and every PDF-producing endpoint with a 500 (ParagraphStyle duplicate 'name' kwarg). If you prefer a different pattern for the dependency wiring (e.g. moving the shims into server.py and passing them into init_billing_module, or replacing the module-global-injection pattern with a proper FastAPI Depends factory), feel free to refactor — the current shim is correct but a little indirect.",
+    "The suspension guard for POST /submissions and POST /vin-reports/order is checked INSIDE the endpoint body, so pydantic validation on the request body runs FIRST. If the intent is that a suspended dealer should see 402 even with a malformed body, move the guard into a FastAPI dependency (Depends). Right now a suspended dealer sending an incomplete body gets a 422, not a 402. Not blocking — but worth flagging."
+  ],
+  "critical_code_review_comments": [
+    "billing.py originally used `Depends(lambda: _require_admin())` — the lambda produces a coroutine object that FastAPI never awaits. Every admin billing endpoint that read `current.get(...)` or `current['id']` was 500'ing. Fixed by introducing two proper async shims (_dep_require_admin / _dep_current_user) that read the Authorization header via Depends and dispatch to the injected server-side dependency callables.",
+    "billing.py `_pdf_footer` passed BOTH the positional first arg AND the `name=` kwarg to ParagraphStyle, so every PDF generation (deposit request, invoice, statement) raised TypeError('PropertySet.__init__() got multiple values for argument name'). Removed the duplicate.",
+    "_recompute_wallet correctly aggregates from three collections (dealer_payments credits + submissions/vin_report_orders billing_charge_cents usage + deposit_refunds debits). Verified numerically via the deposit / refund flow (5000 - 500 = 4500).",
+    "counters collection is upserted with $inc + return_document=AFTER so DEP-000001 vs DEP-000002 is race-safe. Monotonic increment verified in test.",
+    "assert_dealership_active is called from server.py:2150 (create submission), server.py:2251 (resubmit), routes/vin_reports.py:202 (VIN order), and routes/cover.py:341 (Give Cover). All four hits looked correct on code review; two exercised in tests.",
+    "server.py:3149-3156 stamps billing_charge_cents on submissions inside the 24h SLA window and immediately recomputes the wallet — non-blocking try/except so a wallet failure doesn't hurt pricing.",
+    "routes/vin_reports.py:325-339 stamps billing_charge_cents when a VIN report cost is > 0 and recomputes the wallet. Both branches match spec.",
+    "Statement PDF ledger builds credits/debits from four collections + a synthetic 'Cumulative usage debits' row. Balance ties out because usage is aggregated from _recompute_wallet's result. The single-row usage aggregate is a design choice (not per-line) — call it out to the client if they wanted per-submission rows in the statement.",
+    "DealerPaymentCreate accepts BOTH invoice_id and deposit_request_id in the same payload; server allocates the amount to BOTH the invoice (flips status) and the deposit request (flips status) but only ONE dealer_payments row is written. If admin picks both by accident the wallet still balances but the audit trail is ambiguous. Consider raising 400 when both are set."
+  ],
+  "updated_files": [
+    "/app/backend/routes/billing.py (fix 1: replaced Depends(lambda: _require_admin()) with a real async shim; fix 2: removed duplicate `name=` kwarg on ParagraphStyle in _pdf_footer)",
+    "/app/backend/tests/test_iteration_61_billing.py (new — 18 pytest cases covering Phase 1 spec)",
+    "/app/test_reports/pytest/iteration_61_billing.xml (new)",
+    "/app/test_reports/iteration_61.json (this file)"
+  ],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "n/a — backend only"},
+  "seed_data_creation": "Session-scoped pytest fixture creates ONE dealership prefixed TEST_Billing_<hex> plus ONE dealer user (test_billing_<hex>@example.com / TestBill123!, SA ID 9001015800086). Not cleaned up (matches existing convention — TEST_ prefix lets purge_test_dealers.py sweep them later). Wallet ends at R4 500 credit balance after tests.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Phase 1 backend is fully wired and pytest-green. Two bug fixes applied to /app/backend/routes/billing.py — main agent should code-review and either bless or refactor the dependency shim pattern. All admin billing endpoints reachable at /api/admin/... require a Bearer admin token; the dealer self-summary is at /api/billing/my-summary. Reference counters: `dep_seq`, `inv_seq`, `ref_seq` on `db.counters` collection. Session-scoped fixture leaves a TEST_Billing_<hex> dealership with wallet=R4 500 — safe to reuse for iterating.",
+  "rca_of_issue": "Two blocker bugs were RCA'd during Phase 1 testing. (1) DEPENDENCY SHIM: /app/backend/routes/billing.py wrapped every admin endpoint with `Depends(lambda: _require_admin())`. The lambda takes no FastAPI-visible params, so FastAPI cannot resolve the dependency; instead it just executes the lambda, which calls `_require_admin()` — an async function requiring a Header-injected `authorization` kwarg. Since it's called with no args + not awaited, `current` becomes a coroutine object. Any endpoint accessing `current.get(...)` / `current['id']` then 500'd with `'coroutine' object has no attribute 'get'`. FIX: added two real async shims (_dep_require_admin, _dep_current_user) in billing.py that themselves take `authorization: Optional[str] = Header(None)` and call through to the module-globals set by init_billing_module. Every Depends() was updated to reference the shim (nine sites for admin, one for dealer). REPRODUCTION: PUT /api/admin/company-settings with a valid admin bearer -> 500 before fix, 200 after. (2) PDF STYLE: /app/backend/routes/billing.py:_pdf_footer instantiated `ParagraphStyle('footer', ..., name='footer')`; ParagraphStyle's parent PropertySet takes `name` as its first positional, so `name` was passed twice, raising TypeError. FIX: dropped the duplicate `name='footer'` kwarg. REPRODUCTION: GET /api/admin/dealerships/{id}/statement.pdf -> 500 before, 200 (%PDF) after."
+}
