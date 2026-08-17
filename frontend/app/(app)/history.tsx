@@ -39,6 +39,14 @@ type HistoryItem = {
   colour?: string;
   status: "pending" | "priced" | "declined";
   bucket?: string;
+  // Edit & Re-submit chain metadata (Aug 2026). When `retracted` is
+  // true the record has been superseded by a `-vN` re-submit and is
+  // shown here with a "Retracted" badge for audit trail.
+  retracted?: boolean;
+  retracted_at?: string | null;
+  replaced_by_ref?: string | null;
+  replaces_ref?: string | null;
+  version?: number | null;
   price?: number | null;
   priced_at?: string | null;
   declined_at?: string | null;
@@ -158,6 +166,25 @@ export default function HistoryScreen() {
               <View style={styles.unseenPill} testID="unseen-pill">
                 <Ionicons name="eye-off" size={9} color="#B3261E" />
                 <Text style={styles.unseenPillText}>UNSEEN · SUBJECT TO VIEW</Text>
+              </View>
+            ) : null}
+            {/* Retracted badge — surfaces Edit & Re-submit history so the
+                original priced record is visible in the audit trail
+                with a clear pointer to the replacement version. */}
+            {item.retracted ? (
+              <View style={styles.retractedPill} testID="retracted-pill">
+                <Ionicons name="return-up-back" size={10} color="#B45309" />
+                <Text style={styles.retractedPillText}>
+                  RETRACTED
+                  {item.replaced_by_ref ? ` · REPLACED BY ${item.replaced_by_ref}` : ""}
+                </Text>
+              </View>
+            ) : item.replaces_ref ? (
+              <View style={styles.retractedPill} testID="replaces-pill">
+                <Ionicons name="refresh" size={10} color="#B45309" />
+                <Text style={styles.retractedPillText}>
+                  REPLACES {item.replaces_ref}
+                </Text>
               </View>
             ) : null}
           </View>
@@ -465,6 +492,29 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
   unseenPillText: {
     color: "#B3261E",
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+  },
+  // Retracted pill — amber palette so it reads as an audit / history
+  // notice, not an error. Applied to both directions of the chain:
+  // the retracted original ("REPLACED BY …") and the new -vN
+  // version ("REPLACES …").
+  retractedPill: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    marginTop: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    backgroundColor: "#FEF3C7",
+    borderWidth: 1,
+    borderColor: "#B45309",
+  },
+  retractedPillText: {
+    color: "#B45309",
     fontSize: 9,
     fontWeight: "800",
     letterSpacing: 0.4,

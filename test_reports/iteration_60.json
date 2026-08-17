@@ -1,0 +1,46 @@
+{
+  "summary": "Iteration 60 refinement of Edit & Re-submit verified end-to-end. FRONTEND (Expo mobile web, 390x844, dealer dave@fourbuy.co.za): (1) /submissions/(app) — resubmit-btn / resubmit-btn-grid buttons are now COMPLETELY REMOVED from the list AND grid views (0 buttons across 21 cards rendered on dealer Dave's list, was 18 in iter 59). (2) /vehicle/[id] — EditResubmitCard (testID='edit-resubmit-card') renders at the bottom of the scroll above KeyboardAwareScrollView with the correct state-aware copy for all four scenarios: (a) CLEAN (FB-000186, no stock, no deal outcome) → neutral tone, sub = 'Retract this valuation and re-open it as a new editable version.', dialog = 'This will retract FB-000186 and open a new editable version…', (b) IN_STOCK (FB-000172, transferred to stock STK-TE237 via /submissions/{sid}/transfer-to-stock) → amber warning tone, sub = 'This vehicle is in your Stock list — continuing will remove it from Stock.', dialog = 'This vehicle is currently in your Stock list (STK-TE237). Continuing will REMOVE it from Stock and create a new pending submission for editing…', (c) DEAL_DONE (FB-000171 with deal.done=true) → amber tone, sub = 'This vehicle is flagged Deal Done — continuing will void that outcome.', dialog = 'This vehicle is marked as DEAL DONE. Continuing will void that outcome (via retract)…', (d) NO_DEAL (FB-000170 with deal.done=false) → amber tone, sub = 'This vehicle is flagged No Deal — continuing will void that outcome.', dialog = 'This vehicle is marked as NO DEAL. Continuing will void that outcome (via retract)…'. HIDE conditions verified: admin viewing dealer priced sub → card NOT rendered; dealer viewing PENDING sub (FB-000187-v2) → card NOT rendered. BACKEND: pytest 17/17 green in /app/backend/tests/test_resubmit.py (14 regression + 3 new stock-scenario tests): (a) POST /resubmit with linked stock item where sold=True → 409 with 'sold' message, original stays un-retracted, stock item preserved; (b) POST /resubmit with linked NON-sold stock item → 200, stock_items row auto-deleted, retracted submission has stock_item_id/stock_number/transferred_to_stock_at/transferred_to_stock_by all unset; (c) GET /api/stock excludes the removed item after resubmit. FB-XXX → FB-XXX-v2 chain, retracted flag, and replaced_by_ref all still working (regression tests pass).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_resubmit.py",
+    "/app/test_reports/pytest/iteration_60_resubmit.xml",
+    "/app/test_reports/screenshots/iter60_submissions.png",
+    "/app/test_reports/screenshots/iter60_card_clean.png",
+    "/app/test_reports/screenshots/iter60_card_stock.png",
+    "/app/test_reports/screenshots/iter60_card_dealdone.png",
+    "/app/test_reports/screenshots/iter60_card_nodeal.png",
+    "/app/test_reports/screenshots/iter60_admin_no_card.png",
+    "/app/test_reports/screenshots/iter60_pending_no_card.png"
+  ],
+  "action_items": [
+    "None — refinement is functionally complete and matches spec exactly.",
+    "(Optional / cosmetic) The stock/deal warning card uses a mid-amber (#F59E0B) border on a very light amber fill (#FEF3C755). On the dark theme this reads well, but the sub-text uses colors.textSecondary which appears slightly low-contrast (~2.6:1) against the amber tint. Consider bumping the sub-heading to colors.text for AA compliance.",
+    "(Optional / cosmetic) When the sub is IN_STOCK AND sold=true (server hard-stop path), the client-side evaluateResubmitState never actually branches — the frontend still shows canResubmit=true (because sub.stock_item_id is present but the client doesn't hydrate the stock_items collection). The 409 alert from the backend correctly handles this, but rendering a disabled button with copy 'Sold from stock — cannot be re-submitted' before the round-trip would be nicer. Not blocking."
+  ],
+  "critical_code_review_comments": [
+    "server.py resubmit endpoint correctly orders the operations: fetch original → verify not retracted → verify status=priced → verify 14-day window → check stock sold hard-stop → build new doc → insert new → retract original with $unset of stock fields. Ordering is safe: if _build_submission_doc raises, original is not retracted, and the stock item is not touched.",
+    "Auto-untransfer only fires when stock_item_id is set. Sold hard-stop check happens BEFORE any state mutation — good.",
+    "The $unset payload sets stock_item_id/stock_number/transferred_to_stock_at/transferred_to_stock_by all in one update — atomic. Verified by pytest that the fields no longer exist on the retracted doc.",
+    "EditResubmitCard.tsx cleanly separates evaluateResubmitState (pure, testable) from the visual card. buildResubmitConfirmMessage returns copy that matches server intent — the client and server both agree that a sold stock item is a hard-stop; server enforces via 409 and the client card would still enable the button (see action item 3 above).",
+    "submissions.tsx has been fully cleaned — no orphaned canResubmit helper, no orphaned styles, no orphaned testIDs. Grep for 'resubmit' returns zero hits.",
+    "vehicle/[id].tsx wraps the card in `{!isCoverMode && isOwningDealer && !isAdmin && sub ? … : null}` — correct gate. Cover mode and admin viewing dealer submissions both hide the card as verified in the browser walk.",
+    "handleEditResubmit uses confirmAsync (Alert.alert on native, window.confirm on web). If a future refactor uses a custom Modal instead, ensure the state-aware message still surfaces the stock number / deal outcome — right now it's tied to buildResubmitConfirmMessage which is pure and reusable."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_resubmit.py (added TestResubmitStockInteraction class — 3 new tests)",
+    "/app/test_reports/pytest/iteration_60_resubmit.xml (new)",
+    "/app/test_reports/iteration_60.json (this file)"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% (0 buttons on /submissions, 4/4 vehicle-detail states match spec, 2/2 hide conditions correct)"},
+  "seed_data_creation": "Temporary state on Dave's priced subs was applied AND rolled back at end of test: FB-000172 was transferred to stock (STK-TE237) then un-transferred; FB-000171 was tagged deal.done=true then $unset; FB-000170 was tagged deal.done=false then $unset. Final DB state matches iter 59 baseline. FB-000186 remains priced+clean for future manual verification (as documented in iter 59). Pytest teardown cleans all 3 new stock tests' seeded submissions and stock_items.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Refinement (iter 60) confirmed working. Dealer dave@fourbuy.co.za / Dave1234! is valid. FB-000186 (73eabcf0-ecdf-4609-a880-c7a17abfd3d6) is a priced clean sub owned by Dave — safe to reuse. FB-000187-v2 (cac9fe14-856d-4625-aff6-f75864ccb2bf) is a PENDING sub (proves hide-if-not-priced). Test file /app/backend/tests/test_resubmit.py now covers 17 scenarios (14 chain + 3 stock). If you need to re-verify the SOLD stock hard-stop from the UI (not just backend), the frontend does NOT currently disable the button when sold=true — it relies on the server 409. See action item 3.",
+  "rca_of_issue": "N/A — no bugs found. All spec items pass on both backend and frontend."
+}

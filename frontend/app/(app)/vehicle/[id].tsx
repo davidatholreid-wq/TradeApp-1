@@ -45,6 +45,10 @@ import { CoverOfferTermsButton } from "@/src/components/CoverOfferTerms";
 import DetailRow from "@/src/components/vehicle/DetailRow";
 import HeroPill from "@/src/components/vehicle/HeroPill";
 import ReportResultBody from "@/src/components/vehicle/ReportResultBody";
+import EditResubmitCard, {
+  evaluateResubmitState,
+  buildResubmitConfirmMessage,
+} from "@/src/components/vehicle/EditResubmitCard";
 import MarketAnalysisCard from "@/src/components/vehicle/MarketAnalysisCard";
 import VinLinkedReportsCard from "@/src/components/vehicle/VinLinkedReportsCard";
 import DealTrackingCard from "@/src/components/vehicle/DealTrackingCard";
@@ -1575,6 +1579,25 @@ export default function VehicleDetail() {
     }
   }, [sub, refreshSubmission]);
 
+  // Edit & Re-submit — retracts the priced valuation and opens the
+  // Submit form pre-populated with the current data. Extra state-aware
+  // confirmation copy warns when the vehicle is already in Stock or
+  // has a set deal outcome so the dealer knows about the side-effects
+  // (backend also auto-untransfers stock on retract for non-sold
+  // items). See `EditResubmitCard.evaluateResubmitState`.
+  const handleEditResubmit = useCallback(async () => {
+    if (!sub) return;
+    const state = evaluateResubmitState(sub);
+    if (!state.canResubmit) {
+      Alert.alert("Not available", state.disabledReason || "This valuation cannot be re-submitted right now.");
+      return;
+    }
+    const message = buildResubmitConfirmMessage(sub, state);
+    const proceed = await confirmAsync("Edit & Re-submit?", message, "Retract & Edit");
+    if (!proceed) return;
+    router.push(`/(app)/submit?resubmit_from=${sub.id}` as any);
+  }, [sub, router]);
+
   const handleOpenReportPdf = async (reportType: ReportOrder["type"]) => {
     if (!sub) return;
     try {
@@ -2793,6 +2816,16 @@ export default function VehicleDetail() {
           })()
         ) : null}
 
+        {/* ==================== EDIT & RE-SUBMIT ====================
+            Dealers can retract a priced valuation within RESUBMIT_WINDOW_DAYS
+            of `priced_at` and re-submit with edited details. Lives inside
+            the vehicle detail screen (not the submissions list) so it
+            doesn't cramp the card grid, and so we can render a
+            state-aware warning when the vehicle has already been
+            transferred to stock or the deal outcome has been set. */}
+        {!isCoverMode && isOwningDealer && !isAdmin && sub ? (
+          <EditResubmitCard sub={sub} onResubmit={handleEditResubmit} />
+        ) : null}
 
       </KeyboardAwareScrollView>
 

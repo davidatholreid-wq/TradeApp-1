@@ -232,9 +232,17 @@ export default function SubmitVehicle() {
 
   // Draft tracking — if the dealer is editing a saved draft, we keep the id so
   // "Save to Drafts" upserts back into the same document.
-  const params = useLocalSearchParams<{ draft?: string }>();
+  const params = useLocalSearchParams<{ draft?: string; resubmit_from?: string }>();
   const [loadedDraftId, setLoadedDraftId] = useState<string | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
+  // Edit & Re-submit — when present, the Submit form is pre-populated
+  // from an existing priced submission and, on final submit, POSTs to
+  // `/api/submissions/{resubmitFromId}/resubmit` instead of the normal
+  // `/api/submissions` route. The backend retracts the original in the
+  // same call and stamps the new record with `-vN` chain metadata.
+  const [resubmitFromId, setResubmitFromId] = useState<string | null>(null);
+  const [resubmitFromRef, setResubmitFromRef] = useState<string | null>(null);
+  const [resubmitLoading, setResubmitLoading] = useState(false);
   // Free-text vehicle entry — turned on when the dealer taps "Enter
   // vehicle manually" at the bottom of the Vehicle Specification
   // section. Used for pre-M&M-catalogue classics (e.g. 1981 Ferrari)
@@ -427,6 +435,71 @@ export default function SubmitVehicle() {
       }
     })();
   }, [params?.draft, applyDraft]);
+
+  // Edit & Re-submit — when navigated to with ?resubmit_from=<sub_id>,
+  // fetch the original submission, prefill every editable field, and
+  // remember the source id so the final submit knows to POST to the
+  // `/resubmit` endpoint (which retracts the original in the same call).
+  // Runs once on mount / when the id changes.
+  useEffect(() => {
+    const id = params?.resubmit_from;
+    if (!id || typeof id !== "string") return;
+    setResubmitLoading(true);
+    (async () => {
+      try {
+        const res = await apiFetch(`/api/submissions/${id}`);
+        const sub = res?.submission;
+        if (!sub) throw new Error("not found");
+        // Guard: only priced valuations inside the 14d window can be
+        // re-submitted. Backend enforces the same rule but a friendly
+        // client-side check saves an extra round-trip.
+        if (sub.status !== "priced") {
+          Alert.alert(
+            "Cannot re-submit",
+            "Only priced valuations can be edited & re-submitted.",
+          );
+          setResubmitLoading(false);
+          return;
+        }
+        // Map the submission's `reconditioning_items` shape into the
+        // draft's `recon_items` shape so `applyDraft` can reuse its
+        // existing normalisation logic (categories, photo migration,
+        // amount formatting).
+        const draftShape = {
+          ...sub,
+          recon_items: Array.isArray(sub.reconditioning_items)
+            ? sub.reconditioning_items.map((r: any) => ({
+                category: r?.category ?? r?.label ?? null,
+                amount: r?.amount_zar != null ? String(r.amount_zar) : "",
+                photos: Array.isArray(r?.photos)
+                  ? r.photos.filter((p: any) => typeof p === "string" && p)
+                  : (r?.photo ? [r.photo] : []),
+              }))
+            : [],
+        };
+        applyDraft(draftShape);
+        // Preserve the licence-disc photo (not part of the draft schema)
+        // so admins still see the original disc image on the new record.
+        if (typeof sub.license_disk_photo === "string" && sub.license_disk_photo) {
+          setLicenseDiskPhoto(sub.license_disk_photo);
+        }
+        // Copy the "Vehicle Unseen" flag and manual-entry mode across
+        // so the re-submit stays on the same valuation track (desktop
+        // vs physical, catalogue vs free-text).
+        setUnseen(!!sub.unseen);
+        setManualEntry(!!sub.manual_entry);
+        setResubmitFromId(sub.id);
+        setResubmitFromRef(sub.reference || null);
+      } catch {
+        Alert.alert(
+          "Cannot re-submit",
+          "The original valuation couldn't be loaded. It may have been retracted already.",
+        );
+      } finally {
+        setResubmitLoading(false);
+      }
+    })();
+  }, [params?.resubmit_from, applyDraft]);
 
   // Load the drafts list whenever the Submit screen gains focus. This covers
   // both the first mount and any subsequent return from a nested screen.
@@ -791,7 +864,13 @@ export default function SubmitVehicle() {
     setSubmitting(true);
     setError(null);
     try {
-      await apiFetch("/api/submissions", {
+      // Edit & Re-submit: route to the retract-and-replace endpoint so
+      // the backend atomically retracts the original and creates a
+      // `-vN` version in one call.
+      const endpoint = resubmitFromId
+        ? `/api/submissions/${resubmitFromId}/resubmit`
+        : "/api/submissions";
+      await apiFetch(endpoint, {
         method: "POST",
         body: JSON.stringify({
           make, fuel_type: fuelType, year_of_production: yearOfProduction, transmission,
@@ -955,7 +1034,9 @@ export default function SubmitVehicle() {
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()}><Ionicons name="chevron-back" size={22} color={colors.text} /></TouchableOpacity>
           <Text style={styles.headerTitle}>
-            {loadedDraftId ? "EDITING DRAFT" : "SUBMIT VEHICLE"}
+            {resubmitFromId
+              ? "EDIT & RE-SUBMIT"
+              : loadedDraftId ? "EDITING DRAFT" : "SUBMIT VEHICLE"}
           </Text>
           <TouchableOpacity
             testID="reset-submission-button"
@@ -973,6 +1054,27 @@ export default function SubmitVehicle() {
         </View>
 
         <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + 40 }]} keyboardShouldPersistTaps="handled">
+          {/* Edit & Re-submit banner — surfaces which submission is being
+              replaced and reminds the dealer that the original will be
+              retracted on submit, and that a fresh R50 will be invoiced
+              once Fourbuy prices the new version. */}
+          {resubmitFromId ? (
+            <View style={styles.resubmitBanner} testID="resubmit-banner">
+              <View style={styles.resubmitBannerIcon}>
+                <Ionicons name="refresh" size={18} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.resubmitBannerTitle}>
+                  Re-submitting {resubmitFromRef || "valuation"}
+                </Text>
+                <Text style={styles.resubmitBannerSub}>
+                  {resubmitLoading
+                    ? "Loading original details…"
+                    : "The original will be retracted on submit. R50 applies once Fourbuy prices the new version."}
+                </Text>
+              </View>
+            </View>
+          ) : null}
           {/* Inline drafts — dealers can resume any in-progress submission
               directly from the top of the Submit screen. Hidden when the
               user is already editing a draft (no need to switch mid-edit)
@@ -2102,6 +2204,41 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     borderColor: colors.borderLight,
     borderRadius: radius.md,
     overflow: "hidden",
+  },
+  // Edit & Re-submit banner — sits at the very top of the Submit
+  // scroll view when navigated to with `?resubmit_from=<id>`, so the
+  // dealer sees which valuation they're replacing and the billing
+  // reminder before scrolling into the form.
+  resubmitBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    backgroundColor: colors.primary + "12",
+    borderWidth: 1,
+    borderColor: colors.primary + "55",
+    borderRadius: radius.md,
+  },
+  resubmitBannerIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.primary + "22",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  resubmitBannerTitle: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+  },
+  resubmitBannerSub: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
+    lineHeight: 16,
   },
   inlineDraftsHeader: {
     flexDirection: "row",

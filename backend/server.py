@@ -427,8 +427,12 @@ async def refund_points(user_id: str, points: int, redemption_id: str, note: str
 
 
 def compute_bucket(sub: dict) -> str:
-    """Return 'incoming', 'priced' or 'archived' based on status + created_at age.
+    """Return 'incoming', 'priced', 'archived' or 'retracted' based on
+    status + created_at age.
 
+    - retracted == True (Edit & Re-submit) → 'retracted' (still visible
+      in History with a badge, but excluded from active workflows and
+      Deal Outcomes).
     - status == 'pending'  → 'incoming'
     - status == 'priced' and created_at within ARCHIVE_AFTER_DAYS → 'priced'
     - status == 'priced' and created_at older than ARCHIVE_AFTER_DAYS → 'archived'
@@ -437,6 +441,8 @@ def compute_bucket(sub: dict) -> str:
       same window using created_at as the reference so timing is consistent
       across the whole submission lifecycle.
     """
+    if sub.get("retracted") is True:
+        return "retracted"
     status = sub.get("status") or "pending"
     # Anchor everything to created_at (raw submission date). Fall back
     # to priced_at / declined_at only if the record is missing created_at
@@ -501,6 +507,9 @@ async def auto_expire_pending_deal_outcomes(scope_query: Optional[dict] = None) 
     query: dict = {
         "status": "priced",
         "created_at": {"$lt": cutoff_iso},
+        # Skip retracted (Edit & Re-submit) originals — their `-vN`
+        # replacement is what carries the outcome now.
+        "retracted": {"$ne": True},
         # deal.done is null OR the deal object doesn't exist yet
         "$or": [
             {"deal": {"$exists": False}},
@@ -767,6 +776,40 @@ async def next_reference_number() -> str:
     )
     seq = result["seq"] if result else 1
     return f"FB-{seq:06d}"
+
+
+async def next_version_reference(base_ref: str) -> str:
+    """Return the next `-vN` reference for a chain of re-submitted
+    valuations (Aug 2026 Edit & Re-submit feature).
+
+    The original submission keeps its bare `FB-000156` reference. Each
+    subsequent edit-and-resubmit gets `FB-000156-v2`, `-v3`, `-v4`, …
+    We resolve the next number by looking at every submission whose
+    `original_ref` matches the base — that includes the base record itself
+    (which we tag with `original_ref` on retract so the query is symmetric).
+    """
+    highest = 1
+    cursor = db.submissions.find(
+        {"$or": [
+            {"original_ref": base_ref},
+            {"reference": base_ref},
+            {"reference": {"$regex": f"^{base_ref}-v[0-9]+$"}},
+        ]},
+        {"_id": 0, "reference": 1, "version": 1},
+    )
+    async for doc in cursor:
+        v = doc.get("version")
+        if isinstance(v, int) and v > highest:
+            highest = v
+        ref = doc.get("reference") or ""
+        if ref.startswith(base_ref + "-v"):
+            try:
+                n = int(ref.rsplit("-v", 1)[1])
+                if n > highest:
+                    highest = n
+            except (ValueError, IndexError):
+                pass
+    return f"{base_ref}-v{highest + 1}"
 
 
 # ============ Models ============
@@ -1080,7 +1123,9 @@ async def deal_outcomes_stats(current: dict = Depends(get_current_user)):
     """
     role = current.get("role")
     # Build the mongo filter for submissions we should count.
-    query: dict = {"status": {"$ne": "pending"}}
+    # Exclude retracted submissions (Aug 2026 Edit & Re-submit) — they've
+    # been superseded by a `-vN` version and would double-count outcomes.
+    query: dict = {"status": {"$ne": "pending"}, "retracted": {"$ne": True}}
     if role != "admin":
         my_dship = await _get_user_dealership_id(current)
         if my_dship:
@@ -1155,6 +1200,9 @@ async def deal_outcomes_list(current: dict = Depends(get_current_user)):
     query: dict = {
         "status": {"$ne": "pending"},
         "priced_at": {"$gte": ninety_days_ago},
+        # Exclude retracted (Edit & Re-submit) originals — the -vN
+        # replacement is what counts for outcomes.
+        "retracted": {"$ne": True},
     }
     if role != "admin":
         my_dship = await _get_user_dealership_id(current)
@@ -2026,6 +2074,177 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
     total_recon = sum((r.get("amount_zar", 0) or 0) for r in payload.reconditioning_items)
     sub_id = str(uuid.uuid4())
     reference = await next_reference_number()
+    doc = await _build_submission_doc(
+        payload, current, sub_id=sub_id, reference=reference, total_recon=total_recon,
+    )
+    await db.submissions.insert_one(doc)
+    doc.pop("_id", None)
+    return {"submission": {k: v for k, v in doc.items() if k != "photos"}, "id": sub_id}
+
+
+# ---------------------------------------------------------------------------
+# Edit & Re-submit  (Aug 2026)
+# ---------------------------------------------------------------------------
+# Dealers can retract a priced valuation within 14 days of the price date
+# and immediately re-submit with edited details. The original record is
+# marked `retracted=True` (still visible in History with a badge) and the
+# new submission gets a `-vN` reference chained off the original (e.g.
+# FB-000156 → FB-000156-v2 → FB-000156-v3). Billing rule per the client:
+# the original R50 stays invoiced AND the new submission is chargeable
+# once Fourbuy prices it — no waiver.
+# ---------------------------------------------------------------------------
+RESUBMIT_WINDOW_DAYS = 14
+
+
+@api_router.post("/submissions/{sub_id}/resubmit")
+async def resubmit_submission(
+    sub_id: str,
+    payload: VehicleSubmission,
+    current: dict = Depends(get_current_user),
+):
+    if current.get("role") != "dealer":
+        raise HTTPException(403, "Only dealers can re-submit vehicles")
+    if current.get("active") is False:
+        raise HTTPException(
+            403,
+            "Your account has been suspended. Please contact Fourbuy to settle any outstanding balance.",
+        )
+    original = await db.submissions.find_one({"id": sub_id})
+    if not original:
+        raise HTTPException(404, "Submission not found")
+    if not await _can_access_submission(original, current):
+        raise HTTPException(403, "Not authorized")
+    if original.get("retracted") is True:
+        raise HTTPException(409, "This submission has already been retracted")
+    if original.get("status") != "priced":
+        raise HTTPException(
+            409,
+            "Only priced valuations can be re-submitted. Please wait for Fourbuy to price the original first.",
+        )
+    priced_at_raw = original.get("priced_at")
+    if not priced_at_raw:
+        raise HTTPException(409, "Original submission is missing a priced-at timestamp")
+    try:
+        priced_at = datetime.fromisoformat(priced_at_raw)
+        if priced_at.tzinfo is None:
+            priced_at = priced_at.replace(tzinfo=timezone.utc)
+    except Exception:
+        raise HTTPException(409, "Original submission has an invalid priced-at timestamp")
+    if datetime.now(timezone.utc) - priced_at > timedelta(days=RESUBMIT_WINDOW_DAYS):
+        raise HTTPException(
+            409,
+            f"Re-submit window expired — you can only re-submit within {RESUBMIT_WINDOW_DAYS} days of the price date.",
+        )
+    # If the vehicle was already transferred to Stock we auto-untransfer
+    # it on retract, so the retracted record isn't left dangling
+    # against an active stock item. Sold stock is a hard-stop.
+    stock_item_id = original.get("stock_item_id")
+    if stock_item_id:
+        stock_item = await db.stock_items.find_one({"id": stock_item_id}, {"_id": 0})
+        if stock_item and stock_item.get("sold") is True:
+            raise HTTPException(
+                409,
+                "This vehicle has been sold from stock and cannot be re-submitted.",
+            )
+    # Same billing acceptance rule as a new submission — the dealer will
+    # be charged R50 for the new pricing (if Fourbuy prices within 24h),
+    # on TOP of any R50 already invoiced against the retracted original.
+    if not payload.billing_accepted:
+        raise HTTPException(400, "Billing acceptance is required for each submission")
+    if not payload.unseen:
+        for rating, name in [
+            (payload.mechanical_condition, "mechanical"),
+            (payload.cosmetic_condition, "cosmetic"),
+            (payload.interior_condition, "interior"),
+            (payload.history_condition, "history"),
+        ]:
+            if not (1 <= rating <= 10):
+                raise HTTPException(400, f"{name.title()} condition must be 1-10")
+        if not payload.service_history:
+            raise HTTPException(400, "Service history is required")
+
+    new_id = str(uuid.uuid4())
+    base_ref = original.get("original_ref") or (original.get("reference") or "").split("-v")[0]
+    if not base_ref:
+        raise HTTPException(500, "Original submission missing reference")
+    new_ref = await next_version_reference(base_ref)
+    doc = await _build_submission_doc(
+        payload, current, sub_id=new_id, reference=new_ref,
+    )
+    # Chain metadata so admin/dealer UIs can render "Replaces FB-000156"
+    # / "Replaced by FB-000156-v2" pills without extra lookups.
+    doc["original_ref"] = base_ref
+    doc["original_id"] = original.get("original_id") or original["id"]
+    doc["replaces_ref"] = original["reference"]
+    doc["replaces_id"] = original["id"]
+    # `version` starts at 1 for the base and increments per re-submit.
+    doc["version"] = (original.get("version") or 1) + 1
+    await db.submissions.insert_one(doc)
+
+    # Backfill `original_ref` on the retracted record so subsequent
+    # -vN lookups (see `next_version_reference`) can find the whole
+    # chain even if the base was created before this feature shipped.
+    # Also strip any stock link — the vehicle is being re-issued as a
+    # new pending submission so it must exit the active Stock list.
+    retract_set = {
+        "retracted": True,
+        "retracted_at": now_utc(),
+        "retracted_by": current["id"],
+        "replaced_by_ref": new_ref,
+        "replaced_by_id": new_id,
+        "original_ref": base_ref,
+    }
+    retract_unset: dict = {}
+    if stock_item_id:
+        # Delete the (non-sold — checked above) stock item so it no
+        # longer clutters the dealer's active Stock report.
+        await db.stock_items.delete_one({"id": stock_item_id})
+        retract_unset.update({
+            "stock_item_id": "",
+            "stock_number": "",
+            "transferred_to_stock_at": "",
+            "transferred_to_stock_by": "",
+        })
+        logging.info(
+            "resubmit: auto-untransferred stock %s (submission %s → %s)",
+            stock_item_id, original["id"], new_id,
+        )
+    update_doc: dict = {"$set": retract_set}
+    if retract_unset:
+        update_doc["$unset"] = retract_unset
+    await db.submissions.update_one({"id": original["id"]}, update_doc)
+    doc.pop("_id", None)
+    return {
+        "submission": {k: v for k, v in doc.items() if k != "photos"},
+        "id": new_id,
+        "reference": new_ref,
+        "retracted_ref": original["reference"],
+    }
+
+
+async def _build_submission_doc(
+    payload: "VehicleSubmission",
+    current: dict,
+    *,
+    sub_id: str,
+    reference: str,
+    total_recon: Optional[float] = None,
+) -> dict:
+    """Convert a validated VehicleSubmission + user into the full mongo
+    document for the `submissions` collection.
+
+    Shared by `POST /submissions` (new submission) and
+    `POST /submissions/{id}/resubmit` (Edit & Re-submit — retracts the
+    original and creates a `-vN` version with the edited data). Handles
+    all Cloudinary uploads (main photos, licence disc, recon photos) —
+    existing HTTPS URLs are passed through untouched, so re-submits
+    don't re-upload the previous images.
+
+    Caller is responsible for inserting the returned doc into MongoDB
+    and, for re-submits, appending the retract/version metadata.
+    """
+    if total_recon is None:
+        total_recon = sum((r.get("amount_zar", 0) or 0) for r in payload.reconditioning_items)
     # Upload photos to Cloudinary (server-side). Old submissions with base64
     # in the DB are left untouched. New submissions store the returned https
     # secure URL instead of the huge base64 payload.
@@ -2196,9 +2415,7 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
         "billing_accepted_at": now_utc(),
         "created_at": now_utc(),
     }
-    await db.submissions.insert_one(doc)
-    doc.pop("_id", None)
-    return {"submission": {k: v for k, v in doc.items() if k != "photos"}, "id": sub_id}
+    return doc
 
 
 @api_router.get("/submissions/my")
@@ -2218,8 +2435,10 @@ async def get_my_submissions(current: dict = Depends(get_current_user)):
     else:
         query = {"dealer_id": current["id"]}
     subs = await db.submissions.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
-    # Hide archived submissions from the dealer mobile app (they still exist in
-    # the DB and remain visible in the desktop admin archive).
+    # Hide archived + retracted submissions from the dealer's active My
+    # Evaluations list. Retracted ones are the originals of an Edit &
+    # Re-submit chain — they still exist for audit trail in /history but
+    # must not clutter the active workflow.
     visible = []
     for s in subs:
         bucket = compute_bucket(s)
@@ -2231,7 +2450,7 @@ async def get_my_submissions(current: dict = Depends(get_current_user)):
         # Cloudinary URLs are short (~130 chars) so we accept any http(s) URL.
         front = photos.get("front") or None
         s["front_photo"] = _valid_front_photo(front)
-        if bucket != "archived":
+        if bucket not in ("archived", "retracted"):
             visible.append(s)
     # Enrich with the highest cover offer + total count so the list UI
     # can render the three-offer summary (Fourbuy / Highest cover / My
@@ -2682,7 +2901,7 @@ async def admin_list_submissions(
     silo. Counts always cover the full dataset so the UI can render badges.
     """
     subs = await db.submissions.find({}, {"_id": 0}).sort("created_at", -1).to_list(4000)
-    counts = {"incoming": 0, "priced": 0, "archived": 0}
+    counts = {"incoming": 0, "priced": 0, "archived": 0, "retracted": 0}
     for s in subs:
         b = compute_bucket(s)
         s["bucket"] = b
@@ -2690,7 +2909,7 @@ async def admin_list_submissions(
         photos = s.pop("photos", {}) or {}
         front = photos.get("front") or None
         s["front_photo"] = _valid_front_photo(front)
-        counts[b] += 1
+        counts[b] = counts.get(b, 0) + 1
     if bucket and bucket != "all":
         subs = [s for s in subs if s["bucket"] == bucket]
     # Enrich with the highest cover offer + total count so the admin
@@ -2709,11 +2928,12 @@ async def admin_submission_counts(current: dict = Depends(require_admin)):
     every focus without re-loading the entire dataset.
     """
     subs = await db.submissions.find(
-        {}, {"_id": 0, "status": 1, "priced_at": 1, "archived_at": 1}
+        {}, {"_id": 0, "status": 1, "priced_at": 1, "archived_at": 1, "retracted": 1}
     ).to_list(4000)
-    counts = {"incoming": 0, "priced": 0, "archived": 0}
+    counts = {"incoming": 0, "priced": 0, "archived": 0, "retracted": 0}
     for s in subs:
-        counts[compute_bucket(s)] += 1
+        b = compute_bucket(s)
+        counts[b] = counts.get(b, 0) + 1
     return {"counts": counts}
 
 

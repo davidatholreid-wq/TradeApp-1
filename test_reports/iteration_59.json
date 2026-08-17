@@ -1,0 +1,41 @@
+{
+  "summary": "Edit & Re-submit feature (Aug 2026) verified end-to-end. Backend: 14/14 pytest cases green in /app/backend/tests/test_resubmit.py — auth/ownership (401/403/404), business rules (409 for not-priced/outside-14d/already-retracted, 400 for missing billing acceptance), happy path (FB-XXX -> FB-XXX-v2 -> FB-XXX-v3 chain, correct version bump, original marked retracted with retracted_at/retracted_by/replaced_by_ref/replaced_by_id, original_ref backfilled), photos with Cloudinary URLs passed through untouched, /submissions/my hides retracted, /history exposes retracted (bucket='retracted') with replaced_by_ref, /stats/deal-outcomes excludes retracted (deal_done/sold counts decrement post-retract), /admin/submissions and /admin/submissions/counts include a 'retracted' bucket count. Frontend (Expo mobile, 390x844, dealer dave@fourbuy.co.za): 18 resubmit buttons visible on /submissions for priced-within-14d subs; testID='resubmit-btn-<id>' present as expected. Tapping the button (with window.confirm autoaccepted) navigated to /submit?resubmit_from=<id>; the Submit screen (a) rendered the amber banner testID='resubmit-banner' with copy 'Re-submitting FB-000186 · The original will be retracted on submit. R50 applies once Fourbuy prices the new version.', (b) changed the header to 'EDIT & RE-SUBMIT', and (c) prefilled all editable fields (Make BMW, Fuel Diesel, Year 2022, Transmission Automatic, Model X5 UITEST, Derivative xDrive30d etc). After a real chain was created (seeded FB-000187 priced -> API resubmit -> FB-000187-v2), History showed the amber testID='retracted-pill' reading 'RETRACTED · REPLACED BY FB-000187-v2' on the original and testID='replaces-pill' reading 'REPLACES FB-000187' on the -v2, while My Evaluations only listed FB-000187-v2 (retracted original correctly hidden). Dealer password (Dave1234!) was still valid so no admin reset was required this iteration.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_resubmit.py",
+    "/app/test_reports/pytest/iteration_59_resubmit.xml",
+    "/app/test_reports/screenshots/iter59_evals2.png",
+    "/app/test_reports/screenshots/iter59_submit_form.png",
+    "/app/test_reports/screenshots/iter59_history_retracted.png"
+  ],
+  "action_items": [
+    "None — feature is functionally complete and behaves per spec.",
+    "(Optional / cosmetic) The retracted-pill uses `borderColor` amber (#B45309) with a small icon; on a dark background it renders correctly but the pill has no fill (transparent). Consider a light amber tint (#B4530922) to match the existing UNSEEN pill styling for consistency.",
+    "(Optional / cosmetic) Retracted rows in History currently show only reference + year (the make/model are blank for FB-000187 in the screenshot — seed side-effect since my helper omitted make_name/model_name on that path). Real submissions created via /api/submissions carry these fields, so this is a seed-data artefact, NOT a bug. Flagged only in case the main agent wants to make history rows more resilient to missing make/model on legacy retracted rows."
+  ],
+  "critical_code_review_comments": [
+    "next_version_reference() correctly handles all three chain-lookup paths (original_ref, exact reference, and `-vN` regex). Highest-version resolution is O(n) per chain but n is bounded by version count — fine at this scale.",
+    "The resubmit endpoint calls _build_submission_doc AFTER verifying business rules but BEFORE flipping the original to retracted. If _build_submission_doc raises (e.g. Cloudinary hiccup) the original remains un-retracted — correct.",
+    "The dealer's `active=False` suspension check is enforced in the resubmit endpoint (403 same as create). Good.",
+    "compute_bucket returns 'retracted' before the status/date checks — this correctly overrides any 'archived' status a priced sub would otherwise fall into.",
+    "billing_accepted is required per-resubmit — matches spec ('R50 applies · no waiver') and prevents accidental re-submits.",
+    "One subtle issue: RESUBMIT_WINDOW_DAYS is defined as a Python constant (14) on the server, and the mobile app duplicates it as a client-side constant in submissions.tsx. If the server value changes in future, the mobile grey-out window will drift. Suggest surfacing via /api/config or embedding into /submissions/my response so the client cannot drift."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_resubmit.py (new — 14 tests)",
+    "/app/test_reports/pytest/iteration_59_resubmit.xml (new)",
+    "/app/test_reports/iteration_59.json (this file)"
+  ],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% (button visibility, confirm modal, resubmit_from param, banner, header title, field prefill, /submissions/my hides retracted, /history shows both pills)"},
+  "seed_data_creation": "Seeded two priced submissions owned by dave@fourbuy.co.za: FB-000186 (id 73eabcf0-ecdf-4609-a880-c7a17abfd3d6, kept for future manual UI verification) and FB-000187 (id ecdf91b5-31dc-4276-abad-d3421e014ff8) which was then resubmitted via API to create FB-000187-v2 (id cac9fe14-856d-4625-aff6-f75864ccb2bf) so the History retracted-pill / replaces-pill could be rendered live. The 14 backend-test seeded submissions were all cleaned up by the pytest teardown fixture.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Feature is fully working. Dealer dave@fourbuy.co.za / Dave1234! is valid. FB-000186 (73eabcf0-ecdf-4609-a880-c7a17abfd3d6) is a priced submission owned by Dave, still within the 14-day window — safe to use for further resubmit manual verification. FB-000187 -> FB-000187-v2 chain is now permanent seed data in the preview DB (RETRACTED original + PENDING v2). If you need to test the 'outside 14-day window' rejection path via UI, backdate priced_at on any priced sub by 15+ days; the resubmit button will disappear from My Evaluations (client-side canResubmit gate) AND the API will reject with 409.",
+  "rca_of_issue": "No bugs. The initial pytest run failed with 422/401 errors because (a) my seed payload used pre-refactor field names (make_name/model_name/mileage_km/year/warranty_status) instead of the current VehicleSubmission schema (make/model/mileage/year_of_production/year_registered/factory_warranty_status), and (b) the admin password-reset endpoint expects `new_password` not `password`. Both were test-side issues — I fixed the payload and re-ran to green. No production code was modified."
+}
