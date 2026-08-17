@@ -207,11 +207,20 @@ async def assert_dealership_active(dealership_id: str, feature: str = "this feat
     Called from the write-side endpoints (create submission, VIN report,
     Get Cover). Read endpoints are unaffected so dealers can still view
     everything.
+
+    Dealerships flagged `pay_in_arrears=True` are exempt — they operate
+    on credit terms and are billed in arrears via the monthly invoice.
     """
     if not dealership_id:
         return
-    d = await _db.dealerships.find_one({"id": dealership_id}, {"_id": 0, "wallet_balance_cents": 1})
+    d = await _db.dealerships.find_one(
+        {"id": dealership_id},
+        {"_id": 0, "wallet_balance_cents": 1, "pay_in_arrears": 1},
+    )
     if not d:
+        return
+    # Credit-terms dealerships bypass the wallet-depleted guard.
+    if bool(d.get("pay_in_arrears")):
         return
     balance_cents = int(d.get("wallet_balance_cents") or 0)
     # Recompute lazily if we've never computed the wallet yet.
@@ -1083,24 +1092,56 @@ async def admin_billing_summary(
     invoices = await _db.dealer_invoices.find({"dealership_id": dealership_id}, {"_id": 0}).sort("generated_at", -1).to_list(200)
     payments = await _db.dealer_payments.find({"dealership_id": dealership_id}, {"_id": 0}).sort("recorded_at", -1).to_list(500)
     refunds = await _db.deposit_refunds.find({"dealership_id": dealership_id}, {"_id": 0}).sort("recorded_at", -1).to_list(200)
+    pay_in_arrears = bool(d.get("pay_in_arrears"))
     return {
         "dealership": {
             "id": d["id"], "name": d.get("name"), "address": d.get("address"),
             "vat_no": d.get("vat_no"), "company_reg_no": d.get("company_reg_no"),
             "accounts_contact": d.get("accounts_contact") or {},
             "active": d.get("active", True),
+            "pay_in_arrears": pay_in_arrears,
         },
         "wallet": {
             "balance_zar": cents_to_zar(wallet["balance_cents"]),
             "credits_zar": cents_to_zar(wallet["total_credits_cents"]),
             "usage_zar": cents_to_zar(wallet["usage_cents"]),
             "refunds_zar": cents_to_zar(wallet["refunds_cents"]),
-            "suspended": wallet["balance_cents"] <= 0,
+            "suspended": (not pay_in_arrears) and wallet["balance_cents"] <= 0,
+            "pay_in_arrears": pay_in_arrears,
         },
         "invoices": invoices,
         "payments": payments,
         "refunds": refunds,
     }
+
+
+class BillingTermsUpdate(BaseModel):
+    pay_in_arrears: bool
+
+
+@router.patch("/admin/dealerships/{dealership_id}/billing-terms")
+async def admin_update_billing_terms(
+    dealership_id: str,
+    payload: BillingTermsUpdate,
+    current: dict = Depends(_dep_require_admin),
+):
+    """Toggle whether a dealership operates on credit terms
+    (`pay_in_arrears=True`) or prepaid-wallet terms (default). When
+    on credit terms the wallet-depleted guard is bypassed on all
+    write endpoints — submissions, VIN reports and Get Cover can go
+    ahead regardless of balance."""
+    d = await _db.dealerships.find_one({"id": dealership_id}, {"_id": 0, "id": 1, "name": 1})
+    if not d:
+        raise HTTPException(404, "Dealership not found")
+    await _db.dealerships.update_one(
+        {"id": dealership_id},
+        {"$set": {"pay_in_arrears": bool(payload.pay_in_arrears), "billing_terms_updated_at": _now_utc()}},
+    )
+    logger.info(
+        "Admin %s set pay_in_arrears=%s for dealership %s (%s)",
+        current.get("email"), payload.pay_in_arrears, dealership_id, d.get("name"),
+    )
+    return {"dealership_id": dealership_id, "pay_in_arrears": bool(payload.pay_in_arrears)}
 
 
 @router.get("/admin/billing/overview")
@@ -1113,6 +1154,7 @@ async def admin_billing_overview(current: dict = Depends(_dep_require_admin)):
         if "wallet_balance_cents" not in d:
             w = await _recompute_wallet(d["id"])
             balance = w["balance_cents"]
+        pay_in_arrears = bool(d.get("pay_in_arrears"))
         rows.append({
             "id": d["id"],
             "name": d.get("name"),
@@ -1120,7 +1162,8 @@ async def admin_billing_overview(current: dict = Depends(_dep_require_admin)):
             "wallet_balance_zar": cents_to_zar(balance),
             "wallet_usage_zar": cents_to_zar(d.get("wallet_usage_cents") or 0),
             "wallet_credits_zar": cents_to_zar(d.get("wallet_credits_cents") or 0),
-            "suspended": balance <= 0,
+            "pay_in_arrears": pay_in_arrears,
+            "suspended": (not pay_in_arrears) and balance <= 0,
         })
     return {"dealerships": rows}
 
@@ -1129,7 +1172,9 @@ async def admin_billing_overview(current: dict = Depends(_dep_require_admin)):
 async def dealer_billing_my_summary(current: dict = Depends(_dep_current_user)):
     dealership_id = current.get("dealership_id")
     if not dealership_id:
-        return {"wallet": {"balance_zar": 0, "suspended": False}, "invoices": [], "payments": []}
+        return {"wallet": {"balance_zar": 0, "suspended": False, "pay_in_arrears": False}, "invoices": [], "payments": []}
+    d = await _db.dealerships.find_one({"id": dealership_id}, {"_id": 0, "pay_in_arrears": 1}) or {}
+    pay_in_arrears = bool(d.get("pay_in_arrears"))
     wallet = await _recompute_wallet(dealership_id)
     invoices = await _db.dealer_invoices.find(
         {"dealership_id": dealership_id},
@@ -1144,7 +1189,8 @@ async def dealer_billing_my_summary(current: dict = Depends(_dep_current_user)):
             "balance_zar": cents_to_zar(wallet["balance_cents"]),
             "credits_zar": cents_to_zar(wallet["total_credits_cents"]),
             "usage_zar": cents_to_zar(wallet["usage_cents"]),
-            "suspended": wallet["balance_cents"] <= 0,
+            "suspended": (not pay_in_arrears) and wallet["balance_cents"] <= 0,
+            "pay_in_arrears": pay_in_arrears,
         },
         "invoices": invoices,
         "payments": payments,

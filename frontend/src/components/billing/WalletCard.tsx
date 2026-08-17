@@ -25,6 +25,7 @@ type Wallet = {
   credits_zar: number;
   usage_zar: number;
   suspended: boolean;
+  pay_in_arrears?: boolean;
 };
 type Invoice = {
   id: string;
@@ -104,7 +105,14 @@ export function WalletCard() {
           <Ionicons name="refresh" size={14} color={colors.text} />
         </TouchableOpacity>
       </View>
-      {w.suspended ? (
+      {w.pay_in_arrears ? (
+        <View style={styles.arrearsInline}>
+          <Ionicons name="hourglass-outline" size={16} color="#0369A1" />
+          <Text style={styles.arrearsText}>
+            Your dealership is on credit terms — you can submit valuations and order reports without a positive balance. You will be invoiced at the end of each month.
+          </Text>
+        </View>
+      ) : w.suspended ? (
         <View style={styles.suspendedInline}>
           <Ionicons name="warning" size={16} color="#B91C1C" />
           <Text style={styles.suspendedText}>
@@ -193,6 +201,8 @@ const makeStyles = (colors: any) =>
     refreshBtn: { padding: 8, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderLight },
     suspendedInline: { flexDirection: "row", alignItems: "flex-start", gap: 6, marginTop: spacing.sm, padding: 10, borderRadius: radius.md, backgroundColor: "#FEE2E2", borderWidth: 1, borderColor: "#B91C1C" },
     suspendedText: { flex: 1, color: "#7F1D1D", fontSize: 12, lineHeight: 16 },
+    arrearsInline: { flexDirection: "row", alignItems: "flex-start", gap: 6, marginTop: spacing.sm, padding: 10, borderRadius: radius.md, backgroundColor: "#E0F2FE", borderWidth: 1, borderColor: "#0369A1" },
+    arrearsText: { flex: 1, color: "#0C4A6E", fontSize: 12, lineHeight: 16 },
     sectionTitle: { color: colors.textSecondary, fontSize: 10, fontWeight: "800", letterSpacing: 0.8, marginTop: spacing.md, marginBottom: 6 },
     muted: { color: colors.textSecondary, fontSize: 12 },
     row: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.borderLight },

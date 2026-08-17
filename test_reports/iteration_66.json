@@ -1,0 +1,36 @@
+{
+  "summary": "Admin 'Pay in Arrears' toggle validated end-to-end via pytest. 10/10 tests pass. PATCH /api/admin/dealerships/{id}/billing-terms toggles both ways (200 with body {dealership_id, pay_in_arrears}); non-admin -> 403; unknown dealership -> 404. Arrears-ON bypass proven on a dealership with wallet=R0: POST /api/submissions returned 400 'Service history is required' (i.e. reached the post-guard validation) instead of 402 wallet-depleted; POST /api/vin-reports/order also bypassed 402. Arrears-OFF regression preserved: same POST /api/submissions returned 402 with the correct 'deposit balance depleted' message. Response-shape additions confirmed: /admin/dealerships/{id}/billing-summary includes dealership.pay_in_arrears + wallet.pay_in_arrears and correctly forces wallet.suspended=false when arrears is on; /admin/billing/overview includes pay_in_arrears on every row with suspended forced to false when arrears is on; /billing/my-summary exposes wallet.pay_in_arrears and correctly toggles wallet.suspended.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_66_pay_in_arrears.py",
+    "/app/test_reports/pytest/iteration_66_pay_in_arrears.xml"
+  ],
+  "action_items": [
+    "None — the feature matches the review-request contract exactly."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/routes/billing.py:204-234 assert_dealership_active — arrears bypass is placed BEFORE the balance read and BEFORE the lazy recompute; short-circuit is optimal and correct. Guard is a no-op when dealership_id is falsy (safe for admin-owned actions).",
+    "/app/backend/routes/billing.py:1118-1144 admin_update_billing_terms — 404s cleanly when the dealership is missing (loaded with a projected id/name and existence-checked before update). Sets `billing_terms_updated_at` audit stamp. Response payload matches the spec exactly {dealership_id, pay_in_arrears}. Non-admin protection is enforced via `_dep_require_admin` (returns 403 for dealer callers — confirmed in test).",
+    "/app/backend/routes/billing.py:1095-1115 billing-summary — wallet.suspended derivation `(not pay_in_arrears) and balance_cents <= 0` is the correct boolean shape: arrears ON is always non-suspended regardless of balance sign, arrears OFF preserves existing wallet-depleted semantics. Same logic mirrored in /admin/billing/overview (1157-1167) and /billing/my-summary (1177-1194) — DRY-lite but consistent, so any future rule change is easy to keep in lockstep.",
+    "/app/backend/routes/vin_reports.py:199-204 VIN report order calls assert_dealership_active exactly as the submissions endpoint does, so the arrears bypass automatically applies. No additional wallet check downstream — good.",
+    "Minor observation (not a bug): /admin/billing/overview does not force-recompute the wallet for cached rows, so if pay_in_arrears was flipped on a dealership that had never had its wallet computed the row could show suspended=true briefly until the next recompute. In practice every dealership in the preview DB already has `wallet_balance_cents` cached, and the bypass in assert_dealership_active is independent of the overview cache. Consider adding a `set: pay_in_arrears` propagation into the cached row if you ever need real-time overview accuracy without a recompute."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_66_pay_in_arrears.py (new pytest module — 10 tests, 4 classes)"
+  ],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "not tested (backend-only iteration per request)"},
+  "seed_data_creation": "No persistent seed data. Test toggles Mini Test Motors (3e18c809-2803-4124-aeaa-9b0bc9cd3998) between pay_in_arrears True/False and an autouse fixture resets it to False after each test so the DB ends in the same state it started (arrears=False, wallet unchanged at R0). No submissions or VIN reports were persisted — the arrears-ON submission call returns 400 on the post-guard `service_history required` check before the DB write, and the VIN report path fails on a fake VIN vendor call after the guard bypass (no billing occurs because vendor rejects).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Test uses EXPO_PUBLIC_BACKEND_URL (the frontend .env exposes it under that key, not EXPO_BACKEND_URL — the fixture falls back to either). Dealer minitest@example.com is linked to Mini Test Motors dealership 3e18c809-2803-4124-aeaa-9b0bc9cd3998, wallet balance currently R0 — perfect fixture for arrears tests. If the dealership is ever topped up or the dealer link changes the sanity-precondition `wallet_balance_zar <= 0` will fail loudly. To exercise a truly-negative balance, TEST_Billing_5fe7121c (b13e697f-72c9-41ba-b2e4-d3dc021516e0) sits at -R500 but has no dealer login attached so submissions can't be tested against it — only the summary/overview shapes.",
+  "rca_of_issue": "N/A — no bugs found. Implementation matches the review-request contract."
+}

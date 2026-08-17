@@ -35,6 +35,7 @@ type DealerRow = {
   wallet_usage_zar: number;
   wallet_credits_zar: number;
   suspended: boolean;
+  pay_in_arrears?: boolean;
 };
 
 type Wallet = {
@@ -43,6 +44,7 @@ type Wallet = {
   usage_zar: number;
   refunds_zar: number;
   suspended: boolean;
+  pay_in_arrears?: boolean;
 };
 
 type Invoice = {
@@ -86,6 +88,7 @@ type Summary = {
   dealership: {
     id: string; name: string; address?: string; vat_no?: string;
     company_reg_no?: string; accounts_contact?: Contact;
+    pay_in_arrears?: boolean;
   };
   wallet: Wallet;
   invoices: Invoice[];
@@ -208,6 +211,10 @@ export default function AdminBillingCockpit() {
                     <View style={styles.suspendedPill}>
                       <Text style={styles.suspendedPillText}>SUSPENDED</Text>
                     </View>
+                  ) : r.pay_in_arrears ? (
+                    <View style={styles.creditPill}>
+                      <Text style={styles.creditPillText}>CREDIT</Text>
+                    </View>
                   ) : (
                     <View style={styles.activePill}>
                       <Text style={styles.activePillText}>ACTIVE</Text>
@@ -235,14 +242,23 @@ export default function AdminBillingCockpit() {
                 <View style={{ flex: 1 }}>
                   <View style={styles.walletTitleRow}>
                     <Text style={styles.walletDealer}>{summary.dealership.name}</Text>
-                    <TouchableOpacity
-                      testID="edit-dealership-btn"
-                      style={styles.editDealerBtn}
-                      onPress={() => setEditDealerOpen(true)}
-                    >
-                      <Ionicons name="create-outline" size={13} color={colors.primary} />
-                      <Text style={styles.editDealerBtnText}>Edit dealership</Text>
-                    </TouchableOpacity>
+                    <View style={{ flexDirection: "row", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <ArrearsToggle
+                        dealershipId={summary.dealership.id}
+                        value={!!summary.dealership.pay_in_arrears}
+                        onChanged={refreshAll}
+                        styles={styles}
+                        colors={colors}
+                      />
+                      <TouchableOpacity
+                        testID="edit-dealership-btn"
+                        style={styles.editDealerBtn}
+                        onPress={() => setEditDealerOpen(true)}
+                      >
+                        <Ionicons name="create-outline" size={13} color={colors.primary} />
+                        <Text style={styles.editDealerBtnText}>Edit dealership</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                   <Text style={styles.walletMeta}>
                     {(summary.dealership.accounts_contact?.email) || "No accounts contact email on file"}
@@ -253,6 +269,14 @@ export default function AdminBillingCockpit() {
                     <WalletKpi label="Usage" value={rand(summary.wallet.usage_zar)} styles={styles} />
                     <WalletKpi label="Refunds" value={rand(summary.wallet.refunds_zar)} styles={styles} />
                   </View>
+                  {summary.dealership.pay_in_arrears ? (
+                    <View style={styles.arrearsBanner}>
+                      <Ionicons name="hourglass-outline" size={13} color="#0369A1" />
+                      <Text style={styles.arrearsBannerText}>
+                        Credit terms — this dealer can operate without a positive balance and is billed monthly in arrears.
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
               </View>
 
@@ -390,6 +414,53 @@ function ActionButton({ icon, label, onPress, colors, styles, testID, primary }:
     >
       <Ionicons name={icon} size={14} color={iconColor} />
       <Text style={[styles.actionBtnText, primary && styles.actionBtnTextPrimary]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function ArrearsToggle({ dealershipId, value, onChanged, styles, colors }: {
+  dealershipId: string; value: boolean; onChanged: () => void; styles: any; colors: any;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [local, setLocal] = useState(value);
+  useEffect(() => { setLocal(value); }, [value]);
+  const flip = async () => {
+    if (busy) return;
+    const target = !local;
+    // Ask before granting credit terms — this is a business/finance
+    // decision, not a UI convenience toggle.
+    const confirmMsg = target
+      ? "Grant credit terms? This dealer will be able to submit valuations and order VIN reports without a positive balance. They will be invoiced in arrears at month-end."
+      : "Revoke credit terms? Once revoked, the dealer must maintain a positive wallet balance again to keep operating.";
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      if (!window.confirm(confirmMsg)) return;
+    }
+    setBusy(true);
+    setLocal(target);
+    try {
+      await apiFetch(`/api/admin/dealerships/${dealershipId}/billing-terms`, {
+        method: "PATCH",
+        body: JSON.stringify({ pay_in_arrears: target }),
+      });
+      onChanged();
+    } catch (e: any) {
+      setLocal(!target);
+      Alert.alert("Couldn't update terms", e?.message || "");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <TouchableOpacity
+      testID="arrears-toggle"
+      onPress={flip}
+      disabled={busy}
+      style={[styles.arrearsToggle, local && styles.arrearsToggleOn, busy && { opacity: 0.5 }]}
+    >
+      <View style={[styles.arrearsKnob, local && styles.arrearsKnobOn]} />
+      <Text style={[styles.arrearsToggleText, local && styles.arrearsToggleTextOn]}>
+        {local ? "PAY IN ARREARS · ON" : "PAY IN ARREARS · OFF"}
+      </Text>
     </TouchableOpacity>
   );
 }
@@ -782,6 +853,29 @@ const makeStyles = (colors: any) =>
     suspendedPillText: { color: "#B91C1C", fontSize: 9, fontWeight: "800", letterSpacing: 0.4 },
     activePill: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.pill, backgroundColor: "#DCFCE7", borderWidth: 1, borderColor: "#166534" },
     activePillText: { color: "#166534", fontSize: 9, fontWeight: "800", letterSpacing: 0.4 },
+    creditPill: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.pill, backgroundColor: "#E0F2FE", borderWidth: 1, borderColor: "#0369A1" },
+    creditPillText: { color: "#0369A1", fontSize: 9, fontWeight: "800", letterSpacing: 0.4 },
+    arrearsToggle: {
+      flexDirection: "row", alignItems: "center", gap: 6,
+      paddingVertical: 4, paddingHorizontal: 8,
+      borderRadius: radius.pill, borderWidth: 1,
+      borderColor: colors.borderLight, backgroundColor: colors.card,
+    },
+    arrearsToggleOn: { borderColor: "#0369A1", backgroundColor: "#E0F2FE" },
+    arrearsToggleText: { color: colors.textSecondary, fontSize: 10, fontWeight: "800", letterSpacing: 0.4 },
+    arrearsToggleTextOn: { color: "#0369A1" },
+    arrearsKnob: {
+      width: 10, height: 10, borderRadius: 5,
+      backgroundColor: colors.textSecondary,
+    },
+    arrearsKnobOn: { backgroundColor: "#0369A1" },
+    arrearsBanner: {
+      flexDirection: "row", alignItems: "flex-start", gap: 6,
+      marginTop: spacing.sm, padding: 8,
+      borderRadius: radius.md, borderWidth: 1,
+      borderColor: "#0369A1", backgroundColor: "#E0F2FE",
+    },
+    arrearsBannerText: { flex: 1, color: "#0C4A6E", fontSize: 11, lineHeight: 15, fontWeight: "600" },
     muted: { color: colors.textSecondary, fontSize: 12 },
     emptyRight: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8 },
     walletCard: { flexDirection: "row", padding: spacing.md, backgroundColor: colors.background, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderLight, marginBottom: spacing.md },
