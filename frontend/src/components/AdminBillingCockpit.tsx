@@ -132,6 +132,7 @@ export default function AdminBillingCockpit() {
   const [invoiceGenOpen, setInvoiceGenOpen] = useState(false);
   const [refundOpen, setRefundOpen] = useState(false);
   const [companySettingsOpen, setCompanySettingsOpen] = useState(false);
+  const [editDealerOpen, setEditDealerOpen] = useState(false);
 
   const loadOverview = useCallback(async () => {
     setLoading(true);
@@ -246,7 +247,17 @@ export default function AdminBillingCockpit() {
               {/* Wallet card */}
               <View style={styles.walletCard}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.walletDealer}>{summary.dealership.name}</Text>
+                  <View style={styles.walletTitleRow}>
+                    <Text style={styles.walletDealer}>{summary.dealership.name}</Text>
+                    <TouchableOpacity
+                      testID="edit-dealership-btn"
+                      style={styles.editDealerBtn}
+                      onPress={() => setEditDealerOpen(true)}
+                    >
+                      <Ionicons name="create-outline" size={13} color={colors.primary} />
+                      <Text style={styles.editDealerBtnText}>Edit dealership</Text>
+                    </TouchableOpacity>
+                  </View>
                   <Text style={styles.walletMeta}>
                     {(summary.dealership.accounts_contact?.email) || "No accounts contact email on file"}
                   </Text>
@@ -380,6 +391,14 @@ export default function AdminBillingCockpit() {
           <RefundModal
             open={refundOpen}
             onClose={() => setRefundOpen(false)}
+            dealership={summary.dealership}
+            onSaved={refreshAll}
+            colors={colors}
+            styles={styles}
+          />
+          <EditDealershipModal
+            open={editDealerOpen}
+            onClose={() => setEditDealerOpen(false)}
             dealership={summary.dealership}
             onSaved={refreshAll}
             colors={colors}
@@ -630,6 +649,73 @@ function RefundModal({ open, onClose, dealership, onSaved, colors, styles }: any
   );
 }
 
+function EditDealershipModal({ open, onClose, dealership, onSaved, colors, styles }: any) {
+  const [values, setValues] = useState<any>({});
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    // Prefill from the summary payload. The admin can edit every
+    // dealership-level field including the accounts_contact block.
+    const c = dealership?.accounts_contact || {};
+    setValues({
+      name: dealership?.name || "",
+      address: dealership?.address || "",
+      company_reg_no: dealership?.company_reg_no || "",
+      vat_no: dealership?.vat_no || "",
+      accounts_contact_name: c.name || "",
+      accounts_contact_phone: c.phone || "",
+      accounts_contact_email: c.email || "",
+    });
+  }, [open, dealership]);
+  const set = (k: string, v: any) => setValues((s: any) => ({ ...s, [k]: v }));
+  const save = async () => {
+    if (!values.name?.trim()) { Alert.alert("Name is required"); return; }
+    setBusy(true);
+    try {
+      await apiFetch(`/api/admin/dealerships/${dealership.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: values.name.trim(),
+          address: values.address?.trim(),
+          company_reg_no: values.company_reg_no?.trim() || null,
+          vat_no: values.vat_no?.trim() || null,
+          accounts_contact_name: values.accounts_contact_name?.trim() || null,
+          accounts_contact_phone: values.accounts_contact_phone?.trim() || null,
+          accounts_contact_email: values.accounts_contact_email?.trim() || null,
+        }),
+      });
+      onSaved();
+      onClose();
+      Alert.alert("Saved", "Dealership details updated.");
+    } catch (e: any) {
+      Alert.alert("Failed", e?.message || "");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <MinimalModal open={open} onClose={onClose} title="Edit Dealership Details" styles={styles} wide>
+      <Text style={styles.formHint}>
+        These details appear on every invoice, deposit request and statement PDF for this dealership. The accounts contact receives all billing email correspondence.
+      </Text>
+      <FormField label="Dealership name" value={values.name} onChangeText={(v: string) => set("name", v)} styles={styles} />
+      <FormField label="Address" value={values.address} onChangeText={(v: string) => set("address", v)} multiline styles={styles} />
+      <View style={{ flexDirection: "row", gap: 10 }}>
+        <FormField label="Company reg no." value={values.company_reg_no} onChangeText={(v: string) => set("company_reg_no", v)} styles={styles} style={{ flex: 1 }} />
+        <FormField label="VAT no." value={values.vat_no} onChangeText={(v: string) => set("vat_no", v)} styles={styles} style={{ flex: 1 }} />
+      </View>
+      <Text style={[styles.formLabel, { marginTop: spacing.md }]}>ACCOUNTS CONTACT</Text>
+      <FormField label="Full name" value={values.accounts_contact_name} onChangeText={(v: string) => set("accounts_contact_name", v)} styles={styles} placeholder="e.g. Jane Smith" />
+      <View style={{ flexDirection: "row", gap: 10 }}>
+        <FormField label="Phone" value={values.accounts_contact_phone} onChangeText={(v: string) => set("accounts_contact_phone", v)} keyboardType="phone-pad" styles={styles} style={{ flex: 1 }} placeholder="+27 82 …" />
+        <FormField label="Email" value={values.accounts_contact_email} onChangeText={(v: string) => set("accounts_contact_email", v)} keyboardType="email-address" styles={styles} style={{ flex: 1 }} placeholder="accounts@…" />
+      </View>
+      <PrimaryButton testID="edit-dealership-submit" label={busy ? "Saving…" : "Save"} onPress={save} disabled={busy} styles={styles} />
+    </MinimalModal>
+  );
+}
+
+
 function CompanySettingsModal({ open, onClose, colors, styles }: any) {
   const [values, setValues] = useState<any>({});
   const [busy, setBusy] = useState(false);
@@ -651,8 +737,7 @@ function CompanySettingsModal({ open, onClose, colors, styles }: any) {
       Alert.alert("Saved", "Company details updated. New invoices and deposit requests will use these details.");
     } catch (e: any) { Alert.alert("Failed", e?.message || ""); }
     finally { setBusy(false); }
-  };
-  return (
+  };  return (
     <MinimalModal open={open} onClose={onClose} title="Company Details (invoice issuer)" styles={styles} wide>
       <Text style={styles.formHint}>
         These details appear on every deposit request, invoice and statement PDF. Bank details are printed in the footer for EFT payments.
@@ -786,6 +871,29 @@ const makeStyles = (colors: any) =>
     muted: { color: colors.textSecondary, fontSize: 12 },
     emptyRight: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8 },
     walletCard: { flexDirection: "row", padding: spacing.md, backgroundColor: colors.background, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderLight, marginBottom: spacing.md },
+    walletTitleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: spacing.sm,
+    },
+    editDealerBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingVertical: 4,
+      paddingHorizontal: 8,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: colors.primary + "55",
+      backgroundColor: colors.primary + "10",
+    },
+    editDealerBtnText: {
+      color: colors.primary,
+      fontSize: 11,
+      fontWeight: "800",
+      letterSpacing: 0.3,
+    },
     walletDealer: { color: colors.text, fontSize: 15, fontWeight: "800" },
     walletMeta: { color: colors.textSecondary, fontSize: 12, marginTop: 2, marginBottom: spacing.md },
     walletKpiRow: { flexDirection: "row", gap: spacing.sm, flexWrap: "wrap" },
