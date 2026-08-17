@@ -59,18 +59,6 @@ type Invoice = {
   pdf_url?: string | null;
 };
 
-type DepositRequest = {
-  id: string;
-  reference: string;
-  amount_cents: number;
-  amount_zar: number;
-  notes?: string;
-  status: string;
-  requested_at: string;
-  emailed_to?: string | null;
-  pdf_url?: string | null;
-};
-
 type Payment = {
   id: string;
   amount_cents: number;
@@ -79,7 +67,7 @@ type Payment = {
   bank_reference: string;
   notes?: string;
   invoice_id?: string | null;
-  deposit_request_id?: string | null;
+  is_deposit?: boolean;
   recorded_at: string;
 };
 
@@ -101,7 +89,6 @@ type Summary = {
   };
   wallet: Wallet;
   invoices: Invoice[];
-  deposit_requests: DepositRequest[];
   payments: Payment[];
   refunds: Refund[];
 };
@@ -125,10 +112,9 @@ export default function AdminBillingCockpit() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
-  const [tab, setTab] = useState<"invoices" | "deposits" | "payments" | "refunds">("invoices");
+  const [tab, setTab] = useState<"invoices" | "payments" | "refunds">("invoices");
 
   // Modals
-  const [depositReqOpen, setDepositReqOpen] = useState(false);
   const [loadPaymentOpen, setLoadPaymentOpen] = useState(false);
   const [invoiceGenOpen, setInvoiceGenOpen] = useState(false);
   const [refundOpen, setRefundOpen] = useState(false);
@@ -176,8 +162,8 @@ export default function AdminBillingCockpit() {
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>BILLING &amp; DEPOSITS</Text>
           <Text style={styles.subtitle}>
-            Per-dealer prepaid wallets · deposit requests · monthly invoices · payment allocation
-          </Text>
+          Per-dealer prepaid wallets · auto-generated monthly invoices · strict payment allocation
+        </Text>
         </View>
         <TouchableOpacity
           testID="billing-company-settings-btn"
@@ -273,9 +259,8 @@ export default function AdminBillingCockpit() {
 
               {/* Action buttons */}
               <View style={styles.actionRow}>
-                <ActionButton icon="mail-outline" label="Request Deposit" onPress={() => setDepositReqOpen(true)} colors={colors} styles={styles} testID="btn-request-deposit" />
-                <ActionButton icon="cash-outline" label="Load Payment" onPress={() => setLoadPaymentOpen(true)} colors={colors} styles={styles} testID="btn-load-payment" primary />
-                <ActionButton icon="document-text-outline" label="Generate Invoice" onPress={() => setInvoiceGenOpen(true)} colors={colors} styles={styles} testID="btn-generate-invoice" />
+                <ActionButton icon="cash-outline" label="Record Payment" onPress={() => setLoadPaymentOpen(true)} colors={colors} styles={styles} testID="btn-load-payment" primary />
+                <ActionButton icon="document-text-outline" label="Generate Invoice Now" onPress={() => setInvoiceGenOpen(true)} colors={colors} styles={styles} testID="btn-generate-invoice" />
                 <ActionButton icon="return-up-back-outline" label="Refund" onPress={() => setRefundOpen(true)} colors={colors} styles={styles} testID="btn-refund" />
                 <ActionButton
                   icon="print-outline"
@@ -292,50 +277,33 @@ export default function AdminBillingCockpit() {
 
               {/* Tabs */}
               <View style={styles.tabsRow}>
-                {(["invoices", "deposits", "payments", "refunds"] as const).map((t) => (
+                {(["invoices", "payments", "refunds"] as const).map((t) => (
                   <TouchableOpacity
                     key={t}
                     style={[styles.tabBtn, tab === t && styles.tabBtnActive]}
                     onPress={() => setTab(t)}
                   >
                     <Text style={[styles.tabBtnText, tab === t && styles.tabBtnTextActive]}>
-                      {t.toUpperCase()} ({t === "invoices" ? summary.invoices.length : t === "deposits" ? summary.deposit_requests.length : t === "payments" ? summary.payments.length : summary.refunds.length})
+                      {t.toUpperCase()} ({t === "invoices" ? summary.invoices.length : t === "payments" ? summary.payments.length : summary.refunds.length})
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
 
               {tab === "invoices" && (
-                <LedgerList
-                  rows={summary.invoices.map((i) => ({
-                    key: i.id,
-                    line1: `${i.reference} · ${i.period_label}`,
-                    line2: `Emailed: ${i.emailed_to || "not sent"}  · Status: ${i.status}`,
-                    amount: cents(i.total_cents),
-                    right: i.pdf_url ? { label: "PDF", url: i.pdf_url } : undefined,
-                  }))}
+                <InvoiceLedger
+                  invoices={summary.invoices}
+                  dealershipId={summary.dealership.id}
+                  onResent={refreshAll}
                   styles={styles}
-                  emptyText="No invoices generated yet."
-                />
-              )}
-              {tab === "deposits" && (
-                <LedgerList
-                  rows={summary.deposit_requests.map((d) => ({
-                    key: d.id,
-                    line1: `${d.reference}  · ${d.status.toUpperCase()}`,
-                    line2: `${(d.requested_at || "").split("T")[0]}${d.emailed_to ? ` · emailed ${d.emailed_to}` : ""}${d.notes ? ` · ${d.notes}` : ""}`,
-                    amount: cents(d.amount_cents),
-                    right: d.pdf_url ? { label: "PDF", url: d.pdf_url } : undefined,
-                  }))}
-                  styles={styles}
-                  emptyText="No deposit requests raised yet."
+                  colors={colors}
                 />
               )}
               {tab === "payments" && (
                 <LedgerList
                   rows={summary.payments.map((p) => ({
                     key: p.id,
-                    line1: `${p.bank_reference || "(no ref)"} · ${p.invoice_id ? "against invoice" : p.deposit_request_id ? "against deposit" : "unallocated"}`,
+                    line1: `${p.bank_reference || "(no ref)"} · ${p.invoice_id ? "Invoice payment" : "Deposit top-up"}`,
                     line2: `${p.payment_date}${p.notes ? ` · ${p.notes}` : ""}`,
                     amount: cents(p.amount_cents),
                   }))}
@@ -363,19 +331,10 @@ export default function AdminBillingCockpit() {
       {/* Modals */}
       {summary && (
         <>
-          <DepositRequestModal
-            open={depositReqOpen}
-            onClose={() => setDepositReqOpen(false)}
-            dealership={summary.dealership}
-            onSaved={refreshAll}
-            colors={colors}
-            styles={styles}
-          />
           <LoadPaymentModal
             open={loadPaymentOpen}
             onClose={() => setLoadPaymentOpen(false)}
             dealership={summary.dealership}
-            depositRequests={summary.deposit_requests}
             invoices={summary.invoices}
             onSaved={refreshAll}
             colors={colors}
@@ -477,6 +436,64 @@ function openPdf(url: string) {
 // ---------------------------------------------------------------------------
 // Modals — one per action. Each posts to the corresponding backend endpoint.
 // ---------------------------------------------------------------------------
+function InvoiceLedger({ invoices, dealershipId, onResent, styles, colors }: {
+  invoices: Invoice[]; dealershipId: string; onResent: () => void; styles: any; colors: any;
+}) {
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const resend = async (inv: Invoice) => {
+    setBusyId(inv.id);
+    try {
+      const res = await apiFetch(
+        `/api/admin/dealerships/${dealershipId}/invoices/${inv.id}/resend-email`,
+        { method: "POST", body: "{}" },
+      );
+      Alert.alert("Invoice email sent", `Emailed to ${res?.emailed_to || "accounts contact"}.`);
+      onResent();
+    } catch (e: any) {
+      Alert.alert("Couldn't resend", e?.message || "");
+    } finally {
+      setBusyId(null);
+    }
+  };
+  if (invoices.length === 0) {
+    return <Text style={[styles.muted, { marginTop: spacing.md }]}>No invoices generated yet. They will appear here automatically on the 1st of each month.</Text>;
+  }
+  return (
+    <View style={{ marginTop: spacing.sm }}>
+      {invoices.map((i) => (
+        <View key={i.id} style={styles.ledgerRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.ledgerLine1}>{i.reference} · {i.period_label}</Text>
+            <Text style={styles.ledgerLine2}>
+              Emailed: {i.emailed_to || "not sent"} · Status: {i.status}
+              {i.total_paid_cents ? `  · Paid: ${cents(i.total_paid_cents)}` : ""}
+            </Text>
+          </View>
+          <View style={{ alignItems: "flex-end", gap: 4 }}>
+            <Text style={styles.ledgerAmount}>{cents(i.total_cents)}</Text>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              {i.pdf_url ? (
+                <TouchableOpacity onPress={() => openPdf(i.pdf_url!)}>
+                  <Text style={styles.ledgerLink}>PDF</Text>
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity
+                testID={`resend-invoice-${i.reference}`}
+                onPress={() => resend(i)}
+                disabled={busyId === i.id}
+              >
+                <Text style={[styles.ledgerLink, busyId === i.id && { opacity: 0.4 }]}>
+                  {busyId === i.id ? "Sending…" : "Resend email"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function useForm<T extends Record<string, any>>(initial: T) {
   const [values, setValues] = useState<T>(initial);
   const [busy, setBusy] = useState(false);
@@ -484,87 +501,102 @@ function useForm<T extends Record<string, any>>(initial: T) {
   return { values, setValues, set, busy, setBusy };
 }
 
-function DepositRequestModal({ open, onClose, dealership, onSaved, colors, styles }: any) {
-  const { values, setValues, set, busy, setBusy } = useForm({ amount_zar: "", notes: "" });
-  useEffect(() => { if (open) setValues({ amount_zar: "", notes: "" }); }, [open, setValues]);
-  const save = async () => {
-    const amt = parseFloat(values.amount_zar);
-    if (!amt || amt <= 0) { Alert.alert("Enter a valid amount"); return; }
-    setBusy(true);
-    try {
-      await apiFetch(`/api/admin/dealerships/${dealership.id}/deposit-request`, {
-        method: "POST", body: JSON.stringify({ amount_zar: amt, notes: values.notes }),
-      });
-      onSaved(); onClose();
-      Alert.alert("Deposit request sent", "The document has been generated and (if a contact email is on file) emailed to the accounts contact.");
-    } catch (e: any) { Alert.alert("Failed", e?.message || ""); }
-    finally { setBusy(false); }
-  };
-  return (
-    <MinimalModal open={open} onClose={onClose} title="Request Deposit" styles={styles}>
-      <FormField label="Amount (R)" value={values.amount_zar} onChangeText={(v) => set("amount_zar", v)} keyboardType="decimal-pad" styles={styles} placeholder="e.g. 5000" />
-      <FormField label="Notes (optional)" value={values.notes} onChangeText={(v) => set("notes", v)} multiline styles={styles} placeholder="Purpose / period covered / etc." />
-      <PrimaryButton testID="deposit-request-submit" label={busy ? "Sending…" : "Create & Email"} onPress={save} disabled={busy} styles={styles} />
-    </MinimalModal>
-  );
-}
-
-function LoadPaymentModal({ open, onClose, dealership, depositRequests, invoices, onSaved, colors, styles }: any) {
+function LoadPaymentModal({ open, onClose, dealership, invoices, onSaved, colors, styles }: any) {
+  // "invoice" allocation is the default because in the new billing
+  // model an admin is almost always recording a payment against a
+  // specific auto-generated invoice. Top-ups happen but are rarer.
+  const outstanding = (invoices as Invoice[]).filter((i) => i.status !== "paid");
   const { values, set, setValues, busy, setBusy } = useForm({
     amount_zar: "", payment_date: new Date().toISOString().slice(0, 10),
-    bank_reference: "", notes: "", allocation: "deposit", deposit_request_id: "", invoice_id: "",
+    bank_reference: "", notes: "",
+    allocation: (outstanding.length > 0 ? "invoice" : "deposit") as "invoice" | "deposit",
+    invoice_id: outstanding[0]?.id || "",
   });
-  useEffect(() => { if (open) setValues({ amount_zar: "", payment_date: new Date().toISOString().slice(0, 10), bank_reference: "", notes: "", allocation: "deposit", deposit_request_id: "", invoice_id: "" }); }, [open, setValues]);
+  useEffect(() => {
+    if (open) {
+      const first = outstanding[0]?.id || "";
+      setValues({
+        amount_zar: "", payment_date: new Date().toISOString().slice(0, 10),
+        bank_reference: "", notes: "",
+        allocation: first ? "invoice" : "deposit",
+        invoice_id: first,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   const save = async () => {
     const amt = parseFloat(values.amount_zar);
     if (!amt || amt <= 0) { Alert.alert("Enter a valid amount"); return; }
     if (!values.bank_reference) { Alert.alert("Bank reference is required"); return; }
+    if (values.allocation === "invoice" && !values.invoice_id) {
+      Alert.alert("Pick the invoice this payment settles, or switch to 'Top-up Deposit'.");
+      return;
+    }
     setBusy(true);
     try {
       const body: any = {
-        amount_zar: amt, payment_date: values.payment_date,
-        bank_reference: values.bank_reference, notes: values.notes,
+        amount_zar: amt,
+        payment_date: values.payment_date,
+        bank_reference: values.bank_reference,
+        notes: values.notes,
       };
-      if (values.allocation === "deposit" && values.deposit_request_id) body.deposit_request_id = values.deposit_request_id;
-      if (values.allocation === "invoice" && values.invoice_id) body.invoice_id = values.invoice_id;
-      await apiFetch(`/api/admin/dealerships/${dealership.id}/deposits`, {
+      if (values.allocation === "invoice") body.invoice_id = values.invoice_id;
+      else body.is_deposit = true;
+      await apiFetch(`/api/admin/dealerships/${dealership.id}/payments`, {
         method: "POST", body: JSON.stringify(body),
       });
       onSaved(); onClose();
+      Alert.alert(
+        "Payment recorded",
+        values.allocation === "invoice"
+          ? "The invoice has been updated and the dealer emailed an updated statement."
+          : "Deposit top-up applied to the wallet.",
+      );
     } catch (e: any) { Alert.alert("Failed", e?.message || ""); }
     finally { setBusy(false); }
   };
   return (
-    <MinimalModal open={open} onClose={onClose} title="Load Payment (received EFT)" styles={styles}>
+    <MinimalModal open={open} onClose={onClose} title="Record Payment (received EFT)" styles={styles}>
+      <Text style={styles.formHint}>
+        Every payment must be allocated. Either settle an existing invoice, or record it as a standalone deposit top-up against the wallet.
+      </Text>
       <FormField label="Amount (R)" value={values.amount_zar} onChangeText={(v) => set("amount_zar", v)} keyboardType="decimal-pad" styles={styles} />
       <FormField label="Payment date (YYYY-MM-DD)" value={values.payment_date} onChangeText={(v) => set("payment_date", v)} styles={styles} />
       <FormField label="Bank reference" value={values.bank_reference} onChangeText={(v) => set("bank_reference", v)} styles={styles} placeholder="e.g. FNB EFT-9812" />
       <FormField label="Notes (optional)" value={values.notes} onChangeText={(v) => set("notes", v)} multiline styles={styles} />
       <Text style={styles.formLabel}>Allocate to</Text>
       <View style={styles.pillRow}>
-        {["deposit", "invoice", "unallocated"].map((k) => (
-          <TouchableOpacity key={k} style={[styles.pill, values.allocation === k && styles.pillActive]} onPress={() => set("allocation", k)}>
-            <Text style={[styles.pillText, values.allocation === k && styles.pillTextActive]}>{k.toUpperCase()}</Text>
-          </TouchableOpacity>
-        ))}
+        <TouchableOpacity
+          testID="allocation-invoice"
+          style={[styles.pill, values.allocation === "invoice" && styles.pillActive]}
+          onPress={() => set("allocation", "invoice")}
+        >
+          <Text style={[styles.pillText, values.allocation === "invoice" && styles.pillTextActive]}>INVOICE</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          testID="allocation-deposit"
+          style={[styles.pill, values.allocation === "deposit" && styles.pillActive]}
+          onPress={() => set("allocation", "deposit")}
+        >
+          <Text style={[styles.pillText, values.allocation === "deposit" && styles.pillTextActive]}>TOP-UP DEPOSIT</Text>
+        </TouchableOpacity>
       </View>
-      {values.allocation === "deposit" && (
-        <ChoiceList
-          label="Match to deposit request (optional)"
-          items={depositRequests.map((d: any) => ({ id: d.id, label: `${d.reference} — ${cents(d.amount_cents)} — ${d.status}` }))}
-          value={values.deposit_request_id}
-          onChange={(v) => set("deposit_request_id", v)}
-          styles={styles}
-        />
-      )}
       {values.allocation === "invoice" && (
         <ChoiceList
-          label="Match to invoice (required to flip status → paid)"
-          items={invoices.map((i: any) => ({ id: i.id, label: `${i.reference} — ${i.period_label} — ${cents(i.total_cents)} — ${i.status}` }))}
+          label="Select the invoice this payment settles"
+          items={outstanding.length === 0
+            ? []
+            : outstanding.map((i) => ({ id: i.id, label: `${i.reference} — ${i.period_label} — ${cents(i.total_cents)} — ${i.status}${i.total_paid_cents ? ` (paid ${cents(i.total_paid_cents)})` : ""}` }))
+          }
           value={values.invoice_id}
           onChange={(v) => set("invoice_id", v)}
           styles={styles}
         />
+      )}
+      {values.allocation === "deposit" && (
+        <Text style={[styles.formHint, { marginTop: 4 }]}>
+          This payment will credit the dealership wallet as a top-up. Use this only if the dealer is pre-funding ahead of the month-end invoice.
+        </Text>
       )}
       <PrimaryButton testID="load-payment-submit" label={busy ? "Saving…" : "Record Payment"} onPress={save} disabled={busy} styles={styles} />
     </MinimalModal>

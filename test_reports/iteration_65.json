@@ -1,0 +1,36 @@
+{
+  "summary": "Billing pivot (Aug 2026 refactor) validated end-to-end via pytest. 14/14 scenarios verified across two runs. STRICT ALLOCATION on POST /admin/dealerships/{id}/payments works: neither invoice_id nor is_deposit -> 400; both -> 400; unknown invoice_id -> 404; is_deposit=true -> 200 and wallet grows by exactly the amount; invoice-linked payment -> 200 and invoice.total_paid_cents grows, status flips 'partial' then 'paid', paid_at set on full-settlement, wallet also grows by the amount. AUTO RE-EMAIL fires on payment against an invoice: dealer_invoices.emailed_at is refreshed (verified via billing-summary; Emergent Resend sent a real email for dealership eb95e007 to linda@fourbuy.co.za). MANUAL RESEND /invoices/{id}/resend-email returns 200 with the accounts_contact.email and updates emailed_at; unknown invoice -> 404. MONTHLY BATCH POST /admin/billing/run-monthly-batch returns {generated, skipped, year, month} shape and is idempotent (second run generated<=first). REMOVED endpoint POST /admin/dealerships/{id}/deposit-request returns 404. SHAPE CHECKS: /admin/dealerships/{id}/billing-summary has no 'deposit_requests' key (only dealership/wallet/invoices/payments/refunds); /billing/my-summary (dealer) exposes 'payments' array (no 'deposits'). REFUND still works: /deposit-refund returns REF-*, decreases wallet by the amount. No backend issues found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_65_billing_pivot.py",
+    "/app/test_reports/pytest/iteration_65_billing_pivot.xml"
+  ],
+  "action_items": [
+    "None — refactor is functionally correct and matches the contract in the review request."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/routes/billing.py:459-558 admin_record_payment — strict allocation logic is correctly implemented: 400 on neither/both, 404 on unknown invoice_id (loaded before insert so no orphan payment rows), 200 with proper wallet + invoice mutation, and post-commit _recompute_wallet keeps the cached balance in sync. Auto re-email is wrapped in try/except and only warns on failure (correct — email transport must never block the payment write). One tiny nit: `paid_at` is force-set to None on the 'partial' branch which is fine when going from outstanding->partial, but if a future workflow ever reverses a payment this would wipe an earlier paid_at. Not exercised today; safe.",
+    "/app/backend/routes/billing.py:732-768 resend-email endpoint correctly uses the accounts_contact.email currently on file (not the historic emailed_to) which is what the docstring promises. Returns emailed_at ISO timestamp. Bumped to 502 on send failure — good discrimination from a 4xx client error.",
+    "/app/backend/routes/billing.py:859-881 run_monthly_invoice_batch — computes prior month via `now.month == 1 -> (year-1, 12)`; correct edge case. Idempotency via `_generate_invoice_for_dealer` skipping when an invoice already exists for the period (matched on period_start). Skipping is silent (returns None), counted as 'skipped' — matches spec.",
+    "/app/backend/routes/billing.py:1132-1174 in-process scheduler polls every 15 minutes, uses a `billing_scheduler` sentinel per YYYY-MM. Note: if the app restarts on the 1st AFTER the batch fires but BEFORE the sentinel write completes, the batch could run twice on the same day — mitigated in practice because _generate_invoice_for_dealer itself is idempotent per (dealership, period_start). Low-risk.",
+    "/app/backend/routes/billing.py:1081-1104 /billing/my-summary correctly exposes payments (not deposits) and includes invoices+wallet. Cleanly drops mongo _id via projection."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_65_billing_pivot.py (new pytest module — 14 tests)"
+  ],
+  "success_rate": {"backend": "100% (14/14 across two runs)", "frontend": "not tested (backend-only iteration per request)"},
+  "seed_data_creation": "Generated one invoice INV-000001 (8bdc3b3d-c14f-449e-9f68-150ba2efc97b) for Dave's dealership eb95e007-537b-4232-a314-0eba3e7164e7 covering Aug 2026 (subtotal R50, VAT R7.50, total R57.50). Fully paid during testing via two payments (partial R0.01 then remainder). Also created ~2 deposit top-up payments (TEST_TOPUP R111.11 each run) and ~2 refunds (TEST_REFUND R1.00 each run) on the same dealership. Wallet balance moved but ledger integrity preserved (verified after each mutation). Test bank_references prefixed with TEST_ for easy identification.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The invoice-payment sub-tests (TestInvoicePayment.*) are DATA-DEPENDENT — they need at least one outstanding/partial invoice on the target dealership. In the current preview DB only Dave's dealership eb95e007 had a billable month and its Aug 2026 invoice is now fully paid, so the fixture will skip on re-run. If you need to rerun those specific cases, either (a) seed a fresh priced submission in a month that hasn't been invoiced yet, or (b) point the fixture at a different dealership. The removed 'deposit-request' 404 test also implicitly guards against re-introducing the endpoint in server.py. Monthly batch scheduler writes to `billing_scheduler` collection (sentinel key: monthly_invoice:YYYY-MM). Manual /run-monthly-batch does NOT write the sentinel — so an ad-hoc run doesn't disable the cron for that month.",
+  "rca_of_issue": "N/A — no bugs found. Refactor implementation matches contract exactly."
+}

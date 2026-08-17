@@ -8829,7 +8829,11 @@ api_router.include_router(vin_reports_router)
 api_router.include_router(partner_api_router)
 
 # Billing / deposits / invoices / payments (Aug 2026 — see backend/routes/billing.py)
-from routes.billing import router as billing_router, init_billing_module as _init_billing
+from routes.billing import (
+    router as billing_router,
+    init_billing_module as _init_billing,
+    start_monthly_invoice_scheduler as _start_billing_scheduler,
+)
 _init_billing(
     db=db,
     require_admin=require_admin,
@@ -8869,6 +8873,13 @@ async def seed_data():
         asyncio.create_task(ensure_playwright_chromium())
     except Exception:
         logger.exception("Could not schedule Playwright chromium bootstrap")
+
+    # Kick off the monthly invoice scheduler — fires the batch on
+    # the 1st of each month for the prior month (see routes/billing.py).
+    try:
+        _start_billing_scheduler()
+    except Exception:
+        logger.exception("Could not start monthly invoice scheduler")
 
     # Seed admin
     existing_admin = await db.users.find_one({"email": ADMIN_EMAIL.lower()})

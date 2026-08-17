@@ -434,158 +434,68 @@ def _render_pdf(doc_title: str, story_body: list, company: dict, dealership: dic
 
 
 # ---------------------------------------------------------------------------
-# Deposit requests — admin creates a "please pay us R{N}" document with a
-# unique DEP-NNNNNN reference. Emailed to the accounts contact.
-# ---------------------------------------------------------------------------
-class DepositRequestCreate(BaseModel):
-    amount_zar: float
-    notes: Optional[str] = ""
-    email_to: Optional[EmailStr] = None  # override default accounts_contact.email
-
-
-@router.post("/admin/dealerships/{dealership_id}/deposit-request")
-async def admin_create_deposit_request(
-    dealership_id: str,
-    payload: DepositRequestCreate,
-    current: dict = Depends(_dep_require_admin),
-):
-    d = await _db.dealerships.find_one({"id": dealership_id})
-    if not d:
-        raise HTTPException(404, "Dealership not found")
-    amount_cents = zar_to_cents(payload.amount_zar)
-    if amount_cents <= 0:
-        raise HTTPException(400, "Amount must be > 0")
-    reference = await _next_ref("dep_seq", "DEP")
-    doc = {
-        "id": str(uuid.uuid4()),
-        "reference": reference,
-        "dealership_id": dealership_id,
-        "amount_cents": amount_cents,
-        "amount_zar": cents_to_zar(amount_cents),
-        "notes": (payload.notes or "").strip(),
-        "requested_at": _now_utc(),
-        "requested_by": current["id"],
-        "status": "sent",
-    }
-    company = await _get_company_settings()
-    pdf_bytes = _build_deposit_request_pdf(doc, d, company)
-    pdf_url = None
-    if _upload_pdf_to_cloudinary:
-        try:
-            pdf_url = _upload_pdf_to_cloudinary(
-                pdf_bytes,
-                folder=f"fourbuy/billing/deposit_requests/{dealership_id}",
-                public_id=reference,
-            )
-        except Exception as e:
-            logger.warning("Deposit request PDF upload failed: %s", e)
-    if pdf_url:
-        doc["pdf_url"] = pdf_url
-    await _db.deposit_requests.insert_one(doc)
-    # Email the accounts contact (fallback to override / admin can skip)
-    to_addr = payload.email_to or ((d.get("accounts_contact") or {}).get("email"))
-    if to_addr and _send_email:
-        try:
-            await _send_email(
-                to=to_addr,
-                subject=f"Deposit request {reference} — {company['trading_name']}",
-                html=_deposit_request_email_html(doc, d, company, pdf_url),
-            )
-            doc["emailed_to"] = to_addr
-            doc["emailed_at"] = _now_utc()
-            await _db.deposit_requests.update_one(
-                {"id": doc["id"]},
-                {"$set": {"emailed_to": to_addr, "emailed_at": doc["emailed_at"]}},
-            )
-        except Exception as e:
-            logger.warning("Deposit request email failed: %s", e)
-    doc.pop("_id", None)
-    return {"deposit_request": doc}
-
-
-def _build_deposit_request_pdf(request: dict, dealership: dict, company: dict) -> bytes:
-    styles = getSampleStyleSheet()
-    body: list = []
-    meta = Table(
-        [["Reference:", request["reference"]],
-         ["Date issued:", (request["requested_at"] or _now_utc()).split("T")[0]],
-         ["Amount due:", _rand(request["amount_cents"])]],
-        colWidths=[35 * mm, 100 * mm],
-    )
-    meta.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-    ]))
-    body.append(meta)
-    body.append(Spacer(1, 10))
-    intro = ("This document is a request for a prepaid deposit against the "
-             "above dealership's Trade AI powered by FOURBUY account. On "
-             "receipt of the EFT payment, the deposit will be credited to "
-             "the dealership's account and available for use against "
-             "submission and VIN report fees.")
-    body.append(Paragraph(intro, styles["BodyText"]))
-    if (request.get("notes") or "").strip():
-        body.append(Spacer(1, 10))
-        body.append(Paragraph(f"<b>Notes:</b> {request['notes']}", styles["BodyText"]))
-    body.append(Spacer(1, 12))
-    body.append(Paragraph(
-        f"<b>Please use reference <font color='#B45309'>{request['reference']}</font> when making payment.</b>",
-        styles["BodyText"],
-    ))
-    return _render_pdf("DEPOSIT REQUEST", body, company, dealership)
-
-
-def _deposit_request_email_html(request: dict, dealership: dict, company: dict, pdf_url: Optional[str]) -> str:
-    link_html = f"<p><a href='{pdf_url}'>Download deposit request PDF</a></p>" if pdf_url else ""
-    return f"""
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#0F172A;">
-  <h2 style="margin:0 0 10px;">Deposit request {request['reference']}</h2>
-  <p>Hello {(dealership.get('accounts_contact') or {}).get('name', 'there')},</p>
-  <p>Please find attached your deposit request for
-     <b>{_rand(request['amount_cents'])}</b> from {company['trading_name']}.</p>
-  <p>Please use the reference <b>{request['reference']}</b> when transferring funds so we can allocate the payment correctly.</p>
-  {link_html}
-  <p>Thanks,<br/>{company['trading_name']}<br/>Accounts</p>
-</div>
-"""
-
-
-# ---------------------------------------------------------------------------
-# Deposit payment allocation — admin records that money hit the bank.
+# Strict payment allocation — admin records that money hit the bank.
+#
+# Aug 2026 refactor: every payment MUST be tied to either an existing
+# invoice (`invoice_id`) OR flagged as a top-up deposit
+# (`is_deposit=True`). There is no legacy "deposit request" flow any
+# more — invoices are generated automatically on the 1st of each
+# month, so the only reason a dealer would send money before an
+# invoice exists is to pre-load the wallet, which is exactly what a
+# deposit top-up captures.
 # ---------------------------------------------------------------------------
 class DealerPaymentCreate(BaseModel):
     amount_zar: float
     payment_date: str  # YYYY-MM-DD
     bank_reference: str
     notes: Optional[str] = ""
-    # For invoice payments the admin optionally links to an invoice; for
-    # pure deposits the two invoice fields stay null.
+    # Exactly one of these must be set:
+    #   • invoice_id      — closes/partly-closes an invoice
+    #   • is_deposit=True — pure top-up (no invoice link)
     invoice_id: Optional[str] = None
-    deposit_request_id: Optional[str] = None
+    is_deposit: bool = False
 
 
-@router.post("/admin/dealerships/{dealership_id}/deposits")
-async def admin_record_deposit_payment(
+@router.post("/admin/dealerships/{dealership_id}/payments")
+async def admin_record_payment(
     dealership_id: str,
     payload: DealerPaymentCreate,
     current: dict = Depends(_dep_require_admin),
 ):
-    """Record that a deposit (or invoice payment) has hit the bank."""
+    """Record that money has been received. Strict allocation is
+    required — the admin must pick either an invoice this payment
+    settles, or explicitly flag the payment as a deposit top-up. If
+    the payment is against an invoice AND the invoice is only
+    partially settled the invoice is automatically re-emailed to the
+    accounts contact with the updated `balance_due`."""
     d = await _db.dealerships.find_one({"id": dealership_id})
     if not d:
         raise HTTPException(404, "Dealership not found")
-    # A payment either tops up the wallet as a deposit OR closes out
-    # an invoice, never both. Setting both would produce a confusing
-    # audit trail where the same rand value counts against two
-    # different documents.
-    if payload.invoice_id and payload.deposit_request_id:
+    if not payload.invoice_id and not payload.is_deposit:
         raise HTTPException(
             400,
-            "A payment can be linked to an invoice OR a deposit request — not both.",
+            "A payment must be allocated to an invoice OR marked as a deposit top-up — unallocated payments are not accepted.",
+        )
+    if payload.invoice_id and payload.is_deposit:
+        raise HTTPException(
+            400,
+            "A payment can be either against an invoice OR a deposit top-up — not both.",
         )
     amount_cents = zar_to_cents(payload.amount_zar)
     if amount_cents <= 0:
         raise HTTPException(400, "Amount must be > 0")
+
+    # If the payment is allocated to an invoice, load & validate it
+    # up front so we can bail out cleanly on a bad id.
+    invoice_doc: Optional[dict] = None
+    if payload.invoice_id:
+        invoice_doc = await _db.dealer_invoices.find_one(
+            {"id": payload.invoice_id, "dealership_id": dealership_id},
+            {"_id": 0},
+        )
+        if not invoice_doc:
+            raise HTTPException(404, "Invoice not found for this dealership.")
+
     doc = {
         "id": str(uuid.uuid4()),
         "dealership_id": dealership_id,
@@ -595,28 +505,55 @@ async def admin_record_deposit_payment(
         "bank_reference": (payload.bank_reference or "").strip(),
         "notes": (payload.notes or "").strip(),
         "invoice_id": payload.invoice_id,
-        "deposit_request_id": payload.deposit_request_id,
+        "is_deposit": bool(payload.is_deposit),
         "recorded_at": _now_utc(),
         "recorded_by": current["id"],
     }
     await _db.dealer_payments.insert_one(doc)
-    # Flip the deposit-request status if this closes one out.
-    if payload.deposit_request_id:
-        await _db.deposit_requests.update_one(
-            {"id": payload.deposit_request_id},
-            {"$set": {"status": "paid", "paid_at": _now_utc(), "paid_amount_cents": amount_cents}},
-        )
+
     # Update the invoice's status/paid total if allocated to an invoice.
-    if payload.invoice_id:
-        inv = await _db.dealer_invoices.find_one({"id": payload.invoice_id}, {"_id": 0, "total_cents": 1, "total_paid_cents": 1})
-        if inv:
-            new_paid = int(inv.get("total_paid_cents") or 0) + amount_cents
-            status = "paid" if new_paid >= int(inv.get("total_cents") or 0) else "partial"
-            await _db.dealer_invoices.update_one(
-                {"id": payload.invoice_id},
-                {"$set": {"total_paid_cents": new_paid, "status": status, "paid_at": _now_utc() if status == "paid" else None}},
-            )
+    invoice_after: Optional[dict] = None
+    if invoice_doc:
+        new_paid = int(invoice_doc.get("total_paid_cents") or 0) + amount_cents
+        status = "paid" if new_paid >= int(invoice_doc.get("total_cents") or 0) else "partial"
+        set_fields: dict = {
+            "total_paid_cents": new_paid,
+            "status": status,
+            "paid_at": _now_utc() if status == "paid" else None,
+        }
+        await _db.dealer_invoices.update_one(
+            {"id": payload.invoice_id},
+            {"$set": set_fields},
+        )
+        invoice_after = {**invoice_doc, **set_fields}
+
     await _recompute_wallet(dealership_id)
+
+    # Auto re-email invoice on payment (per business rule Aug 2026):
+    # every payment against an invoice — whether it fully settles it
+    # or only partially settles it — triggers an updated invoice
+    # email so the dealer sees the running balance.
+    if invoice_after and _send_email:
+        to_addr = (d.get("accounts_contact") or {}).get("email")
+        if to_addr:
+            try:
+                company = await _get_company_settings()
+                subject = (
+                    f"Payment received — Invoice {invoice_after['reference']} "
+                    f"({'settled' if invoice_after['status'] == 'paid' else 'balance updated'}) — {company['trading_name']}"
+                )
+                await _send_email(
+                    to=to_addr,
+                    subject=subject,
+                    html=_invoice_email_html(invoice_after, d, company, invoice_after.get("pdf_url")),
+                )
+                await _db.dealer_invoices.update_one(
+                    {"id": invoice_after["id"]},
+                    {"$set": {"emailed_to": to_addr, "emailed_at": _now_utc()}},
+                )
+            except Exception as e:
+                logger.warning("Auto re-email invoice on payment failed: %s", e)
+
     doc.pop("_id", None)
     return {"payment": doc}
 
@@ -792,6 +729,167 @@ async def admin_generate_monthly_invoice(
     return {"invoice": doc}
 
 
+@router.post("/admin/dealerships/{dealership_id}/invoices/{invoice_id}/resend-email")
+async def admin_resend_invoice_email(
+    dealership_id: str,
+    invoice_id: str,
+    current: dict = Depends(_dep_require_admin),
+):
+    """Re-send an already-generated invoice by email to the accounts
+    contact currently on file for the dealership. Useful if the contact
+    changed, if the original delivery failed, or if the dealer just
+    lost the email. Does NOT regenerate the PDF — the same Cloudinary
+    URL from the original generation is re-linked."""
+    d = await _db.dealerships.find_one({"id": dealership_id})
+    if not d:
+        raise HTTPException(404, "Dealership not found")
+    inv = await _db.dealer_invoices.find_one({"id": invoice_id, "dealership_id": dealership_id}, {"_id": 0})
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+    to_addr = (d.get("accounts_contact") or {}).get("email")
+    if not to_addr:
+        raise HTTPException(400, "No accounts contact email on file for this dealership.")
+    if not _send_email:
+        raise HTTPException(500, "Email transport is not configured.")
+    company = await _get_company_settings()
+    try:
+        await _send_email(
+            to=to_addr,
+            subject=f"Invoice {inv['reference']} — {inv['period_label']} — {company['trading_name']}",
+            html=_invoice_email_html(inv, d, company, inv.get("pdf_url")),
+        )
+    except Exception as e:
+        raise HTTPException(502, f"Email send failed: {e}")
+    await _db.dealer_invoices.update_one(
+        {"id": invoice_id},
+        {"$set": {"emailed_to": to_addr, "emailed_at": _now_utc()}},
+    )
+    logger.info("Admin %s re-sent invoice %s to %s", current.get("email"), inv["reference"], to_addr)
+    return {"emailed_to": to_addr, "emailed_at": _now_utc()}
+
+
+async def _generate_invoice_for_dealer(dealership_id: str, year: int, month: int, current_user_id: str) -> Optional[dict]:
+    """Internal helper — creates the invoice doc + PDF + email in the
+    same way the admin endpoint does. Returns None when there is no
+    billable activity in the period (safe for the scheduler to call
+    for every dealership without spamming empty invoices). Extracted
+    so the monthly cron can reuse the exact same code path.
+    """
+    d = await _db.dealerships.find_one({"id": dealership_id})
+    if not d:
+        return None
+    start = datetime(year, month, 1, tzinfo=timezone.utc)
+    end = datetime(year + (1 if month == 12 else 0), 1 if month == 12 else month + 1, 1, tzinfo=timezone.utc)
+    # Skip if we've already generated an invoice for this period.
+    existing = await _db.dealer_invoices.find_one({
+        "dealership_id": dealership_id,
+        "period_start": start.date().isoformat(),
+    })
+    if existing:
+        return None
+    line_items: list[dict] = []
+    subtotal_cents = 0
+    async for s in _db.submissions.find(
+        {"dealership_id": dealership_id, "retracted": {"$ne": True},
+         "billing_charge_cents": {"$gt": 0},
+         "priced_at": {"$gte": start.isoformat(), "$lt": end.isoformat()}},
+        {"_id": 0, "reference": 1, "billing_charge_cents": 1, "make_name": 1, "model_name": 1, "year": 1, "priced_at": 1},
+    ).sort("priced_at", 1):
+        desc = f"{s.get('reference', '')} · {s.get('year', '')} {s.get('make_name', '')} {s.get('model_name', '')}"
+        line_items.append({"type": "submission", "reference": s.get("reference"),
+                           "date": (s.get("priced_at") or "").split("T")[0],
+                           "description": desc.strip(),
+                           "amount_cents": int(s.get("billing_charge_cents") or 0)})
+        subtotal_cents += int(s.get("billing_charge_cents") or 0)
+    async for v in _db.vin_report_orders.find(
+        {"dealership_id": dealership_id, "billing_charge_cents": {"$gt": 0},
+         "created_at": {"$gte": start.isoformat(), "$lt": end.isoformat()}},
+        {"_id": 0, "reference": 1, "report_type": 1, "vin": 1, "billing_charge_cents": 1, "created_at": 1},
+    ).sort("created_at", 1):
+        line_items.append({"type": "vin_report", "reference": v.get("reference"),
+                           "date": (v.get("created_at") or "").split("T")[0],
+                           "description": f"VIN report ({v.get('report_type', '')}) · {v.get('vin', '')}".strip(),
+                           "amount_cents": int(v.get("billing_charge_cents") or 0)})
+        subtotal_cents += int(v.get("billing_charge_cents") or 0)
+    if subtotal_cents <= 0:
+        return None
+    company = await _get_company_settings()
+    vat_percent = float(company.get("vat_rate_percent") or 15.0)
+    vat_cents = int(round(subtotal_cents * (vat_percent / 100.0)))
+    total_cents = subtotal_cents + vat_cents
+    reference = await _next_ref("inv_seq", "INV")
+    doc = {
+        "id": str(uuid.uuid4()), "reference": reference, "dealership_id": dealership_id,
+        "period_start": start.date().isoformat(),
+        "period_end": (end - timedelta(days=1)).date().isoformat(),
+        "period_label": start.strftime("%B %Y"),
+        "line_items": line_items,
+        "subtotal_cents": subtotal_cents, "vat_cents": vat_cents,
+        "vat_rate_percent": vat_percent, "total_cents": total_cents,
+        "total_paid_cents": 0, "status": "outstanding",
+        "generated_at": _now_utc(), "generated_by": current_user_id,
+    }
+    pdf_bytes = _build_invoice_pdf(doc, d, company)
+    if _upload_pdf_to_cloudinary:
+        try:
+            pdf_url = _upload_pdf_to_cloudinary(
+                pdf_bytes, folder=f"fourbuy/billing/invoices/{dealership_id}", public_id=reference,
+            )
+            if pdf_url:
+                doc["pdf_url"] = pdf_url
+        except Exception as e:
+            logger.warning("Invoice PDF upload failed: %s", e)
+    await _db.dealer_invoices.insert_one(doc)
+    to_addr = (d.get("accounts_contact") or {}).get("email")
+    if to_addr and _send_email:
+        try:
+            await _send_email(
+                to=to_addr,
+                subject=f"Invoice {reference} — {doc['period_label']} — {company['trading_name']}",
+                html=_invoice_email_html(doc, d, company, doc.get("pdf_url")),
+            )
+            await _db.dealer_invoices.update_one({"id": doc["id"]},
+                {"$set": {"emailed_to": to_addr, "emailed_at": _now_utc()}})
+            doc["emailed_to"] = to_addr
+        except Exception as e:
+            logger.warning("Invoice email failed: %s", e)
+    return doc
+
+
+async def run_monthly_invoice_batch() -> dict:
+    """Called by the scheduler on the 1st of each month at 09:00 SAST.
+    Generates invoices for every dealership for the PRIOR calendar
+    month. Idempotent: `_generate_invoice_for_dealer` skips
+    dealerships that already have an invoice for the target period.
+    Also safely callable ad-hoc via `POST /admin/billing/run-monthly-batch`.
+    """
+    now = datetime.now(timezone.utc)
+    # Prior month
+    year, month = (now.year - 1, 12) if now.month == 1 else (now.year, now.month - 1)
+    generated = 0
+    skipped = 0
+    async for d in _db.dealerships.find({}, {"_id": 0, "id": 1}):
+        try:
+            res = await _generate_invoice_for_dealer(d["id"], year, month, current_user_id="system:cron")
+            if res:
+                generated += 1
+            else:
+                skipped += 1
+        except Exception as e:
+            logger.warning("Monthly invoice for %s failed: %s", d["id"], e)
+    logger.info("Monthly invoice batch: %s generated, %s skipped (period=%s-%02d)", generated, skipped, year, month)
+    return {"generated": generated, "skipped": skipped, "year": year, "month": month}
+
+
+@router.post("/admin/billing/run-monthly-batch")
+async def admin_run_monthly_batch(current: dict = Depends(_dep_require_admin)):
+    """Manual trigger for the same batch the scheduler runs on the 1st
+    of every month. Handy for catching up if the app was down at
+    month-end, or for an initial back-fill after enabling the feature.
+    """
+    return await run_monthly_invoice_batch()
+
+
 def _build_invoice_pdf(invoice: dict, dealership: dict, company: dict) -> bytes:
     styles = getSampleStyleSheet()
     body: list = []
@@ -866,22 +964,22 @@ async def admin_statement_pdf(
     if not d:
         raise HTTPException(404, "Dealership not found")
     company = await _get_company_settings()
-    # Collect everything
-    deposits = await _db.deposit_requests.find({"dealership_id": dealership_id}, {"_id": 0}).sort("requested_at", 1).to_list(1000)
+    # Collect everything (deposit-request concept removed Aug 2026 —
+    # payments are now either invoice allocations or standalone
+    # deposit top-ups).
     invoices = await _db.dealer_invoices.find({"dealership_id": dealership_id}, {"_id": 0}).sort("generated_at", 1).to_list(1000)
     payments = await _db.dealer_payments.find({"dealership_id": dealership_id}, {"_id": 0}).sort("recorded_at", 1).to_list(2000)
     refunds = await _db.deposit_refunds.find({"dealership_id": dealership_id}, {"_id": 0}).sort("recorded_at", 1).to_list(1000)
 
     events: list[tuple[str, str, str, int]] = []  # (iso_ts, kind, description, delta_cents)
-    for req in deposits:
-        events.append((req.get("requested_at") or "", "Deposit request", f"{req['reference']} · {req.get('notes', '')}", 0))
     for pay in payments:
-        desc = f"Payment received · ref {pay.get('bank_reference', '')}"
         if pay.get("invoice_id"):
-            desc += f" (against invoice)"
-        elif pay.get("deposit_request_id"):
-            desc += f" (deposit)"
-        events.append((pay.get("recorded_at") or "", "Payment received", desc, +int(pay["amount_cents"])))
+            kind = "Payment (invoice)"
+            desc = f"Payment received · ref {pay.get('bank_reference', '')} (against invoice)"
+        else:
+            kind = "Deposit top-up"
+            desc = f"Deposit top-up · ref {pay.get('bank_reference', '')}"
+        events.append((pay.get("recorded_at") or "", kind, desc, +int(pay["amount_cents"])))
     for inv in invoices:
         events.append((inv.get("generated_at") or "", "Invoice raised", f"{inv['reference']} · {inv['period_label']}", 0))
     for rf in refunds:
@@ -935,7 +1033,6 @@ async def admin_billing_summary(
     if not d:
         raise HTTPException(404, "Dealership not found")
     wallet = await _recompute_wallet(dealership_id)
-    deposit_requests = await _db.deposit_requests.find({"dealership_id": dealership_id}, {"_id": 0}).sort("requested_at", -1).to_list(200)
     invoices = await _db.dealer_invoices.find({"dealership_id": dealership_id}, {"_id": 0}).sort("generated_at", -1).to_list(200)
     payments = await _db.dealer_payments.find({"dealership_id": dealership_id}, {"_id": 0}).sort("recorded_at", -1).to_list(500)
     refunds = await _db.deposit_refunds.find({"dealership_id": dealership_id}, {"_id": 0}).sort("recorded_at", -1).to_list(200)
@@ -953,7 +1050,6 @@ async def admin_billing_summary(
             "refunds_zar": cents_to_zar(wallet["refunds_cents"]),
             "suspended": wallet["balance_cents"] <= 0,
         },
-        "deposit_requests": deposit_requests,
         "invoices": invoices,
         "payments": payments,
         "refunds": refunds,
@@ -986,16 +1082,16 @@ async def admin_billing_overview(current: dict = Depends(_dep_require_admin)):
 async def dealer_billing_my_summary(current: dict = Depends(_dep_current_user)):
     dealership_id = current.get("dealership_id")
     if not dealership_id:
-        return {"wallet": {"balance_zar": 0, "suspended": False}, "invoices": [], "deposits": []}
+        return {"wallet": {"balance_zar": 0, "suspended": False}, "invoices": [], "payments": []}
     wallet = await _recompute_wallet(dealership_id)
     invoices = await _db.dealer_invoices.find(
         {"dealership_id": dealership_id},
         {"_id": 0, "line_items": 0},  # line items are heavy; PDF has them.
     ).sort("generated_at", -1).to_list(120)
-    deposits = await _db.deposit_requests.find(
+    payments = await _db.dealer_payments.find(
         {"dealership_id": dealership_id},
         {"_id": 0},
-    ).sort("requested_at", -1).to_list(60)
+    ).sort("recorded_at", -1).to_list(120)
     return {
         "wallet": {
             "balance_zar": cents_to_zar(wallet["balance_cents"]),
@@ -1004,7 +1100,7 @@ async def dealer_billing_my_summary(current: dict = Depends(_dep_current_user)):
             "suspended": wallet["balance_cents"] <= 0,
         },
         "invoices": invoices,
-        "deposits": deposits,
+        "payments": payments,
     }
 
 
@@ -1014,4 +1110,65 @@ __all__ = [
     "assert_dealership_active",
     "zar_to_cents",
     "cents_to_zar",
+    "run_monthly_invoice_batch",
+    "start_monthly_invoice_scheduler",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Monthly invoice scheduler (Aug 2026).
+#
+# A tiny in-process asyncio loop that fires `run_monthly_invoice_batch`
+# once per calendar month, on the 1st, covering the prior month. Uses
+# a lightweight sentinel document in `billing_scheduler` to guarantee
+# we only invoice once per month even if the server restarts on the
+# 1st. Sleeping in ~15 minute checks keeps the drift bounded to
+# under a coffee-break so the invoices land close to midnight local
+# time without pounding the event loop.
+# ---------------------------------------------------------------------------
+import asyncio as _billing_asyncio  # avoid clashes with server.py imports
+
+
+async def _monthly_scheduler_loop() -> None:
+    """Long-running task. Cancelled cleanly on FastAPI shutdown."""
+    logger.info("Monthly invoice scheduler started")
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+            # Only actually invoice on the 1st of the month. Prior
+            # month runs are stored under a `year-month` sentinel so
+            # a same-day restart doesn't fire the batch twice.
+            if now.day == 1:
+                prev_year, prev_month = (now.year - 1, 12) if now.month == 1 else (now.year, now.month - 1)
+                sentinel_key = f"monthly_invoice:{prev_year:04d}-{prev_month:02d}"
+                already = await _db.billing_scheduler.find_one({"_id": sentinel_key})
+                if not already:
+                    logger.info("Monthly invoice batch triggered by scheduler (period=%s-%02d)", prev_year, prev_month)
+                    try:
+                        result = await run_monthly_invoice_batch()
+                        await _db.billing_scheduler.update_one(
+                            {"_id": sentinel_key},
+                            {"$set": {"ran_at": _now_utc(), "result": result}},
+                            upsert=True,
+                        )
+                    except Exception as e:
+                        logger.exception("Monthly invoice batch failed: %s", e)
+        except _billing_asyncio.CancelledError:
+            raise
+        except Exception as e:
+            # Never let a bad iteration kill the loop.
+            logger.warning("Monthly scheduler iteration errored: %s", e)
+        # Sleep 15 minutes between polls. Cheap and reliable.
+        try:
+            await _billing_asyncio.sleep(15 * 60)
+        except _billing_asyncio.CancelledError:
+            raise
+
+
+def start_monthly_invoice_scheduler() -> _billing_asyncio.Task:
+    """Kick off the background scheduler. Idempotent — call once at
+    FastAPI startup. Returns the task handle so callers can await
+    cancellation on shutdown if desired.
+    """
+    task = _billing_asyncio.create_task(_monthly_scheduler_loop(), name="billing-monthly-scheduler")
+    return task

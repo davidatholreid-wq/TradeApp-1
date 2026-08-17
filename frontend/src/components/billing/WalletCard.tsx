@@ -2,8 +2,8 @@
  * Dealer-side billing summary card + suspend banner (Aug 2026).
  *
  * `<WalletCard />` — full card with balance, usage-to-date, past
- *                    invoices (with PDF download) and past deposit
- *                    requests. Used at the top of /(app)/billing.
+ *                    invoices (with PDF download) and recorded
+ *                    payments. Used at the top of /(app)/billing.
  *
  * `<WalletSuspendBanner />` — thin red bar that self-fetches and
  *                             only renders when the caller's dealership
@@ -35,18 +35,18 @@ type Invoice = {
   generated_at: string;
   pdf_url?: string | null;
 };
-type Deposit = {
+type Payment = {
   id: string;
-  reference: string;
   amount_cents: number;
-  status: string;
-  requested_at: string;
-  pdf_url?: string | null;
+  bank_reference: string;
+  payment_date: string;
+  invoice_id?: string | null;
+  is_deposit?: boolean;
 };
 type MySummary = {
   wallet: Wallet;
   invoices: Invoice[];
-  deposits: Deposit[];
+  payments: Payment[];
 };
 
 const rand = (v: number | null | undefined) => {
@@ -135,22 +135,19 @@ export function WalletCard() {
         </View>
       ))}
 
-      <Text style={styles.sectionTitle}>DEPOSIT REQUESTS</Text>
-      {summary.deposits.length === 0 ? (
-        <Text style={styles.muted}>No deposit requests raised yet.</Text>
-      ) : summary.deposits.map((d) => (
-        <View key={d.id} style={styles.row}>
+      <Text style={styles.sectionTitle}>PAYMENTS RECEIVED</Text>
+      {summary.payments.length === 0 ? (
+        <Text style={styles.muted}>No payments recorded yet.</Text>
+      ) : summary.payments.map((p) => (
+        <View key={p.id} style={styles.row}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.rowLine1}>{d.reference} · {d.status.toUpperCase()}</Text>
-            <Text style={styles.rowLine2}>{(d.requested_at || "").split("T")[0]}</Text>
+            <Text style={styles.rowLine1}>
+              {p.bank_reference || "(no ref)"} · {p.invoice_id ? "Invoice payment" : "Deposit top-up"}
+            </Text>
+            <Text style={styles.rowLine2}>{p.payment_date}</Text>
           </View>
           <View style={{ alignItems: "flex-end" }}>
-            <Text style={styles.rowAmount}>{cents(d.amount_cents)}</Text>
-            {d.pdf_url ? (
-              <TouchableOpacity onPress={() => openPdf(d.pdf_url)}>
-                <Text style={styles.rowLink}>PDF</Text>
-              </TouchableOpacity>
-            ) : null}
+            <Text style={styles.rowAmount}>{cents(p.amount_cents)}</Text>
           </View>
         </View>
       ))}
