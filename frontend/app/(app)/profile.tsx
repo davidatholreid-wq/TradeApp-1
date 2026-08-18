@@ -541,20 +541,30 @@ export default function Profile() {
           <Text style={styles.logoutText}>Sign Out</Text>
         </TouchableOpacity>
 
-        {/* Delete My Account — Apple / Google Play require in-app self
-            deletion for accounts created in the app. We soft-delete
-            with a 30-day recovery window; the actual purge is done
-            off-band. Admins are blocked at the backend so this button
-            is hidden for admins here as a UX nicety. */}
+        {/* Danger Zone — spaced well below the Sign Out button, with
+            its own labeled block and a low-emphasis text link (not a
+            full-width button) so it can't be misfired-tapped by a
+            dealer who was going for Sign Out. Apple / Google Play
+            require an in-app self-deletion path; we soft-delete with
+            a 30-day recovery window. Admins are blocked at the API
+            layer so we simply hide the section for them. */}
         {user?.role !== "admin" ? (
-          <TouchableOpacity
-            testID="delete-account-button"
-            style={styles.deleteAccountBtn}
-            onPress={() => setDeleteAccountOpen(true)}
-          >
-            <Ionicons name="trash-outline" size={16} color="#B91C1C" />
-            <Text style={styles.deleteAccountText}>Delete My Account</Text>
-          </TouchableOpacity>
+          <View style={styles.dangerZone}>
+            <View style={styles.dangerZoneDivider} />
+            <Text style={styles.dangerZoneHeader}>DANGER ZONE</Text>
+            <Text style={styles.dangerZoneBody}>
+              Deleting your account is permanent after a 30-day recovery window. Your submissions, reports and history will be removed. Contact <Text style={{ fontWeight: "700" }}>support@fourbuy.co.za</Text> if you just need to update your details.
+            </Text>
+            <TouchableOpacity
+              testID="delete-account-button"
+              style={styles.deleteAccountLink}
+              onPress={() => setDeleteAccountOpen(true)}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <Ionicons name="trash-outline" size={13} color="#B91C1C" />
+              <Text style={styles.deleteAccountLinkText}>Delete my account</Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
       </ScrollView>
       <DeleteAccountModal
@@ -1278,23 +1288,51 @@ const makeStyles = (colors: Palette, isWide: boolean) => StyleSheet.create({
     marginTop: spacing.md,
   },
   logoutText: { color: colors.danger, fontWeight: "700", fontSize: 15 },
-  // Delete-my-account CTA — deliberately styled as a low-emphasis
-  // destructive action so the primary Sign Out button retains focus.
-  // Same amber-warning tone as other retract-y controls in the app.
-  deleteAccountBtn: {
-    marginTop: spacing.md,
+  // Danger Zone — a well-separated block below the Sign Out button
+  // that guards the Delete My Account action. The visual break
+  // (divider + generous top margin + heading + explainer copy) plus
+  // the low-emphasis text-link CTA style guarantees the destructive
+  // action cannot be reached by a stray thumb aiming for Sign Out.
+  dangerZone: {
+    marginTop: 56,          // ≥ two Sign-Out button heights of vertical space
+    marginHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: "transparent",
+  },
+  dangerZoneDivider: {
+    height: 1,
+    backgroundColor: colors.borderLight,
+    marginBottom: spacing.md,
+  },
+  dangerZoneHeader: {
+    color: "#B91C1C",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  dangerZoneBody: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: spacing.sm,
+  },
+  deleteAccountLink: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 10,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: "#B91C1C" + "55",
-    backgroundColor: "#FEE2E2" + "44",
+    alignSelf: "flex-start",
+    gap: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 2,
   },
-  deleteAccountText: { color: "#B91C1C", fontWeight: "700", fontSize: 13 },
+  deleteAccountLinkText: {
+    color: "#B91C1C",
+    fontWeight: "700",
+    fontSize: 12,
+    textDecorationLine: "underline",
+  },
   deleteModalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", alignItems: "center", justifyContent: "center", padding: spacing.md },
   deleteModalCard: { width: "min(460px, 92vw)" as any, backgroundColor: colors.card, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.borderLight },
   deleteModalTitle: { color: colors.text, fontSize: 16, fontWeight: "800", marginBottom: 8 },
