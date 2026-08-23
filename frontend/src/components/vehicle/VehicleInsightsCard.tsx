@@ -15,7 +15,7 @@
 import React from "react";
 import { View, Text, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { TouchableOpacity } from "@/src/components/HapticButtons";
+import { TouchableOpacity, Pressable } from "@/src/components/HapticButtons";
 
 type Severity = "low" | "medium" | "high";
 
@@ -51,6 +51,9 @@ export type VehicleInsightsCardProps = {
   onFetch: () => void;
   colors: any;
   styles: any;
+  // Aug 2026: collapsible.
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
 };
 
 function severityColor(sev: Severity | undefined) {
@@ -71,6 +74,8 @@ export default function VehicleInsightsCard({
   onFetch,
   colors,
   styles,
+  collapsed = false,
+  onToggleCollapsed,
 }: VehicleInsightsCardProps) {
   const data = insights?.insights;
   const hasData = !!data && !data.raw;
@@ -81,8 +86,22 @@ export default function VehicleInsightsCard({
   return (
     <>
       <View style={styles.analysisHeader}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.sectionTitle}>Recalls & Known Issues</Text>
+        <Pressable
+          style={{ flex: 1 }}
+          onPress={onToggleCollapsed}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: !collapsed }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            {onToggleCollapsed ? (
+              <Ionicons
+                name={collapsed ? "chevron-down" : "chevron-up"}
+                size={16}
+                color={colors.textSecondary}
+              />
+            ) : null}
+            <Text style={styles.sectionTitle}>Recalls & Known Issues</Text>
+          </View>
           {insights?.generated_at ? (
             <Text style={styles.analysisTs}>
               Generated {new Date(insights.generated_at).toLocaleString()}
@@ -92,7 +111,7 @@ export default function VehicleInsightsCard({
               GPT-5.2 checks published recalls & common failure modes for this make/model/year.
             </Text>
           )}
-        </View>
+        </Pressable>
         <TouchableOpacity
           testID="vehicle-insights-button"
           style={[styles.analysisBtn, loading && { opacity: 0.6 }]}
@@ -113,7 +132,7 @@ export default function VehicleInsightsCard({
         </TouchableOpacity>
       </View>
 
-      {hasData ? (
+      {!collapsed && hasData ? (
         <View style={{ gap: 12, marginTop: 8 }}>
           {/* Recalls */}
           <View>

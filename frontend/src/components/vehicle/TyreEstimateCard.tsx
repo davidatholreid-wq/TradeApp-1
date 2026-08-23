@@ -6,7 +6,7 @@
 // -----------------------------------------------------------------------------
 import React from "react";
 import { View, Text, ActivityIndicator } from "react-native";
-import { TouchableOpacity } from "@/src/components/HapticButtons";
+import { TouchableOpacity, Pressable } from "@/src/components/HapticButtons";
 import { Ionicons } from "@expo/vector-icons";
 import type { TyreEstimatePayload } from "@/src/types/vehicle";
 
@@ -16,6 +16,11 @@ export type TyreEstimateCardProps = {
   onEstimate: () => void;
   colors: any;
   styles: any;
+  // Aug 2026: collapsible so dealers can hide the tyre panel when
+  // they're not using it. Both props optional — if omitted the card
+  // renders in its old always-expanded form.
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
 };
 
 export function TyreEstimateCard({
@@ -24,18 +29,34 @@ export function TyreEstimateCard({
   onEstimate,
   colors,
   styles,
+  collapsed = false,
+  onToggleCollapsed,
 }: TyreEstimateCardProps) {
   return (
     <>
       <View style={styles.analysisHeader}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.sectionTitle}>Tyre Replacement Estimate</Text>
+        <Pressable
+          style={{ flex: 1 }}
+          onPress={onToggleCollapsed}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: !collapsed }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            {onToggleCollapsed ? (
+              <Ionicons
+                name={collapsed ? "chevron-down" : "chevron-up"}
+                size={16}
+                color={colors.textSecondary}
+              />
+            ) : null}
+            <Text style={styles.sectionTitle}>Tyre Replacement Estimate</Text>
+          </View>
           {tyreEstimate?.generated_at ? (
             <Text style={styles.analysisTs}>
               Generated {new Date(tyreEstimate.generated_at).toLocaleString()}
             </Text>
           ) : null}
-        </View>
+        </Pressable>
         <TouchableOpacity
           testID="tyre-estimate-button"
           style={[styles.analysisBtn, estimating && { opacity: 0.6 }]}
@@ -55,7 +76,7 @@ export function TyreEstimateCard({
         </TouchableOpacity>
       </View>
 
-      {tyreEstimate?.estimate ? (
+      {!collapsed && tyreEstimate?.estimate ? (
         <View style={styles.analysisCard} testID="tyre-estimate-card">
           <View style={styles.tyreHeaderRow}>
             <View style={styles.tyreSpecBadge}>

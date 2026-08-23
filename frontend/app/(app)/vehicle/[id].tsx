@@ -1292,6 +1292,10 @@ export default function VehicleDetail() {
   // Result is cached on the submission doc so subsequent opens don't
   // re-spend LLM budget.
   const [loadingInsights, setLoadingInsights] = useState(false);
+  // Both AI cards start collapsed by default — dealers explicitly expand
+  // them when they want the deep dive; keeps the vehicle detail lean.
+  const [tyreCollapsed, setTyreCollapsed] = useState(true);
+  const [insightsCollapsed, setInsightsCollapsed] = useState(true);
   const handleFetchInsights = async () => {
     if (!sub) return;
     setLoadingInsights(true);
@@ -2603,6 +2607,8 @@ export default function VehicleDetail() {
               onEstimate={handleTyreEstimate}
               colors={colors}
               styles={styles}
+              collapsed={tyreCollapsed}
+              onToggleCollapsed={() => setTyreCollapsed(v => !v)}
             />
             <VehicleInsightsCard
               insights={(sub as any).vehicle_insights}
@@ -2610,6 +2616,8 @@ export default function VehicleDetail() {
               onFetch={handleFetchInsights}
               colors={colors}
               styles={styles}
+              collapsed={insightsCollapsed}
+              onToggleCollapsed={() => setInsightsCollapsed(v => !v)}
             />
           </>
         ) : null}
