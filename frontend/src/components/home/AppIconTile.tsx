@@ -80,6 +80,7 @@ export default function AppIconTile({
         style={styles.iconWrap}
         accessibilityRole="button"
         accessibilityLabel={label}
+        accessibilityHint={hint}
       >
         <Animated.View style={[styles.iconWrap, animStyle]}>
           {/* Squircle icon — gradient tinted, drop-shadowed, white icon */}
@@ -109,9 +110,11 @@ export default function AppIconTile({
         </Animated.View>
       </TouchableOpacity>
       <Text style={styles.label} numberOfLines={2}>{label}</Text>
-      {hint ? (
-        <Text style={styles.hint} numberOfLines={2}>{hint}</Text>
-      ) : null}
+      {/* Aug 2026: description under the tile removed per client
+          request — the icon + label alone identify the module. The
+          `hint` prop is retained in the signature and forwarded to
+          the parent Pressable's `accessibilityHint` above so screen
+          readers still announce the tile's purpose. */}
     </View>
   );
 }
