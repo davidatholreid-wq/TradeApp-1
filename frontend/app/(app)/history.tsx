@@ -144,7 +144,7 @@ export default function HistoryScreen() {
     return (
       <TouchableOpacity
         style={styles.card}
-        onPress={() => router.push(`/(app)/vehicle/${item.id}` as any)}
+        onPress={() => router.push({ pathname: "/(app)/vehicle/[id]", params: { id: item.id, from: "/(app)/history" } } as any)}
         testID={`history-card-${item.id}`}
       >
         <View style={styles.cardHeader}>

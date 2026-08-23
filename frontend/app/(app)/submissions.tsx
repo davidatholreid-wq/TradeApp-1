@@ -259,7 +259,7 @@ export default function DashboardScreen() {
     <TouchableOpacity
       testID={`submission-card-${item.id}`}
       style={styles.card}
-      onPress={() => router.push(`/(app)/vehicle/${item.id}` as any)}
+      onPress={() => router.push({ pathname: "/(app)/vehicle/[id]", params: { id: item.id, from: "/(app)/submissions" } } as any)}
     >
       <View style={styles.cardTop}>
         {/* Front photo thumbnail (or placeholder if missing) — helps the
@@ -449,7 +449,7 @@ export default function DashboardScreen() {
       >
         <TouchableOpacity
           testID={`submission-card-${item.id}`}
-          onPress={() => router.push(`/(app)/vehicle/${item.id}` as any)}
+          onPress={() => router.push({ pathname: "/(app)/vehicle/[id]", params: { id: item.id, from: "/(app)/submissions" } } as any)}
           activeOpacity={0.92}
           style={[
             styles.gridCard,

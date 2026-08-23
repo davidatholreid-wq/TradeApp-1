@@ -617,7 +617,7 @@ export default function StockScreen() {
                         );
                         return;
                       }
-                      router.push(`/(app)/vehicle/${row.submission_id}` as never);
+                      router.push({ pathname: "/(app)/vehicle/[id]", params: { id: row.submission_id, from: "/(app)/stock" } } as never);
                     }}
                     onMarkSold={() => setSoldModalFor(row)}
                     onDelete={() => untransferFromStock(row)}

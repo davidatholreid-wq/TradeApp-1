@@ -91,7 +91,7 @@ import {
 export default function VehicleDetail() {
   const colors = useThemeColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const { id, cover, attach } = useLocalSearchParams<{ id: string; cover?: string; attach?: string }>();
+  const { id, cover, attach, from } = useLocalSearchParams<{ id: string; cover?: string; attach?: string; from?: string }>();
   const router = useRouter();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -1864,12 +1864,19 @@ export default function VehicleDetail() {
               router.replace({ pathname: "/(app)/cover", params: { tab: "given" } });
               return;
             }
-            // Otherwise prefer the browser/native back-stack if we have
-            // history to walk. When there IS no history (deep-link,
-            // fresh reload, or a router.replace(...) chain that lost the
-            // stack) fall back to the dealer's submissions inbox — the
-            // route dealers usually arrive from via the "My Evaluations"
-            // home tile. Going home was disorienting.
+            // Aug 2026: callers now pass `?from=/(app)/submissions`
+            // (or /stock, /history, /deal-outcomes) so the back
+            // button lands on the exact list the user came from.
+            // This dodges the tab-router quirk where `router.back()`
+            // on web-inside-a-tab sometimes falls through to home.
+            const fromParam = typeof from === "string" ? from : undefined;
+            if (fromParam) {
+              router.replace(fromParam as never);
+              return;
+            }
+            // Legacy fallback for any old links / deep-links without
+            // the `from` param — walk history if we have it, else
+            // route to the dealer's submissions inbox.
             // @ts-ignore  — canGoBack is present at runtime on expo-router v3+
             const canGo = typeof router.canGoBack === "function" ? router.canGoBack() : true;
             if (canGo) {

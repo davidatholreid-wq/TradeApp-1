@@ -236,7 +236,7 @@ export default function DealOutcomesScreen() {
             rows.map((row) => (
               <TouchableOpacity
                 key={row.id}
-                onPress={() => router.push(`/(app)/vehicle/${row.id}` as never)}
+                onPress={() => router.push({ pathname: "/(app)/vehicle/[id]", params: { id: row.id, from: "/(app)/deal-outcomes" } } as never)}
                 activeOpacity={0.9}
                 style={[styles.row, { borderColor: colors.border, backgroundColor: colors.paper }]}
                 testID={`outcome-row-${row.reference || row.id}`}
