@@ -6,8 +6,9 @@
 // -----------------------------------------------------------------------------
 import React from "react";
 import { View, Text, ActivityIndicator } from "react-native";
-import { TouchableOpacity, Pressable } from "@/src/components/HapticButtons";
+import { TouchableOpacity } from "@/src/components/HapticButtons";
 import { Ionicons } from "@expo/vector-icons";
+import CollapsibleSection from "@/src/components/vehicle/CollapsibleSection";
 import type { TyreEstimatePayload } from "@/src/types/vehicle";
 
 export type TyreEstimateCardProps = {
@@ -16,9 +17,10 @@ export type TyreEstimateCardProps = {
   onEstimate: () => void;
   colors: any;
   styles: any;
-  // Aug 2026: collapsible so dealers can hide the tyre panel when
-  // they're not using it. Both props optional — if omitted the card
-  // renders in its old always-expanded form.
+  // Aug 2026: collapsible via the shared CollapsibleSection component so
+  // the header/chevron style matches AI Market Analysis, Compare Live
+  // Listings and VIN-Linked Reports exactly. When these props aren't
+  // supplied the caller is treated as legacy and the card renders fully.
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
 };
@@ -32,51 +34,44 @@ export function TyreEstimateCard({
   collapsed = false,
   onToggleCollapsed,
 }: TyreEstimateCardProps) {
-  return (
-    <>
-      <View style={styles.analysisHeader}>
-        <Pressable
-          style={{ flex: 1 }}
-          onPress={onToggleCollapsed}
-          accessibilityRole="button"
-          accessibilityState={{ expanded: !collapsed }}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            {onToggleCollapsed ? (
-              <Ionicons
-                name={collapsed ? "chevron-down" : "chevron-up"}
-                size={16}
-                color={colors.textSecondary}
-              />
-            ) : null}
-            <Text style={styles.sectionTitle}>Tyre Replacement Estimate</Text>
-          </View>
-          {tyreEstimate?.generated_at ? (
-            <Text style={styles.analysisTs}>
-              Generated {new Date(tyreEstimate.generated_at).toLocaleString()}
-            </Text>
-          ) : null}
-        </Pressable>
-        <TouchableOpacity
-          testID="tyre-estimate-button"
-          style={[styles.analysisBtn, estimating && { opacity: 0.6 }]}
-          onPress={onEstimate}
-          disabled={estimating}
-        >
-          {estimating ? (
-            <ActivityIndicator color={colors.primary} size="small" />
-          ) : (
-            <>
-              <Ionicons name="disc-outline" size={14} color={colors.primary} />
-              <Text style={styles.analysisBtnText}>
-                {tyreEstimate ? "Refresh" : "Estimate"}
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
+  // Right-slot action button (Estimate / Refresh). Kept in the header
+  // so dealers don't need to expand the card to trigger the LLM call.
+  const rightSlot = (
+    <TouchableOpacity
+      testID="tyre-estimate-button"
+      style={[styles.analysisBtn, estimating && { opacity: 0.6 }]}
+      onPress={onEstimate}
+      disabled={estimating}
+    >
+      {estimating ? (
+        <ActivityIndicator color={colors.primary} size="small" />
+      ) : (
+        <>
+          <Ionicons name="disc-outline" size={14} color={colors.primary} />
+          <Text style={styles.analysisBtnText}>
+            {tyreEstimate ? "Refresh" : "Estimate"}
+          </Text>
+        </>
+      )}
+    </TouchableOpacity>
+  );
 
-      {!collapsed && tyreEstimate?.estimate ? (
+  const summary = tyreEstimate?.generated_at
+    ? `Generated ${new Date(tyreEstimate.generated_at).toLocaleString()}`
+    : "Not yet estimated";
+
+  return (
+    <CollapsibleSection
+      testID="tyre-estimate-section"
+      title="Tyre Replacement Estimate"
+      summary={summary}
+      right={rightSlot}
+      open={!collapsed}
+      onToggle={() => onToggleCollapsed?.()}
+      colors={colors}
+      styles={styles}
+    >
+      {tyreEstimate?.estimate ? (
         <View style={styles.analysisCard} testID="tyre-estimate-card">
           <View style={styles.tyreHeaderRow}>
             <View style={styles.tyreSpecBadge}>
@@ -177,7 +172,7 @@ export function TyreEstimateCard({
           </Text>
         </View>
       )}
-    </>
+    </CollapsibleSection>
   );
 }
 

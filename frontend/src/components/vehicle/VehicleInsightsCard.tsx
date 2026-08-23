@@ -15,7 +15,8 @@
 import React from "react";
 import { View, Text, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { TouchableOpacity, Pressable } from "@/src/components/HapticButtons";
+import { TouchableOpacity } from "@/src/components/HapticButtons";
+import CollapsibleSection from "@/src/components/vehicle/CollapsibleSection";
 
 type Severity = "low" | "medium" | "high";
 
@@ -83,57 +84,47 @@ export default function VehicleInsightsCard({
   const issues = data?.common_issues || [];
   const checklist = data?.buying_checklist || [];
 
-  return (
-    <>
-      <View style={styles.analysisHeader}>
-        <Pressable
-          style={{ flex: 1 }}
-          onPress={onToggleCollapsed}
-          accessibilityRole="button"
-          accessibilityState={{ expanded: !collapsed }}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            {onToggleCollapsed ? (
-              <Ionicons
-                name={collapsed ? "chevron-down" : "chevron-up"}
-                size={16}
-                color={colors.textSecondary}
-              />
-            ) : null}
-            <Text style={styles.sectionTitle}>Recalls & Known Issues</Text>
-          </View>
-          {insights?.generated_at ? (
-            <Text style={styles.analysisTs}>
-              Generated {new Date(insights.generated_at).toLocaleString()}
-            </Text>
-          ) : (
-            <Text style={[styles.analysisTs, { color: colors.textSecondary }]}>
-              GPT-5.2 checks published recalls & common failure modes for this make/model/year.
-            </Text>
-          )}
-        </Pressable>
-        <TouchableOpacity
-          testID="vehicle-insights-button"
-          style={[styles.analysisBtn, loading && { opacity: 0.6 }]}
-          onPress={onFetch}
-          disabled={loading}
-          accessibilityLabel="Check recalls and known issues"
-        >
-          {loading ? (
-            <ActivityIndicator size="small" color={colors.text} />
-          ) : (
-            <>
-              <Ionicons name="warning-outline" size={14} color={colors.text} />
-              <Text style={styles.analysisBtnText}>
-                {hasData ? "Refresh" : "Check now"}
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
+  // Right-slot: Check-now / Refresh action button. Kept on the header
+  // so a dealer can trigger the LLM without expanding the section
+  // first — result is cached on the submission after the first call.
+  const rightSlot = (
+    <TouchableOpacity
+      testID="vehicle-insights-button"
+      style={[styles.analysisBtn, loading && { opacity: 0.6 }]}
+      onPress={onFetch}
+      disabled={loading}
+      accessibilityLabel="Check recalls and known issues"
+    >
+      {loading ? (
+        <ActivityIndicator size="small" color={colors.text} />
+      ) : (
+        <>
+          <Ionicons name="warning-outline" size={14} color={colors.text} />
+          <Text style={styles.analysisBtnText}>
+            {hasData ? "Refresh" : "Check now"}
+          </Text>
+        </>
+      )}
+    </TouchableOpacity>
+  );
 
-      {!collapsed && hasData ? (
-        <View style={{ gap: 12, marginTop: 8 }}>
+  const summary = insights?.generated_at
+    ? `Generated ${new Date(insights.generated_at).toLocaleString()}`
+    : "Recalls & known-issue check for this make/model/year";
+
+  return (
+    <CollapsibleSection
+      testID="vehicle-insights-section"
+      title="Recalls & Known Issues"
+      summary={summary}
+      right={rightSlot}
+      open={!collapsed}
+      onToggle={() => onToggleCollapsed?.()}
+      colors={colors}
+      styles={styles}
+    >
+      {hasData ? (
+        <View style={{ gap: 12 }}>
           {/* Recalls */}
           <View>
             <Text style={styles.subsectionTitle}>Recalls</Text>
@@ -243,7 +234,15 @@ export default function VehicleInsightsCard({
         <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 6 }}>
           Insights returned in an unexpected format — please try again.
         </Text>
-      ) : null}
-    </>
+      ) : (
+        <View style={styles.analysisEmpty}>
+          <Ionicons name="warning-outline" size={20} color={colors.textSecondary} />
+          <Text style={styles.analysisEmptyText}>
+            Tap Check now for a GPT-5.2 rundown of published recalls, common failure modes,
+            and a pre-purchase checklist tuned to this specific make/model/year.
+          </Text>
+        </View>
+      )}
+    </CollapsibleSection>
   );
 }
