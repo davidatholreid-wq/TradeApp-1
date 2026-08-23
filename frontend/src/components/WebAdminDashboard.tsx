@@ -11,6 +11,7 @@ import { buildWhatsappUrl, buildDealerMessage } from "@/src/utils/whatsapp";
 // dashboard. Kept out of the import graph for clarity; the dealer app
 // still resolves it via its own /(app)/billing route.
 import AdminBillingCockpit from "@/src/components/AdminBillingCockpit";
+import FlatfileUploader from "@/src/components/admin/FlatfileUploader";
 import DealersScreen from "@/app/(app)/dealers";
 import AdminRewardsScreen from "@/src/components/AdminRewardsScreen";
 import AdminAdvertisingScreen from "@/src/components/AdminAdvertisingScreen";
@@ -1493,6 +1494,18 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                 </View>
               )
             ) : null}
+          </View>
+          {/* System utilities — Vehicle Reference DB uploader */}
+          <View style={styles.mtdSection} testID="cockpit-system-utilities">
+            <View style={styles.mtdSectionHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.mtdSectionTitle}>Vehicle Reference DB</Text>
+                <Text style={styles.mtdSectionSubtitle}>
+                  Upload the latest TransUnion / Kredo flat-file (.xlsx) to refresh the vehicle dictionary.
+                </Text>
+              </View>
+              <FlatfileUploader onDone={loadMtd} colors={colors} styles={styles} />
+            </View>
           </View>
         </ScrollView>
       ) : view === "billing" ? (

@@ -97,15 +97,20 @@ def _display_make(m: str) -> str:
     )
 
 
-def main() -> int:
-    if not INPUT.exists():
-        print(f"input not found: {INPUT}")
-        return 1
+def convert_workbook_to_specs(wb) -> tuple[list[dict], dict]:
+    """Turn an already-opened openpyxl workbook into the flat
+    JSON structure the app expects.
 
-    wb = openpyxl.load_workbook(str(INPUT), read_only=True)
+    Returns (rows, stats) where `stats` is a dict of counters for
+    diagnostics. Never touches disk — the caller decides where to
+    write the output. This is the reusable core used by both the
+    local script (below) and the admin-cockpit uploader endpoint
+    that Emergent operators can trigger to refresh the flat-file
+    without a code deploy.
+    """
     ws = wb["Final"]
-    rows = ws.iter_rows(values_only=True)
-    header = next(rows)
+    rows_iter = ws.iter_rows(values_only=True)
+    header = next(rows_iter)
     idx = {h: i for i, h in enumerate(header)}
 
     required = [
@@ -115,23 +120,24 @@ def main() -> int:
     ]
     missing = [k for k in required if k not in idx]
     if missing:
-        print("MISSING HEADERS:", missing)
-        return 2
+        raise ValueError(f"Missing headers: {missing}")
 
     out: list[dict] = []
     seen: set[tuple[str, str, str, int]] = set()
     total = 0
     kept = 0
+    skipped_vehicle_type = 0
+    skipped_old = 0
+    skipped_dupes = 0
 
-    for r in rows:
+    for r in rows_iter:
         total += 1
         make = str(r[idx["Make"]] or "").strip()
         if not make:
             continue
-        # Restrict to passenger cars + bakkies; skip trucks, buses,
-        # bikes, tractors, trailers, caravans.
         vtype = str(r[idx["VehicleType"]] or "").strip().upper()
         if vtype not in ALLOWED_VEHICLE_TYPES:
+            skipped_vehicle_type += 1
             continue
         model = str(r[idx["Model"]] or "").strip()
         variant = str(r[idx["Variant"]] or "").strip()
@@ -142,22 +148,21 @@ def main() -> int:
             year = int(year_raw)
         except (TypeError, ValueError):
             continue
-        # Skip obsolete rows — anything older than MIN_YEAR (9 years ago).
         if year < MIN_YEAR:
+            skipped_old += 1
             continue
 
         key = (make.upper(), model, variant, year)
         if key in seen:
+            skipped_dupes += 1
             continue
         seen.add(key)
 
-        # Normalise transmission "M"/"A" → "Manual"/"Automatic" for display.
         trans_raw = r[idx["ManualAuto"]]
         trans = None
         if isinstance(trans_raw, str):
             trans = {"M": "Manual", "A": "Automatic"}.get(trans_raw.strip().upper()) or trans_raw
 
-        # Fuel type — Kredo uses single letters. Expand common ones.
         fuel_raw = r[idx["FuelType"]]
         fuel = None
         if isinstance(fuel_raw, str):
@@ -192,17 +197,37 @@ def main() -> int:
             "kw": r[idx["Kilowatts"]],
             "cylinders": r[idx["NoCylinders"]],
             "new_list_price_zar": new_price_num,
-            # NEW — carried through so the Market Values card can render an
-            # M&M code without an extra API call.
             "mm_code": mm_code_str,
         }
         out.append(entry)
         kept += 1
 
+    stats = {
+        "total_rows_scanned": total,
+        "kept_variants": kept,
+        "skipped_vehicle_type": skipped_vehicle_type,
+        "skipped_older_than_min_year": skipped_old,
+        "skipped_duplicate_variants": skipped_dupes,
+        "min_year": MIN_YEAR,
+    }
+    return out, stats
+
+
+def main() -> int:
+    if not INPUT.exists():
+        print(f"input not found: {INPUT}")
+        return 1
+
+    wb = openpyxl.load_workbook(str(INPUT), read_only=True)
+    try:
+        out, stats = convert_workbook_to_specs(wb)
+    except ValueError as e:
+        print("MISSING HEADERS:", e)
+        return 2
+
     OUTPUT.write_text(json.dumps(out, ensure_ascii=False))
-    print(f"scanned rows: {total}")
-    print(f"kept variants: {kept} (unique make/model/variant/year within allowed makes)")
-    # Sanity check counts per make.
+    print(f"scanned rows: {stats['total_rows_scanned']}")
+    print(f"kept variants: {stats['kept_variants']}")
     from collections import Counter
     counts = Counter(e["make"] for e in out)
     for m, c in counts.most_common():

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Query, Request
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Query, Request, UploadFile, File
 from fastapi.responses import Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -3066,6 +3066,112 @@ async def admin_submission_counts(current: dict = Depends(require_admin)):
         b = compute_bucket(s)
         counts[b] = counts.get(b, 0) + 1
     return {"counts": counts}
+
+
+@api_router.post("/admin/vehicle-specs/upload-flatfile")
+async def admin_upload_flatfile(
+    file: UploadFile = File(...),
+    current: dict = Depends(require_admin),
+):
+    """Accept a fresh TransUnion / Kredo flat-file XLSX from the admin
+    cockpit, convert it in-process, persist the new
+    `vehicle_specs_kredo.json`, and reseed the `vehicle_specs`
+    collection so the app runs on the new dictionary immediately.
+
+    Uses the same conversion logic that the local script uses so the
+    output is bit-for-bit identical — the endpoint just spares
+    operators a code deploy every month.
+
+    Preserves dealer-owned rows tagged with a non-mock / non-kredo
+    `spec_source` (custom overrides survive the reseed).
+    """
+    from pathlib import Path
+    import json as _json
+    import openpyxl as _openpyxl
+    from io import BytesIO as _BytesIO
+    import sys as _sys
+    # Extend the sys.path so we can import the sibling `scripts` folder
+    # exactly once — cached after first hit.
+    _scripts_dir = str(Path(__file__).parent / "scripts")
+    if _scripts_dir not in _sys.path:
+        _sys.path.insert(0, _scripts_dir)
+    try:
+        from import_kredo_flatfile import convert_workbook_to_specs
+    except Exception as e:
+        raise HTTPException(500, f"Import of flat-file converter failed: {e}")
+
+    if not file.filename or not file.filename.lower().endswith((".xlsx", ".xlsm")):
+        raise HTTPException(400, "Please upload the TransUnion flat-file as an .xlsx workbook.")
+
+    payload = await file.read()
+    if not payload:
+        raise HTTPException(400, "Empty upload.")
+    if len(payload) > 60 * 1024 * 1024:
+        # Kredo's latest flat-file sits around 12–18 MB; a 60 MB safety
+        # ceiling stops an accidental gigabyte upload from blowing up
+        # the worker.
+        raise HTTPException(413, "Flat-file is unexpectedly large (>60 MB).")
+
+    try:
+        wb = _openpyxl.load_workbook(_BytesIO(payload), read_only=True, data_only=True)
+    except Exception as e:
+        raise HTTPException(400, f"Could not read the workbook — is it a valid Kredo flat-file? ({e})")
+
+    try:
+        rows, stats = convert_workbook_to_specs(wb)
+    except ValueError as e:
+        raise HTTPException(400, f"Flat-file is missing required columns: {e}")
+    except Exception as e:
+        logger.exception("Flat-file conversion failed")
+        raise HTTPException(500, f"Conversion failed: {e}")
+
+    if not rows:
+        raise HTTPException(400, "The uploaded flat-file produced zero rows — refusing to wipe the DB.")
+
+    # Snapshot the current JSON so operators can revert if the new
+    # file turns out to be corrupt. Kept next to the live file as
+    # `.bak-<timestamp>` — retention is manual (Emergent pods don't
+    # persist across redeploys so this is only a session guardrail).
+    kredo_specs_path = Path(__file__).with_name("vehicle_specs_kredo.json")
+    if kredo_specs_path.exists():
+        try:
+            ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            backup = kredo_specs_path.with_suffix(f".json.bak-{ts}")
+            backup.write_bytes(kredo_specs_path.read_bytes())
+            logger.info("Backed up prior vehicle_specs_kredo.json → %s", backup.name)
+        except Exception as e:
+            logger.warning("Could not back up prior flat-file JSON: %s", e)
+
+    kredo_specs_path.write_text(_json.dumps(rows, ensure_ascii=False))
+
+    # Reseed the runtime collection so the app picks up the new
+    # dictionary without a restart. Same behaviour as the existing
+    # /admin/vehicle-specs/reseed endpoint — we only replace rows
+    # tagged mock/kredo/null; anything with a custom spec_source is
+    # preserved.
+    deleted = (await db.vehicle_specs.delete_many(
+        {"spec_source": {"$in": ["mock", "kredo", None]}}
+    )).deleted_count
+    for r in rows:
+        r["id"] = str(uuid.uuid4())
+        r["spec_source"] = "kredo"
+    BATCH = 2000
+    inserted = 0
+    for i in range(0, len(rows), BATCH):
+        result = await db.vehicle_specs.insert_many(rows[i:i + BATCH])
+        inserted += len(result.inserted_ids)
+
+    logger.info(
+        "Admin flat-file upload by %s: file=%s size=%d KB deleted=%d inserted=%d",
+        current.get("email"), file.filename, len(payload) // 1024, deleted, inserted,
+    )
+    return {
+        "filename": file.filename,
+        "file_size_bytes": len(payload),
+        "deleted": deleted,
+        "inserted": inserted,
+        "conversion_stats": stats,
+    }
 
 
 @api_router.post("/admin/vehicle-specs/reseed")
