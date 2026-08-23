@@ -1897,8 +1897,9 @@ def _parse_license_disk_string(raw: str) -> dict:
         out["dateOfTest"] = dates_ordered[0]
         out["expiryDate"] = dates_ordered[-1]
     elif len(dates_ordered) == 1:
-        # Single-date disc — treat as expiry, dateOfTest stays blank
-        # (which downstream renders as "1-Owner from new").
+        # Single-date disc — treat as expiry; dateOfTest stays blank.
+        # (Aug 2026: the downstream "1-Owner from new" badge that used
+        # this signal has been removed as unreliable.)
         out["expiryDate"] = dates_ordered[0]
 
     # Colour — known SA vocabulary.

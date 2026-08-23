@@ -2,12 +2,12 @@
 // IdentityLicenseSection — VIN / Engine identity + decoded License Disk block.
 //
 // Extracted from `/app/frontend/app/(app)/vehicle/[id].tsx` during the
-// P3 modularization pass — Round C (Aug 2026). Includes the ownership
-// heuristic derived from the disc's Date of Test.
+// P3 modularization pass — Round C (Aug 2026). The old "1-Owner from
+// new" ownership badge derived from the disc's Date of Test was
+// removed as unreliable.
 // -----------------------------------------------------------------------------
 import React from "react";
 import { View, Text } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import DetailRow from "@/src/components/vehicle/DetailRow";
 import { decodeLicenseDisk } from "@/src/utils/licenseDisk";
 import type { Submission } from "@/src/types/vehicle";
@@ -63,57 +63,12 @@ export function IdentityLicenseSection({ sub, colors, styles }: IdentityLicenseS
               ["Expires", info.expiryDate],
               ["Disc No", info.licenceDiscNo],
             ];
-            // Ownership signal derived from disc's Date of Test.
-            const submittedAtIso = sub.created_at || new Date().toISOString();
-            let ownership: { text: string; oneOwner: boolean } | null = null;
-            if (!info.dateOfTest) {
-              ownership = { text: "1-Owner from new", oneOwner: true };
-            } else {
-              try {
-                const test = new Date(info.dateOfTest);
-                const now = new Date(submittedAtIso);
-                let months =
-                  (now.getFullYear() - test.getFullYear()) * 12 +
-                  (now.getMonth() - test.getMonth());
-                if (now.getDate() < test.getDate()) months -= 1;
-                if (months < 0) months = 0;
-                const yrs = Math.floor(months / 12);
-                const mos = months % 12;
-                const parts: string[] = [];
-                if (yrs > 0) parts.push(`${yrs} ${yrs === 1 ? "year" : "years"}`);
-                if (mos > 0 || yrs === 0) parts.push(`${mos} ${mos === 1 ? "month" : "months"}`);
-                ownership = { text: `Owned approx. ${parts.join(" ")}`, oneOwner: false };
-              } catch {
-                ownership = null;
-              }
-            }
+            // Aug 2026: removed the "1-Owner from new" / "Owned approx. X"
+            // ownership badge — the disc's blank Date of Test was
+            // being interpreted as one-owner-from-new, which isn't
+            // actually reliable, so we no longer surface that signal.
             return (
               <View style={styles.diskDecodedBox}>
-                {ownership ? (
-                  <View
-                    style={[
-                      styles.ownershipBadge,
-                      ownership.oneOwner ? styles.ownershipBadgeOne : styles.ownershipBadgeMulti,
-                    ]}
-                    testID="license-disk-ownership-badge"
-                  >
-                    <Ionicons
-                      name={ownership.oneOwner ? "ribbon" : "time-outline"}
-                      size={16}
-                      color={ownership.oneOwner ? "#065F46" : colors.text}
-                    />
-                    <Text
-                      style={[
-                        styles.ownershipBadgeText,
-                        ownership.oneOwner
-                          ? styles.ownershipBadgeTextOne
-                          : styles.ownershipBadgeTextMulti,
-                      ]}
-                    >
-                      {ownership.text}
-                    </Text>
-                  </View>
-                ) : null}
                 {rows
                   .filter(([, v]) => !!v)
                   .map(([label, value]) => (

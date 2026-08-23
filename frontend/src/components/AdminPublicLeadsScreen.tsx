@@ -733,7 +733,7 @@ export default function AdminPublicLeadsScreen() {
                 <KV label="Year registered" value={(selected.vehicle as any).year_registered || selected.vehicle.year || "—"} colors={colors} />
                 <KV label="VIN" value={selected.vehicle.vin || "—"} mono colors={colors} />
                 <KV label="Colour" value={selected.vehicle.colour || "—"}  colors={colors} />
-                <KV label="Roadworthy" value={selected.vehicle.date_of_test || "1-owner from new"}  colors={colors} />
+                <KV label="Roadworthy" value={selected.vehicle.date_of_test || "—"}  colors={colors} />
               </View>
 
               {/* Condition */}

@@ -2559,62 +2559,12 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
                         </Text>
                       );
                     }
-                    // Highlighted ownership signal — blank test date =
-                    // 1-Owner from new, else compute duration between
-                    // last roadworthy test and this submission.
-                    const submittedAtIso =
-                      (selected as any).created_at ||
-                      (selected as any).submitted_at ||
-                      new Date().toISOString();
-                    let ownership: { text: string; oneOwner: boolean } | null = null;
-                    if (!info.dateOfTest) {
-                      ownership = { text: "1-Owner from new", oneOwner: true };
-                    } else {
-                      try {
-                        const test = new Date(info.dateOfTest);
-                        const now = new Date(submittedAtIso);
-                        let months =
-                          (now.getFullYear() - test.getFullYear()) * 12 +
-                          (now.getMonth() - test.getMonth());
-                        if (now.getDate() < test.getDate()) months -= 1;
-                        if (months < 0) months = 0;
-                        const yrs = Math.floor(months / 12);
-                        const mos = months % 12;
-                        const parts: string[] = [];
-                        if (yrs > 0) parts.push(`${yrs} ${yrs === 1 ? "year" : "years"}`);
-                        if (mos > 0 || yrs === 0) parts.push(`${mos} ${mos === 1 ? "month" : "months"}`);
-                        ownership = { text: `Owned approx. ${parts.join(" ")}`, oneOwner: false };
-                      } catch {
-                        ownership = null;
-                      }
-                    }
+                    // Aug 2026: removed the "1-Owner from new" /
+                    // "Owned approx. X" derived ownership badge —
+                    // the blank-Date-of-Test heuristic wasn't a
+                    // reliable proxy for single ownership.
                     return (
                       <View style={{ marginTop: spacing.sm }}>
-                        {ownership ? (
-                          <View
-                            style={[
-                              styles.ownershipBadge,
-                              ownership.oneOwner ? styles.ownershipBadgeOne : styles.ownershipBadgeMulti,
-                            ]}
-                            testID="license-disk-ownership-badge"
-                          >
-                            <Ionicons
-                              name={ownership.oneOwner ? "ribbon" : "time-outline"}
-                              size={16}
-                              color={ownership.oneOwner ? "#065F46" : colors.text}
-                            />
-                            <Text
-                              style={[
-                                styles.ownershipBadgeText,
-                                ownership.oneOwner
-                                  ? styles.ownershipBadgeTextOne
-                                  : styles.ownershipBadgeTextMulti,
-                              ]}
-                            >
-                              {ownership.text}
-                            </Text>
-                          </View>
-                        ) : null}
                         {visible.map(([label, value]) => (
                           <View key={label} style={styles.diskDecodedRow}>
                             <Text style={styles.diskDecodedLabel}>{label}</Text>
