@@ -207,6 +207,15 @@ export default function HomeScreen() {
     user?.name?.split(" ")[0] ||
     (user?.email ? user.email.split("@")[0] : "");
 
+  // Dealership label for the welcome header ("Welcome David from
+  // Fourbuy Fourways Gardens (PTY) Ltd"). Falls back to company_info's
+  // company_name for dealers who registered before we linked them to
+  // a `dealership` doc.
+  const dealershipName =
+    user?.dealership?.name ||
+    user?.company_info?.company_name ||
+    "";
+
   const heroPlayer = useVideoPlayer(HERO_VIDEO, (p) => {
     // Client-supplied 10-second cinematic. Native (iOS/Android) only —
     // the web hero renders a static TRADE AI logo instead. Guard the
@@ -531,21 +540,27 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.pageMax}>
-          {/* Welcome header — greets the user by first name and grounds the
-              page as a proper dashboard rather than a marketing splash. */}
+          {/* Welcome header — greets the user by first name + dealership
+              (Aug 2026 client request). Sub-copy removed per same
+              request; the dealership name below the greeting grounds
+              the page contextually. */}
           <View style={styles.welcomeRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.welcomeEyebrow}>
                 {isAdmin ? "ADMIN COCKPIT" : "DEALER PORTAL"}
               </Text>
               <Text style={styles.welcomeTitle} numberOfLines={1}>
-                {firstName ? `Welcome back, ${firstName}` : "Welcome back"}
+                {firstName ? `Welcome ${firstName}` : "Welcome"}
               </Text>
-              <Text style={styles.welcomeSub} numberOfLines={2}>
-                {isAdmin
-                  ? "Manage submissions, dealers and rewards from one place."
-                  : "Submit a vehicle for a guaranteed cover price in under 90 seconds."}
-              </Text>
+              {!isAdmin && dealershipName ? (
+                <Text style={styles.welcomeSub} numberOfLines={2}>
+                  from {dealershipName}
+                </Text>
+              ) : isAdmin ? (
+                <Text style={styles.welcomeSub} numberOfLines={2}>
+                  Manage submissions, dealers and rewards from one place.
+                </Text>
+              ) : null}
             </View>
           </View>
 
@@ -553,22 +568,24 @@ export default function HomeScreen() {
               swallowing the whole viewport, and full-bleed 16:9 on
               phones.
               • Native (iOS / Android): looping cinematic video.
-              • Web: static TRADE AI logo lockup on a black backdrop.
-                The client asked to keep the browser hero as a rock-solid
-                still image (Aug 2026) — the video-player pipeline was
-                also triggering a transient fontfaceobserver "6000ms
-                timeout exceeded" overlay in dev-mode, which the still
-                image sidesteps entirely.
+              • Web: clean text-based TRADE AI wordmark on a
+                transparent background (Aug 2026 — client asked to
+                drop the black-boxed PNG hero and let the browser
+                surface breathe). Adapts to light + dark themes
+                because the mark is rendered from the theme palette.
               Stands alone — no wordmark / tagline overlay. */}
           <View>
-            <View style={styles.heroWrap}>
+            <View style={[styles.heroWrap, Platform.OS === "web" && styles.heroWrapWeb]}>
               {Platform.OS === "web" ? (
-                <Image
-                  source={HERO_LOGO}
-                  style={styles.hero}
-                  resizeMode="contain"
-                  accessibilityLabel="TRADE AI powered by FOURBUY"
-                />
+                <View style={styles.webLogoLockup} accessibilityLabel="TRADE AI powered by FOURBUY">
+                  <View style={styles.webLogoRow}>
+                    <Text style={styles.webLogoTrade}>TRADE</Text>
+                    <View style={styles.webLogoAiChip}>
+                      <Text style={styles.webLogoAiText}>AI</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.webLogoTagline}>POWERED BY FOURBUY</Text>
+                </View>
               ) : (
                 <>
                   <Image
@@ -1488,6 +1505,64 @@ const makeStyles = (colors: Palette, isWide: boolean, windowWidth: number = 0) =
     },
     hero: { width: "100%", height: "100%" },
     heroPoster: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, width: "100%", height: "100%" },
+    // Web override — drop the black boxed backdrop so the TRADE AI
+    // wordmark sits directly on the surrounding surface. Also removes
+    // the platform shadow (transparent element casting a shadow
+    // reads as visual noise) and cuts the max height so the mark
+    // doesn't dominate the viewport.
+    heroWrapWeb: {
+      backgroundColor: "transparent",
+      maxHeight: isWide ? 220 : 180,
+      // Kill the platform shadow declared on `heroWrap` — RN Web
+      // renders shadow rules as a box-shadow which sticks around
+      // even with a transparent backgroundColor. `elevation: 0`
+      // covers Android; the shadow* keys clear iOS/web.
+      shadowOpacity: 0,
+      elevation: 0,
+    },
+    webLogoLockup: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 6,
+    },
+    webLogoRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+    webLogoTrade: {
+      color: colors.text,
+      // Sized so the lockup reads as a hero on wide screens but
+      // gracefully compacts on phones (which never see this branch
+      // anyway — kept responsive as a safety net).
+      fontSize: isWide ? 56 : 40,
+      fontWeight: "800",
+      letterSpacing: isWide ? 6 : 4,
+      lineHeight: isWide ? 60 : 44,
+      fontFamily: fonts.heading,
+    },
+    webLogoAiChip: {
+      backgroundColor: colors.text,
+      paddingHorizontal: isWide ? 14 : 10,
+      paddingVertical: isWide ? 4 : 3,
+      borderRadius: 6,
+    },
+    webLogoAiText: {
+      color: colors.paper,
+      fontSize: isWide ? 44 : 32,
+      fontWeight: "900",
+      letterSpacing: 1,
+      lineHeight: isWide ? 48 : 36,
+      fontFamily: fonts.heading,
+    },
+    webLogoTagline: {
+      color: colors.textSecondary,
+      fontSize: isWide ? 13 : 11,
+      fontWeight: "700",
+      letterSpacing: isWide ? 5 : 3,
+      marginTop: 4,
+    },
     // Clean static hero — TRADE AI wordmark centred on a dark panel
     // with a soft cyan radial-style glow behind it. Consistent look
     // across iOS, Android and Web; a future video / animation can
