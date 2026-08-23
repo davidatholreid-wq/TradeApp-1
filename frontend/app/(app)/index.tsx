@@ -461,7 +461,6 @@ export default function HomeScreen() {
           tint: "#A78BFA",
           badge: incomingCount && incomingCount > 0 ? String(incomingCount) : undefined,
         },
-        { key: "kredo", label: "Kredo", hint: "VIN reports & CarTrust tools", icon: "pricetag", to: "/(app)/kredo-test", tint: "#F43F5E" },
         { key: "vin-reports", label: "VIN Reports", hint: "Order OEM & history reports for any VIN", icon: "document-text", to: "/(app)/vin-reports", tint: "#22C55E" },
         // Partner API — Kredo & other resellers. Manage API keys,
         // IP allowlists and rate limits. Same screen as the desktop

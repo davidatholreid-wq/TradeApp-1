@@ -12,7 +12,6 @@ import { buildWhatsappUrl, buildDealerMessage } from "@/src/utils/whatsapp";
 // still resolves it via its own /(app)/billing route.
 import AdminBillingCockpit from "@/src/components/AdminBillingCockpit";
 import DealersScreen from "@/app/(app)/dealers";
-import KredoTestScreen from "@/app/(app)/kredo-test";
 import AdminRewardsScreen from "@/src/components/AdminRewardsScreen";
 import AdminAdvertisingScreen from "@/src/components/AdminAdvertisingScreen";
 import AdminPartnerApiScreen from "@/src/components/AdminPartnerApiScreen";
@@ -232,7 +231,7 @@ function formatReportName(type: string): string {
 }
 
 type Bucket = "incoming" | "priced" | "archived";
-type CockpitView = "home" | "submissions" | "dealers" | "billing" | "rewards" | "kredo" | "ads" | "catalogue" | "public-leads" | "partner-api";
+type CockpitView = "home" | "submissions" | "dealers" | "billing" | "rewards" | "ads" | "catalogue" | "public-leads" | "partner-api";
 
 export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }) {
   const colors = useThemeColors();
@@ -907,19 +906,6 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              testID="cockpit-view-kredo"
-              style={[styles.viewBtn, view === "kredo" && styles.viewBtnActive]}
-              onPress={() => setView("kredo")}
-            >
-              <Ionicons name="pricetag" size={14} color={view === "kredo" ? colors.onPrimary : colors.text} />
-              <Text style={[styles.viewBtnText, view === "kredo" && styles.viewBtnTextActive]}>
-                Kredo
-              </Text>
-              <View style={styles.betaPill}>
-                <Text style={styles.betaPillText}>BETA</Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity
               testID="cockpit-view-ads"
               style={[styles.viewBtn, view === "ads" && styles.viewBtnActive]}
               onPress={() => setView("ads")}
@@ -1523,10 +1509,6 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
       ) : view === "rewards" ? (
         <View style={{ flex: 1 }}>
           <AdminRewardsScreen />
-        </View>
-      ) : view === "kredo" ? (
-        <View style={{ flex: 1 }}>
-          <KredoTestScreen />
         </View>
       ) : view === "ads" ? (
         <View style={{ flex: 1 }}>
@@ -3610,19 +3592,6 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     lineHeight: 16,
     textAlign: "center",
     paddingHorizontal: 4,
-  },
-  betaPill: {
-    backgroundColor: colors.warning,
-    borderRadius: 999,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    marginLeft: 4,
-  },
-  betaPillText: {
-    color: colors.onPrimary,
-    fontSize: 9,
-    fontWeight: "900",
-    letterSpacing: 0.5,
   },
   statPill: {
     paddingHorizontal: spacing.md,
