@@ -280,7 +280,7 @@ export const makeStyles = (colors: Palette) => StyleSheet.create({
     letterSpacing: 1.5,
   },
   refBadgeValue: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 16,
     fontWeight: "800",
     fontFamily: fonts.mono,
@@ -362,7 +362,7 @@ export const makeStyles = (colors: Palette) => StyleSheet.create({
     width: "100%",
     overflow: "hidden",
   },
-  heroBarFill: { height: "100%", backgroundColor: "#fff" },
+  heroBarFill: { height: "100%", backgroundColor: colors.primary },
   unseenHeroCaption: {
     color: colors.textSecondary,
     fontSize: 11,

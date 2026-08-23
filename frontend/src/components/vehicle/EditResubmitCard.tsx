@@ -169,7 +169,7 @@ export default function EditResubmitCard({
         <Ionicons
           name="refresh"
           size={16}
-          color={state.canResubmit ? "#fff" : colors.textSecondary}
+          color={state.canResubmit ? colors.onPrimary : colors.textSecondary}
         />
         <Text style={[styles.buttonText, !state.canResubmit ? styles.buttonTextDisabled : null]}>
           {state.canResubmit ? "Edit & Re-submit" : (state.disabledReason || "Not available")}
@@ -252,7 +252,7 @@ const makeStyles = (colors: any) =>
       backgroundColor: colors.borderLight,
     },
     buttonText: {
-      color: "#fff",
+      color: colors.onPrimary,
       fontSize: 14,
       fontWeight: "800",
       letterSpacing: 0.3,

@@ -119,7 +119,7 @@ export function DealerOfferCard({
             onPress={() => onSaveOffer(parsed)}
           >
             {dealSaving ? (
-              <ActivityIndicator size="small" color="#fff" />
+              <ActivityIndicator size="small" color={colors.onPrimary} />
             ) : (
               <Text style={styles.dealerOfferSaveBtnText}>
                 {savedOffer != null ? "Update" : "Save Offer"}

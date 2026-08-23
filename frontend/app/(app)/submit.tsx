@@ -2092,7 +2092,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     fontWeight: "700",
   },
   segBtnTextOn: {
-    color: "#fff",
+    color: colors.onPrimary,
   },
 
   reconRow: { flexDirection: "row", gap: 6, alignItems: "center", marginBottom: 6 },
