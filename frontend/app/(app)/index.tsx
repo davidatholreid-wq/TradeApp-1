@@ -1015,6 +1015,7 @@ function NavFlipTile({
       onPress={onTap}
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityHint={hint}
       style={({ pressed }) => [{ opacity: pressed ? 0.9 : 1 }]}
     >
       <Animated.View style={[styles.quickCard, { borderColor: tint + "44" }, faceStyle]}>
@@ -1040,7 +1041,11 @@ function NavFlipTile({
           <Ionicons name={icon} size={28} color={tint} />
         </View>
         <Text style={[styles.quickCardLabel, { color: colors.text }]}>{label}</Text>
-        <Text style={styles.quickCardHint} numberOfLines={2}>{hint}</Text>
+        {/* Aug 2026: description under the tile label removed per
+            request — the label + icon alone communicate the module.
+            The `hint` prop is kept in the signature for a11y (screen
+            readers announce the tile's purpose via accessibilityHint)
+            but no longer rendered visually. */}
         {/* Live count pill — rendered ABSOLUTELY in the tile's top-right
             corner. Only shown when the caller provided a `badge` string
             (currently used by the "Give Cover" tile to surface how many
