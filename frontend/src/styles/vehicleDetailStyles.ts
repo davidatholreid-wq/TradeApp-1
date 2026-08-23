@@ -2264,6 +2264,16 @@ export const makeStyles = (colors: Palette) => StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.2,
   },
+  // Success variant — flips the amber "pending" chip to green once the
+  // NaTIS owners query has been fulfilled by Kredo. Matches other
+  // "ready to view" indicators in the app for visual continuity.
+  cartrustOwnershipChipReady: {
+    borderColor: "#10B981",
+    backgroundColor: "#D1FAE5",
+  },
+  cartrustOwnershipChipTextReady: {
+    color: "#065F46",
+  },
   viewReportBtn: {
     flexDirection: "row",
     alignItems: "center",

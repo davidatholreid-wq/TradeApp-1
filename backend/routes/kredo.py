@@ -96,7 +96,6 @@ def _select_kredo_model_by_year(candidates: list[str], year: int) -> Optional[st
     """Kredo's model list bakes production year ranges into the name, e.g.
     `HILUX 2005 - 2016`, `HILUX 2016 ON`. Pick the candidate whose range
     contains the given `year`, else fall back to the first candidate."""
-    import re
     for m in candidates:
         range_match = re.search(r"(\d{4})\s*-\s*(\d{4})", m)
         if range_match:
@@ -123,9 +122,6 @@ async def _resolve_kredo_identifiers(sub: dict) -> tuple[str, str, str, str]:
 
     Raises `ValueError` with a human-readable message if we can't match.
     """
-    import re
-    from difflib import SequenceMatcher
-
     make = (sub.get("make_name") or "").strip()
     model = (sub.get("model_name") or "").strip()
     derivative = (sub.get("derivative_name") or "").strip()
@@ -751,12 +747,6 @@ async def kredo_vin_history(
 
 # ---------- CarTrust PDF (async, webhook) ----------
 
-import hmac as _hmac  # noqa: E402
-import hashlib as _hashlib  # noqa: E402
-import base64 as _base64  # noqa: E402
-import json as _json  # noqa: E402
-import httpx as _httpx  # noqa: E402
-
 CARTRUST_COST_ZAR = float(os.environ.get("CARTRUST_COST_ZAR", "0"))
 # Kredo/Whozhoo callback signature header — captured from a real callback
 # on 2026-07-24 (see /app/backend/logs/kredo_cartrust_callback.log).
@@ -1044,19 +1034,29 @@ async def kredo_cartrust_status(
     report = ((sub.get("reports") or {}).get("kredo_cartrust") or None)
     if not report:
         return {"status": "not_ordered", "report": None}
-    # Backfill ownership_status for reports that landed before we started
-    # stamping it (any submission where the callback fired prior to this
-    # feature). Cheap re-derivation from the stored payload — no vendor
-    # call. Persists so subsequent polls skip the recompute.
-    if report.get("status") == "completed" and not report.get("ownership_status"):
+    # Ownership-status derivation. Two triggers:
+    #   1) Backfill for reports that landed before we started stamping
+    #      the field (missing entirely).
+    #   2) Re-derive on every poll WHILE status stays "pending" — Kredo
+    #      sometimes fulfils the NaTIS owners query via a follow-up
+    #      webhook that updates callback_payload in place. Re-running
+    #      the derivation is cheap (pure Python over the stored blob)
+    #      and lets the client detect the pending → populated flip
+    #      without waiting for a new webhook to also stamp the field.
+    if report.get("status") == "completed":
         cb = report.get("callback_payload") or {}
-        if cb:
+        current_ownership = report.get("ownership_status")
+        should_derive = cb and (
+            not current_ownership or current_ownership == "pending"
+        )
+        if should_derive:
             derived = _derive_ownership_status(cb)
-            report["ownership_status"] = derived
-            await db.submissions.update_one(
-                {"id": submission_id},
-                {"$set": {"reports.kredo_cartrust.ownership_status": derived}},
-            )
+            if derived != current_ownership:
+                report["ownership_status"] = derived
+                await db.submissions.update_one(
+                    {"id": submission_id},
+                    {"$set": {"reports.kredo_cartrust.ownership_status": derived}},
+                )
     return {"status": report.get("status", "unknown"), "report": report}
 
 

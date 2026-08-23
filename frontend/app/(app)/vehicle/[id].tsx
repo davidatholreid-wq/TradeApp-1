@@ -896,29 +896,55 @@ export default function VehicleDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin, sub?.id, sub?.vin]);
 
-  // Load CarTrust status on mount (dealer + admin), then poll while pending.
-  const loadCartrustStatus = async () => {
+  // Load CarTrust status on mount (dealer + admin), then poll while
+  // either the report itself OR the NaTIS ownership feed is still
+  // pending. When the NaTIS query flips from pending → populated we
+  // pop a one-shot success alert so the dealer knows the disc-owner
+  // data has landed and the tile now has more to show.
+  const cartrustPrevRef = useRef<{ status?: string; ownership?: string }>({});
+  const loadCartrustStatus = useCallback(async () => {
     if (!sub?.id) return;
     try {
       const r = await apiFetch(`/api/kredo/cartrust/status/${sub.id}`);
-      setCartrust((r?.report as CartrustReport | null) || null);
+      const next = (r?.report as CartrustReport | null) || null;
+      // Detect NaTIS pending → populated transition.
+      const prev = cartrustPrevRef.current;
+      const wasPending = prev.status === "completed" && prev.ownership === "pending";
+      const nowPopulated =
+        next?.status === "completed" && next?.ownership_status === "populated";
+      if (wasPending && nowPopulated) {
+        Alert.alert(
+          "NaTIS ownership query complete",
+          "Kredo has finished the NaTIS owners query for this VIN — open the CarTrust report to see the current registered owner and history.",
+        );
+      }
+      cartrustPrevRef.current = {
+        status: next?.status,
+        ownership: next?.ownership_status || undefined,
+      };
+      setCartrust(next);
     } catch {
-      // Silent
+      // Silent — the polling loop will try again on the next tick.
     }
-  };
+  }, [sub?.id]);
 
   useEffect(() => {
     if (!sub?.id) return;
     loadCartrustStatus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sub?.id]);
+  }, [sub?.id, loadCartrustStatus]);
 
   useEffect(() => {
-    if (!sub?.id || cartrust?.status !== "pending") return;
+    if (!sub?.id) return;
+    // Keep polling while the report itself is still processing OR
+    // (report done but NaTIS owners feed is still pending). Once
+    // both are settled we stop the timer to avoid unnecessary calls.
+    const stillPending =
+      cartrust?.status === "pending" ||
+      (cartrust?.status === "completed" && cartrust?.ownership_status === "pending");
+    if (!stillPending) return;
     const t = setInterval(loadCartrustStatus, 8000);
     return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sub?.id, cartrust?.status]);
+  }, [sub?.id, cartrust?.status, cartrust?.ownership_status, loadCartrustStatus]);
 
   // Load Cover Offers received on this submission — backend gates the
   // response so pricing agents / other dealers get [] here.

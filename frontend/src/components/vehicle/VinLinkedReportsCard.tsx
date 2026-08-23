@@ -294,7 +294,22 @@ export function VinLinkedReportsCard({
                           color={(colors as any).warningText || "#78350F"}
                         />
                         <Text style={styles.cartrustOwnershipChipText}>
-                          Natis Owners Query Pending
+                          NaTIS owners query pending — we&apos;ll notify you once it lands
+                        </Text>
+                      </View>
+                    ) : cartrust.status === "completed" &&
+                    cartrust.ownership_status === "populated" ? (
+                      <View
+                        style={[styles.cartrustOwnershipChip, styles.cartrustOwnershipChipReady]}
+                        testID="cartrust-ownership-ready"
+                      >
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={12}
+                          color="#065F46"
+                        />
+                        <Text style={[styles.cartrustOwnershipChipText, styles.cartrustOwnershipChipTextReady]}>
+                          NaTIS owners query complete
                         </Text>
                       </View>
                     ) : (
