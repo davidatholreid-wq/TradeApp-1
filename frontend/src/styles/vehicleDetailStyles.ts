@@ -1694,6 +1694,14 @@ export const makeStyles = (colors: Palette) => StyleSheet.create({
 
   analysisHeader: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", marginTop: spacing.lg, marginBottom: spacing.sm },
   analysisTs: { color: colors.textDisabled, fontSize: 11, marginTop: 2 },
+  subsectionTitle: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
   analysisBtn: {
     flexDirection: "row",
     alignItems: "center",

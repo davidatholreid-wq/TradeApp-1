@@ -7674,9 +7674,12 @@ async def tyre_estimate(sub_id: str, current: dict = Depends(get_current_user)):
     sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0, "photos": 0})
     if not sub:
         raise HTTPException(404, "Submission not found")
-    # Only admins should be spending LLM budget on tyre estimates.
+    # Aug 2026: dealers can also run the tyre estimator on their own
+    # submissions — no longer admin-only. Non-owning dealers are still
+    # blocked to keep LLM spend attributable.
     if current["role"] != "admin":
-        raise HTTPException(403, "Admin only")
+        if sub.get("dealer_id") != current.get("id"):
+            raise HTTPException(403, "Not authorized")
     if not EMERGENT_LLM_KEY:
         raise HTTPException(500, "LLM key not configured")
 
@@ -7741,6 +7744,81 @@ async def tyre_estimate(sub_id: str, current: dict = Depends(get_current_user)):
     await db.submissions.update_one(
         {"id": sub_id},
         {"$set": {"tyre_estimate": payload, "tyre_estimate_at": payload["generated_at"]}},
+    )
+    return payload
+
+
+@api_router.post("/submissions/{sub_id}/vehicle-insights")
+async def vehicle_insights(sub_id: str, current: dict = Depends(get_current_user)):
+    """GPT-5.2 pulls together publicly-known recalls, common failure
+    modes, and things a dealer would want to check on this specific
+    make / model / year before buying it in. Same auth pattern as
+    the tyre estimator — admin or the owning dealer — and the
+    result is cached on the submission doc so we don't burn LLM
+    budget every time the vehicle detail is opened.
+    """
+    sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0, "photos": 0})
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+    if current["role"] != "admin":
+        if sub.get("dealer_id") != current.get("id"):
+            raise HTTPException(403, "Not authorized")
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(500, "LLM key not configured")
+
+    system_prompt = (
+        "You are a South African vehicle industry expert who tracks OEM safety recalls, "
+        "known failure modes, and mechanical / electrical quirks by make, model and year. "
+        "Given a vehicle, respond with ONLY a valid JSON object (no markdown, no explanation) "
+        "in this exact shape:\n"
+        "{\n"
+        '  "recalls": [{"title": "<short recall title>", "summary": "<1-2 sentence description>", "severity": "low|medium|high", "year_range": "<e.g. 2018-2020 or blank>"}],\n'
+        '  "common_issues": [{"title": "<component / symptom>", "summary": "<1-2 sentence description of the issue and typical trigger>", "typical_cost_zar": "<repair range e.g. R8000-R15000 or blank>"}],\n'
+        '  "buying_checklist": ["<short actionable check the dealer should do before buying this vehicle in>"],\n'
+        '  "confidence": "low|medium|high",\n'
+        '  "disclaimer": "Compiled from public sources — verify with the OEM / a qualified technician before relying on this."\n'
+        "}\n"
+        "If no recalls or known issues are broadly reported for this vehicle, return empty arrays for those keys "
+        "rather than inventing entries. Focus on the SPECIFIC year range that matches the vehicle — do not repeat "
+        "generic advice that applies to every car. Keep each summary under 40 words."
+    )
+    prompt = (
+        "Vehicle:\n"
+        f"- Make: {sub['make_name']}\n"
+        f"- Model: {sub['model_name']}\n"
+        f"- Derivative: {sub['derivative_name']}\n"
+        f"- Year: {sub.get('year_of_production') or sub.get('year')}\n"
+        f"- Odometer: {sub.get('mileage_km') or 'unknown'} km\n"
+        "\nProvide the vehicle-insights JSON for a South African dealer considering purchasing this car."
+    )
+
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"insights-{sub_id}",
+            system_message=system_prompt,
+        ).with_model("openai", "gpt-5.2")
+        reply = await chat.send_message(UserMessage(text=prompt))
+    except Exception as e:
+        logger.exception("LLM vehicle insights failed")
+        raise HTTPException(502, f"Vehicle insights unavailable: {e}")
+
+    import json, re
+    text = reply.strip()
+    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.MULTILINE).strip()
+    try:
+        insights = json.loads(text)
+    except Exception:
+        insights = {"raw": text, "disclaimer": "Insights returned in non-JSON format"}
+
+    payload = {
+        "insights": insights,
+        "generated_at": now_utc(),
+        "model": "gpt-5.2",
+    }
+    await db.submissions.update_one(
+        {"id": sub_id},
+        {"$set": {"vehicle_insights": payload, "vehicle_insights_at": payload["generated_at"]}},
     )
     return payload
 

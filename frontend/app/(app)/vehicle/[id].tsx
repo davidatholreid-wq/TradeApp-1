@@ -57,6 +57,7 @@ import { TransferToStockModal } from "@/src/components/vehicle/modals/TransferTo
 import ConditionSection from "@/src/components/vehicle/ConditionSection";
 import IdentityLicenseSection from "@/src/components/vehicle/IdentityLicenseSection";
 import TyreEstimateCard from "@/src/components/vehicle/TyreEstimateCard";
+import VehicleInsightsCard from "@/src/components/vehicle/VehicleInsightsCard";
 import CoverOffersReceivedCard from "@/src/components/vehicle/CoverOffersReceivedCard";
 import DealerOfferCard from "@/src/components/vehicle/DealerOfferCard";
 import CoverPlacementBar from "@/src/components/vehicle/CoverPlacementBar";
@@ -1284,6 +1285,23 @@ export default function VehicleDetail() {
       Alert.alert("Tyre estimate failed", e.message);
     } finally {
       setEstimatingTyres(false);
+    }
+  };
+
+  // Vehicle Insights (Aug 2026) — GPT-5.2 recalls & known issues summary.
+  // Result is cached on the submission doc so subsequent opens don't
+  // re-spend LLM budget.
+  const [loadingInsights, setLoadingInsights] = useState(false);
+  const handleFetchInsights = async () => {
+    if (!sub) return;
+    setLoadingInsights(true);
+    try {
+      const data = await apiFetch(`/api/submissions/${id}/vehicle-insights`, { method: "POST" });
+      setSub({ ...sub, vehicle_insights: data, vehicle_insights_at: data.generated_at } as any);
+    } catch (e: any) {
+      Alert.alert("Vehicle insights failed", e?.message || "Please try again in a moment.");
+    } finally {
+      setLoadingInsights(false);
     }
   };
 
@@ -2573,15 +2591,27 @@ export default function VehicleDetail() {
           </View>
         </CollapsibleSection>
 
-        {/* Tyre Replacement Estimate — admin-only, see TyreEstimateCard */}
-        {isAdmin ? (
-          <TyreEstimateCard
-            tyreEstimate={sub.tyre_estimate}
-            estimating={estimatingTyres}
-            onEstimate={handleTyreEstimate}
-            colors={colors}
-            styles={styles}
-          />
+        {/* Tyre Replacement Estimate + Vehicle Insights.
+            Aug 2026: opened to owning dealers too (previously admin-only).
+            Cover-mode dealers see them; other dealers viewing a
+            broadcast (pricing-agent workspace) don't. */}
+        {(isAdmin || isOwningDealer) && !isCoverMode ? (
+          <>
+            <TyreEstimateCard
+              tyreEstimate={sub.tyre_estimate}
+              estimating={estimatingTyres}
+              onEstimate={handleTyreEstimate}
+              colors={colors}
+              styles={styles}
+            />
+            <VehicleInsightsCard
+              insights={(sub as any).vehicle_insights}
+              loading={loadingInsights}
+              onFetch={handleFetchInsights}
+              colors={colors}
+              styles={styles}
+            />
+          </>
         ) : null}
 
         {/* VIN-Linked Reports — see VinLinkedReportsCard for full markup. */}
