@@ -175,6 +175,17 @@ export default function AdminBillingCockpit() {
           <Ionicons name="business-outline" size={14} color={colors.text} />
           <Text style={styles.secondaryBtnText}>Company details</Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          testID="billing-debtors-report-btn"
+          style={styles.secondaryBtn}
+          onPress={() => openAuthedPdf(
+            "/api/admin/billing/debtors-report.pdf",
+            `debtors_report_${new Date().toISOString().slice(0, 10)}.pdf`,
+          ).catch((e) => Alert.alert("Couldn't open Debtors Report", e?.message || ""))}
+        >
+          <Ionicons name="podium-outline" size={14} color={colors.text} />
+          <Text style={styles.secondaryBtnText}>Debtors Report</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.secondaryBtn} onPress={refreshAll}>
           <Ionicons name="refresh" size={14} color={colors.text} />
           <Text style={styles.secondaryBtnText}>Refresh</Text>

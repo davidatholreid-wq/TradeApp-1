@@ -1078,6 +1078,156 @@ async def admin_statement_pdf(
 
 
 # ---------------------------------------------------------------------------
+# Debtors Report — live snapshot of what every dealership owes.
+#
+# For each dealership we compute:
+#   • wallet_balance_cents   — the running ledger (credits − debits).
+#                              A positive value means we hold prepaid
+#                              deposit for them; negative means they
+#                              have consumed more than they've paid
+#                              (only possible for arrears dealers).
+#   • outstanding_invoiced   — sum of (total_cents − total_paid_cents)
+#                              for every invoice with status != paid.
+#   • amount_owed            — max(0, −wallet_balance_cents), i.e. the
+#                              cash they'd need to send today to clear
+#                              their ledger. Positive-wallet dealers
+#                              show R 0 here.
+#
+# The PDF lists everyone but sorts biggest-owed first so admin can
+# triage collections. A grand total sits at the bottom.
+# ---------------------------------------------------------------------------
+@router.get("/admin/billing/debtors-report.pdf")
+async def admin_debtors_report_pdf(
+    current: dict = Depends(_dep_require_admin),
+):
+    company = await _get_company_settings()
+    rows: list[dict] = []
+    async for d in _db.dealerships.find({}, {"_id": 0}).sort("name", 1):
+        # Always recompute so the snapshot is truthful even if the
+        # cached number is stale.
+        wallet = await _recompute_wallet(d["id"])
+        # Sum outstanding invoice balances
+        outstanding_cents = 0
+        async for inv in _db.dealer_invoices.find(
+            {"dealership_id": d["id"], "status": {"$ne": "paid"}},
+            {"_id": 0, "total_cents": 1, "total_paid_cents": 1},
+        ):
+            outstanding_cents += max(0, int(inv.get("total_cents") or 0) - int(inv.get("total_paid_cents") or 0))
+        wallet_balance = int(wallet.get("balance_cents") or 0)
+        # "Amount owed today" — what the dealer would need to pay to
+        # bring their ledger to zero. Anything above zero on the
+        # wallet means we owe them (or they're pre-loaded); we only
+        # care about the deficit here.
+        amount_owed_cents = max(0, -wallet_balance)
+        rows.append({
+            "id": d["id"],
+            "name": d.get("name") or "(unnamed)",
+            "contact_name": (d.get("accounts_contact") or {}).get("name") or "",
+            "contact_email": (d.get("accounts_contact") or {}).get("email") or "",
+            "wallet_balance_cents": wallet_balance,
+            "outstanding_cents": outstanding_cents,
+            "amount_owed_cents": amount_owed_cents,
+            "pay_in_arrears": bool(d.get("pay_in_arrears")),
+            "active": d.get("active", True),
+        })
+
+    # Sort: highest amount owed first, then largest outstanding invoice, then name.
+    rows.sort(key=lambda r: (-r["amount_owed_cents"], -r["outstanding_cents"], r["name"].lower()))
+
+    styles = getSampleStyleSheet()
+    header_style = ParagraphStyle("dhead", parent=styles["Normal"], fontSize=8.5, textColor=_rlcolors.HexColor("#FFFFFF"), fontName="Helvetica-Bold")
+    cell_style = ParagraphStyle("dcell", parent=styles["Normal"], fontSize=8.5, leading=11)
+    small = ParagraphStyle("dsmall", parent=styles["Normal"], fontSize=7.5, leading=10, textColor=_rlcolors.HexColor("#64748B"))
+
+    table_rows: list[list] = [[
+        Paragraph("Dealership", header_style),
+        Paragraph("Accounts contact", header_style),
+        Paragraph("Terms", header_style),
+        Paragraph("Wallet", header_style),
+        Paragraph("Outstanding\ninvoices", header_style),
+        Paragraph("Amount owed", header_style),
+    ]]
+
+    grand_wallet = 0
+    grand_outstanding = 0
+    grand_owed = 0
+    for r in rows:
+        contact_lines = []
+        if r["contact_name"]:
+            contact_lines.append(r["contact_name"])
+        if r["contact_email"]:
+            contact_lines.append(f"<font color='#64748B'>{r['contact_email']}</font>")
+        contact_cell = Paragraph("<br/>".join(contact_lines) or "—", cell_style)
+        terms = "Credit (arrears)" if r["pay_in_arrears"] else "Prepaid"
+        if not r["active"]:
+            terms += "<br/><font color='#B91C1C'>Inactive</font>"
+        table_rows.append([
+            Paragraph(f"<b>{r['name']}</b>", cell_style),
+            contact_cell,
+            Paragraph(terms, cell_style),
+            Paragraph(_rand(r["wallet_balance_cents"]), cell_style),
+            Paragraph(_rand(r["outstanding_cents"]) if r["outstanding_cents"] else "—", cell_style),
+            Paragraph(
+                f"<b>{_rand(r['amount_owed_cents'])}</b>" if r["amount_owed_cents"] else "—",
+                cell_style,
+            ),
+        ])
+        grand_wallet += r["wallet_balance_cents"]
+        grand_outstanding += r["outstanding_cents"]
+        grand_owed += r["amount_owed_cents"]
+
+    # Total row
+    table_rows.append([
+        Paragraph("<b>TOTAL</b>", cell_style),
+        Paragraph(f"<font color='#64748B'>{len(rows)} dealerships</font>", cell_style),
+        Paragraph("", cell_style),
+        Paragraph(f"<b>{_rand(grand_wallet)}</b>", cell_style),
+        Paragraph(f"<b>{_rand(grand_outstanding)}</b>", cell_style),
+        Paragraph(f"<b>{_rand(grand_owed)}</b>", cell_style),
+    ])
+
+    tbl = Table(
+        table_rows,
+        colWidths=[42 * mm, 48 * mm, 22 * mm, 24 * mm, 26 * mm, 28 * mm],
+        repeatRows=1,
+    )
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), _rlcolors.HexColor("#0F172A")),
+        ("GRID", (0, 0), (-1, -1), 0.25, _rlcolors.HexColor("#E5E7EB")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ALIGN", (3, 1), (5, -1), "RIGHT"),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        # Total row styling
+        ("BACKGROUND", (0, -1), (-1, -1), _rlcolors.HexColor("#F1F5F9")),
+        ("LINEABOVE", (0, -1), (-1, -1), 0.8, _rlcolors.HexColor("#0F172A")),
+    ]))
+
+    now = datetime.now(timezone.utc)
+    intro = Paragraph(
+        f"<b>Snapshot generated:</b> {now.strftime('%Y-%m-%d %H:%M UTC')}<br/>"
+        f"<b>Dealerships in report:</b> {len(rows)}<br/>"
+        "<i>Amount owed = negative wallet balance (i.e. cash the dealer needs to send to clear their ledger). "
+        "Positive wallets are prepaid and owe nothing today.</i>",
+        small,
+    )
+    body = [intro, Spacer(1, 8), tbl]
+
+    # A single-dealership _pdf_header expects a dealership dict — use
+    # a stub since the "BILL TO" side is meaningless on an aggregate
+    # report. The header block still renders the company (Fourbuy)
+    # info on the left.
+    stub_dealership = {"name": "ALL DEALERSHIPS", "address": ""}
+    pdf = _render_pdf("DEBTORS REPORT — LIVE SNAPSHOT", body, company, stub_dealership)
+    filename = f"debtors_report_{date.today().isoformat()}.pdf"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"inline; filename={filename}"},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Overview / Summary endpoints
 # ---------------------------------------------------------------------------
 @router.get("/admin/dealerships/{dealership_id}/billing-summary")
