@@ -1043,6 +1043,13 @@ async def kredo_cartrust_status(
     #      the derivation is cheap (pure Python over the stored blob)
     #      and lets the client detect the pending → populated flip
     #      without waiting for a new webhook to also stamp the field.
+    #
+    # Aug 2026 refinement: on FB-000155-style reports Kredo delivers
+    # the owner history in the PDF but leaves the JSON block full of
+    # "No Record Found" markers. If the JSON derivation says pending
+    # we also scan the stored PDF text — presence of "Ownership
+    # History / TITLE_HOLDER / CURRENT OWNER" markers means the
+    # backfill has landed even if the JSON never got updated.
     if report.get("status") == "completed":
         cb = report.get("callback_payload") or {}
         current_ownership = report.get("ownership_status")
@@ -1051,6 +1058,17 @@ async def kredo_cartrust_status(
         )
         if should_derive:
             derived = _derive_ownership_status(cb)
+            # Fall-back: if JSON still says pending, try the PDF text.
+            if derived == "pending":
+                pdf_b64 = report.get("pdf_b64")
+                if pdf_b64:
+                    try:
+                        import base64 as _b64
+                        pdf_bytes = _b64.b64decode(pdf_b64)
+                        if _pdf_has_ownership_rows(pdf_bytes):
+                            derived = "populated"
+                    except Exception:
+                        logger.exception("cartrust status: PDF ownership scan failed")
             if derived != current_ownership:
                 report["ownership_status"] = derived
                 await db.submissions.update_one(
@@ -1300,6 +1318,50 @@ _OWNERSHIP_KEYS = (
 _OWNERSHIP_EMPTY_MARKERS = {
     "no record found", "", "n/a", "na", "none", "null", "—", "-", "unknown",
 }
+
+
+def _pdf_has_ownership_rows(pdf_bytes: bytes) -> bool:
+    """Aug 2026 — some Kredo callbacks land with an empty ownership
+    block ("No Record Found" everywhere) but the actual owner
+    history is populated inside the delivered PDF. This scanner
+    extracts the PDF text and looks for markers that mean "we have
+    a populated Ownership History section", so we can flip
+    ownership_status → populated even when the JSON schema stayed
+    stale.
+
+    Never raises — bad PDF just returns False so we fall back to
+    the JSON-only derivation.
+    """
+    try:
+        import pdfplumber  # local import — pdfplumber is heavy
+        import io as _io
+        with pdfplumber.open(_io.BytesIO(pdf_bytes)) as pdf:
+            text_parts = []
+            for page in pdf.pages[:10]:  # generous — most reports are 4-6 pages
+                try:
+                    t = page.extract_text() or ""
+                    text_parts.append(t)
+                except Exception:
+                    continue
+            text = "\n".join(text_parts)
+    except Exception:
+        return False
+    if not text:
+        return False
+    upper = text.upper()
+    # Kredo's PDF-only ownership section is rendered as a table with
+    # these distinctive headings. Presence of any of these strongly
+    # indicates the report carries populated owner data.
+    signals = (
+        "OWNERSHIP HISTORY",
+        "OWNERSHIP TYPE",
+        "OWNERSHIP STATUS",
+        "TITLE_HOLDER",
+        "CURRENT OWNER",
+        "PREVIOUS OWNER",
+    )
+    hits = sum(1 for s in signals if s in upper)
+    return hits >= 2  # two independent markers to avoid false positives
 
 
 def _derive_ownership_status(callback_payload: dict[str, Any]) -> str:
