@@ -525,39 +525,46 @@ export default function Profile() {
           </View>
         </View>
 
-        {/* Push notification preferences — per-type opt-in toggles.
-            Only useful for dealers (admins have their own console);
-            hide from admin to keep the screen focused. */}
-        {user?.role !== "admin" ? (
-          <NotificationPreferencesSection colors={colors} />
-        ) : null}
+        {/* Constrained-width footer stack — Notifications, Sign Out,
+            Danger Zone. Wraps them in the same `maxWidth: 720`
+            container the identity/referral/appearance cards use so
+            everything below the Appearance card lines up flush on
+            wide screens. Nothing else changed — the child components
+            keep their own paddings and dividers. */}
+        <View style={styles.footerStack}>
+          {/* Push notification preferences — per-type opt-in toggles.
+              Only useful for dealers (admins have their own console);
+              hide from admin to keep the screen focused. */}
+          {user?.role !== "admin" ? (
+            <NotificationPreferencesSection colors={colors} />
+          ) : null}
 
-        <TouchableOpacity
-          testID="logout-button"
-          style={styles.logoutBtn}
-          onPress={handleLogout}
-        >
-          <Ionicons name="log-out-outline" size={20} color={colors.danger} />
-          <Text style={styles.logoutText}>Sign Out</Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            testID="logout-button"
+            style={styles.logoutBtn}
+            onPress={handleLogout}
+          >
+            <Ionicons name="log-out-outline" size={20} color={colors.danger} />
+            <Text style={styles.logoutText}>Sign Out</Text>
+          </TouchableOpacity>
 
-        {/* Danger Zone — spaced well below the Sign Out button, with
-            its own labeled block and a low-emphasis text link (not a
-            full-width button) so it can't be misfired-tapped by a
-            dealer who was going for Sign Out. Apple / Google Play
-            require an in-app self-deletion path; we soft-delete with
-            a 30-day recovery window. Admins are blocked at the API
-            layer so we simply hide the section for them. */}
-        {user?.role !== "admin" ? (
-          <View style={styles.dangerZone}>
-            <View style={styles.dangerZoneDivider} />
-            <Text style={styles.dangerZoneHeader}>DANGER ZONE</Text>
-            <Text style={styles.dangerZoneBody}>
-              Deleting your account is permanent after a 30-day recovery window. Your submissions, reports and history will be removed. Contact <Text style={{ fontWeight: "700" }}>support@fourbuy.co.za</Text> if you just need to update your details.
-            </Text>
-            <TouchableOpacity
-              testID="delete-account-button"
-              style={styles.deleteAccountLink}
+          {/* Danger Zone — spaced well below the Sign Out button, with
+              its own labeled block and a low-emphasis text link (not a
+              full-width button) so it can't be misfired-tapped by a
+              dealer who was going for Sign Out. Apple / Google Play
+              require an in-app self-deletion path; we soft-delete with
+              a 30-day recovery window. Admins are blocked at the API
+              layer so we simply hide the section for them. */}
+          {user?.role !== "admin" ? (
+            <View style={styles.dangerZone}>
+              <View style={styles.dangerZoneDivider} />
+              <Text style={styles.dangerZoneHeader}>DANGER ZONE</Text>
+              <Text style={styles.dangerZoneBody}>
+                Deleting your account is permanent after a 30-day recovery window. Your submissions, reports and history will be removed. Contact <Text style={{ fontWeight: "700" }}>support@fourbuy.co.za</Text> if you just need to update your details.
+              </Text>
+              <TouchableOpacity
+                testID="delete-account-button"
+                style={styles.deleteAccountLink}
               onPress={() => setDeleteAccountOpen(true)}
               hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
@@ -565,7 +572,8 @@ export default function Profile() {
               <Text style={styles.deleteAccountLinkText}>Delete my account</Text>
             </TouchableOpacity>
           </View>
-        ) : null}
+          ) : null}
+        </View>
       </ScrollView>
       <DeleteAccountModal
         visible={deleteAccountOpen}
@@ -1272,6 +1280,16 @@ const makeStyles = (colors: Palette, isWide: boolean) => StyleSheet.create({
   },
   themeToggleTextActive: {
     color: colors.onPrimary,
+  },
+
+  // Aug 2026: constrains the tail of the profile (Notifications,
+  // Sign Out, Danger Zone) to the same 720 px max-width the identity
+  // and card blocks above use, so on wide screens the whole page
+  // aligns flush instead of the footer stretching edge-to-edge.
+  footerStack: {
+    ...(isWide
+      ? { maxWidth: 720, width: "100%", alignSelf: "center", paddingHorizontal: spacing.lg * 2 }
+      : {}),
   },
 
   logoutBtn: {
