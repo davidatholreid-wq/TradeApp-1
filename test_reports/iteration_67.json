@@ -1,0 +1,38 @@
+{
+  "summary": "Jan 2026 billing pivot and Valuation PDF gate change validated end-to-end. 8/8 pytest tests pass on first run against the preview deployment (Dave's dealership eb95e007). VERIFIED: (1) POST /api/submissions stamps billing_charge_cents=5000 on the doc at insert AND immediately drives wallet.usage_zar up by exactly R50.00 via the in-request _recompute_wallet call. (2) No SLA waiver — a submission with created_at=-72h and priced_at=(created_at+48h) still keeps its R50 stamp; wallet.usage_zar delta remains R50 after DB backdating + summary recompute. (3) GET /api/submissions/{id}/valuation.pdf for a NON-priced sub returns 200 application/pdf and the rendered PDF text contains the literal 'PRICE PENDING' banner (previously the endpoint would 400 with 'available only after an offer has been received'). (4) GET /api/submissions/{id}/valuation.pdf for a PRICED sub returns 200 with an 'OFFER' card and NO 'PRICE PENDING' string. (5) POST /api/submissions/{id}/resubmit produces a -v2 sub with billing_charge_cents=5000; the original is flipped retracted=True with replaced_by_ref/id set; net wallet.usage_zar delta is R0.00 (old -R50 filtered out, new +R50 in). (6) Retracted submissions are correctly excluded — flipping retracted=True in the DB and re-hitting billing-summary drops the R50 back off wallet.usage_zar. Response shapes (billing-summary wallet keys + admin/billing/overview reachability) validated as a sanity guard.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_67_billing_and_pdf.py",
+    "/app/test_reports/pytest/iteration_67.xml"
+  ],
+  "action_items": [
+    "None — implementation matches the review-request contract exactly."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/server.py:388-401 is_billable — collapsed to `not retracted`, matches the new rule. Docstring accurately calls out that the retracted filter in routes/billing.py is what keeps retracted debits out of the wallet sum. Clean.",
+    "/app/backend/server.py:2185 create_submission — billing_charge_cents = int(round(50.0 * 100)) = 5000 (R50 flat, NOT R57.50 — the R57.50 mentioned in the review request notes is the VAT-inclusive invoice line generated downstream by the invoice generator, not the wallet debit stamp). Recompute is wrapped in try/except so a wallet-cache write failure doesn't block the submission insert — correct trade-off, the ledger is derived from primary rows anyway.",
+    "/app/backend/server.py:2303 resubmit_submission — identical R50 stamp on the -vN row and the same non-blocking _recompute_wallet call after both the insert AND the retract $set. The retract-set update happens AFTER the new insert, so if the retract-write ever fails, the new row is still inserted and the ledger overcounts (old + new = R100) until the next recompute. Low-risk because the retract $set is a simple update_one against a UUID id, but worth noting.",
+    "/app/backend/server.py:3178-3188 set_price — still calls is_billable() and stamps R50 on price if the field is missing. With the new create_submission always stamping at insert this branch is effectively dead for post-Jan-2026 submissions but usefully back-fills any pre-Jan submission that was created before the stamp-at-insert rule. Safe idempotent write ($set to the same value).",
+    "/app/backend/server.py:6952-6991 download_valuation_pdf — status check removed; the docstring correctly documents the Jan 2026 rule. The `expired` flag (archived bucket) still surfaces a red SUBMISSION EXPIRED banner, orthogonal to PRICE PENDING. Both banners can coexist if an archived sub was never priced.",
+    "/app/backend/server.py:4152-4171 _build_valuation_pdf PRICE PENDING branch — sits in an `else` off `status == PRICED / DECLINED`, so pending/declined-then-editable states are covered. Colour palette (LINE border on light-slate background) matches the neutral tone the request asked for.",
+    "/app/backend/routes/billing.py:163-168 _recompute_wallet — submissions query filters `retracted: {$ne: True}` AND `billing_charge_cents: {$exists: True}`, so a legacy submission with no stamp will not accidentally get billed at R0. Sum is over cents (int), no float drift."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_67_billing_and_pdf.py (new pytest module — 8 tests, 4 classes)"
+  ],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "not tested (backend-only iteration per request)"},
+  "seed_data_creation": "Ephemeral only. Each test creates 1-2 submissions on Dave's dealership (dealership_id=eb95e007-537b-4232-a314-0eba3e7164e7) via POST /api/submissions and/or a direct db.submissions.insert_one (for the priced-with-controlled-priced_at case), then hard-deletes them in a module-scoped teardown fixture (`created_sub_ids`). Post-test wallet state matches pre-test state exactly: wallet_balance_cents=1011783 (R10,117.83) / wallet_usage_cents=27000 (R270.00). No counter rewind — the submission-ref sequence advanced by ~5 during the run (test submissions had refs assigned via the standard next_reference_number path). No test data left in Mongo.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Uses EXPO_PUBLIC_BACKEND_URL (frontend .env exposes it under that key). PDF text extraction uses pypdf (already installed at 6.14.2 in the venv). Priced-PDF sub is picked dynamically from Dave's dealership (any non-retracted, priced sub); currently FB-000115..FB-000125 satisfy the query. Resubmit test seeds a fresh priced sub directly in Mongo so priced_at is inside the 14-day window regardless of when the test runs (test_resubmit.py uses the same pattern). If Dave's password ever rotates the fixture auto-resets via admin. NOTE for the main agent: the review-request mentioned POST /api/submissions/{id}/retract — that endpoint does NOT exist as a standalone route; retraction only happens as a side-effect of /resubmit. Tested the retracted-exclusion rule via a direct DB flip (mimicking exactly what resubmit's $set does).",
+  "rca_of_issue": "N/A — no bugs found. Both rule changes are implemented correctly, wallet cache is kept in sync via _recompute_wallet after every write path, retracted rows are excluded via the existing filter in routes/billing.py, and the PDF renderer surfaces a PRICE PENDING banner on non-priced valuations."
+}

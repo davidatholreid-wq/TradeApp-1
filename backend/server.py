@@ -386,19 +386,19 @@ def parse_iso(ts: Optional[str]) -> Optional[datetime]:
 
 
 def is_billable(sub: dict) -> bool:
-    """A submission is billable only if it was PRICED within BILLING_SLA_HOURS
-    (24h) of being submitted. If admin took longer than the SLA, no fee.
+    """Every submission is billable at the flat R50 fee.
+
+    Aug 2026: dropped the 24h SLA waiver — dealers pay R50 as soon as
+    they submit a vehicle, whether Fourbuy prices it inside the SLA
+    window, outside it, or not at all. Retracted submissions are the
+    only carve-out (usage debits are excluded from wallet recompute
+    via the `retracted` filter in `routes/billing.py`).
     """
-    if sub.get("status") != "priced":
+    if not sub:
         return False
-    created = parse_iso(sub.get("created_at"))
-    priced = parse_iso(sub.get("priced_at"))
-    if not created or not priced:
+    if sub.get("retracted"):
         return False
-    delta = priced - created
-    if delta < timedelta(0):
-        return False
-    return delta <= timedelta(hours=BILLING_SLA_HOURS)
+    return True
 
 
 # ============ Fourbuy Rewards helpers ============
@@ -2177,7 +2177,21 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
     doc = await _build_submission_doc(
         payload, current, sub_id=sub_id, reference=reference, total_recon=total_recon,
     )
+    # Aug 2026 billing rule: every submission is chargeable on
+    # creation — the previous "24h SLA waiver" is gone. Stamp the
+    # wallet-debit amount now so the billing summary reflects it
+    # immediately and the wallet debit hits the ledger regardless
+    # of whether Fourbuy ever prices the vehicle.
+    doc["billing_charge_cents"] = int(round(BILLING_FEE_ZAR * 100))
     await db.submissions.insert_one(doc)
+    # Refresh the dealership's wallet cache so the new debit is visible
+    # right away in the admin billing overview.
+    try:
+        if doc.get("dealership_id"):
+            from routes.billing import _recompute_wallet as _bill_recompute
+            await _bill_recompute(doc["dealership_id"])
+    except Exception as e:
+        logger.warning("Wallet debit stamp on submit failed (non-blocking): %s", e)
     doc.pop("_id", None)
     return {"submission": {k: v for k, v in doc.items() if k != "photos"}, "id": sub_id}
 
@@ -2284,6 +2298,9 @@ async def resubmit_submission(
     doc["replaces_id"] = original["id"]
     # `version` starts at 1 for the base and increments per re-submit.
     doc["version"] = (original.get("version") or 1) + 1
+    # Aug 2026: every re-submit is a fresh R50 charge (same rule as
+    # a brand-new submission).
+    doc["billing_charge_cents"] = int(round(BILLING_FEE_ZAR * 100))
     await db.submissions.insert_one(doc)
 
     # Backfill `original_ref` on the retracted record so subsequent
@@ -2318,6 +2335,15 @@ async def resubmit_submission(
     if retract_unset:
         update_doc["$unset"] = retract_unset
     await db.submissions.update_one({"id": original["id"]}, update_doc)
+    # Aug 2026: refresh wallet cache — the new -vN submission's R50
+    # debit lands as soon as the row is inserted (and the retracted
+    # original is filtered out by `_recompute_wallet`).
+    try:
+        if doc.get("dealership_id"):
+            from routes.billing import _recompute_wallet as _bill_recompute
+            await _bill_recompute(doc["dealership_id"])
+    except Exception as e:
+        logger.warning("Wallet recompute after resubmit failed (non-blocking): %s", e)
     doc.pop("_id", None)
     return {
         "submission": {k: v for k, v in doc.items() if k != "photos"},
@@ -4123,6 +4149,26 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
             ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
         ]))
         story.append(decl_card)
+    else:
+        # Aug 2026: dealers can download the valuation snapshot PDF
+        # before Fourbuy prices the vehicle — surface a clear
+        # "PRICE PENDING" banner so anyone reading the doc knows
+        # the offer field is intentionally missing rather than lost.
+        pending = Paragraph(
+            '<para align="center"><font name="Helvetica-Bold" size="10" color="#0F172A">'
+            'PRICE PENDING — Fourbuy has not yet made an offer on this vehicle. '
+            'The offer will appear here once pricing is complete.'
+            '</font></para>',
+            body,
+        )
+        pending_card = Table([[pending]], colWidths=[CONTENT_W_MM * mm])
+        pending_card.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor("#F1F5F9")),
+            ("BOX", (0, 0), (-1, -1), 0.6, LINE),
+            ("TOPPADDING", (0, 0), (-1, -1), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ]))
+        story.append(pending_card)
 
     # ============ PHOTOS (single row of 5, no labels) ============
     photos = sub.get("photos") or {}
@@ -6911,8 +6957,11 @@ async def download_valuation_pdf(sub_id: str, current: dict = Depends(get_user_f
         raise HTTPException(404, "Submission not found")
     if not await _can_access_submission(sub, current):
         raise HTTPException(403, "Not authorized")
-    if sub.get("status") != "priced":
-        raise HTTPException(400, "Valuation PDF is available only after an offer has been received")
+    # Aug 2026 business rule: the owning dealer can download a
+    # snapshot PDF at any time, regardless of whether Fourbuy has
+    # priced the vehicle yet. Non-priced submissions render with a
+    # "PRICE PENDING" watermark inside the PDF (see
+    # `_build_valuation_pdf`).
 
     # If the submission has moved to the "archived" bucket, we STILL let
     # the owner download a snapshot PDF (they can't access the live

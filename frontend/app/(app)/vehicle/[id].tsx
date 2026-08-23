@@ -2281,9 +2281,11 @@ export default function VehicleDetail() {
             is intentionally left blank so the layout below stays
             unchanged. */}
 
-        {/* Open Valuation PDF — always available once an offer has been received.
-            Hidden in cover mode because the PDF exposes the Fourbuy admin offer. */}
-        {sub.status === "priced" && !isCoverMode ? (
+        {/* Open Valuation PDF — Aug 2026: available at any time to
+            the owning dealer (submission snapshot even before an offer
+            is received). Still hidden in cover mode because the PDF
+            exposes the Fourbuy admin offer to network dealers. */}
+        {!isCoverMode ? (
           <View style={styles.reportsSection}>
             <TouchableOpacity
               testID="download-valuation-pdf"
@@ -2298,7 +2300,9 @@ export default function VehicleDetail() {
                 <View style={{ marginLeft: spacing.sm, flex: 1 }}>
                   <Text style={styles.docBtnTitle}>Download Valuation PDF</Text>
                   <Text style={styles.docBtnSubtitle}>
-                    Includes offer, condition, tyre estimate & any purchased reports
+                    {sub.status === "priced"
+                      ? "Includes offer, condition, tyre estimate & any purchased reports"
+                      : "Snapshot of your submission — offer will be added once Fourbuy prices the vehicle"}
                   </Text>
                 </View>
               </View>
