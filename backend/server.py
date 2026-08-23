@@ -267,21 +267,15 @@ REWARD_VOUCHER_PROVIDER = "Takealot"
 
 # Vehicle report catalogue — dealers may purchase these against a submission's
 # VIN after an offer has been received. Cost is added to the dealer's monthly
-# billing (alongside the R50 valuation fee). Real APIs are wired up later; for
-# now the order is stored as PENDING so the UI can reflect it.
+# billing (alongside the R50 valuation fee).
+#
+# Aug 2026: Lightstone Verification / Lightstone Repair / CarVertical
+# were removed from this catalogue because none of them were ever
+# wired to a real API — they had a mocked-JSON generator behind them.
+# Historical orders of those types keep rendering (see `_mock_report_data`
+# and the PDF branches further down), but the catalogue and the
+# ReportOrderCreate Literal reject any *new* orders with those types.
 REPORT_CATALOG = {
-    "lightstone_verification": {
-        "name": "Lightstone Vehicle Verification Report",
-        "cost_zar": 100.0,
-    },
-    "lightstone_repair": {
-        "name": "Lightstone Vehicle Repair History Report",
-        "cost_zar": 50.0,
-    },
-    "car_vertical": {
-        "name": "Car Vertical Report",
-        "cost_zar": 200.0,
-    },
     # BMW-family VIN-linked report — sourced live from Bimmervin (BMW
     # factory order). Currently offered on BMW and MINI vehicles only.
     # Front-end filters this out of the catalog for other brands.
@@ -1140,7 +1134,11 @@ class DealerPhotoUpload(BaseModel):
 
 
 class ReportOrderCreate(BaseModel):
-    type: Literal["lightstone_verification", "lightstone_repair", "car_vertical", "bmw_options", "mb_options", "outvin_spec", "landrover_osh", "porsche_vin", "ferrari_vin"]
+    # Aug 2026: Lightstone Verification/Repair and CarVertical removed
+    # from the accepted set — they were never wired to a real API.
+    # Historical orders keep rendering; new POSTs with those types
+    # are rejected at the Pydantic layer with a 422.
+    type: Literal["bmw_options", "mb_options", "outvin_spec", "landrover_osh", "porsche_vin", "ferrari_vin", "kredo_vin_history"]
     accepted_charge: bool = False
 
 

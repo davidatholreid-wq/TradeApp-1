@@ -150,11 +150,11 @@ export function VinLinkedReportsCard({
           )}
 
           {((): ReportOrder["type"][] => {
-            const baseTypes: ReportOrder["type"][] = [
-              "lightstone_verification",
-              "lightstone_repair",
-              "car_vertical",
-            ];
+            // Aug 2026: Lightstone Verification / Repair and CarVertical
+            // removed from the catalog — those integrations were never
+            // wired to a real API. Historical orders keep rendering
+            // via ReportModals.tsx so no data is lost.
+            const baseTypes: ReportOrder["type"][] = [];
             if (isBimmerSupported) baseTypes.push("bmw_options");
             if (isMbSupported) baseTypes.push("mb_options");
             if (isOutvinSupported) baseTypes.push("outvin_spec");
