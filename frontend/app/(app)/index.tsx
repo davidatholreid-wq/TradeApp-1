@@ -15,6 +15,7 @@ import Animated, {
 import { Ionicons } from "@expo/vector-icons";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useEvent } from "expo";
+import TradeAppWordmark from "@/src/components/TradeAppWordmark";
 import { LinearGradient } from "expo-linear-gradient";
 import AppIconTile from "@/src/components/home/AppIconTile";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -38,12 +39,12 @@ import { apiFetch } from "@/src/api";
 //      the cinematic buffers, and the client prefers a rock-solid
 //      still-image hero on the browser anyway.
 const HERO_VIDEO = require("../../assets/video/hero_v2.mp4");
-// Static, glare-free wordmark shown BENEATH the video (as the poster
-// while it buffers) and OVER the top of the video once it finishes
-// playing. Using the crisp AI-generated logo (auto-cropped 965×392)
-// so the final freeze state is a clean, artefact-free wordmark
-// regardless of the video's spotlight composition.
-const HERO_LOGO = require("../../assets/images/logo-tradeapp.png");
+// Static wordmark is now rendered as pure text via <TradeAppWordmark>,
+// so HERO_LOGO isn't needed anymore. Kept the constant name as
+// deprecated but null so a future grep for the old asset path still
+// lands developers in the right place.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const HERO_LOGO = null;
 
 // Advertising rotation — bundled bitmaps, cycled per-tap.
 const AD_TCS = require("../../assets/brands/ad_tcs.jpeg");
@@ -586,19 +587,14 @@ export default function HomeScreen() {
           <View>
             <View style={[styles.heroWrap, Platform.OS === "web" && styles.heroWrapWeb]}>
               {/* Layer order (back → front):
-                    1. Crisp static wordmark — always visible, so if
-                       the browser blocks video autoplay the user
-                       still sees a proper hero (never a black hole).
-                    2. Cinematic video — plays on top; hidden once
-                       playback reaches the 7.5s freeze mark, so the
-                       final state is the glare-free static wordmark
-                       from layer 1. */}
-              <Image
-                source={HERO_LOGO}
-                style={styles.heroLogoBase}
-                resizeMode="contain"
-                accessibilityLabel="TradeAPP"
-              />
+                    1. Pure-text wordmark — always visible, pixel-perfect
+                       at every viewport size, no PNG artefacts.
+                    2. Cinematic video — plays over the top; hidden once
+                       playback hits the 7.5s freeze mark so the final
+                       state is the crisp wordmark from layer 1. */}
+              <View style={styles.heroLogoBase} pointerEvents="none">
+                <TradeAppWordmark size={72} />
+              </View>
               <VideoView
                 player={heroPlayer}
                 style={[styles.hero, heroEnded && styles.heroHidden]}
@@ -1508,18 +1504,20 @@ const makeStyles = (colors: Palette, isWide: boolean, windowWidth: number = 0) =
     },
     hero: { width: "100%", height: "100%" },
     heroPoster: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, width: "100%", height: "100%" },
-    // Base logo layer — sits BEHIND the video, always visible so the
-    // hero panel is never a blank rectangle (browser autoplay may
-    // block the video). Once the intro finishes we hide the video
-    // and this crisp glare-free wordmark stays. Feb 2027.
+    // Base wordmark layer — sits BEHIND the video, always visible so
+    // the hero panel is never a blank rectangle (browser autoplay may
+    // block the video). Once the intro finishes we hide the video and
+    // this crisp text-based wordmark stays. Feb 2027. Rendered as
+    // pure text via <TradeAppWordmark> — no PNG artefacts, no glare,
+    // no baked-in dark background.
     heroLogoBase: {
       position: "absolute",
-      top: "18%",
-      left: "12%",
-      right: "12%",
-      bottom: "18%",
-      width: "76%",
-      height: "64%",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      alignItems: "center",
+      justifyContent: "center",
     },
     // Applied to the VideoView once playback hits the freeze mark to
     // reveal the base logo underneath without any glare artefacts.

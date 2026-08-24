@@ -9,13 +9,13 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
-  Image,
   useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { spacing, radius, fonts, BRAND } from "@/src/theme";
+import TradeAppWordmark from "@/src/components/TradeAppWordmark";
 import { darkPalette, type Palette } from "@/src/theme/ThemeContext";
 import { useAuth } from "@/src/context/AuthContext";
 
@@ -81,12 +81,7 @@ export default function Login() {
   const HeroPanel = (
     <View style={[styles.hero, styles.heroSolid]}>
       <View style={styles.heroContent}>
-        <Image
-          source={BRAND.logo}
-          style={styles.heroLogo}
-          resizeMode="contain"
-          accessibilityLabel="TradeAPP"
-        />
+        <TradeAppWordmark size={layout === "phone" ? 74 : 88} />
         {layout !== "phone" ? (
           <>
             <Text style={styles.heroHeadline}>
