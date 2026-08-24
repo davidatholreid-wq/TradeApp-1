@@ -217,22 +217,18 @@ export default function HomeScreen() {
     "";
 
   const heroPlayer = useVideoPlayer(HERO_VIDEO, (p) => {
-    // Client-supplied 10-second cinematic. Native (iOS/Android) only —
-    // the web hero renders a static TradeAPP logo instead. Guard the
-    // .play() call so the web preview never actually kicks off the
-    // media pipeline.
+    // Client-supplied 10-second cinematic. Played on every platform —
+    // iOS, Android AND Web (Feb 2027 rollout, dropped the earlier
+    // web-only text lockup). Muted so browser autoplay policies
+    // allow it without a user gesture.
     //
-    // Feb 2027 — client asked the intro to play ONCE and freeze on the
-    // final logo frame. `loop = false` disables auto-restart; expo-video
-    // holds the last decoded frame in place after playback ends, giving
-    // us the "stand still once the logo has appeared" behaviour they
-    // requested. No watchdog / focus-replay either — the video is a
-    // one-shot per app-open.
+    // `loop = false` — plays once and freezes on the final logo frame
+    // (expo-video default: holds the last decoded frame after the
+    // buffer runs out, giving us the "stand still once the logo has
+    // appeared" behaviour the client requested).
     p.loop = false;
     p.muted = true;
-    if (Platform.OS !== "web") {
-      p.play();
-    }
+    p.play();
   });
 
   // Fetch the running "Value of Cars Covered in the last 30 Days" figure
@@ -543,43 +539,30 @@ export default function HomeScreen() {
           {/* Hero panel — capped height on wide screens so it stops
               swallowing the whole viewport, and full-bleed 16:9 on
               phones.
-              • Native (iOS / Android): looping cinematic video.
-              • Web: clean text-based TradeAPP wordmark on a
-                transparent background (Aug 2026 — client asked to
-                drop the black-boxed PNG hero and let the browser
-                surface breathe). Adapts to light + dark themes
-                because the mark is rendered from the theme palette.
-              Stands alone — no wordmark / tagline overlay. */}
+              Feb 2027 — client asked for the video to play on web too
+              (previously we rendered a static text lockup). The
+              same expo-video pipeline now drives all platforms; the
+              only web-specific override is a shorter max-height so
+              the hero doesn't dominate the browser viewport, and a
+              tighter maxWidth so the panel stays visually contained.
+              */}
           <View>
             <View style={[styles.heroWrap, Platform.OS === "web" && styles.heroWrapWeb]}>
-              {Platform.OS === "web" ? (
-                <View style={styles.webLogoLockup} accessibilityLabel="TradeAPP">
-                  <View style={styles.webLogoRow}>
-                    <Text style={styles.webLogoTrade}>TRADE</Text>
-                    <View style={styles.webLogoAiChip}>
-                      <Text style={styles.webLogoAiText}>APP</Text>
-                    </View>
-                  </View>
-                </View>
-              ) : (
-                <>
-                  <Image
-                    source={HERO_LOGO}
-                    style={styles.heroPoster}
-                    resizeMode="contain"
-                    accessibilityLabel="TradeAPP hero poster"
-                  />
-                  <VideoView
-                    player={heroPlayer}
-                    style={styles.hero}
-                    contentFit="cover"
-                    nativeControls={false}
-                    allowsFullscreen={false}
-                    allowsPictureInPicture={false}
-                    accessibilityLabel="TradeAPP"
-                  />
-                </>
-              )}
+              <Image
+                source={HERO_LOGO}
+                style={styles.heroPoster}
+                resizeMode="cover"
+                accessibilityLabel="TradeAPP hero poster"
+              />
+              <VideoView
+                player={heroPlayer}
+                style={styles.hero}
+                contentFit="cover"
+                nativeControls={false}
+                allowsFullscreen={false}
+                allowsPictureInPicture={false}
+                accessibilityLabel="TradeAPP"
+              />
             </View>
           </View>
 
@@ -1485,15 +1468,17 @@ const makeStyles = (colors: Palette, isWide: boolean, windowWidth: number = 0) =
     // the platform shadow (transparent element casting a shadow
     // reads as visual noise) and cuts the max height so the mark
     // doesn't dominate the viewport.
+    // Feb 2027 — web hero now plays the same cinematic video that
+    // native uses. Kept the max-height slim (was 220/180 → now
+    // 260/200) and added a centred maxWidth so the hero doesn't
+    // sprawl across ultra-wide browser windows. The 16:9 aspect
+    // inherited from `heroWrap` still governs the actual size, so
+    // shorter windows collapse the panel proportionally.
     heroWrapWeb: {
-      backgroundColor: "transparent",
-      maxHeight: isWide ? 220 : 180,
-      // Kill the platform shadow declared on `heroWrap` — RN Web
-      // renders shadow rules as a box-shadow which sticks around
-      // even with a transparent backgroundColor. `elevation: 0`
-      // covers Android; the shadow* keys clear iOS/web.
-      shadowOpacity: 0,
-      elevation: 0,
+      maxHeight: isWide ? 260 : 200,
+      maxWidth: 720,
+      alignSelf: "center",
+      width: "100%",
     },
     webLogoLockup: {
       flex: 1,
