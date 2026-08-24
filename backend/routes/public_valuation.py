@@ -788,7 +788,7 @@ async def admin_deliver_public(sub_id: str, payload: DeliverIn, request: Request
         # log the intent here for the MVP; the frontend can also open a
         # mailto: fallback.
         updates["delivered_email_at"] = now
-        updates["last_email_subject"] = payload.email_subject or f"Your Fourbuy valuation for {sub['reference']}"
+        updates["last_email_subject"] = payload.email_subject or f"Your TradeAPP valuation for {sub['reference']}"
         updates["last_email_body"] = payload.email_body
 
     await db.public_submissions.update_one(

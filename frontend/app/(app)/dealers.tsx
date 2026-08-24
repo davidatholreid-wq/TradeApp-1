@@ -458,7 +458,7 @@ export default function Dealers() {
         ""
       );
     } else {
-      const auto = "Fourbuy" + Math.floor(1000 + Math.random() * 9000);
+      const auto = "TradeAPP" + Math.floor(1000 + Math.random() * 9000);
       Alert.alert(
         "Confirm password reset",
         `Generate a new password for ${dealer.email}?\n\nSuggested: ${auto}`,

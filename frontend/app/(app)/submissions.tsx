@@ -27,10 +27,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 // Redesigned Nov 2026 — replaced the loud gold "My Offer" chip with
 // a unified emerald/indigo/neutral palette so the three offers read
 // as one grouped panel rather than a mismatched stack of pills.
-//   • Fourbuy Offer  → neutral text / soft chip (informational)
+//   • TradeAPP Offer  → neutral text / soft chip (informational)
 //   • Highest Cover  → brand primary (blue) — the market's answer
 //   • My Offer       → emerald — the dealer's own stake, positive but calm
-const FOURBUY_OFFER_ACCENT = "#94A3B8";     // slate — neutral
+const TRADEAPP_OFFER_ACCENT = "#94A3B8";     // slate — neutral
 const COVER_OFFER_ACCENT   = "#3B82F6";     // brand blue — external market
 const MY_OFFER_ACCENT      = "#10B981";     // emerald — dealer's own number
 
@@ -297,7 +297,7 @@ export default function DashboardScreen() {
           in the bottom-right of the photo AND was hard to read in dark
           mode where `colors.success` was pure white on white photo
           highlights. The dealer's actual signal (their deal outcome +
-          the Fourbuy Offer amount below) is much clearer. */}
+          the TradeAPP Offer amount below) is much clearer. */}
       </View>
 
       <View style={styles.metaRow}>
@@ -343,30 +343,30 @@ export default function DashboardScreen() {
         </View>
       ) : null}
 
-      {/* Unified offers panel — Fourbuy Offer, Highest Cover, and
+      {/* Unified offers panel — TradeAPP Offer, Highest Cover, and
           My Offer render as one grouped card so the three prices
           read together at a glance. Each row is a coloured left-
           stripe + accent-tinted amount so the panel stays readable
           without any loud borders. My Offer sits at the bottom on a
           subtle emerald wash to hint "this is yours" without dominating. */}
       {(() => {
-        const showFourbuy = item.status === "priced" && item.price !== null;
-        const showFourbuyNoOffer = item.status === "declined";
+        const showTradeAPP = item.status === "priced" && item.price !== null;
+        const showTradeAPPNoOffer = item.status === "declined";
         const showCover = item.highest_cover_zar != null;
         return (
           <View style={styles.offersPanel}>
-            {showFourbuy ? (
+            {showTradeAPP ? (
               <View style={styles.offersRow}>
-                <View style={[styles.offersDot, { backgroundColor: FOURBUY_OFFER_ACCENT }]} />
-                <Text style={styles.offersRowLabel}>Fourbuy Offer</Text>
+                <View style={[styles.offersDot, { backgroundColor: TRADEAPP_OFFER_ACCENT }]} />
+                <Text style={styles.offersRowLabel}>TradeAPP Offer</Text>
                 <Text style={[styles.offersRowValue, { color: colors.text }]}>
                   R {item.price!.toLocaleString()}
                 </Text>
               </View>
-            ) : showFourbuyNoOffer ? (
+            ) : showTradeAPPNoOffer ? (
               <View style={styles.offersRow}>
-                <View style={[styles.offersDot, { backgroundColor: FOURBUY_OFFER_ACCENT }]} />
-                <Text style={styles.offersRowLabel}>Fourbuy Offer</Text>
+                <View style={[styles.offersDot, { backgroundColor: TRADEAPP_OFFER_ACCENT }]} />
+                <Text style={styles.offersRowLabel}>TradeAPP Offer</Text>
                 <Text style={[styles.offersRowValueMuted, { color: colors.textSecondary }]}>
                   No offer — not charged
                 </Text>
@@ -374,7 +374,7 @@ export default function DashboardScreen() {
             ) : null}
 
             {showCover ? (
-              <View style={[styles.offersRow, (showFourbuy || showFourbuyNoOffer) && styles.offersRowDivider]}>
+              <View style={[styles.offersRow, (showTradeAPP || showTradeAPPNoOffer) && styles.offersRowDivider]}>
                 <View style={[styles.offersDot, { backgroundColor: COVER_OFFER_ACCENT }]} />
                 <Text style={styles.offersRowLabel}>
                   Cover Offer{item.cover_count && item.cover_count > 1 ? ` · ${item.cover_count}` : ""}
@@ -393,7 +393,7 @@ export default function DashboardScreen() {
             <View
               style={[
                 styles.offersMyRow,
-                (showFourbuy || showFourbuyNoOffer || showCover) && styles.offersMyRowWithDivider,
+                (showTradeAPP || showTradeAPPNoOffer || showCover) && styles.offersMyRowWithDivider,
                 { backgroundColor: MY_OFFER_ACCENT + "12" },
               ]}
             >
@@ -533,29 +533,29 @@ export default function DashboardScreen() {
             </View>
 
             {/* Unified offers footer — same visual language as the
-                list card so dealers see the same grouped Fourbuy / Cover
+                list card so dealers see the same grouped TradeAPP / Cover
                 Offer / My Offer panel across both views. */}
             <View style={styles.offersPanel}>
               {item.status === "priced" && item.price !== null ? (
                 <View style={styles.offersRow}>
-                  <View style={[styles.offersDot, { backgroundColor: FOURBUY_OFFER_ACCENT }]} />
-                  <Text style={styles.offersRowLabel}>Fourbuy Offer</Text>
+                  <View style={[styles.offersDot, { backgroundColor: TRADEAPP_OFFER_ACCENT }]} />
+                  <Text style={styles.offersRowLabel}>TradeAPP Offer</Text>
                   <Text style={[styles.offersRowValue, { color: colors.text, fontSize: 14 }]}>
                     R {item.price.toLocaleString()}
                   </Text>
                 </View>
               ) : item.status === "declined" ? (
                 <View style={styles.offersRow}>
-                  <View style={[styles.offersDot, { backgroundColor: FOURBUY_OFFER_ACCENT }]} />
-                  <Text style={styles.offersRowLabel}>Fourbuy Offer</Text>
+                  <View style={[styles.offersDot, { backgroundColor: TRADEAPP_OFFER_ACCENT }]} />
+                  <Text style={styles.offersRowLabel}>TradeAPP Offer</Text>
                   <Text style={[styles.offersRowValueMuted, { color: colors.textSecondary }]}>
                     No offer
                   </Text>
                 </View>
               ) : (
                 <View style={styles.offersRow}>
-                  <View style={[styles.offersDot, { backgroundColor: FOURBUY_OFFER_ACCENT }]} />
-                  <Text style={styles.offersRowLabel}>Fourbuy Offer</Text>
+                  <View style={[styles.offersDot, { backgroundColor: TRADEAPP_OFFER_ACCENT }]} />
+                  <Text style={styles.offersRowLabel}>TradeAPP Offer</Text>
                   <Text style={[styles.offersRowValueMuted, { color: colors.textSecondary }]}>
                     Awaiting
                   </Text>
@@ -606,7 +606,7 @@ export default function DashboardScreen() {
       </View>
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.greeting}>{isAdmin ? "Fourbuy Admin" : "My Submissions"}</Text>
+          <Text style={styles.greeting}>{isAdmin ? "TradeAPP Admin" : "My Submissions"}</Text>
           <Text style={styles.subGreeting}>
             {isAdmin
               ? `${counts.incoming + counts.priced} active · ${counts.archived} archived`
@@ -1123,7 +1123,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   priceLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: "600" },
   priceValue: { color: colors.success, fontSize: 18, fontWeight: "800" },
   // ---- Unified offers panel (list card) ----
-  // A single grouped container that holds Fourbuy Offer, Cover Offer
+  // A single grouped container that holds TradeAPP Offer, Cover Offer
   // (highest external cover), and the dealer's own My Offer. Each
   // row is a coloured left-dot + label + right-aligned amount. My
   // Offer sits at the bottom on a subtle emerald wash so it still
@@ -1394,7 +1394,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   },
   // -- Grid card My Offer / Dealer Offer highlight --
   // Same "gold chip" as the list card but tuned for the grid's tighter
-  // footprint. Sits directly below the neutral Fourbuy + Highest Cover
+  // footprint. Sits directly below the neutral TradeAPP + Highest Cover
   // rows so it caps every card with a bold gold band.
   gridFooterHighlight: {
     flexDirection: "row",

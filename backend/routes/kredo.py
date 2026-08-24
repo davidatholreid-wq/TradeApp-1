@@ -978,7 +978,7 @@ async def kredo_cartrust_order(
         raw = await get_kredo_client().order_cartrust_pdf(
             requester_name=(dealer_info.get("first_name") or current.get("email") or "Dealer"),
             requester_surname=(dealer_info.get("last_name") or "User"),
-            requester_email=current.get("email") or "noreply@fourbuy.co.za",
+            requester_email=current.get("email") or "noreply@tradeapp.co.za",
             requester_phone=(dealer_info.get("phone") or "0000000000"),
             vin=vin,
             registration_number=(licence_no or ""),
@@ -990,7 +990,7 @@ async def kredo_cartrust_order(
             # Description, Variant, Engine Number, Colour and Year of
             # Registration because we only ever sent VIN + reg. Now
             # we also forward everything the submission knows so the
-            # report shows Fourbuy's values in the "Information
+            # report shows TradeAPP's values in the "Information
             # Supplied" column and a proper MATCH/mismatch verdict.
             manufacturer=str(sub.get("make_name") or ""),
             model=str(sub.get("model_name") or ""),
@@ -1713,7 +1713,7 @@ def _pdf_extract_ownership_summary(pdf_bytes: bytes) -> dict[str, Any]:
     # with the literal "[HIDDEN]" marker.
     #
     # Line shape examples:
-    #   FOURBUY WHOLESALE (PTY) LTD [HIDDEN] CURRENT OWNER 14/04/2026
+    #   TRADEAPP WHOLESALE (PTY) LTD [HIDDEN] CURRENT OWNER 14/04/2026
     #   MAZARURA [HIDDEN] PREVIOUS OWNER 25/11/2020
     row_re = re.compile(
         r"^\s*(?P<name>.+?)\s+\[?HIDDEN\]?\s+(?P<kind>CURRENT|PREVIOUS)\s+OWNER\s+(?P<date>\d{2}/\d{2}/\d{4})\s*$",
@@ -2017,8 +2017,8 @@ def _render_cartrust_pdf_from_json(cartrust_json: str, sub: dict) -> bytes:
     # Footer note.
     story.append(Spacer(1, 12))
     story.append(Paragraph(
-        "Source: Kredo CarTrust. Fourbuy renders every field the CarTrust "
-        "callback delivers — please contact your Fourbuy administrator if "
+        "Source: Kredo CarTrust. TradeAPP renders every field the CarTrust "
+        "callback delivers — please contact your TradeAPP administrator if "
         "any expected data is missing.",
         small,
     ))
@@ -2029,7 +2029,7 @@ def _render_cartrust_pdf_from_json(cartrust_json: str, sub: dict) -> bytes:
         leftMargin=15 * mm, rightMargin=15 * mm,
         topMargin=15 * mm, bottomMargin=15 * mm,
         title=f"CarTrust {sub.get('reference') or ''}".strip(),
-        author="TRADE AI powered by FOURBUY",
+        author="TradeAPP",
     )
     doc.build(story)
     return buf.getvalue()

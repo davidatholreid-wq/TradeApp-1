@@ -31,7 +31,7 @@ from motor.motor_asyncio import AsyncIOMotorClient  # noqa: E402
 from server import upload_image_to_cloudinary  # noqa: E402
 
 
-ADMIN_EMAIL = os.environ.get("ADMIN_PHOTOS_EMAIL", "admin@fourbuy.co.za")
+ADMIN_EMAIL = os.environ.get("ADMIN_PHOTOS_EMAIL", "admin@tradeapp.co.za")
 FRONTEND_ASSETS = BACKEND_DIR.parent / "frontend" / "assets" / "profile"
 COVER_PATH = FRONTEND_ASSETS / "cover.jpeg"
 PROFILE_PATH = FRONTEND_ASSETS / "profile.jpeg"

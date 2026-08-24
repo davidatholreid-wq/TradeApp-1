@@ -261,7 +261,7 @@ export default function HistoryScreen() {
           <View style={styles.offersBlock}>
             {item.status === "priced" && item.price != null ? (
               <View style={styles.offerRow}>
-                <Text style={styles.offerLabel}>Fourbuy Offer</Text>
+                <Text style={styles.offerLabel}>TradeAPP Offer</Text>
                 <Text style={[styles.offerValue, { color: colors.success }]}>
                   {formatZAR(item.price)}
                 </Text>
@@ -583,7 +583,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     fontFamily: fonts.number,
     fontVariant: ["tabular-nums"],
   },
-  // ---- Three-offer summary block (Fourbuy · Highest Cover · My/Dealer) ----
+  // ---- Three-offer summary block (TradeAPP · Highest Cover · My/Dealer) ----
   offersBlock: {
     marginTop: 8,
     paddingTop: 8,

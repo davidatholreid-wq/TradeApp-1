@@ -1,4 +1,4 @@
-"""Fourbuy Rewards routes (voucher redemptions + admin ledger).
+"""TradeAPP Rewards routes (voucher redemptions + admin ledger).
 
 Extracted from `backend/server.py` on 2026-08-09 as the second
 proof-of-concept in the Phase 2 route-splitting effort.
@@ -129,7 +129,7 @@ async def rewards_me(current: dict = Depends(get_current_user)):
         info = u.get("dealer_info") or {}
         first = (info.get("first_name") or "").strip()
         last = (info.get("last_name") or "").strip()
-        name = (first + " " + last).strip() or "Fourbuy dealer"
+        name = (first + " " + last).strip() or "TradeAPP dealer"
         if u.get("archived_at"):
             status = "archived"
         elif u.get("active") is False:

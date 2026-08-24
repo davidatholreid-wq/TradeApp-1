@@ -122,7 +122,7 @@ export function TakealotVoucherCard({
         <View style={styles.footer}>
           <View style={styles.footerLeft}>
             <Ionicons name="ribbon-outline" size={12} color="#F5F5F5" />
-            <Text style={styles.footerLabel}>FOURBUY REWARDS</Text>
+            <Text style={styles.footerLabel}>TRADEAPP REWARDS</Text>
           </View>
           <Text style={styles.footerCode}>
             NO • {String(value).padStart(4, "0")} • ZA

@@ -99,7 +99,7 @@ export default function VehicleDetail() {
   const isAdmin = user?.role === "admin";
   // Cover-mode: pricing agent inspecting a submission to place a
   // binding cover. Renders the SAME vehicle detail page but hides the
-  // Fourbuy offer / offer history / admin controls, and swaps the
+  // TradeAPP offer / offer history / admin controls, and swaps the
   // bottom action bar for a cover-placement input. Backend also
   // sanitises the response so admin_pricing / offer numbers never leak.
   const isCoverMode = cover === "1" || cover === "true";
@@ -367,7 +367,7 @@ export default function VehicleDetail() {
     binding_caveat?: string | null;
   };
   const [coverOffers, setCoverOffers] = useState<CoverOffer[]>([]);
-  // Both the Cover Offers Received panel and the Fourbuy Offer History
+  // Both the Cover Offers Received panel and the TradeAPP Offer History
   // are collapsed by default so the top of the page stays tight — the
   // dealer opens them on demand.
   const [coverOffersOpen, setCoverOffersOpen] = useState(false);
@@ -2033,7 +2033,7 @@ export default function VehicleDetail() {
             <View style={{ flex: 1 }}>
               <Text style={styles.unseenBannerTitle}>Subject to View — Less to Spend</Text>
               <Text style={styles.unseenBannerHint}>
-                Desktop valuation. Fourbuy has NOT physically inspected the vehicle. Final cover will adjust at inspection.
+                Desktop valuation. TradeAPP has NOT physically inspected the vehicle. Final cover will adjust at inspection.
               </Text>
             </View>
           </View>
@@ -2221,16 +2221,16 @@ export default function VehicleDetail() {
         </View>
 
         {/* Status banner — hidden in cover-mode so pricing agents aren't
-            anchored by any Fourbuy offer/price state. */}
+            anchored by any TradeAPP offer/price state. */}
         {isCoverMode ? null : sub.status === "priced" ? (
           <View style={styles.fourbuyOfferCard} testID="fourbuy-offer-card">
             <View style={styles.priceBanner} testID="price-banner">
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.priceLabel}>FOURBUY OFFER</Text>
+                <Text style={styles.priceLabel}>TRADEAPP OFFER</Text>
                 <Text style={styles.priceValue}>{formatZAR(sub.price)}</Text>
                 {sub.price_notes ? <Text style={styles.priceNotes}>{sub.price_notes}</Text> : null}
                 {/* Terms & Conditions of Offer — attached exclusively to
-                    the Fourbuy Offer (admin → dealer purchase offer).
+                    the TradeAPP Offer (admin → dealer purchase offer).
                     Dealer-to-dealer covers are governed by each dealer's
                     own terms and deliberately don't carry this button. */}
                 <View style={{ marginTop: 8, alignItems: "flex-start" }}>
@@ -2240,8 +2240,8 @@ export default function VehicleDetail() {
               <Ionicons name="checkmark-circle" size={40} color={colors.text} />
             </View>
 
-            {/* Nested Fourbuy Offer History — sits inside the same card
-                as the FOURBUY OFFER banner so the audit trail is
+            {/* Nested TradeAPP Offer History — sits inside the same card
+                as the TRADEAPP OFFER banner so the audit trail is
                 visually tied to the current offer. Collapsible, closed
                 by default. */}
             {sub.price_history && sub.price_history.length > 0 ? (
@@ -2258,7 +2258,7 @@ export default function VehicleDetail() {
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                     <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
                     <Text style={styles.nestedHistoryTitle}>
-                      Fourbuy Offer History ({sub.price_history.length})
+                      TradeAPP Offer History ({sub.price_history.length})
                     </Text>
                   </View>
                   <Ionicons
@@ -2369,7 +2369,7 @@ export default function VehicleDetail() {
 
 
 
-        {/* Fourbuy Offer History is now nested INSIDE the Fourbuy Offer
+        {/* TradeAPP Offer History is now nested INSIDE the TradeAPP Offer
             card above — see `fourbuyOfferCard`. This standalone slot
             is intentionally left blank so the layout below stays
             unchanged. */}
@@ -2377,7 +2377,7 @@ export default function VehicleDetail() {
         {/* Open Valuation PDF — Aug 2026: available at any time to
             the owning dealer (submission snapshot even before an offer
             is received). Still hidden in cover mode because the PDF
-            exposes the Fourbuy admin offer to network dealers. */}
+            exposes the TradeAPP admin offer to network dealers. */}
         {!isCoverMode ? (
           <View style={styles.reportsSection}>
             <TouchableOpacity
@@ -2395,7 +2395,7 @@ export default function VehicleDetail() {
                   <Text style={styles.docBtnSubtitle}>
                     {sub.status === "priced"
                       ? "Includes offer, condition, tyre estimate & any purchased reports"
-                      : "Snapshot of your submission — offer will be added once Fourbuy prices the vehicle"}
+                      : "Snapshot of your submission — offer will be added once TradeAPP prices the vehicle"}
                   </Text>
                 </View>
               </View>

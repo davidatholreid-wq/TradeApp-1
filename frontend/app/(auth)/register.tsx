@@ -15,7 +15,7 @@ const WHATSAPP_NUMBER = "27848819073"; // ZA — country code without the "+"
 
 /**
  * Public dealer self-registration is disabled — every dealer account is
- * created by a Fourbuy administrator. This screen is kept in the router so
+ * created by a TradeAPP administrator. This screen is kept in the router so
  * any existing bookmarks / QR codes still land somewhere friendly, and it
  * gives the prospective dealer a one-tap WhatsApp button that pre-fills the
  * request message with their dealership + contact name.
@@ -58,7 +58,7 @@ export default function RegisterInvitationOnly() {
     if (!dealerClean || !nameClean) {
       Alert.alert(
         "Fill in both fields",
-        "Please enter your dealership and your name so the Fourbuy team can help you quickly.",
+        "Please enter your dealership and your name so the TradeAPP team can help you quickly.",
       );
       return;
     }
@@ -66,8 +66,8 @@ export default function RegisterInvitationOnly() {
       ? `• Referral code: ${referralCode} (from ${referrer.name})\n`
       : "";
     const message =
-      `Hi Fourbuy 👋\n\n` +
-      `I'd like to request a dealer account on the TRADE AI powered by FOURBUY app.\n\n` +
+      `Hi TradeAPP 👋\n\n` +
+      `I'd like to request a dealer account on the TradeAPP app.\n\n` +
       `• Dealership: ${dealerClean}\n` +
       `• My name: ${nameClean}\n` +
       referralLine +
@@ -103,14 +103,14 @@ export default function RegisterInvitationOnly() {
 
           <Text style={styles.title}>Invitation only</Text>
           <Text style={styles.sub}>
-            Fourbuy dealer accounts are created by a Fourbuy administrator so
+            TradeAPP dealer accounts are created by a TradeAPP administrator so
             we can verify each dealership before you go live.
           </Text>
 
           {/* Referred-by banner — only shown when the `?ref=CODE` code
               resolves to a real dealer via /api/referral/lookup. If the
               code is missing OR unknown, we skip the banner entirely
-              rather than showing a misleading "a Fourbuy dealer" line. */}
+              rather than showing a misleading "a TradeAPP dealer" line. */}
           {referralCode && referrer ? (
             <View style={styles.referralBanner} testID="referred-by-banner">
               <Ionicons name="ribbon" size={16} color={colors.text} />
@@ -135,7 +135,7 @@ export default function RegisterInvitationOnly() {
             <View style={styles.step}>
               <Text style={styles.stepIndex}>2</Text>
               <Text style={styles.stepText}>
-                Tap the WhatsApp button — it opens a chat with the Fourbuy team
+                Tap the WhatsApp button — it opens a chat with the TradeAPP team
                 pre-filled with your details.
               </Text>
             </View>

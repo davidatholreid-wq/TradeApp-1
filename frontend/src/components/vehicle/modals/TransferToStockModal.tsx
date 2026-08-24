@@ -32,7 +32,7 @@ export type TransferToStockModalProps = {
   // confirms they're transferring the right car.
   vehicleTitle: string;
   vehicleSubtitle?: string | null;
-  // Pre-fill hint (e.g. suggested target based on Fourbuy cover), or
+  // Pre-fill hint (e.g. suggested target based on TradeAPP cover), or
   // leave undefined to start blank.
   suggestedTargetZar?: number | null;
   colors: any;
@@ -141,7 +141,7 @@ export function TransferToStockModal({
               </View>
               {suggestedTargetZar ? (
                 <Text style={styles.helper}>
-                  Suggested (based on Fourbuy cover): {fmtZar(suggestedTargetZar)}
+                  Suggested (based on TradeAPP cover): {fmtZar(suggestedTargetZar)}
                 </Text>
               ) : (
                 <Text style={styles.helper}>

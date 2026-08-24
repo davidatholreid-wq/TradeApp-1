@@ -64,7 +64,7 @@ class LoginRequest(BaseModel):
 async def register(payload: RegisterRequest):  # noqa: ARG001 - schema kept for client compatibility
     """Public self-registration is disabled.
 
-    All dealer users must be created by a Fourbuy administrator through
+    All dealer users must be created by a TradeAPP administrator through
     `POST /api/admin/dealerships/{dealership_id}/users` (or by creating a new
     dealership from the admin cockpit). Returning 403 here keeps the client
     contract explicit while making it impossible for the public web form to
@@ -73,8 +73,8 @@ async def register(payload: RegisterRequest):  # noqa: ARG001 - schema kept for 
     raise HTTPException(
         status_code=403,
         detail=(
-            "Dealer accounts are created by Fourbuy administrators. "
-            "Please contact your Fourbuy admin to be added to your dealership."
+            "Dealer accounts are created by TradeAPP administrators. "
+            "Please contact your TradeAPP admin to be added to your dealership."
         ),
     )
 
@@ -94,12 +94,12 @@ async def login(payload: LoginRequest):
         if user.get("archived_at"):
             raise HTTPException(
                 403,
-                "This dealer account has been archived. Please contact Fourbuy.",
+                "This dealer account has been archived. Please contact TradeAPP.",
             )
         if user.get("active") is False:
             raise HTTPException(
                 403,
-                "Your account has been suspended. Please contact Fourbuy to settle any outstanding balance.",
+                "Your account has been suspended. Please contact TradeAPP to settle any outstanding balance.",
             )
     token = sign_token(user["id"], user["email"], user["role"])
     # Ensure legacy dealer users have a dealership_id — the startup migration
@@ -131,7 +131,7 @@ async def login(payload: LoginRequest):
                 info = referrer.get("dealer_info") or {}
                 first = (info.get("first_name") or "").strip()
                 last = (info.get("last_name") or "").strip()
-                name = (first + " " + last).strip() or "a Fourbuy dealer"
+                name = (first + " " + last).strip() or "a TradeAPP dealer"
                 rb_dship_name = None
                 if referrer.get("dealership_id"):
                     rdship = await db.dealerships.find_one(
@@ -232,7 +232,7 @@ async def _send_password_reset_email(
     caller's response must be identical regardless (to avoid email
     enumeration)."""
     email_key = (os.environ.get("EMERGENT_EMAIL_KEY") or "").strip()
-    from_name = (os.environ.get("EMAIL_FROM_NAME") or "TRADE AI powered by FOURBUY").strip()
+    from_name = (os.environ.get("EMAIL_FROM_NAME") or "TradeAPP").strip()
     if not email_key:
         logger.error("EMERGENT_EMAIL_KEY not configured — cannot send reset email")
         return
@@ -244,12 +244,12 @@ async def _send_password_reset_email(
         <td align="center">
           <table role="presentation" width="520" cellpadding="0" cellspacing="0" style="background:#111827;border:1px solid #1F2937;border-radius:14px;padding:32px;">
             <tr>
-              <td style="font-size:20px;font-weight:800;color:#F9FAFB;padding-bottom:8px;">Reset your Fourbuy password</td>
+              <td style="font-size:20px;font-weight:800;color:#F9FAFB;padding-bottom:8px;">Reset your TradeAPP password</td>
             </tr>
             <tr>
               <td style="font-size:14px;color:#D1D5DB;line-height:1.5;padding-bottom:20px;">
                 {greeting}<br><br>
-                We received a request to reset the password for your TRADE AI powered by FOURBUY account. Click the button below to choose a new one. This link is valid for 30 minutes and can only be used once.
+                We received a request to reset the password for your TradeAPP account. Click the button below to choose a new one. This link is valid for 30 minutes and can only be used once.
               </td>
             </tr>
             <tr>
@@ -273,7 +273,7 @@ async def _send_password_reset_email(
             </tr>
           </table>
           <div style="font-size:11px;color:#6B7280;padding-top:16px;">
-            © TRADE AI powered by FOURBUY
+            © TradeAPP
           </div>
         </td>
       </tr>
@@ -281,7 +281,7 @@ async def _send_password_reset_email(
     """
     payload = {
         "to": [to_email],
-        "subject": "Reset your Fourbuy password",
+        "subject": "Reset your TradeAPP password",
         "html": html,
         "from_name": from_name,
     }
@@ -481,7 +481,7 @@ async def me(current: dict = Depends(get_current_user)):
                 info = referrer.get("dealer_info") or {}
                 first = (info.get("first_name") or "").strip()
                 last = (info.get("last_name") or "").strip()
-                name = (first + " " + last).strip() or "a Fourbuy dealer"
+                name = (first + " " + last).strip() or "a TradeAPP dealer"
                 rb_dship_name = None
                 if referrer.get("dealership_id"):
                     rdship = await db.dealerships.find_one(
@@ -520,7 +520,7 @@ async def referral_lookup(code: str):
     info = user.get("dealer_info") or {}
     first = (info.get("first_name") or "").strip()
     last = (info.get("last_name") or "").strip()
-    name = (first + " " + last).strip() or "a Fourbuy dealer"
+    name = (first + " " + last).strip() or "a TradeAPP dealer"
     return {
         "code": normalised,
         "referrer_name": name,
@@ -544,7 +544,7 @@ async def update_me(
     """Self-service profile editing is disabled.
 
     Dealer profile fields (name, phone, job title, etc.) must be maintained
-    by a Fourbuy admin from Manage Dealers so that role, job title and
+    by a TradeAPP admin from Manage Dealers so that role, job title and
     contact details are auditable. This endpoint returns 403 for every
     caller to keep the client contract explicit.
     """
@@ -552,8 +552,8 @@ async def update_me(
     raise HTTPException(
         status_code=403,
         detail=(
-            "Profile edits are managed by Fourbuy administrators. "
-            "Please contact your Fourbuy admin to update your details."
+            "Profile edits are managed by TradeAPP administrators. "
+            "Please contact your TradeAPP admin to update your details."
         ),
     )
 
@@ -576,16 +576,16 @@ async def delete_my_account(
     Sets `deleted_at` (now) + `purge_after` (+30 days) on the user
     document. The account is immediately unusable — login and every
     Bearer-auth'd request return 401 from here on — but the row stays
-    in Mongo for 30 days so Fourbuy support can recover it on request.
+    in Mongo for 30 days so TradeAPP support can recover it on request.
 
     Guards:
       • Requires the caller's current password (defense against a
         stolen-token deletion).
       • Blocks the LAST active admin of a dealership from deleting so
         the dealership doesn't end up ownerless (the caller is asked
-        to contact Fourbuy support to close the dealership instead).
+        to contact TradeAPP support to close the dealership instead).
       • Admins with `role == 'admin'` cannot self-delete via this
-        endpoint — Fourbuy staff accounts are managed off-platform.
+        endpoint — TradeAPP staff accounts are managed off-platform.
     """
     # Re-verify the password so a stolen token can't nuke the account.
     fresh = await db.users.find_one({"id": current["id"]})
@@ -596,7 +596,7 @@ async def delete_my_account(
     if fresh.get("role") == "admin":
         raise HTTPException(
             403,
-            "Admin accounts cannot self-delete from the app. Please contact Fourbuy support.",
+            "Admin accounts cannot self-delete from the app. Please contact TradeAPP support.",
         )
     # Last-active-user-of-dealership guard.
     dealership_id = fresh.get("dealership_id")
@@ -620,7 +620,7 @@ async def delete_my_account(
             raise HTTPException(
                 409,
                 "You are the last remaining user on this dealership. "
-                "Please contact Fourbuy support to close the dealership account.",
+                "Please contact TradeAPP support to close the dealership account.",
             )
     now = datetime.now(timezone.utc).isoformat()
     purge_after = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
@@ -640,7 +640,7 @@ async def delete_my_account(
         "purge_after": purge_after,
         "message": (
             "Your account has been marked for deletion. "
-            "Contact Fourbuy support within 30 days if you'd like it restored."
+            "Contact TradeAPP support within 30 days if you'd like it restored."
         ),
     }
 

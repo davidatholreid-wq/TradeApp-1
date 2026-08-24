@@ -50,7 +50,7 @@ export default function AgreementModal() {
         <View style={styles.card}>
           <View style={styles.header}>
             <Ionicons name="shield-checkmark" size={22} color={colors.neon} />
-            <Text style={styles.title}>Fourbuy Pricing Agreement</Text>
+            <Text style={styles.title}>TradeAPP Pricing Agreement</Text>
           </View>
 
           <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: spacing.md }}>
@@ -77,7 +77,7 @@ export default function AgreementModal() {
               <Text style={styles.termHeading}>Billing</Text>
               <Text style={styles.term}>
                 • Fees accumulate per calendar month and are invoiced separately by
-                Fourbuy. Payment is by EFT.
+                TradeAPP. Payment is by EFT.
               </Text>
               <Text style={styles.term}>
                 • Unpaid accounts may be suspended until settled.

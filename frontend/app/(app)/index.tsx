@@ -160,7 +160,7 @@ export default function HomeScreen() {
       // etc.) in dealership / user names — WhatsApp then displayed
       // literal "%20" and "%2F" tokens in the pre-filled body.
       const waMessage =
-        "Hi Fourbuy Admin,\n\n" +
+        "Hi TradeAPP Admin,\n\n" +
         "I'm enquiring about an account suspension.\n" +
         `Dealership: ${dealership}\n` +
         `User: ${userName}\n\n` +
@@ -168,7 +168,7 @@ export default function HomeScreen() {
       const waUrl = `https://wa.me/${adminPhone}?text=${encodeURIComponent(waMessage)}`;
       const message =
         `Your account is currently suspended, so you can't ${tileLabel === "Get Cover" ? "submit new valuations" : "place covers"} right now.\n\n` +
-        `Please contact the Fourbuy administrator to resolve this.`;
+        `Please contact the TradeAPP administrator to resolve this.`;
       if (Platform.OS === "web") {
         const ok = (globalThis as any).confirm?.(
           `${message}\n\nOpen WhatsApp to message admin now?`
@@ -208,7 +208,7 @@ export default function HomeScreen() {
     (user?.email ? user.email.split("@")[0] : "");
 
   // Dealership label for the welcome header ("Welcome David from
-  // Fourbuy Fourways Gardens (PTY) Ltd"). Falls back to company_info's
+  // TradeAPP Fourways Gardens (PTY) Ltd"). Falls back to company_info's
   // company_name for dealers who registered before we linked them to
   // a `dealership` doc.
   const dealershipName =
@@ -300,7 +300,7 @@ export default function HomeScreen() {
   useEffect(() => { loadDealOutcomes(); }, [loadDealOutcomes]);
   useFocusEffect(useCallback(() => { loadDealOutcomes(); }, [loadDealOutcomes]));
 
-  // Fourbuy Rewards — running balance + how far to the next voucher.
+  // TradeAPP Rewards — running balance + how far to the next voucher.
   // Powers the redesigned TakealotRewardsTile so dealers can see their
   // points and how much more they need to earn a Takealot voucher, all
   // from the home dashboard. Refreshed on every focus so returning from
@@ -568,7 +568,7 @@ export default function HomeScreen() {
               swallowing the whole viewport, and full-bleed 16:9 on
               phones.
               • Native (iOS / Android): looping cinematic video.
-              • Web: clean text-based TRADE AI wordmark on a
+              • Web: clean text-based TradeAPP wordmark on a
                 transparent background (Aug 2026 — client asked to
                 drop the black-boxed PNG hero and let the browser
                 surface breathe). Adapts to light + dark themes
@@ -577,14 +577,13 @@ export default function HomeScreen() {
           <View>
             <View style={[styles.heroWrap, Platform.OS === "web" && styles.heroWrapWeb]}>
               {Platform.OS === "web" ? (
-                <View style={styles.webLogoLockup} accessibilityLabel="TRADE AI powered by FOURBUY">
+                <View style={styles.webLogoLockup} accessibilityLabel="TradeAPP">
                   <View style={styles.webLogoRow}>
                     <Text style={styles.webLogoTrade}>TRADE</Text>
                     <View style={styles.webLogoAiChip}>
-                      <Text style={styles.webLogoAiText}>AI</Text>
+                      <Text style={styles.webLogoAiText}>APP</Text>
                     </View>
                   </View>
-                  <Text style={styles.webLogoTagline}>POWERED BY FOURBUY</Text>
                 </View>
               ) : (
                 <>
@@ -592,7 +591,7 @@ export default function HomeScreen() {
                     source={HERO_LOGO}
                     style={styles.heroPoster}
                     resizeMode="contain"
-                    accessibilityLabel="TRADE AI hero poster"
+                    accessibilityLabel="TradeAPP hero poster"
                   />
                   <VideoView
                     player={heroPlayer}
@@ -601,7 +600,7 @@ export default function HomeScreen() {
                     nativeControls={false}
                     allowsFullscreen={false}
                     allowsPictureInPicture={false}
-                    accessibilityLabel="TRADE AI powered by FOURBUY"
+                    accessibilityLabel="TradeAPP"
                   />
                 </>
               )}
@@ -651,7 +650,7 @@ export default function HomeScreen() {
           {/* Live "Value of Cars Covered in the last 30 Days" banner —
               standalone stat card that sits above the marketing tiles.
               Deliberately NOT a flip tile / not tied to rewards — it's a
-              running figure of Fourbuy's real cover activity, formatted
+              running figure of TradeAPP's real cover activity, formatted
               with comma thousand-separators (en-US). Hidden while the
               stat is loading so the layout doesn't jump. */}
           {coversTotal30d != null ? (
@@ -760,7 +759,7 @@ export default function HomeScreen() {
               signpost that the below area is the pitch, not primary UI. */}
           {isWide ? (
             <View style={styles.sectionHead}>
-              <Text style={styles.sectionEyebrow}>WHY FOURBUY</Text>
+              <Text style={styles.sectionEyebrow}>WHY TRADEAPP</Text>
               <Text style={styles.sectionTitle}>Everything you need to trade with confidence</Text>
             </View>
           ) : null}
@@ -926,8 +925,8 @@ function TakealotRewardsTile({
       accessibilityRole="button"
       accessibilityLabel={
         rewards
-          ? `Fourbuy Rewards. ${balance} points. ${toNext} points until your next R${voucherR} Takealot voucher.`
-          : "Fourbuy Rewards, powered by takealot.com"
+          ? `TradeAPP Rewards. ${balance} points. ${toNext} points until your next R${voucherR} Takealot voucher.`
+          : "TradeAPP Rewards, powered by takealot.com"
       }
       testID="rewards-takealot-tile"
       style={({ pressed }) => [{ opacity: pressed ? 0.92 : 1 }]}
@@ -1450,8 +1449,8 @@ const makeStyles = (colors: Palette, isWide: boolean, windowWidth: number = 0) =
 
     // Hero video ----------------------------------------------------------
     // On wide screens the hero panel becomes a two-column row that
-    // docks the Advertising flip-tile to the right of the Fourbuy
-    // brand banner. The Fourbuy panel shrinks to ~62% width so both
+    // docks the Advertising flip-tile to the right of the TradeAPP
+    // brand banner. The TradeAPP panel shrinks to ~62% width so both
     // banners feel balanced (the ad panel needs a workable minimum
     // width to render its full-bleed brand images legibly).
     heroRow: {
@@ -1489,7 +1488,7 @@ const makeStyles = (colors: Palette, isWide: boolean, windowWidth: number = 0) =
       flex: 0.38,
       minHeight: 200,
       // Cap the maximum height so the ad panel never dwarfs the
-      // Fourbuy banner on ultra-wide screens.
+      // TradeAPP banner on ultra-wide screens.
       maxHeight: 360,
       borderRadius: radius.lg,
       overflow: "hidden",
@@ -1497,7 +1496,7 @@ const makeStyles = (colors: Palette, isWide: boolean, windowWidth: number = 0) =
     // Applied to the promoted ad FlipTile's outer Pressable — strips
     // the default `TILE_HEIGHT` fixed height and lets it fill the
     // parent column, so the banner sits at exactly the same height
-    // as the neighbouring Fourbuy panel.
+    // as the neighbouring TradeAPP panel.
     heroAdOuter: {
       height: "100%",
       width: "100%",

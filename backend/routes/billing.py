@@ -230,7 +230,7 @@ async def assert_dealership_active(dealership_id: str, feature: str = "this feat
     if balance_cents <= 0:
         raise HTTPException(
             402,
-            f"Your dealership's deposit balance has been depleted. Please contact Fourbuy accounts to top up before using {feature}.",
+            f"Your dealership's deposit balance has been depleted. Please contact TradeAPP accounts to top up before using {feature}.",
         )
 
 
@@ -246,8 +246,8 @@ async def _get_company_settings() -> dict:
     doc.pop("_id", None)
     # Sensible defaults if the admin hasn't populated the record yet.
     return {
-        "trading_name": doc.get("trading_name") or "TRADE AI powered by FOURBUY",
-        "legal_name": doc.get("legal_name") or "Fourbuy Car Buying Co (Pty) Ltd",
+        "trading_name": doc.get("trading_name") or "TradeAPP",
+        "legal_name": doc.get("legal_name") or "TradeAPP (Pty) Ltd",
         "registration_number": doc.get("registration_number") or "",
         "vat_number": doc.get("vat_number") or "",
         "address_line1": doc.get("address_line1") or "",
@@ -1215,7 +1215,7 @@ async def admin_debtors_report_pdf(
 
     # A single-dealership _pdf_header expects a dealership dict — use
     # a stub since the "BILL TO" side is meaningless on an aggregate
-    # report. The header block still renders the company (Fourbuy)
+    # report. The header block still renders the company (TradeAPP)
     # info on the left.
     stub_dealership = {"name": "ALL DEALERSHIPS", "address": ""}
     pdf = _render_pdf("DEBTORS REPORT — LIVE SNAPSHOT", body, company, stub_dealership)

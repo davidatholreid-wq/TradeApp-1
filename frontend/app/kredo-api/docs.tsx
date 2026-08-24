@@ -36,11 +36,11 @@ export default function PartnerApiDocsScreen() {
       <ScrollView contentContainerStyle={{ padding: spacing.md, paddingBottom: 96 }}>
         <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 12 }}>
           <View style={{ flex: 1 }}>
-            <Text style={s.title}>Fourbuy VIN Data API</Text>
+            <Text style={s.title}>TradeAPP VIN Data API</Text>
             <Text style={s.subtitle}>
               Whitelabel VIN factory-options decode service. Base URL:
               {"\n"}
-              <Text style={s.mono}>https://api.fourbuy.co.za/api/partner/v1</Text>
+              <Text style={s.mono}>https://api.tradeapp.co.za/api/partner/v1</Text>
             </Text>
           </View>
           <TouchableOpacity style={s.pdfBtn} onPress={openPdf} activeOpacity={0.85}>
@@ -60,7 +60,7 @@ export default function PartnerApiDocsScreen() {
           <Text style={s.codeText}>Authorization: Bearer fbp_XXXXXXXXXXXX</Text>
         </View>
         <Text style={s.p}>
-          Keys are provisioned per client. Contact your Fourbuy account
+          Keys are provisioned per client. Contact your TradeAPP account
           manager to receive one. Keep it server-side — never embed in a
           browser or mobile app.
         </Text>
@@ -74,7 +74,7 @@ export default function PartnerApiDocsScreen() {
         <View style={s.code}>
           <Text style={s.codeText}>{`{
   "ok": true,
-  "service": "Fourbuy VIN Data API",
+  "service": "TradeAPP VIN Data API",
   "version": "1.0"
 }`}</Text>
         </View>
@@ -92,8 +92,8 @@ export default function PartnerApiDocsScreen() {
 
         <Text style={s.h3}>Example</Text>
         <View style={s.code}>
-          <Text style={s.codeText}>{`curl -H "Authorization: Bearer $FOURBUY_API_KEY" \\
-  https://api.fourbuy.co.za/api/partner/v1/vin-lookup/WVGZZZ5NZJW402485`}</Text>
+          <Text style={s.codeText}>{`curl -H "Authorization: Bearer $TRADEAPP_API_KEY" \\
+  https://api.tradeapp.co.za/api/partner/v1/vin-lookup/WVGZZZ5NZJW402485`}</Text>
         </View>
 
         <Text style={s.h3}>Response 200 OK</Text>
@@ -111,7 +111,7 @@ export default function PartnerApiDocsScreen() {
       ...
     ]
   },
-  "source": "Fourbuy VIN Data API",
+  "source": "TradeAPP VIN Data API",
   "cached": false,
   "call_id": "6a30…"
 }`}</Text>
@@ -126,7 +126,7 @@ export default function PartnerApiDocsScreen() {
             ["403 Forbidden", "IP address not on the client's allowlist."],
             ["404 Not Found", "No factory data available for this VIN. Not billed."],
             ["429 Too Many Requests", "Upstream rate limit. Not billed."],
-            ["500 Internal Error", "Fourbuy-side error. Not billed."],
+            ["500 Internal Error", "TradeAPP-side error. Not billed."],
             ["502 Bad Gateway", "Upstream vendor error. Not billed."],
           ].map(([code, desc], i) => (
             <View key={i} style={s.tblRow}>
@@ -192,7 +192,7 @@ export default function PartnerApiDocsScreen() {
         </Text>
 
         <Text style={[s.p, { marginTop: spacing.lg, color: colors.textSecondary, textAlign: "center" }]}>
-          © TRADE AI powered by FOURBUY · Fourbuy VIN Data API v1.0
+          © TradeAPP · TradeAPP VIN Data API v1.0
         </Text>
       </ScrollView>
     </SafeAreaView>

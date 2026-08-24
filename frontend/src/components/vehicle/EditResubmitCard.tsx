@@ -83,7 +83,7 @@ export function buildResubmitConfirmMessage(sub: any, state: ResubmitPromptState
   const ref = sub?.reference || "this valuation";
   const base =
     `This will retract ${ref} and open a new editable version with all details pre-filled.\n\n` +
-    `You'll still be charged R50 once Fourbuy prices the new valuation.`;
+    `You'll still be charged R50 once TradeAPP prices the new valuation.`;
   switch (state.reason.kind) {
     case "in_stock": {
       const stk = state.reason.stockNumber ? ` (${state.reason.stockNumber})` : "";
@@ -177,7 +177,7 @@ export default function EditResubmitCard({
       </TouchableOpacity>
 
       <Text style={styles.footnote}>
-        R50 will apply once Fourbuy prices the new version, on top of any R50 already invoiced.
+        R50 will apply once TradeAPP prices the new version, on top of any R50 already invoiced.
       </Text>
     </View>
   );

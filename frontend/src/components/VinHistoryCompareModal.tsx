@@ -1,7 +1,7 @@
 /**
  * VinHistoryCompareModal
  *
- * Admin-cockpit modal that lets Fourbuy staff view a NEW incoming
+ * Admin-cockpit modal that lets TradeAPP staff view a NEW incoming
  * submission side-by-side with a previous submission for the SAME VIN
  * (any dealership). Read-only — no edits.
  *
@@ -198,7 +198,7 @@ function CompareCard({
     ["Submitted by", pick(sub.submitted_by_name)],
     ["Mileage", fmtKm(sub.mileage)],
     ["Colour", pick(sub.colour)],
-    ["Fourbuy Price", fmtZar(sub.price)],
+    ["TradeAPP Price", fmtZar(sub.price)],
     ["Dealer Offer", fmtZar(sub.dealer_offer_zar)],
     ["Mechanical", pick(sub.mechanical_condition)],
     ["Cosmetic", pick(sub.cosmetic_condition)],

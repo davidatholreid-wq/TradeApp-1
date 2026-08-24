@@ -116,7 +116,7 @@ export function WalletCard() {
         <View style={styles.suspendedInline}>
           <Ionicons name="warning" size={16} color="#B91C1C" />
           <Text style={styles.suspendedText}>
-            Your deposit is depleted — new submissions, VIN reports and Get Cover placements are blocked until Fourbuy accounts loads a top-up.
+            Your deposit is depleted — new submissions, VIN reports and Get Cover placements are blocked until TradeAPP accounts loads a top-up.
           </Text>
         </View>
       ) : null}
@@ -184,7 +184,7 @@ export function WalletSuspendBanner() {
     <View style={styles.suspendBanner} testID="wallet-suspend-banner">
       <Ionicons name="warning" size={14} color="#fff" />
       <Text style={styles.suspendBannerText}>
-        Deposit depleted — please contact Fourbuy accounts to top up before submitting.
+        Deposit depleted — please contact TradeAPP accounts to top up before submitting.
       </Text>
     </View>
   );

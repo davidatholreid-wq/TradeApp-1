@@ -173,7 +173,7 @@ function ResolvedLogo({
         source={BRAND.logo}
         style={{ width: height * 0.9, height: height * 0.9 }}
         resizeMode="contain"
-        accessibilityLabel="TRADE AI powered by FOURBUY"
+        accessibilityLabel="TradeAPP"
       />
     </Animated.View>
   );

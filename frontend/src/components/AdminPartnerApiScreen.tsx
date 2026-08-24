@@ -1,5 +1,5 @@
 /**
- * AdminPartnerApiScreen — manage the Fourbuy VIN Data API (Kredo-style
+ * AdminPartnerApiScreen — manage the TradeAPP VIN Data API (Kredo-style
  * reseller) partner clients and their billing.
  *
  * Renders inside the admin cockpit. Uses the same backend endpoints
@@ -159,7 +159,7 @@ export default function AdminPartnerApiScreen() {
           <Text style={styles.title}>Partner API</Text>
           <Text style={styles.subtitle}>
             Manage API keys, IP allowlists and monthly billing for third-party partners
-            querying the Fourbuy VIN Data API.
+            querying the TradeAPP VIN Data API.
           </Text>
         </View>
         <TouchableOpacity style={styles.newBtn} onPress={() => setCreateOpen(true)} activeOpacity={0.85} testID="partner-api-new">

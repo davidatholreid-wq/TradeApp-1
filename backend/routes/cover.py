@@ -5,7 +5,7 @@ proof-of-concept in the Phase 2 route-splitting effort.
 
 A pricing-agent is a special dealer who can price other dealers'
 submissions. Their offers ("covers") are binding-subject-to-inspection,
-billed R10 per cover placed. The Fourbuy admin Offer / admin_pricing
+billed R10 per cover placed. The TradeAPP admin Offer / admin_pricing
 are stripped from what they see so they price without anchoring.
 
 Owns 8 routes:
@@ -53,8 +53,8 @@ COVER_OFFER_COST_ZAR = 10.0
 
 def _sanitise_sub_for_pricing_agent(sub: dict) -> dict:
     """Return a copy of the submission dict with fields hidden that a
-    pricing agent must NOT see: the Fourbuy admin Offer, admin_pricing,
-    and any other Fourbuy-side price signals. Everything else (photos,
+    pricing agent must NOT see: the TradeAPP admin Offer, admin_pricing,
+    and any other TradeAPP-side price signals. Everything else (photos,
     condition, recon, warranty, VIN reports, AI market analysis,
     AutoTrader deep link, service history etc.) stays visible.
     """
@@ -223,7 +223,7 @@ async def list_cover_submissions(current: dict = Depends(require_pricing_agent))
                 pass
         # Derive a single "thumbnail" URL from whichever photo role is
         # present first — the frontend list card renders this. `photos`
-        # in Fourbuy submissions is a dict keyed by role
+        # in TradeAPP submissions is a dict keyed by role
         # (front / driver_side / passenger_side / rear / interior) so
         # we can't just do `photos[0]`.
         photos = s.get("photos")
@@ -334,7 +334,7 @@ async def place_cover_offer(
     if current.get("active") is False:
         raise HTTPException(
             403,
-            "Your account has been suspended. Please contact Fourbuy to reactivate before placing covers.",
+            "Your account has been suspended. Please contact TradeAPP to reactivate before placing covers.",
         )
     # Wallet-balance guard — a dealership with a depleted deposit
     # cannot place new covers (Aug 2026 billing).

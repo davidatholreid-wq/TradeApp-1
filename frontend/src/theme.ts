@@ -1,4 +1,4 @@
-// Design tokens for TRADE AI powered by FOURBUY
+// Design tokens for TradeAPP
 // Monochrome luxury: pure black, white and grey — no colour accents.
 // Headings use the same system font as the body, uppercase with wide letter
 // spacing for a clean editorial feel.
@@ -94,16 +94,17 @@ export const type = {
 };
 
 export const BRAND = {
-  name: "TRADE AI powered by FOURBUY",
-  short: "Fourbuy",
+  name: "TradeAPP",
+  short: "TradeAPP",
   tagline: "Quality Used Cars at Wholesale Prices",
-  // Dark-background monochrome (white text + car icon) — used in dark mode.
+  // Feb 2027 rebrand — single AI-generated wordmark used for both
+  // dark and light themes. The badge design is a self-contained
+  // black card so it reads cleanly against any background — same
+  // convention Netflix / HBO Max use for their logo tiles.
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  logo: require("../assets/images/logo-fourbuy.png"),
-  // Light-background monochrome (black text + car icon) — used in day mode
-  // so the logo reads cleanly against the white/off-white background.
+  logo: require("../assets/images/logo-tradeapp.png"),
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  logoLight: require("../assets/images/logo-fourbuy-light.png"),
+  logoLight: require("../assets/images/logo-tradeapp.png"),
   // Legacy remote URL kept for the login background fallback only.
-  logoUrl: "https://fourbuy.b-cdn.net/wp-content/uploads/logo.webp",
+  logoUrl: "https://tradeapp.co.za/logo.webp",
 };

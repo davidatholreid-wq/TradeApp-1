@@ -289,7 +289,7 @@ async def fetch_landrover_osh(vin: str, *, country_label: str = "South Africa",
     """Fetch service history for a Land Rover / Range Rover / Jaguar VIN.
 
     ``country_label`` is the visible-text label used to click the country
-    from JLR's country picker. Defaults to South Africa since Fourbuy is
+    from JLR's country picker. Defaults to South Africa since TradeAPP is
     a ZA business — override for edge cases (e.g. an imported vehicle
     still under service in another market).
     """

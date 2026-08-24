@@ -72,8 +72,8 @@ export const makeStyles = (colors: Palette) => StyleSheet.create({
     letterSpacing: 1,
   },
 
-  // Wrapper card that ties the Fourbuy Offer banner together with the
-  // nested Fourbuy Offer History collapsible below it. Keeps them
+  // Wrapper card that ties the TradeAPP Offer banner together with the
+  // nested TradeAPP Offer History collapsible below it. Keeps them
   // visually linked as a single "offer" unit.
   fourbuyOfferCard: {
     marginBottom: spacing.md,
@@ -103,7 +103,7 @@ export const makeStyles = (colors: Palette) => StyleSheet.create({
     paddingBottom: spacing.md,
   },
 
-  // Collapsible toggle row on the Fourbuy Offer History card.
+  // Collapsible toggle row on the TradeAPP Offer History card.
   priceHistoryToggle: {
     flexDirection: "row",
     alignItems: "center",

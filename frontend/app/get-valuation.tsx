@@ -1,5 +1,5 @@
 /**
- * PUBLIC VALUATION PORTAL — TRADE AI powered by FOURBUY
+ * PUBLIC VALUATION PORTAL — TradeAPP
  *
  * Anonymous, no-login funnel for members of the public to submit their
  * vehicle for a free valuation. Route lives at `/get-valuation`. Uses the
@@ -566,7 +566,7 @@ export default function GetValuationScreen() {
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       {/* STATIC HEADER — pinned to the top of the viewport. On web we
           add `position: sticky` so the mobile browser's shrinking /
-          growing address bar can't push the Fourbuy logo off-screen
+          growing address bar can't push the TradeAPP logo off-screen
           (which was the "logo too high, cannot be seen" bug). Outside
           the KeyboardAvoidingView so the wordmark never jumps when
           the on-screen keyboard opens. */}
@@ -575,7 +575,7 @@ export default function GetValuationScreen() {
           source={brandLogo}
           style={styles.headerLogo}
           resizeMode="contain"
-          accessibilityLabel="TRADE AI powered by FOURBUY"
+          accessibilityLabel="TradeAPP"
         />
       </View>
 
@@ -754,7 +754,7 @@ function StepSeller({ colors, styles, fullName, setFullName, phone, setPhone, em
           {consent ? <Ionicons name="checkmark" size={14} color={colors.onPrimary} /> : null}
         </View>
         <Text style={styles.consentText}>
-          I accept Fourbuy{"\u2019"}s <Text style={styles.link}>Privacy Notice</Text> and agree to be contacted by
+          I accept TradeAPP{"\u2019"}s <Text style={styles.link}>Privacy Notice</Text> and agree to be contacted by
           WhatsApp or email regarding this valuation (POPIA-compliant).
         </Text>
       </TouchableOpacity>
@@ -1039,7 +1039,7 @@ function StepReview({ colors, styles, summary, onEditStep, turnstileSiteKey, tur
           </>
         ) : (
           <Text style={styles.turnstileMissing}>
-            Anti-abuse widget is not configured. Please contact Fourbuy.
+            Anti-abuse widget is not configured. Please contact TradeAPP.
           </Text>
         )}
       </View>
@@ -1048,12 +1048,12 @@ function StepReview({ colors, styles, summary, onEditStep, turnstileSiteKey, tur
 }
 
 function SuccessCard({ colors, styles, brandLogo, reference, message }: any) {
-  // Redirect the seller to the main Fourbuy marketing site. On web
+  // Redirect the seller to the main TradeAPP marketing site. On web
   // we prefer navigating the same tab (feels like a natural page
   // transition after Done); on native we hand off to the system
   // browser via `Linking.openURL`.
-  const goToFourbuy = () => {
-    const target = "https://www.fourbuy.co.za";
+  const goToTradeAPP = () => {
+    const target = "https://www.tradeapp.co.za";
     try {
       if (Platform.OS === "web") {
         const w = (globalThis as any).window;
@@ -1071,14 +1071,14 @@ function SuccessCard({ colors, styles, brandLogo, reference, message }: any) {
   return (
     <SafeAreaView style={[styles.safe, { justifyContent: "center" }]} edges={["top", "bottom"]}>
       {/* Slim brand header on the success page too — keeps the
-          seller's mental context ("I'm still on Fourbuy's site") and
+          seller's mental context ("I'm still on TradeAPP's site") and
           matches the wizard's chrome so the transition feels tidy. */}
       <View style={styles.header}>
         <Image
           source={brandLogo}
           style={styles.headerLogo}
           resizeMode="contain"
-          accessibilityLabel="TRADE AI powered by FOURBUY"
+          accessibilityLabel="TradeAPP"
         />
       </View>
       <ScrollView contentContainerStyle={styles.successScroll}>
@@ -1096,18 +1096,18 @@ function SuccessCard({ colors, styles, brandLogo, reference, message }: any) {
             Save this reference — we{"\u2019"}ll quote it in our WhatsApp and email response.
           </Text>
 
-          {/* Primary CTA — send the seller to the main Fourbuy site
+          {/* Primary CTA — send the seller to the main TradeAPP site
               to browse stock, read reviews, or contact the team while
               they wait for the valuation to land. Wider button + arrow
               icon reads as an outbound link rather than a form
               dismissal. */}
           <TouchableOpacity
             style={styles.successPrimaryBtn}
-            onPress={goToFourbuy}
+            onPress={goToTradeAPP}
             accessibilityRole="link"
-            accessibilityLabel="Visit fourbuy.co.za"
+            accessibilityLabel="Visit tradeapp.co.za"
           >
-            <Text style={styles.successPrimaryBtnText}>Visit fourbuy.co.za</Text>
+            <Text style={styles.successPrimaryBtnText}>Visit tradeapp.co.za</Text>
             <Ionicons name="arrow-forward" size={18} color={colors.onPrimary} />
           </TouchableOpacity>
           <Text style={styles.successHint}>
@@ -1232,7 +1232,7 @@ function makeStyles(colors: Palette) {
         zIndex: 10,
       } as any) : {}),
     },
-    // Logo dimensions — the Fourbuy wordmark PNG is 617×215 (~2.87:1).
+    // Logo dimensions — the TradeAPP wordmark PNG is 617×215 (~2.87:1).
     // 40px tall × 115 wide keeps it legible on the smallest supported
     // phone browser (iPhone SE, 320px CSS width) without dominating
     // the header. Increased from the previous text-only header for
@@ -1639,7 +1639,7 @@ function makeStyles(colors: Palette) {
     },
     // Bigger, more inviting primary CTA on the success screen —
     // full-width, elevated, arrow icon so it reads as an outbound
-    // link back to the main Fourbuy site.
+    // link back to the main TradeAPP site.
     successPrimaryBtn: {
       backgroundColor: colors.primary,
       paddingVertical: 16,

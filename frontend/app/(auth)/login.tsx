@@ -21,7 +21,7 @@ import { darkPalette, type Palette } from "@/src/theme/ThemeContext";
 import { useAuth } from "@/src/context/AuthContext";
 
 // Marketing bullets shown on the hero side of the login screen — they
-// mirror the four pillars of the Fourbuy dealer app so a first-time
+// mirror the four pillars of the TradeAPP dealer app so a first-time
 // visitor immediately sees what the platform does before they sign in.
 const HERO_BULLETS: { icon: keyof typeof Ionicons.glyphMap; text: string }[] = [
   { icon: "shield-checkmark-outline", text: "Get confirmed Trade Covers" },
@@ -30,9 +30,11 @@ const HERO_BULLETS: { icon: keyof typeof Ionicons.glyphMap; text: string }[] = [
   { icon: "leaf-outline", text: "Trade responsibly" },
 ];
 
-const HERO_IMAGE = {
-  uri: "https://fourbuy.b-cdn.net/wp-content/uploads/welcome-bg.webp",
-};
+// Uses the local hero-poster asset so the login screen never
+// depends on the legacy Fourbuy CDN. Falls back to nothing on
+// asset-load failure.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const HERO_IMAGE = require("../../assets/video/hero_poster.jpg");
 
 export default function Login() {
   const colors = darkPalette;
@@ -81,7 +83,7 @@ export default function Login() {
           source={BRAND.logo}
           style={styles.heroLogo}
           resizeMode="contain"
-          accessibilityLabel="TRADE AI powered by FOURBUY"
+          accessibilityLabel="TradeAPP"
         />
         {layout !== "phone" ? (
           <>
@@ -214,7 +216,7 @@ export default function Login() {
 
         <Text style={styles.footNote}>
           Need help? Email{" "}
-          <Text style={styles.footNoteEm}>support@fourbuy.co.za</Text>
+          <Text style={styles.footNoteEm}>support@tradeapp.co.za</Text>
         </Text>
       </View>
     </View>

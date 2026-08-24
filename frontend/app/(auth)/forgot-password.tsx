@@ -93,7 +93,7 @@ export default function ForgotPasswordScreen() {
                 <Text style={[styles.title, { color: colors.text }]}>Check your inbox</Text>
                 <Text style={[styles.hint, { color: colors.textSecondary }]}>
                   If <Text style={{ color: colors.text, fontWeight: "700" }}>{email.trim()}</Text> is
-                  registered with Fourbuy, we&apos;ve just sent a password reset link there.
+                  registered with TradeAPP, we&apos;ve just sent a password reset link there.
                   The link is valid for 30 minutes and can only be used once.
                 </Text>
                 <Text style={[styles.hint, { color: colors.textSecondary, marginTop: 10 }]}>

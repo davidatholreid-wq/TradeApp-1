@@ -207,7 +207,7 @@ export default function Profile() {
     try {
       const url = buildShareUrl(referralCode);
       const message =
-        `Join TRADE AI powered by FOURBUY — the vehicle valuation app for dealers.\n\n` +
+        `Join TradeAPP — the vehicle valuation app for dealers.\n\n` +
         `Use my referral code when you sign up:  ${referralCode}\n\n` +
         `${url}`;
       // React Native's cross-platform Share API — falls back to the OS
@@ -218,7 +218,7 @@ export default function Profile() {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const nav: any = (globalThis as any).navigator;
           if (nav?.share) {
-            await nav.share({ title: "TRADE AI powered by FOURBUY", text: message, url });
+            await nav.share({ title: "TradeAPP", text: message, url });
           } else if (nav?.clipboard?.writeText) {
             await nav.clipboard.writeText(message);
             // eslint-disable-next-line no-alert
@@ -228,7 +228,7 @@ export default function Profile() {
           /* user cancelled — no-op */
         }
       } else {
-        await Share.share({ message, url, title: "TRADE AI powered by FOURBUY" });
+        await Share.share({ message, url, title: "TradeAPP" });
       }
     } finally {
       setSharing(false);
@@ -412,19 +412,19 @@ export default function Profile() {
           <View style={styles.hintBox}>
             <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
             <Text style={styles.hintText}>
-              Your profile details, job title, photos and dealership branding are managed by Fourbuy. Please contact your Fourbuy administrator to request any changes.
+              Your profile details, job title, photos and dealership branding are managed by TradeAPP. Please contact your TradeAPP administrator to request any changes.
             </Text>
           </View>
         ) : null}
 
-        {/* Share Fourbuy — dealer-only referral code + native share sheet.
-            Every referred dealer earns THEIR referrer a matching Fourbuy
+        {/* Share TradeAPP — dealer-only referral code + native share sheet.
+            Every referred dealer earns THEIR referrer a matching TradeAPP
             Reward point for every point they earn — indefinitely. */}
         {user.role === "dealer" && referralCode ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Share Fourbuy</Text>
+            <Text style={styles.sectionTitle}>Share TradeAPP</Text>
             <Text style={styles.hintText}>
-              Invite another dealer to Fourbuy. When they&apos;re onboarded and earn a Fourbuy Rewards point, you earn one too — for the lifetime of their account.
+              Invite another dealer to TradeAPP. When they&apos;re onboarded and earn a TradeAPP Rewards point, you earn one too — for the lifetime of their account.
             </Text>
             {referredBy ? (
               <View style={styles.referredByRow} testID="profile-referred-by">
@@ -453,7 +453,7 @@ export default function Profile() {
                 style={styles.shareBtn}
                 testID="share-fourbuy-btn"
                 disabled={sharing}
-                accessibilityLabel="Share Fourbuy with a dealer"
+                accessibilityLabel="Share TradeAPP with a dealer"
               >
                 <Ionicons name="share-outline" size={16} color={colors.onPrimary} />
                 <Text style={styles.shareBtnText}>Share</Text>
@@ -560,7 +560,7 @@ export default function Profile() {
               <View style={styles.dangerZoneDivider} />
               <Text style={styles.dangerZoneHeader}>DANGER ZONE</Text>
               <Text style={styles.dangerZoneBody}>
-                Deleting your account is permanent after a 30-day recovery window. Your submissions, reports and history will be removed. Contact <Text style={{ fontWeight: "700" }}>support@fourbuy.co.za</Text> if you just need to update your details.
+                Deleting your account is permanent after a 30-day recovery window. Your submissions, reports and history will be removed. Contact <Text style={{ fontWeight: "700" }}>support@tradeapp.co.za</Text> if you just need to update your details.
               </Text>
               <TouchableOpacity
                 testID="delete-account-button"
@@ -767,7 +767,7 @@ function DeleteAccountModal({
       });
       Alert.alert(
         "Account marked for deletion",
-        "Your account has been disabled. Contact Fourbuy support within 30 days to restore it.",
+        "Your account has been disabled. Contact TradeAPP support within 30 days to restore it.",
       );
       onDeleted();
     } catch (e: any) {
@@ -782,7 +782,7 @@ function DeleteAccountModal({
         <Pressable style={styles.deleteModalCard} onPress={(e: any) => e.stopPropagation && e.stopPropagation()}>
           <Text style={styles.deleteModalTitle}>Delete Your Account</Text>
           <Text style={styles.deleteModalBody}>
-            This will disable your account immediately. Your data is kept for 30 days in case you want to restore it — contact Fourbuy support within that window.
+            This will disable your account immediately. Your data is kept for 30 days in case you want to restore it — contact TradeAPP support within that window.
             {"\n\n"}
             The dealership itself is not deleted (only your user account). Any monthly invoices already generated remain on record.
             {"\n\n"}

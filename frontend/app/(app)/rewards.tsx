@@ -106,7 +106,7 @@ export default function RewardsScreen() {
       await load();
       Alert.alert(
         "Redemption submitted",
-        "Your points have been deducted and Fourbuy will action your voucher shortly.",
+        "Your points have been deducted and TradeAPP will action your voucher shortly.",
       );
     } catch (e: any) {
       setRedeemError(e?.message || "Could not redeem");
@@ -190,7 +190,7 @@ export default function RewardsScreen() {
           <Stat label="REFUNDED" value={data.totals.refunded} />
         </View>
 
-        {/* Referred dealers — every dealer who joined Fourbuy via THIS
+        {/* Referred dealers — every dealer who joined TradeAPP via THIS
             user's referral code. Shows safe fields only (name, dealership,
             join date, status, points earned from them) — never leaks
             email/phone/ID. */}
@@ -206,7 +206,7 @@ export default function RewardsScreen() {
               ) : null}
             </View>
             <Text style={styles.referredHint}>
-              You earn one point every time a dealer you referred earns a Fourbuy Reward point — for the lifetime of their account.
+              You earn one point every time a dealer you referred earns a TradeAPP Reward point — for the lifetime of their account.
             </Text>
             {data.referred_dealers.map((d) => {
               const joined = (d.joined_at || "").slice(0, 10);
@@ -329,7 +329,7 @@ export default function RewardsScreen() {
             </View>
             <Text style={styles.modalHint}>
               {data.points_per_voucher} points will be deducted immediately.
-              If Fourbuy is unable to fulfil, your points will be refunded.
+              If TradeAPP is unable to fulfil, your points will be refunded.
             </Text>
             <Text style={styles.modalLabel}>DELIVERY EMAIL</Text>
             <TextInput

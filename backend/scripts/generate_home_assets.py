@@ -34,7 +34,7 @@ ASSETS_DIR = Path("/app/frontend/assets/brands")
 ASSETS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Design cues shared across every prompt so the whole set looks like
-# one campaign that belongs with Fourbuy's minimalist black/white app.
+# one campaign that belongs with TradeAPP's minimalist black/white app.
 DESIGN_LANGUAGE = (
     "Premium modern automotive advertising design. "
     "Cinematic wide 16:9 landscape composition, full-bleed to the edges. "
@@ -55,7 +55,7 @@ PROMPTS: list[tuple[str, str]] = [
             "luxury premium SUV on a polished showroom floor at golden hour, "
             "confidently shaking hands with another dealer just off-frame; "
             "keys glint in a hand in the mid-ground, "
-            "a subtle Fourbuy-style black-and-white palette dominates the scene, "
+            "a subtle TradeAPP-style black-and-white palette dominates the scene, "
             "warm rim light, moody premium atmosphere, shallow depth of field. "
             "IMPORTANT: leave the LEFT 55% of the frame as a smooth dark "
             "gradient / soft bokeh negative space (no visible objects, no letters, "

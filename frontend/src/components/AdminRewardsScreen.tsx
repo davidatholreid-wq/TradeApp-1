@@ -234,7 +234,7 @@ export default function AdminRewardsScreen() {
         ];
         if (r.requested_email) lines.push("", `Sent to: ${r.requested_email}`);
         if (note) lines.push("", note);
-        lines.push("", "Thanks for being part of the Fourbuy Rewards Programme.", "— TRADE AI powered by FOURBUY");
+        lines.push("", "Thanks for being part of the TradeAPP Rewards Programme.", "— TradeAPP");
         const rawPhone = (r.user_phone || "").replace(/[^0-9+]/g, "");
         // Normalise SA numbers: strip a leading "0" and prepend "27"
         // so international WhatsApp always resolves. Leave already-

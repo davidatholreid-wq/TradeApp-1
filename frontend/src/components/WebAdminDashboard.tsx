@@ -662,7 +662,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
     // @ts-ignore
     const a = document.createElement("a");
     a.href = url;
-    a.download = `fourbuy-submissions-${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `tradeapp-submissions-${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
     // @ts-ignore
     URL.revokeObjectURL(url);
@@ -850,7 +850,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
             source={themeMode === "light" ? BRAND.logoLight : BRAND.logo}
             style={styles.logo}
             resizeMode="contain"
-            accessibilityLabel="TRADE AI powered by FOURBUY"
+            accessibilityLabel="TradeAPP"
           />
           <View style={styles.divider} />
           <Text style={styles.topbarSub}>ADMIN COCKPIT</Text>
@@ -966,7 +966,7 @@ export default function WebAdminDashboard({ onLogout }: { onLogout: () => void }
           <View style={styles.homeHeader}>
             <Text style={styles.homeTitle}>Admin Cockpit</Text>
             <Text style={styles.homeSubtitle}>
-              Quick access to every Fourbuy module. Choose a tile below or use the top nav.
+              Quick access to every TradeAPP module. Choose a tile below or use the top nav.
             </Text>
           </View>
           <View style={styles.homeStatsRow}>

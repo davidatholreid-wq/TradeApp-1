@@ -121,7 +121,7 @@ export function DealTrackingCard({
         <View style={{ flex: 1 }}>
           <Text style={styles.dealTitle}>Deal Tracking &amp; Profit Analysis</Text>
           <Text style={styles.dealSub}>
-            Private to your dealership and Fourbuy admin. Pricing agents
+            Private to your dealership and TradeAPP admin. Pricing agents
             never see this.
           </Text>
         </View>

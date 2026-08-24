@@ -40,11 +40,12 @@ const HEIGHTS: Record<NonNullable<Props["size"]>, number> = {
   xl: 96,
 };
 
-// New TRADE AI wordmark is a square 1254×1254 lockup (was 617×215 landscape).
-// Kept as a constant so a future rebrand is still a one-file change.
-const ASPECT = 1;
+// Feb 2027 rebrand — new TradeAPP wordmark is a wide landscape lockup
+// (965×392) after auto-crop, so update the aspect. Kept as a constant
+// so a future rebrand is still a one-file change.
+const ASPECT = 965 / 392;
 
-// Single source of truth for rendering the Fourbuy wordmark. Keep every logo
+// Single source of truth for rendering the TradeAPP wordmark. Keep every logo
 // insertion in the app routed through this component so a future rebrand is
 // a one-file change.
 export default function BrandLogo({ size = "md", style, containerStyle, testID, variant = "auto", linkToHome = false }: Props) {
@@ -64,7 +65,7 @@ export default function BrandLogo({ size = "md", style, containerStyle, testID, 
       source={src}
       style={[{ height: h, width: h * ASPECT }, style]}
       resizeMode="contain"
-      accessibilityLabel="TRADE AI powered by FOURBUY"
+      accessibilityLabel="TradeAPP"
     />
   );
   if (linkToHome) {

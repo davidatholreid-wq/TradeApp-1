@@ -65,7 +65,7 @@ export function ConfirmReportModal({
           </Text>
           <Text style={styles.reportModalBody}>
             By continuing, you accept the charge of R{report?.cost_zar?.toFixed(0) ?? "0"}.
-            This amount will be added to your next Fourbuy invoice alongside the R50 valuation fee.
+            This amount will be added to your next TradeAPP invoice alongside the R50 valuation fee.
           </Text>
           <Text style={styles.reportModalBodySmall}>
             The report will be run against VIN {vin || "—"}.

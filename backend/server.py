@@ -43,7 +43,7 @@ if not JWT_SECRET:
         "string in backend/.env (dev) or the deployment env panel (prod)."
     )
 JWT_EXPIRES_IN = int(os.environ.get('JWT_EXPIRES_IN', '604800'))
-ADMIN_EMAIL = os.environ.get('ADMIN_EMAIL', 'admin@fourbuy.co.za')
+ADMIN_EMAIL = os.environ.get('ADMIN_EMAIL', 'admin@tradeapp.co.za')
 # The initial admin password MUST be provided via the environment. We do
 # NOT fall back to a hardcoded default so production boots fail-fast if
 # the operator forgets to set it (vs silently seeding a well-known
@@ -215,7 +215,7 @@ async def send_email_via_emergent(
         "to": [to],
         "subject": subject,
         "html": html,
-        "from_name": (from_name or os.environ.get("EMAIL_FROM_NAME") or "TRADE AI powered by FOURBUY").strip(),
+        "from_name": (from_name or os.environ.get("EMAIL_FROM_NAME") or "TradeAPP").strip(),
     }
     try:
         async with httpx.AsyncClient(timeout=15) as client:
@@ -252,15 +252,15 @@ _push_client = httpx.AsyncClient(
 # to read-only history + PDF gets a red "SUBMISSION EXPIRED" banner).
 # The clock runs from `created_at` (raw submission date) not `priced_at`,
 # so a dealer always has the same predictable window to record an
-# outcome regardless of how quickly Fourbuy priced the car.
+# outcome regardless of how quickly TradeAPP priced the car.
 ARCHIVE_AFTER_DAYS = 30
 BILLING_FEE_ZAR = 50.0
 BILLING_SLA_HOURS = 24
 
-# ============ Fourbuy Rewards ============
+# ============ TradeAPP Rewards ============
 # 1 point per submission that becomes billable. 50 points redeems for a
 # R500 Takealot voucher. Points are per USER (not per dealership).
-REWARD_POINT_LABEL = "Fourbuy Rewards"
+REWARD_POINT_LABEL = "TradeAPP Rewards"
 REWARD_POINTS_PER_VOUCHER = 50
 REWARD_VOUCHER_VALUE_ZAR = 500
 REWARD_VOUCHER_PROVIDER = "Takealot"
@@ -389,7 +389,7 @@ def is_billable(sub: dict) -> bool:
     """Every submission is billable at the flat R50 fee.
 
     Aug 2026: dropped the 24h SLA waiver — dealers pay R50 as soon as
-    they submit a vehicle, whether Fourbuy prices it inside the SLA
+    they submit a vehicle, whether TradeAPP prices it inside the SLA
     window, outside it, or not at all. Retracted submissions are the
     only carve-out (usage debits are excluded from wallet recompute
     via the `retracted` filter in `routes/billing.py`).
@@ -401,7 +401,7 @@ def is_billable(sub: dict) -> bool:
     return True
 
 
-# ============ Fourbuy Rewards helpers ============
+# ============ TradeAPP Rewards helpers ============
 # Ledger-based points system. Every point delta (award or spend) is an event
 # in `reward_ledger` so we always have a full audit trail. The balance is the
 # net sum, computed on read (cheap for typical dealer volumes).
@@ -641,7 +641,7 @@ async def _enrich_submissions_with_covers(subs: list) -> None:
     Runs a single aggregation over the `cover_offers` collection so listing
     N submissions costs O(1) extra queries instead of O(N). Used by
     `/submissions/my`, `/admin/submissions` and `/history` so that the list
-    UI can render the three-offer summary (Fourbuy Offer · Highest Cover ·
+    UI can render the three-offer summary (TradeAPP Offer · Highest Cover ·
     Dealer/My Offer) without a follow-up round-trip per row.
     """
     if not subs:
@@ -806,7 +806,7 @@ async def send_push(recipients: List[str], data: dict) -> None:
 NOTIFICATION_PREF_KEYS = {
     "vehicle_priced": {
         "label": "Vehicle priced",
-        "description": "When a Fourbuy admin prices one of your submissions.",
+        "description": "When a TradeAPP admin prices one of your submissions.",
         "roles": ["dealer"],
     },
     "cover_offer_received": {
@@ -855,7 +855,14 @@ async def send_push_gated(user_ids: List[str], pref_key: str, data: dict) -> Non
 
 
 async def next_reference_number() -> str:
-    """Generate an auto-incrementing FB-000001 reference."""
+    """Generate an auto-incrementing TA-000001 submission reference.
+
+    Historical note: submissions before the Feb 2027 rebrand were
+    numbered ``FB-<seq>``. Those records keep their FB- prefix; NEW
+    submissions get TA- (TradeAPP). The underlying auto-increment
+    counter is shared so numbering continues seamlessly (e.g. if the
+    last Fourbuy-era ref was FB-000218, the next new one is TA-000219).
+    """
     result = await db.counters.find_one_and_update(
         {"_id": "submission_ref"},
         {"$inc": {"seq": 1}},
@@ -863,7 +870,7 @@ async def next_reference_number() -> str:
         return_document=True,
     )
     seq = result["seq"] if result else 1
-    return f"FB-{seq:06d}"
+    return f"TA-{seq:06d}"
 
 
 async def next_version_reference(base_ref: str) -> str:
@@ -963,7 +970,7 @@ async def _can_access_submission(sub: dict, user: dict) -> bool:
     submission belongs to the same dealership (all users of a dealership
     share visibility). Pricing agents may access ANY non-draft submission
     that is not from their own dealership — the response is sanitised
-    downstream so they never see the Fourbuy admin offer/pricing.
+    downstream so they never see the TradeAPP admin offer/pricing.
     Falls back to the legacy `dealer_id == user.id` check for
     pre-migration submissions that don't yet carry a `dealership_id`.
     """
@@ -1150,10 +1157,10 @@ class ReportOrderCreate(BaseModel):
 
 @api_router.get("/stats/covers-30d")
 async def public_covers_last_30_days(current: dict = Depends(get_current_user)):
-    """Sum of Fourbuy Cover Prices given to dealers in the last 30 days.
+    """Sum of TradeAPP Cover Prices given to dealers in the last 30 days.
 
     Rendered on the home-page "Earn Rewards" flip banner so every user
-    sees a live running figure of how much cover Fourbuy has issued
+    sees a live running figure of how much cover TradeAPP has issued
     recently. Uses `priced_at` and the dealer-facing offer amount
     (`price` / `offer_to_dealer_zar` / `admin_pricing.offer_to_dealer_zar`).
     Auth is required (uses `get_current_user`) so the number stays behind
@@ -1275,7 +1282,7 @@ async def deal_outcomes_stats(current: dict = Depends(get_current_user)):
 @api_router.get("/stats/deal-outcomes/list")
 async def deal_outcomes_list(current: dict = Depends(get_current_user)):
     """Full deal-outcomes report — the list of dealership submissions
-    (last 90 days) that have a Fourbuy offer recorded, grouped by
+    (last 90 days) that have a TradeAPP offer recorded, grouped by
     outcome bucket. Powers the "Deal Outcomes" report screen.
 
     Filters:
@@ -2136,14 +2143,14 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
     if current.get("active") is False:
         raise HTTPException(
             403,
-            "Your account has been suspended. Please contact Fourbuy to settle any outstanding balance.",
+            "Your account has been suspended. Please contact TradeAPP to settle any outstanding balance.",
         )
     # Must have accepted the one-time master agreement.
     user_doc = await db.users.find_one({"id": current["id"]}, {"agreement_accepted_at": 1})
     if not user_doc or not user_doc.get("agreement_accepted_at"):
         raise HTTPException(
             409,
-            "You must accept the Fourbuy Pricing Agreement before submitting vehicles.",
+            "You must accept the TradeAPP Pricing Agreement before submitting vehicles.",
         )
     # Per-submission acceptance popup ("R50 incl. VAT / no fee if not priced within 24h").
     if not payload.billing_accepted:
@@ -2181,7 +2188,7 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
     # creation — the previous "24h SLA waiver" is gone. Stamp the
     # wallet-debit amount now so the billing summary reflects it
     # immediately and the wallet debit hits the ledger regardless
-    # of whether Fourbuy ever prices the vehicle.
+    # of whether TradeAPP ever prices the vehicle.
     doc["billing_charge_cents"] = int(round(BILLING_FEE_ZAR * 100))
     await db.submissions.insert_one(doc)
     # Refresh the dealership's wallet cache so the new debit is visible
@@ -2205,7 +2212,7 @@ async def create_submission(payload: VehicleSubmission, current: dict = Depends(
 # new submission gets a `-vN` reference chained off the original (e.g.
 # FB-000156 → FB-000156-v2 → FB-000156-v3). Billing rule per the client:
 # the original R50 stays invoiced AND the new submission is chargeable
-# once Fourbuy prices it — no waiver.
+# once TradeAPP prices it — no waiver.
 # ---------------------------------------------------------------------------
 RESUBMIT_WINDOW_DAYS = 14
 
@@ -2221,7 +2228,7 @@ async def resubmit_submission(
     if current.get("active") is False:
         raise HTTPException(
             403,
-            "Your account has been suspended. Please contact Fourbuy to settle any outstanding balance.",
+            "Your account has been suspended. Please contact TradeAPP to settle any outstanding balance.",
         )
     original = await db.submissions.find_one({"id": sub_id})
     if not original:
@@ -2233,7 +2240,7 @@ async def resubmit_submission(
     if original.get("status") != "priced":
         raise HTTPException(
             409,
-            "Only priced valuations can be re-submitted. Please wait for Fourbuy to price the original first.",
+            "Only priced valuations can be re-submitted. Please wait for TradeAPP to price the original first.",
         )
     priced_at_raw = original.get("priced_at")
     if not priced_at_raw:
@@ -2261,7 +2268,7 @@ async def resubmit_submission(
                 "This vehicle has been sold from stock and cannot be re-submitted.",
             )
     # Same billing acceptance rule as a new submission — the dealer will
-    # be charged R50 for the new pricing (if Fourbuy prices within 24h),
+    # be charged R50 for the new pricing (if TradeAPP prices within 24h),
     # on TOP of any R50 already invoiced against the retracted original.
     if not payload.billing_accepted:
         raise HTTPException(400, "Billing acceptance is required for each submission")
@@ -2584,7 +2591,7 @@ async def get_my_submissions(current: dict = Depends(get_current_user)):
         if bucket not in ("archived", "retracted"):
             visible.append(s)
     # Enrich with the highest cover offer + total count so the list UI
-    # can render the three-offer summary (Fourbuy / Highest cover / My
+    # can render the three-offer summary (TradeAPP / Highest cover / My
     # offer) without a follow-up round-trip per row.
     await _enrich_submissions_with_covers(visible)
     return {"submissions": visible}
@@ -2814,7 +2821,7 @@ async def get_submission(sub_id: str, current: dict = Depends(get_current_user))
     ).sort("ordered_at", -1).to_list(50)
     sub["report_orders"] = reports
     # If a pricing agent (from a different dealership) is reading the
-    # submission via the standard endpoint, strip the Fourbuy admin
+    # submission via the standard endpoint, strip the TradeAPP admin
     # offer/pricing so their cover isn't anchored by our number.
     is_owner = sub.get("dealership_id") and sub["dealership_id"] == await _get_user_dealership_id(current)
     if (
@@ -2824,7 +2831,7 @@ async def get_submission(sub_id: str, current: dict = Depends(get_current_user))
     ):
         sub = _sanitise_sub_for_pricing_agent(sub)
         # Also hide the current price banner + price history — those
-        # reveal what Fourbuy offered.
+        # reveal what TradeAPP offered.
         for k in ("price", "price_notes", "price_history", "priced_at",
                   "declined_at", "declined_note"):
             sub.pop(k, None)
@@ -3268,7 +3275,7 @@ async def admin_price(sub_id: str, offer: PriceOffer, current: dict = Depends(re
         {"id": sub_id},
         {"$set": update, "$push": {"price_history": history_entry}},
     )
-    # Award 1 Fourbuy Rewards point to the submitter if this priced offer
+    # Award 1 TradeAPP Rewards point to the submitter if this priced offer
     # lands within the SLA window (which is exactly the billing rule).
     fresh_sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0})
     if fresh_sub:
@@ -3314,7 +3321,7 @@ async def admin_decline(
     payload: Optional[DeclineOffer] = None,
     current: dict = Depends(require_admin),
 ):
-    """Mark a submission as DECLINED — Fourbuy will not make an offer.
+    """Mark a submission as DECLINED — TradeAPP will not make an offer.
 
     The dealer is NOT charged (submission is not counted as priced) and sees
     a standard message on the vehicle detail screen. The admin may attach
@@ -3371,7 +3378,7 @@ async def admin_submission_vin_history(
 
     Used by the admin cockpit to pop a side-by-side compare when the
     same car is submitted for valuation a second (or third) time —
-    lets Fourbuy see if the story has changed (condition ratings,
+    lets TradeAPP see if the story has changed (condition ratings,
     mileage, dealer, notes, etc.) since the last time it went through
     the desk.
 
@@ -3647,10 +3654,10 @@ async def order_submission_report(
     if not await _can_access_submission(sub, current):
         raise HTTPException(403, "Not authorized")
     # NOTE: previously this endpoint required status == "priced" so a
-    # dealer could only buy a VIN report AFTER Fourbuy had made an
+    # dealer could only buy a VIN report AFTER TradeAPP had made an
     # offer. Business ask (2026-08-10): the submitting dealer must be
     # able to spend on a VIN-linked report the moment their car is in
-    # the system — Fourbuy's pricing turnaround shouldn't block dealer
+    # the system — TradeAPP's pricing turnaround shouldn't block dealer
     # workflow. Access remains gated to the owning dealership + a
     # valid VIN + explicit charge acceptance. Admins are still blocked
     # from ordering on behalf of a dealer.
@@ -4005,7 +4012,7 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
         leftMargin=12 * mm, rightMargin=12 * mm,
         topMargin=22 * mm, bottomMargin=16 * mm,
         title=f"Valuation {sub.get('reference') or sub.get('id')}",
-        author="TRADE AI powered by FOURBUY",
+        author="TradeAPP",
     )
     styles = getSampleStyleSheet()
 
@@ -4064,7 +4071,7 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
     reference = sub.get("reference") or (sub.get("id") or "")[:8].upper()
     status = (sub.get("status") or "pending").upper()
     header_left = Paragraph(
-        '<font name="Helvetica-Bold" size="12" color="#FFFFFF">FOURBUY CAR BUYING CO.</font><br/>'
+        '<font name="Helvetica-Bold" size="12" color="#FFFFFF">TRADEAPP</font><br/>'
         '<font name="Helvetica" size="7" color="#BFBFBF">Vehicle Valuation Statement</font>',
         ParagraphStyle("hdrL", parent=styles["Normal"], leading=13),
     )
@@ -4189,7 +4196,7 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
             "VEHICLE UNSEEN — SUBJECT TO VIEW &amp; LESS TO SPEND"
             "</font><br/>"
             '<font name="Helvetica" size="8" color="#6B6B6B">'
-            "This valuation is desktop-only. Fourbuy has NOT physically "
+            "This valuation is desktop-only. TradeAPP has NOT physically "
             "inspected the vehicle. The final trade cover will be adjusted "
             "at inspection to reflect actual condition."
             "</font>",
@@ -4257,12 +4264,12 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
         story.append(decl_card)
     else:
         # Aug 2026: dealers can download the valuation snapshot PDF
-        # before Fourbuy prices the vehicle — surface a clear
+        # before TradeAPP prices the vehicle — surface a clear
         # "PRICE PENDING" banner so anyone reading the doc knows
         # the offer field is intentionally missing rather than lost.
         pending = Paragraph(
             '<para align="center"><font name="Helvetica-Bold" size="10" color="#0F172A">'
-            'PRICE PENDING — Fourbuy has not yet made an offer on this vehicle. '
+            'PRICE PENDING — TradeAPP has not yet made an offer on this vehicle. '
             'The offer will appear here once pricing is complete.'
             '</font></para>',
             body,
@@ -5501,7 +5508,7 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
     story.append(Spacer(1, 6))
     story.append(Paragraph(
         "This document is generated for the dealer's internal record. Offer prices are indicative and "
-        "subject to a physical inspection at Fourbuy premises. TRADE AI powered by FOURBUY — Quality Used Cars at Wholesale Prices.",
+        "subject to a physical inspection at TradeAPP premises. TradeAPP — Quality Used Cars at Wholesale Prices.",
         small,
     ))
 
@@ -5514,7 +5521,7 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
     # save() when the final total is known.
     from reportlab.pdfgen import canvas as _rl_canvas
 
-    _logo_path = "/app/frontend/assets/images/logo-fourbuy.png"
+    _logo_path = "/app/frontend/assets/images/logo-tradeapp.png"
     _has_logo = os.path.exists(_logo_path)
     _ref = str(sub.get("reference") or sub.get("id") or "")[:24]
     _make_model = " ".join(
@@ -5563,11 +5570,11 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
                 except Exception:
                     self.setFillColor(rl_colors.white)
                     self.setFont("Helvetica-Bold", 10)
-                    self.drawString(12 * mm, band_bot + 4 * mm, "FOURBUY")
+                    self.drawString(12 * mm, band_bot + 4 * mm, "TRADEAPP")
             else:
                 self.setFillColor(rl_colors.white)
                 self.setFont("Helvetica-Bold", 10)
-                self.drawString(12 * mm, band_bot + 4 * mm, "FOURBUY")
+                self.drawString(12 * mm, band_bot + 4 * mm, "TRADEAPP")
 
             self.setFillColor(rl_colors.white)
             self.setFont("Helvetica-Bold", 9)
@@ -5591,7 +5598,7 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
             self.setFont("Helvetica", 7)
             self.drawString(
                 12 * mm, foot_y,
-                "TRADE AI powered by FOURBUY  ·  Confidential  ·  Offer prices are indicative and subject to physical inspection.",
+                "TradeAPP  ·  Confidential  ·  Offer prices are indicative and subject to physical inspection.",
             )
             self.setFont("Helvetica-Bold", 7)
             self.setFillColor(INK)
@@ -5646,7 +5653,7 @@ async def _build_reconditioning_pdf(sub: dict) -> bytes:
     valuation walk-around.
 
     Layout:
-      - Black header band (Fourbuy monochrome, brand + reference).
+      - Black header band (TradeAPP monochrome, brand + reference).
       - Vehicle summary block (year make derivative + VIN + mileage + colour).
       - Recon line items — one block per item with heading, estimated
         cost, and up to 5 thumbnails.
@@ -5712,7 +5719,7 @@ async def _build_reconditioning_pdf(sub: dict) -> bytes:
         leftMargin=12 * mm, rightMargin=12 * mm,
         topMargin=14 * mm, bottomMargin=14 * mm,
         title=f"Reconditioning {ref}",
-        author="TRADE AI powered by FOURBUY",
+        author="TradeAPP",
     )
     styles = getSampleStyleSheet()
     body = ParagraphStyle("body", parent=styles["Normal"], fontName="Helvetica",
@@ -5728,7 +5735,7 @@ async def _build_reconditioning_pdf(sub: dict) -> bytes:
 
     # ---- Header band ----
     header_left = Paragraph(
-        '<font name="Helvetica-Bold" size="11" color="#FFFFFF">FOURBUY CAR BUYING CO.</font>'
+        '<font name="Helvetica-Bold" size="11" color="#FFFFFF">TRADEAPP</font>'
         '<br/><font size="8" color="#DDDDDD">Reconditioning Requirement Sheet</font>',
         body,
     )
@@ -5939,7 +5946,7 @@ async def _build_report_pdf(sub: dict, order: dict) -> bytes:
         leftMargin=16*mm, rightMargin=16*mm,
         topMargin=10*mm, bottomMargin=14*mm,
         title=f"{order.get('name') or report_type} - {sub.get('reference') or ''}",
-        author="TRADE AI powered by FOURBUY",
+        author="TradeAPP",
     )
     styles = getSampleStyleSheet()
     body = ParagraphStyle("body", parent=styles["Normal"], fontSize=10, leading=14)
@@ -6444,7 +6451,7 @@ async def _build_report_pdf(sub: dict, order: dict) -> bytes:
     # Footer
     story.append(Spacer(1, 16))
     story.append(Paragraph(
-        f"Delivered via TRADE AI powered by FOURBUY · Report Cost: R{order.get('cost_zar', 0):.0f} · Order ID: {order.get('id')}",
+        f"Delivered via TradeAPP · Report Cost: R{order.get('cost_zar', 0):.0f} · Order ID: {order.get('id')}",
         small,
     ))
 
@@ -6454,7 +6461,7 @@ async def _build_report_pdf(sub: dict, order: dict) -> bytes:
 
 # ============ Deal Tracking & Profit Analysis ============
 # The submitting dealer records the outcome of the deal on the vehicle in
-# TWO stages once they've received Fourbuy's Cover + any Pricing Agent
+# TWO stages once they've received TradeAPP's Cover + any Pricing Agent
 # covers:
 #   Stage 1 (purchase)  — Did they do the deal? If yes, at what price?
 #   Stage 2 (sale)      — Have they sold the car? If yes, recon spend +
@@ -6776,7 +6783,7 @@ async def _build_profit_pdf(sub: dict, deal: dict) -> bytes:
     """Render a 1-page A4 profit-analysis sheet for a completed deal.
 
     Vehicle header (year / make / model / VIN / reference / dealership) +
-    a front-photo thumbnail (when available), the Fourbuy Cover offer,
+    a front-photo thumbnail (when available), the TradeAPP Cover offer,
     the purchase price, recon cost, cost basis, sale price, and a bold
     profit / loss callout with margin %.
     """
@@ -6838,7 +6845,7 @@ async def _build_profit_pdf(sub: dict, deal: dict) -> bytes:
         leftMargin=14 * mm, rightMargin=14 * mm,
         topMargin=16 * mm, bottomMargin=14 * mm,
         title=f"Profit Analysis {ref}",
-        author="TRADE AI powered by FOURBUY",
+        author="TradeAPP",
     )
     styles = getSampleStyleSheet()
     BLACK = rl_colors.HexColor("#0A0A0A")
@@ -6907,7 +6914,7 @@ async def _build_profit_pdf(sub: dict, deal: dict) -> bytes:
     if fourbuy_cover is None:
         ap = sub.get("admin_pricing") or {}
         fourbuy_cover = ap.get("offer_to_dealer_zar")
-    story.append(Paragraph("Fourbuy Cover", h2))
+    story.append(Paragraph("TradeAPP Cover", h2))
     story.append(Table(
         [[
             Paragraph("Cover offered", body),
@@ -7009,8 +7016,8 @@ async def _build_profit_pdf(sub: dict, deal: dict) -> bytes:
 
     now_str = datetime.now(timezone.utc).strftime("%d %b %Y %H:%M UTC")
     story.append(Paragraph(
-        f"Generated {now_str} · TRADE AI powered by FOURBUY · Confidential — for the "
-        "submitting dealership and Fourbuy admin only.",
+        f"Generated {now_str} · TradeAPP · Confidential — for the "
+        "submitting dealership and TradeAPP admin only.",
         muted,
     ))
 
@@ -7064,7 +7071,7 @@ async def download_valuation_pdf(sub_id: str, current: dict = Depends(get_user_f
     if not await _can_access_submission(sub, current):
         raise HTTPException(403, "Not authorized")
     # Aug 2026 business rule: the owning dealer can download a
-    # snapshot PDF at any time, regardless of whether Fourbuy has
+    # snapshot PDF at any time, regardless of whether TradeAPP has
     # priced the vehicle yet. Non-priced submissions render with a
     # "PRICE PENDING" watermark inside the PDF (see
     # `_build_valuation_pdf`).
@@ -7592,7 +7599,7 @@ async def market_analysis(sub_id: str, current: dict = Depends(get_current_user)
         "   THIS mileage on AutoTrader — i.e. what the average AutoTrader dealer would list this exact car at "
         "   today, positioned correctly in its year-and-mileage cell. Round to R1 000.\n"
         "6. Compute `trade_price_estimate_zar` = round(retail * 0.85 / 1000) * 1000 — a strict 15 %% margin "
-        "   below your retail estimate. This is what a Fourbuy dealer should pay.\n"
+        "   below your retail estimate. This is what a TradeAPP dealer should pay.\n"
         "7. Set `estimated_market_range_zar.low` and `.high` to the 10th and 90th percentile of the "
         "   FULL AutoTrader distribution across the model-year run (not just the primary year), so the "
         "   dealer sees the wider market context; `.typical` = your retail estimate for THIS year/mileage.\n"
@@ -8255,7 +8262,7 @@ async def admin_list_dealers(
             info = u.get("dealer_info") or {}
             first = (info.get("first_name") or "").strip()
             last = (info.get("last_name") or "").strip()
-            name = (first + " " + last).strip() or "a Fourbuy dealer"
+            name = (first + " " + last).strip() or "a TradeAPP dealer"
             rb_dship_name = None
             if u.get("dealership_id") and u["dealership_id"] in ds_map:
                 rb_dship_name = ds_map[u["dealership_id"]].get("name")
@@ -8526,9 +8533,9 @@ async def my_dealership_invoice_details_pdf(
     invoice-issuing details so the dealer can attach it to
     correspondence with suppliers / customers.
 
-    IMPORTANT: no Fourbuy branding, no logo, no marketing footer —
+    IMPORTANT: no TradeAPP branding, no logo, no marketing footer —
     the user explicitly asked for a supplier-safe document that
-    represents ONLY their own company. Anything Fourbuy-ish would
+    represents ONLY their own company. Anything TradeAPP-ish would
     defeat the purpose.
 
     Accepts both `Authorization: Bearer <jwt>` (in-app fetch) and
@@ -9185,7 +9192,7 @@ async def admin_home_mtd_stats(current: dict = Depends(require_admin)):
 # file (search for `include_router(ads_router)`).
 
 
-# ============ Fourbuy Rewards ============
+# ============ TradeAPP Rewards ============
 # Route handlers extracted 2026-08-09 → /app/backend/routes/rewards.py.
 # The ledger helpers (get_user_reward_balance, spend_points,
 # refund_points, award_reward_point_for_submission) and REWARD_*
@@ -9214,7 +9221,7 @@ async def admin_home_mtd_stats(current: dict = Depends(require_admin)):
 # ============ Health (real) ============
 @api_router.get("/")
 async def root():
-    return {"message": "TRADE AI powered by FOURBUY API", "status": "ok"}
+    return {"message": "TradeAPP API", "status": "ok"}
 
 
 # ============ Extracted route modules ============
@@ -9308,8 +9315,8 @@ async def seed_data():
             "email": ADMIN_EMAIL.lower(),
             "password_hash": hash_password(ADMIN_PASSWORD),
             "role": "admin",
-            "dealer_info": {"first_name": "Fourbuy", "last_name": "Admin", "phone": ""},
-            "company_info": {"company_name": "TRADE AI powered by FOURBUY", "company_address": ""},
+            "dealer_info": {"first_name": "TradeAPP", "last_name": "Admin", "phone": ""},
+            "company_info": {"company_name": "TradeAPP", "company_address": ""},
             "created_at": now_utc(),
         }
         await db.users.insert_one(admin_doc)

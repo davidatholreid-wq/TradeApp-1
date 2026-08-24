@@ -152,7 +152,7 @@ const defaultWaTemplate = (sub: PublicSubmission) => {
   return (
     `Hi ${sub.seller.full_name.split(" ")[0] || "there"} 👋
 
-Thanks for requesting a valuation from TRADE AI powered by FOURBUY
+Thanks for requesting a valuation from TradeAPP
 
 For your ${y} ${mk} ${md} we're offering:
 ${price}
@@ -163,18 +163,18 @@ Full valuation PDF (valid 30 days):
 If you'd like to accept, just reply to this WhatsApp. We'll come to you, pay you on the spot and take care of all the admin.
 
 Ref: ${sub.reference}
-— TRADE AI powered by FOURBUY`
+— TradeAPP`
   );
 };
 
 const defaultEmailSubject = (sub: PublicSubmission) =>
-  `Your Fourbuy valuation for the ${sub.vehicle.year} ${sub.vehicle.make} ${sub.vehicle.model} — ${sub.reference}`;
+  `Your TradeAPP valuation for the ${sub.vehicle.year} ${sub.vehicle.make} ${sub.vehicle.model} — ${sub.reference}`;
 
 const defaultEmailBody = (sub: PublicSubmission) => {
   return (
     `Hi ${sub.seller.full_name},
 
-Thank you for requesting a valuation from TRADE AI powered by FOURBUY
+Thank you for requesting a valuation from TradeAPP
 
 Vehicle: ${sub.vehicle.year} ${sub.vehicle.make} ${sub.vehicle.model}${sub.vehicle.derivative ? " " + sub.vehicle.derivative : ""}
 Mileage: ${fmtKm(sub.vehicle.mileage)}
@@ -186,7 +186,7 @@ The full valuation (with our reconditioning breakdown) is attached to this email
 If you'd like to accept our offer, simply reply to this email and we'll be in touch to arrange collection at a time and place that suits you.
 
 Kind regards,
-The Fourbuy Team`
+The TradeAPP Team`
   );
 };
 

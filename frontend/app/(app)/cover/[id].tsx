@@ -4,7 +4,7 @@
  * The pricing agent's cover-detail experience is intentionally
  * identical to the standard vehicle-detail page (same photos, condition,
  * recon, warranty, VIN reports, AI market analysis, live listings and
- * PDF) — with the Fourbuy Offer / admin_pricing hidden and the price
+ * PDF) — with the TradeAPP Offer / admin_pricing hidden and the price
  * banner / offer history stripped by the backend. To avoid duplicating
  * a 4700-line component, we redirect to `/vehicle/[id]?cover=1`; the
  * vehicle screen keys off `?cover=1` to render a cover-placement bar

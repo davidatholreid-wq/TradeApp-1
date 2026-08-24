@@ -268,7 +268,7 @@ export default function GiveCoverScreen() {
         <Ionicons name="lock-closed-outline" size={36} color={colors.textDisabled} />
         <Text style={[styles.blockedTitle, { color: colors.text }]}>Managerial access only</Text>
         <Text style={[styles.blockedSub, { color: colors.textSecondary }]}>
-          Ask a Fourbuy admin to enable pricing-agent permissions on your account.
+          Ask a TradeAPP admin to enable pricing-agent permissions on your account.
         </Text>
       </View>
     );

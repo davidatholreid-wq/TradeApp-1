@@ -16,7 +16,7 @@ Rules:
   commercial / bakkie body types (VehicleType ``B`` — e.g. Hilux S/C
   and D/C). Everything else Kredo publishes (heavy trucks ``H``,
   buses ``Z``, motorbikes ``C``, tractors ``M``, trailers ``T``,
-  caravans ``S``) is skipped because Fourbuy does not appraise them.
+  caravans ``S``) is skipped because TradeAPP does not appraise them.
 - Make is stored title-cased for display friendliness (`Land Rover`,
   `Mercedes-Benz`, `Volkswagen`); a small alias table below preserves
   known industry-uppercase brands like `BMW`, `MINI`. Model + derivative

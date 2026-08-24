@@ -57,7 +57,7 @@ class AdminInviteUserRequest(BaseModel):
     sa_id_number: str
     # Optional referral code — if the new dealer applied via another
     # dealer's referral link, admin keys the code here and we link the
-    # accounts so the referrer earns matching Fourbuy Rewards points.
+    # accounts so the referrer earns matching TradeAPP Rewards points.
     referred_by_code: Optional[str] = None
 
 

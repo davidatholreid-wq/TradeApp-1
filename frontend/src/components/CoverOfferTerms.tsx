@@ -1,7 +1,7 @@
 /**
  * CoverOfferTermsModal + CoverOfferTermsButton
  *
- * A single self-contained pair that surfaces the Fourbuy Subject to
+ * A single self-contained pair that surfaces the TradeAPP Subject to
  * View Cover Offer T&Cs anywhere they're relevant — vehicle detail,
  * Give Cover screen, admin, etc.
  *
@@ -119,7 +119,7 @@ export function CoverOfferTermsModal({
             </View>
 
             <Text style={styles.footerNote}>
-              Last revised: {COVER_OFFER_TERMS_LAST_REV} · TRADE AI powered by FOURBUY
+              Last revised: {COVER_OFFER_TERMS_LAST_REV} · TradeAPP
             </Text>
           </ScrollView>
 

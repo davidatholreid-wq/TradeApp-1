@@ -1106,7 +1106,7 @@ export default function SubmitVehicle() {
           {/* Edit & Re-submit banner — surfaces which submission is being
               replaced and reminds the dealer that the original will be
               retracted on submit, and that a fresh R50 will be invoiced
-              once Fourbuy prices the new version. */}
+              once TradeAPP prices the new version. */}
           {resubmitFromId ? (
             <View style={styles.resubmitBanner} testID="resubmit-banner">
               <View style={styles.resubmitBannerIcon}>
@@ -1119,7 +1119,7 @@ export default function SubmitVehicle() {
                 <Text style={styles.resubmitBannerSub}>
                   {resubmitLoading
                     ? "Loading original details…"
-                    : "The original will be retracted on submit. R50 applies once Fourbuy prices the new version."}
+                    : "The original will be retracted on submit. R50 applies once TradeAPP prices the new version."}
                 </Text>
               </View>
             </View>
@@ -1283,7 +1283,7 @@ export default function SubmitVehicle() {
                 <View style={styles.regNoticeWarn} testID="reg-notice-post-discontinued">
                   <Ionicons name="alert-circle" size={14} color={colors.warning} />
                   <Text style={styles.regNoticeWarnText}>
-                    This variant was discontinued after {max}. Your vehicle is registered in {yearRegistered} — you can still submit, but Fourbuy will use {max} as the reference model year for valuation.
+                    This variant was discontinued after {max}. Your vehicle is registered in {yearRegistered} — you can still submit, but TradeAPP will use {max} as the reference model year for valuation.
                   </Text>
                 </View>
               );
@@ -1356,7 +1356,7 @@ export default function SubmitVehicle() {
               <Text style={styles.unseenHint}>
                 Turn this on if you have NOT physically inspected the vehicle.
                 Condition rating, service history, damage & reconditioning will
-                be skipped. Fourbuy will price it as an unseen desktop
+                be skipped. TradeAPP will price it as an unseen desktop
                 valuation ({'"Less to Spend"'}).
               </Text>
             </View>
@@ -1747,7 +1747,7 @@ export default function SubmitVehicle() {
                 <Text style={styles.billFeeAmount}>R50.00</Text>
                 <Text style={styles.billFeeCaption}>per priced submission · incl. VAT</Text>
               </View>
-              <Text style={styles.billNote}>No fee if Fourbuy does not return a price within 24 hours.</Text>
+              <Text style={styles.billNote}>No fee if TradeAPP does not return a price within 24 hours.</Text>
               <TouchableOpacity testID="billing-confirm-check" style={styles.billCheckRow} onPress={() => setBillingAckChecked((v) => !v)}>
                 <View style={[styles.checkbox, billingAckChecked && styles.checkboxOn]}>{billingAckChecked ? <Ionicons name="checkmark" size={14} color={colors.onPrimary} /> : null}</View>
                 <Text style={styles.checkText}>I agree to the R50 fee for this submission.</Text>
@@ -1783,8 +1783,8 @@ export default function SubmitVehicle() {
             <View style={{ padding: spacing.md }}>
               <Text style={styles.billNote}>
                 {submittedReference
-                  ? `Your submission ${submittedReference} was received and is now visible under My Evaluations. Fourbuy will price it and notify you when the offer is ready.`
-                  : "Your submission was received and is now visible under My Evaluations. Fourbuy will price it and notify you when the offer is ready."}
+                  ? `Your submission ${submittedReference} was received and is now visible under My Evaluations. TradeAPP will price it and notify you when the offer is ready.`
+                  : "Your submission was received and is now visible under My Evaluations. TradeAPP will price it and notify you when the offer is ready."}
               </Text>
             </View>
             <View style={styles.billFooter}>

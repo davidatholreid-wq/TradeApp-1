@@ -4,7 +4,7 @@ Ported from the public logic surfaced by 911uk.com's client-side VIN
 decoder and cross-checked against Porsche's own VIN-position tables.
 Everything here is a static lookup against the 17-character VIN — no
 network calls, no third-party keys, no per-lookup vendor cost — so
-Fourbuy can price this at a flat internal margin (currently R20) and
+TradeAPP can price this at a flat internal margin (currently R20) and
 still deliver an instant response.
 
 VIN structure recap (Porsche, 1981 onwards)

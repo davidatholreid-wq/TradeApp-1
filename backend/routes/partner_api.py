@@ -1,4 +1,4 @@
-"""Partner API — Fourbuy as reseller for Outvin VIN decodes.
+"""Partner API — TradeAPP as reseller for Outvin VIN decodes.
 
 Public-facing REST endpoints under ``/api/partner/v1/`` that let external
 partners (currently Kredo) query VIN factory-options data through us.
@@ -17,7 +17,7 @@ Design:
   client's contracted ``cost_billed_zar``. Failures are logged as
   ``status=failed`` and NOT billed. Admin can generate a monthly
   invoice-ready summary via ``GET /api/admin/partner-clients/{id}/usage``.
-* **Whitelabel** — the response never mentions Outvin. Only Fourbuy-
+* **Whitelabel** — the response never mentions Outvin. Only TradeAPP-
   branded fields are exposed to the partner.
 """
 
@@ -91,7 +91,7 @@ async def _resolve_partner_client(
 # =============================================================================
 def _whitelabel_outvin(payload: dict) -> dict:
     """Strip Outvin-specific field names / branding out of a raw response
-    before returning to the partner. Fourbuy is the vendor as far as the
+    before returning to the partner. TradeAPP is the vendor as far as the
     caller is concerned.
     """
     if not isinstance(payload, dict):
@@ -118,7 +118,7 @@ def _whitelabel_outvin(payload: dict) -> dict:
 # =============================================================================
 @router.get("/partner/v1/health")
 async def partner_health():
-    return {"ok": True, "service": "Fourbuy VIN Data API", "version": "1.0"}
+    return {"ok": True, "service": "TradeAPP VIN Data API", "version": "1.0"}
 
 
 # =============================================================================
@@ -249,7 +249,7 @@ async def partner_vin_lookup(
         response = {
             "vin": vin,
             "data": _whitelabel_outvin(payload or {}),
-            "source": "Fourbuy VIN Data API",
+            "source": "TradeAPP VIN Data API",
             "cached": served_from_cache,
             "call_id": call_id,
         }
@@ -521,7 +521,7 @@ async def admin_partner_usage(
 # GET /partner-api/docs.pdf — downloadable API spec (public, no auth)
 # =============================================================================
 def _build_partner_api_docs_pdf() -> bytes:
-    """Render the Fourbuy VIN Data API spec as a printable PDF.
+    """Render the TradeAPP VIN Data API spec as a printable PDF.
 
     Public — no auth. Same content as `/kredo-api/docs`, formatted for
     A4. Kept in sync with the docs page manually (both are short and
@@ -552,14 +552,14 @@ def _build_partner_api_docs_pdf() -> bytes:
         buf, pagesize=A4,
         leftMargin=18 * mm, rightMargin=18 * mm,
         topMargin=15 * mm, bottomMargin=18 * mm,
-        title="Fourbuy VIN Data API — Integration Guide",
-        author="TRADE AI powered by FOURBUY",
+        title="TradeAPP VIN Data API — Integration Guide",
+        author="TradeAPP",
     )
     story: list = []
 
     # ---- Brand header ----
     hdr = Table([[
-        Paragraph("<font color='white' size='18'><b>FOURBUY VIN DATA API</b></font><br/>"
+        Paragraph("<font color='white' size='18'><b>TRADEAPP VIN DATA API</b></font><br/>"
                   "<font color='white' size='10'>Integration Guide — v1.0 (November 2026)</font>", body),
     ]], colWidths=[174 * mm])
     hdr.setStyle(TableStyle([
@@ -577,7 +577,7 @@ def _build_partner_api_docs_pdf() -> bytes:
 
     story.append(Paragraph(
         "Whitelabel VIN factory-options decode service. "
-        "Base URL: <font color='#2563EB'><b>https://api.fourbuy.co.za/api/partner/v1</b></font>",
+        "Base URL: <font color='#2563EB'><b>https://api.tradeapp.co.za/api/partner/v1</b></font>",
         body,
     ))
 
@@ -589,7 +589,7 @@ def _build_partner_api_docs_pdf() -> bytes:
     ))
     story.append(Preformatted("Authorization: Bearer fbp_XXXXXXXXXXXX", mono))
     story.append(Paragraph(
-        "Keys are provisioned per client. Contact your Fourbuy account manager to receive one. "
+        "Keys are provisioned per client. Contact your TradeAPP account manager to receive one. "
         "Keep it server-side — never embed in a browser or mobile app.",
         body,
     ))
@@ -599,7 +599,7 @@ def _build_partner_api_docs_pdf() -> bytes:
     story.append(Preformatted("GET /api/partner/v1/health", mono))
     story.append(Paragraph("Returns 200 OK if the service is available. No auth required.", body))
     story.append(Preformatted(
-        '{\n  "ok": true,\n  "service": "Fourbuy VIN Data API",\n  "version": "1.0"\n}',
+        '{\n  "ok": true,\n  "service": "TradeAPP VIN Data API",\n  "version": "1.0"\n}',
         mono,
     ))
 
@@ -615,8 +615,8 @@ def _build_partner_api_docs_pdf() -> bytes:
 
     story.append(Paragraph("Example", h3))
     story.append(Preformatted(
-        "curl -H 'Authorization: Bearer $FOURBUY_API_KEY' \\\n"
-        "  https://api.fourbuy.co.za/api/partner/v1/vin-lookup/WVGZZZ5NZJW402485",
+        "curl -H 'Authorization: Bearer $TRADEAPP_API_KEY' \\\n"
+        "  https://api.tradeapp.co.za/api/partner/v1/vin-lookup/WVGZZZ5NZJW402485",
         mono,
     ))
 
@@ -634,7 +634,7 @@ def _build_partner_api_docs_pdf() -> bytes:
         '      { "code": "8IU", "description": "LED Matrix headlights" }\n'
         '    ]\n'
         '  },\n'
-        '  "source": "Fourbuy VIN Data API",\n'
+        '  "source": "TradeAPP VIN Data API",\n'
         '  "cached": false,\n'
         '  "call_id": "6a30..."\n'
         '}',
@@ -649,7 +649,7 @@ def _build_partner_api_docs_pdf() -> bytes:
         ["403 Forbidden",         "IP address not on the client's allowlist."],
         ["404 Not Found",         "No factory data available for this VIN. Not billed."],
         ["429 Too Many Requests", "Upstream rate limit. Not billed."],
-        ["500 Internal Error",    "Fourbuy-side error. Not billed."],
+        ["500 Internal Error",    "TradeAPP-side error. Not billed."],
         ["502 Bad Gateway",       "Upstream vendor error. Not billed."],
     ]
     tbl = Table(
@@ -722,7 +722,7 @@ def _build_partner_api_docs_pdf() -> bytes:
 
     story.append(Spacer(1, 8 * mm))
     story.append(Paragraph(
-        "<font color='#64748B'>&#169; TRADE AI powered by FOURBUY — Fourbuy VIN Data API v1.0</font>",
+        "<font color='#64748B'>&#169; TradeAPP — TradeAPP VIN Data API v1.0</font>",
         small,
     ))
 
@@ -742,6 +742,6 @@ async def partner_api_docs_pdf():
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": 'inline; filename="fourbuy-vin-data-api-guide.pdf"'},
+        headers={"Content-Disposition": 'inline; filename="tradeapp-vin-data-api-guide.pdf"'},
     )
 
