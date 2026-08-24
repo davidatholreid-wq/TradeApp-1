@@ -10,7 +10,6 @@ import {
   ScrollView,
   ActivityIndicator,
   Image,
-  ImageBackground,
   useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -30,11 +29,13 @@ const HERO_BULLETS: { icon: keyof typeof Ionicons.glyphMap; text: string }[] = [
   { icon: "leaf-outline", text: "Trade responsibly" },
 ];
 
-// Uses the local hero-poster asset so the login screen never
-// depends on the legacy Fourbuy CDN. Falls back to nothing on
-// asset-load failure.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const HERO_IMAGE = require("../../assets/video/hero_v2_poster.jpg");
+// Feb 2027 — the login hero no longer uses a background image.
+// Previously we layered a car-showroom shot beneath the wordmark;
+// after the rebrand the same "TRADE APP" logo was showing both as
+// the poster AND as the foreground `BRAND.logo`, so users saw two
+// stacked wordmarks. A clean solid-black hero with the wordmark
+// centred reads far better and matches the app's home-screen freeze
+// frame.
 
 export default function Login() {
   const colors = darkPalette;
@@ -74,10 +75,11 @@ export default function Login() {
     }
   };
 
-  // ---------------- Hero panel (image + brand + bullets) --------------
+  // ---------------- Hero panel (brand + bullets) --------------------
+  // Solid-black hero (no background image) — the brand wordmark is
+  // rendered by BrandLogo below, centred cleanly against the surface.
   const HeroPanel = (
-    <ImageBackground source={HERO_IMAGE} style={styles.hero} imageStyle={styles.heroImage}>
-      <View style={styles.heroOverlay} />
+    <View style={[styles.hero, styles.heroSolid]}>
       <View style={styles.heroContent}>
         <Image
           source={BRAND.logo}
@@ -111,7 +113,7 @@ export default function Login() {
           <Text style={styles.heroHeadlineMobile}>Dealer portal</Text>
         )}
       </View>
-    </ImageBackground>
+    </View>
   );
 
   // --------------- Form panel (inputs + CTAs) -------------------------
@@ -293,11 +295,18 @@ const makeStyles = (colors: Palette, layout: "desktop" | "tablet" | "phone") => 
     // -------- MOBILE stack --------
     safeMobile: { flex: 1, backgroundColor: colors.bg },
     mobileScroll: { flexGrow: 1 },
-    mobileHeroWrap: { height: 260 },
+    // Feb 2027 — solid hero (no image), give the wordmark more room.
+    mobileHeroWrap: { height: 220 },
     mobileFormWrap: { paddingHorizontal: spacing.lg, paddingTop: spacing.xl },
 
     // -------- HERO panel --------
     hero: { flex: 1, backgroundColor: "#0A0A0A" },
+    // Solid variant used when no background image is set — centers the
+    // wordmark on a clean dark surface for the login screen. Feb 2027.
+    heroSolid: {
+      alignItems: "center",
+      justifyContent: "center",
+    },
     heroImage: {
       // Full colour on desktop, slightly dimmed on tablet.
       opacity: isDesktop ? 0.9 : 0.75,
@@ -309,15 +318,22 @@ const makeStyles = (colors: Palette, layout: "desktop" | "tablet" | "phone") => 
     },
     heroContent: {
       flex: 1,
-      justifyContent: isPhone ? "flex-end" : "center",
+      // Feb 2027 — solid hero has no background image, so centre the
+      // logo + tagline for a clean minimalist login on phones. Desktop
+      // + tablet still use flex-start for their multi-line copy blocks.
+      justifyContent: isPhone ? "center" : "center",
+      alignItems: isPhone ? "center" : "flex-start",
       paddingHorizontal: isDesktop ? 64 : spacing.xl,
       paddingVertical: isPhone ? spacing.lg : spacing.xl * 2,
       gap: spacing.md,
     },
     heroLogo: {
-      width: isDesktop ? 260 : isPhone ? 180 : 220,
-      height: isDesktop ? 96 : isPhone ? 66 : 82,
-      alignSelf: isPhone ? "flex-start" : "flex-start",
+      // Feb 2027 — logo is centred on the phone hero now that the
+      // duplicate poster is gone. Bumped up to 240×98 on phones so
+      // it reads confidently at the top of the login screen.
+      width: isDesktop ? 260 : isPhone ? 240 : 220,
+      height: isDesktop ? 96 : isPhone ? 98 : 82,
+      alignSelf: isPhone ? "center" : "flex-start",
       marginBottom: spacing.md,
     },
     heroHeadline: {
