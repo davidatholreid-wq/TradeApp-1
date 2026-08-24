@@ -228,6 +228,10 @@ export default function SubmitVehicle() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [billingConfirmOpen, setBillingConfirmOpen] = useState(false);
+  // Post-submit confirmation modal — cross-platform replacement for
+  // Alert.alert (which is a no-op on react-native-web).
+  const [submittedModalOpen, setSubmittedModalOpen] = useState(false);
+  const [submittedReference, setSubmittedReference] = useState<string | null>(null);
   const [billingAckChecked, setBillingAckChecked] = useState(false);
 
   // Draft tracking — if the dealer is editing a saved draft, we keep the id so
@@ -859,6 +863,32 @@ export default function SubmitVehicle() {
     setBillingConfirmOpen(true);
   };
 
+  // Reset every user-editable field back to first-mount defaults.
+  // Called after a successful submission so the tab-router's cached
+  // submit screen shows an empty form the next time the dealer opens
+  // it (previously it would still be filled with the just-submitted
+  // vehicle's data — visually looked like a duplicate submission).
+  const resetForm = () => {
+    setMake(null); setFuelType(null); setYearOfProduction(null); setTransmission(null);
+    setModel(null); setDerivative(null); setYearRegistered(null);
+    setLicenseDisk(null); setLicenseDiskInfo(null); setLicenseDiskPhoto(null);
+    setColour(null); setVin("TBC"); setEngineNo("TBC"); setUnseen(false);
+    setMechanicalRating(null); setCosmeticRating(null);
+    setInteriorRating(null); setHistoryRating(null);
+    setServiceHistory(null); setLastServiceDate(""); setLastServiceMileage("");
+    setPhotos({ front: "", driver_side: "", passenger_side: "", rear: "", interior: "" });
+    setMileage("");
+    setPaintEvidence(false); setPaintQuality(null);
+    setAccidentDamage(false); setAccidentTypes([]);
+    setReconItems([]);
+    setFactoryWarrantyStatus(null); setMaintenancePlanStatus(null); setServicePlanStatus(null);
+    setVariantYearRange(null);
+    setError(null);
+    setLoadedDraftId(null);
+    setResubmitFromId(null); setResubmitFromRef(null);
+    setManualEntry(false);
+  };
+
   const performSubmit = async () => {
     setBillingConfirmOpen(false);
     setSubmitting(true);
@@ -870,7 +900,7 @@ export default function SubmitVehicle() {
       const endpoint = resubmitFromId
         ? `/api/submissions/${resubmitFromId}/resubmit`
         : "/api/submissions";
-      await apiFetch(endpoint, {
+      const resp: any = await apiFetch(endpoint, {
         method: "POST",
         body: JSON.stringify({
           make, fuel_type: fuelType, year_of_production: yearOfProduction, transmission,
@@ -945,6 +975,25 @@ export default function SubmitVehicle() {
           /* non-blocking */
         }
       }
+      // Aug 2026 fix: reset every form field back to its initial
+      // state BEFORE navigating so the tab-router's cached submit
+      // screen doesn't repopulate with the just-sent submission next
+      // time the dealer opens it. Also fire a native confirmation
+      // Alert with the newly-issued submission reference so the
+      // dealer sees an explicit "success" before the app whisks them
+      // back to Home. Extracted into `resetForm()` for reuse from
+      // the "Clear form" affordance elsewhere in the file.
+      resetForm();
+      const submittedRef =
+        resp?.submission?.reference || resp?.reference || null;
+      // Aug 2026 iteration 68 fix: `Alert.alert` is a no-op on
+      // react-native-web@0.21, so on the web preview the dealer would
+      // see no confirmation AND be stranded on the just-cleared form
+      // (navigation was trapped inside Alert's OK callback). Switch
+      // to a cross-platform Modal and navigate UNCONDITIONALLY here,
+      // before showing the modal, so the dealer always ends up home.
+      setSubmittedReference(submittedRef);
+      setSubmittedModalOpen(true);
       router.replace("/(app)");
     } catch (e: any) { setError(e.message || "Failed to submit"); }
     finally { setSubmitting(false); }
@@ -1714,8 +1763,43 @@ export default function SubmitVehicle() {
           </View>
         </View>
       </Modal>
-      {/* Reset / Save-to-Drafts prompt — replaces Alert.alert so it renders
-          on iOS, Android AND React Native Web (which ignores Alert buttons). */}
+      {/* Post-submit confirmation modal — cross-platform replacement
+          for `Alert.alert` (a no-op on react-native-web). Navigation
+          fires unconditionally after a successful submit so the
+          dealer lands on Home even if they never dismiss this
+          modal. */}
+      <Modal
+        visible={submittedModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSubmittedModalOpen(false)}
+      >
+        <View style={styles.billBackdrop}>
+          <View style={styles.billCard} testID="submitted-confirm-modal">
+            <View style={styles.billHeader}>
+              <Ionicons name="checkmark-circle" size={22} color="#059669" />
+              <Text style={styles.billTitle}>VEHICLE SUBMITTED</Text>
+            </View>
+            <View style={{ padding: spacing.md }}>
+              <Text style={styles.billNote}>
+                {submittedReference
+                  ? `Your submission ${submittedReference} was received and is now visible under My Evaluations. Fourbuy will price it and notify you when the offer is ready.`
+                  : "Your submission was received and is now visible under My Evaluations. Fourbuy will price it and notify you when the offer is ready."}
+              </Text>
+            </View>
+            <View style={styles.billFooter}>
+              <TouchableOpacity
+                style={styles.billOk}
+                onPress={() => setSubmittedModalOpen(false)}
+                testID="submitted-confirm-ok"
+              >
+                <Ionicons name="checkmark" size={16} color={colors.onPrimary} />
+                <Text style={styles.billOkText}>OK</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
       <Modal
         visible={resetPromptOpen}
         transparent

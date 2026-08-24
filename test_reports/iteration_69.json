@@ -1,0 +1,42 @@
+{
+  "summary": "Verified iteration 69 fix in /app/frontend/app/(app)/submit.tsx — Alert.alert(...) was replaced with a cross-platform <Modal testID='submitted-confirm-modal'> and router.replace('/(app)') now fires unconditionally on the successful-submit path. On the web preview: (1) submission POST succeeded (created FB-000217 for dave@fourbuy.co.za), (2) the modal became visible and displayed 'VEHICLE SUBMITTED' + 'FB-000217' reference, (3) URL flipped from /submit → / (home) BEFORE the OK button was tapped — confirmed via a per-second URL poll (t=1s: /submit; t=3s: /), (4) tapping submitted-confirm-ok dismissed the modal cleanly, (5) reopening the Submit tab showed a fully-reset form (Make='Tap to choose', mileage='', no photo <img> in any of the 5 photo boxes), (6) Playwright captured 0 browser dialogs, confirming the old no-op Alert.alert code path is gone. The regression from iter68 (dealer stranded on cleared form because navigation was trapped inside a no-op Alert callback) is resolved on react-native-web.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "submit.tsx post-submit modal",
+        "issues": [
+          "Minor: during the fade-in animation the billCard briefly appears semi-transparent so home-screen tiles bleed through (see screenshots/iter69/06_after_submit_modal.png). Once animation settles the card is fully opaque (colors.card). Cosmetic only — not blocking. If the transient render bothers users, consider animationType='none' or a slower fade + higher backdrop opacity (currently rgba(0,0,0,0.85))."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {
+        "component": "expo-image-picker",
+        "issue": "Console warning still present: `ImagePicker.MediaTypeOptions` is deprecated — use `ImagePicker.MediaType` (or an array). Fires on every photo pick. Reference: /app/frontend/app/(app)/submit.tsx lines 728, 755, 772. (Separate concern per review request — reported for tracking only.)"
+      }
+    ]
+  },
+  "test_report_links": ["/app/test_reports/screenshots/iter69/"],
+  "action_items": [
+    "None blocking. Optional: address the expo-image-picker `MediaTypeOptions` deprecation warning (submit.tsx lines 728/755/772) by switching to `MediaType.image` or `['images']`.",
+    "Optional polish: bump animationType or backdrop opacity on submit-confirm-modal so the card doesn't briefly show through during the initial fade."
+  ],
+  "critical_code_review_comments": [
+    "submit.tsx is still 2491 lines — well past the 700-line guideline. Recommend splitting into Vehicle Spec, Photos, Damage/Recon, and Modals sub-components before adding further modals.",
+    "performSubmit now navigates BEFORE showing the modal (router.replace fires immediately after setSubmittedModalOpen). That's the correct fix — dealer is never stranded on the cleared submit screen even if they close the tab or dismiss without OK.",
+    "resetForm() is still called before setSubmittedModalOpen — good ordering; the cleared form is invisible to the user because router.replace whisks them home in the same tick."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Created submission FB-000217 (Toyota Corolla 1.8 XS CVT, 2020 production / 2021 registered, White, unseen=true, 60,000 km, manual_entry=true) for dealer dave@fourbuy.co.za while validating the flow. Safe to leave — used by billing/history downstream. Iteration 68's FB-000216 is also still present.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The iter68 regression is fixed. Reproduction of success: login as dave@fourbuy.co.za / Dave1234! → go to /(app)/submit → toggle manual-entry → fill make/fuel/yop/trans/model/deriv/yr-reg text inputs (all `pick-<field>-input`) → open pick-colour wheel and pick White → toggle unseen-toggle ON → fill mileage-input with 60000 → upload 5 photos through file_chooser on photo-front, photo-driver_side, photo-passenger_side, photo-rear, photo-interior → tap submit-button → tick billing-confirm-check → tap billing-confirm-submit. Poll page.url every second: URL flips from /submit to / around t=3s (after backend responds). submitted-confirm-modal appears at the same time with the FB-000xxx reference. Playwright's page.on('dialog') captures 0 dialogs (fix removed Alert.alert). Reset verified by re-navigating to /(app)/submit and asserting make='Tap to choose' + mileage empty + no photo <img> children.",
+  "rca_of_issue": "Prior root cause (iter68): Alert.alert is a no-op class on react-native-web@0.21 (verified in node_modules/react-native-web/dist/exports/Alert/index.js), so both the confirmation UI and the router.replace('/(app)') (which was placed inside Alert.alert's OK-button callback) never fired on web. Fix applied in iter69: (a) replaced Alert.alert with a controlled <Modal testID='submitted-confirm-modal'> rendered near the existing billingConfirm modal, using the same billBackdrop/billCard styles for visual parity; (b) called router.replace('/(app)') UNCONDITIONALLY after resetForm() + setSubmittedModalOpen(true), so navigation happens on both web and native regardless of whether the user dismisses the modal. Verified end-to-end on the web preview."
+}

@@ -1,0 +1,54 @@
+{
+  "summary": "Tested the post-submit reset + confirmation alert fix in /app/frontend/app/(app)/submit.tsx. Reset behaviour WORKS on web (form fully cleared after successful submit + tab re-open). However the native Alert.alert popup does NOT render on web (react-native-web@0.21.0 ships Alert.alert as a no-op class — `static alert(){}` in node_modules/react-native-web/dist/exports/Alert/index.js). Consequence: (1) no visible 'Vehicle submitted' pop-up on the web preview; (2) router.replace('/(app)') inside the OK button's onPress is NEVER invoked, so the dealer is NOT redirected home after submit — they stay on the (now-cleared) submit screen. The reset half of the fix is correct; the popup + navigation half is broken on web and needs a cross-platform modal.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "submit.tsx performSubmit",
+        "issue": "Alert.alert('Vehicle submitted', ...) is a no-op on react-native-web@0.21.0 (see node_modules/react-native-web/dist/exports/Alert/index.js — class Alert { static alert(){} }). On the web preview the confirmation popup NEVER renders, and because router.replace('/(app)') is placed inside the OK button's onPress callback, that navigation ALSO never fires. Verified: after successful submit (FB-000216 was created on backend), URL remained https://.../submit and no browser dialog was captured by Playwright's dialog handler. On native (iOS/Android) Alert.alert would work, but the user's stated bug report (\"can a pop up appear saying that vehicle has been submitted\") is on web today. Fix: use a cross-platform confirmation Modal (there is already <Modal> imported in submit.tsx for the billing sheet) OR branch on Platform.OS === 'web' with a custom overlay and always fire router.replace('/(app)') after the API call regardless of the alert result.",
+        "testID": "submit-button",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Submit → confirmation → home redirect",
+        "issue": "After the API call succeeds (verified /api/submissions/my returns the new FB-000216 with manual_entry=true, mileage=55000) the app is left sitting on the /submit screen because router.replace lives only inside Alert.alert's OK onPress, which does not fire on web. Dealer has no explicit success signal and no auto-navigation.",
+        "affected_testIDs": ["submit-button", "billing-confirm-submit"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "expo-image-picker",
+        "issue": "Console warning: `ImagePicker.MediaTypeOptions` is deprecated — use `ImagePicker.MediaType` (or an array). Fires 5 times per submission on the photo grid. Reference: /app/frontend/app/(app)/submit.tsx lines 728, 755, 772."
+      },
+      {
+        "component": "React Native Web style deprecations",
+        "issue": "Runtime warnings on every submit-screen mount: `\"shadow*\" style props are deprecated. Use \"boxShadow\"`, `\"textShadow*\" style props are deprecated`, `Image: style.resizeMode is deprecated — use props.resizeMode`, `props.pointerEvents is deprecated — use style.pointerEvents`. Not blocking but should be swept across theme/components."
+      }
+    ]
+  },
+  "test_report_links": ["/app/test_reports/screenshots/iter68/"],
+  "action_items": [
+    "Replace `Alert.alert('Vehicle submitted', ...)` in performSubmit with a cross-platform confirmation. Recommended: reuse the existing <Modal> pattern (like billingConfirmOpen) with a testID='submit-success-modal', an OK button with testID='submit-success-ok', and put router.replace('/(app)') in that button's handler.",
+    "As a safety net, ALWAYS call `router.replace('/(app)')` after `resetForm()` regardless of whether the confirmation modal is dismissed — otherwise if the user closes the modal without hitting OK the submit tab stays stuck.",
+    "Optionally include the returned submission reference (already extracted as `submittedRef` from resp.submission.reference) inside the modal body so the dealer sees e.g. 'FB-000216 received'.",
+    "Migrate `ImagePicker.MediaTypeOptions.Images` → `ImagePicker.MediaType.image` / `['images']` in submit.tsx (3 occurrences) to silence the deprecation warning."
+  ],
+  "critical_code_review_comments": [
+    "submit.tsx is now 2450 lines — well past the 700-line guideline. Consider splitting: manual-entry section, photos section, damage/recon section, and the billing/success modals into dedicated components.",
+    "performSubmit relies on Alert.alert callback for navigation — even on native this couples the redirect to user interaction. Prefer: navigate first (or use a modal we control), THEN show acknowledgement.",
+    "resetForm() intentionally sets vin & engineNo to 'TBC' (line 871) — matches initial state, fine, but worth a code comment that these strings aren't 'empty' from the user's perspective."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "50%"},
+  "seed_data_creation": "Created submission FB-000216 (Toyota Corolla 1.8 XS CVT, 2021 reg, 55,000 km, manual_entry=true, unseen=true) for dealer dave@fourbuy.co.za during the flow test. Also reset dave@fourbuy.co.za password to Dave1234! via /api/admin/dealers/{id}/password (was 401 before).",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Dave's password had drifted — I reset via admin API to Dave1234!. To repro: login as dave → home → tap Get Cover tile → toggle manual entry + unseen → fill make/fuel/yop/trans/model/deriv/yr-reg → pick colour via wheel picker → fill mileage-input → upload 5 photos through file_chooser on each `photo-<key>` TouchableOpacity → tap submit-button → tick billing-confirm-check → tap billing-confirm-submit. On web the alert is invisible (RN-Web Alert.alert is a no-op class) so no dialog + no navigation, but the form IS reset. Playwright's page.on('dialog') will capture zero dialogs — that alone confirms the popup is missing on web.",
+  "rca_of_issue": "Root cause: react-native-web ships a stub Alert implementation (class Alert { static alert(){} } — verified in node_modules/react-native-web/dist/exports/Alert/index.js). Calling Alert.alert on the web target executes nothing — no window.alert, no modal, no button callback. E1 placed both the user-facing confirmation AND the router.replace navigation inside that no-op call, so on web the dealer gets zero acknowledgement AND is stranded on the (cleared) submit screen. On native (iOS/Android) the RN core Alert bridges to native UIAlertController / DialogFragment and would work. Mitigation: replace Alert.alert with a cross-platform <Modal>-based success screen, or Platform.select an OS-appropriate implementation; either way move the router.replace OUT of the OK button callback (call it unconditionally after resetForm)."
+}
