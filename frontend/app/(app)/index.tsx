@@ -14,6 +14,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 import { useVideoPlayer, VideoView } from "expo-video";
+import { useEvent } from "expo";
 import { LinearGradient } from "expo-linear-gradient";
 import AppIconTile from "@/src/components/home/AppIconTile";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -36,10 +37,12 @@ import { apiFetch } from "@/src/api";
 //      transient "6000ms timeout exceeded" font-loading warning while
 //      the cinematic buffers, and the client prefers a rock-solid
 //      still-image hero on the browser anyway.
-const HERO_VIDEO = require("../../assets/video/hero.mp4");
-// Static logo lockup used as the web hero and as a fallback poster
-// behind the native VideoView so the panel is never a blank rectangle.
-const HERO_LOGO = require("../../assets/brands/tradeai_hero.png");
+const HERO_VIDEO = require("../../assets/video/hero_v2.mp4");
+// Static logo lockup used as the fallback poster behind the VideoView
+// so the panel is never a blank rectangle. Points at the "TRADE APP"
+// logo-reveal frame extracted from the video (feb 2027 rebrand — the
+// previous `tradeai_hero.png` was branded "POWERED BY FOURBUY").
+const HERO_LOGO = require("../../assets/video/hero_v2_poster.jpg");
 
 // Advertising rotation — bundled bitmaps, cycled per-tap.
 const AD_TCS = require("../../assets/brands/ad_tcs.jpeg");
@@ -217,19 +220,41 @@ export default function HomeScreen() {
     "";
 
   const heroPlayer = useVideoPlayer(HERO_VIDEO, (p) => {
-    // Client-supplied 10-second cinematic. Played on every platform —
-    // iOS, Android AND Web (Feb 2027 rollout, dropped the earlier
-    // web-only text lockup). Muted so browser autoplay policies
+    // Client-supplied cinematic intro. Plays on every platform —
+    // iOS, Android and Web. Muted so browser autoplay policies
     // allow it without a user gesture.
     //
-    // `loop = false` — plays once and freezes on the final logo frame
-    // (expo-video default: holds the last decoded frame after the
-    // buffer runs out, giving us the "stand still once the logo has
-    // appeared" behaviour the client requested).
+    // Feb 2027 — the video's last frames feature a particle-shatter
+    // that dissolves the "TRADE APP" logo. Clients wants the freeze
+    // to land on the fully-revealed logo, not on the empty aftermath.
+    // We solve that in two coordinated ways:
+    //   1. `loop = false` — playback stops naturally, no restart.
+    //   2. The timeUpdate subscriber below pauses the player at the
+    //      logo-reveal moment (~7.5s in), before the shatter starts,
+    //      so the last visible frame is the clean logo.
     p.loop = false;
     p.muted = true;
+    p.timeUpdateEventInterval = 0.25;
     p.play();
   });
+
+  // Auto-pause at the logo-reveal moment. Uses `expo`'s `useEvent` hook
+  // to subscribe to expo-video's `timeUpdate` event. Cheap subscription
+  // — fires 4×/second (250 ms interval configured above) — and only
+  // triggers the pause once per playback cycle (guarded by a ref so
+  // subsequent time updates after the pause are no-ops).
+  const heroPaused = useRef(false);
+  const HERO_FREEZE_AT = 7.5; // seconds — matches the logo-reveal frame
+  const heroTime = useEvent(heroPlayer, "timeUpdate", { currentTime: 0 });
+  useEffect(() => {
+    if (heroPaused.current) return;
+    if (heroTime?.currentTime && heroTime.currentTime >= HERO_FREEZE_AT) {
+      heroPaused.current = true;
+      try {
+        heroPlayer.pause();
+      } catch { /* no-op */ }
+    }
+  }, [heroTime, heroPlayer]);
 
   // Fetch the running "Value of Cars Covered in the last 30 Days" figure
   // so it can be surfaced on the Earn Rewards flip banner. Refreshed on

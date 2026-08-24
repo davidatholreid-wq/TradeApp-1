@@ -34,7 +34,7 @@ const HERO_BULLETS: { icon: keyof typeof Ionicons.glyphMap; text: string }[] = [
 // depends on the legacy Fourbuy CDN. Falls back to nothing on
 // asset-load failure.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const HERO_IMAGE = require("../../assets/video/hero_poster.jpg");
+const HERO_IMAGE = require("../../assets/video/hero_v2_poster.jpg");
 
 export default function Login() {
   const colors = darkPalette;
