@@ -218,46 +218,22 @@ export default function HomeScreen() {
 
   const heroPlayer = useVideoPlayer(HERO_VIDEO, (p) => {
     // Client-supplied 10-second cinematic. Native (iOS/Android) only —
-    // the web hero renders a static TRADE AI logo instead. Guard the
+    // the web hero renders a static TradeAPP logo instead. Guard the
     // .play() call so the web preview never actually kicks off the
     // media pipeline.
-    p.loop = true;
+    //
+    // Feb 2027 — client asked the intro to play ONCE and freeze on the
+    // final logo frame. `loop = false` disables auto-restart; expo-video
+    // holds the last decoded frame in place after playback ends, giving
+    // us the "stand still once the logo has appeared" behaviour they
+    // requested. No watchdog / focus-replay either — the video is a
+    // one-shot per app-open.
+    p.loop = false;
     p.muted = true;
     if (Platform.OS !== "web") {
       p.play();
     }
   });
-
-  // Watchdog: some web browsers (Safari, and Chrome in restricted power
-  // modes) opportunistically pause muted background <video> elements.
-  // On web we render a static logo instead of the video so this watchdog
-  // only runs on native — where the OS video pipeline generally honours
-  // `loop = true`, but a belt-and-braces re-play() keeps the panel alive
-  // if the player is ever paused by a system-level interruption
-  // (incoming call, PiP switch, etc.).
-  useEffect(() => {
-    if (Platform.OS === "web") return;
-    const id = setInterval(() => {
-      try {
-        if (!heroPlayer.playing) heroPlayer.play();
-      } catch { /* no-op */ }
-    }, 1500);
-    return () => clearInterval(id);
-  }, [heroPlayer]);
-
-  useFocusEffect(
-    useCallback(() => {
-      // Rewind and play once every time the Home tab is re-focused so
-      // dealers see the intro from the start, not mid-way through.
-      // Web renders a static logo — skip the seek/play on that platform
-      // to avoid unnecessary media-pipeline work.
-      if (Platform.OS === "web") return;
-      try {
-        heroPlayer.currentTime = 0;
-        heroPlayer.play();
-      } catch { /* no-op */ }
-    }, [heroPlayer]),
-  );
 
   // Fetch the running "Value of Cars Covered in the last 30 Days" figure
   // so it can be surfaced on the Earn Rewards flip banner. Refreshed on
