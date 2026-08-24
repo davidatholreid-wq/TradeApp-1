@@ -1,16 +1,15 @@
 # TRADE AI powered by FOURBUY — PRD
 
 ## Latest Change
-- **Stock List redesign (Feb 2027)** — Removed floorplan tile + column + inline editor entirely. Summary now renders as a modern 2×2 grid of big glanceable tiles: Units in stock, Capital tied up, Expected GP (colour-coded), Average age.
-- **Advertising Blurb generator (Feb 2027)** — New GPT-5.2 endpoint `POST /api/submissions/{id}/ad-blurb` produces three channel-tuned marketing blurbs: Facebook Marketplace, AutoTrader Listing, WhatsApp broadcast. Uses full vehicle context (options, warranty, service plan, ownership, target sell price). Result is cached; `?refresh=1` regenerates.
-- New `AdBlurbCard` collapsible card on vehicle detail with channel tabs, Copy button, native Share on iOS/Android.
-- Stock List row has a purple megaphone icon that deep-links to `?openAdBlurb=1` — auto-expands + auto-generates on the vehicle detail page.
+- **Owner Timeline Drilldown (Feb 2027)** — Tapping the green "N owners" chip on the Kredo CarTrust card now opens a full ownership timeline modal. Vertical timeline with a colour-coded dot per row (green = current, indigo = previous), owner name (e.g. "FOURBUY WHOLESALE (PTY) LTD"), CURRENT / PREVIOUS pill, and the ownership date formatted as "14 Apr 2026".
+- Backend PDF scraper now extracts the full per-owner timeline (`name`, `kind`, `date_iso`) from Kredo's CarTrust PDF and stores it under `reports.kredo_cartrust.ownership_summary.timeline`.
+- Callback, status-check, and legacy backfill paths all merge the timeline in when it's missing — legacy reports auto-populate on the next open.
 
 ## Core Modules
 - Vehicle valuation submissions (R50 charge on submission)
 - Admin cockpit + Pricing Agents (Managerial)
 - Billing & Finance (auto-invoicing scheduler, arrears toggle, strict payment allocation)
-- VIN-Linked Reports (BMW Factory Options, Kredo VIN, Kredo CarTrust with NaTIS + owner peek)
-- AI Insights: Tyre estimator · GPT-5.2 recall checks · **Advertising Blurb generator**
+- VIN-Linked Reports (BMW Factory Options, Kredo VIN, Kredo CarTrust with NaTIS + **Owner Timeline drilldown**)
+- AI Insights: Tyre estimator · GPT-5.2 recall checks · Advertising Blurb generator
 - Debtors report & PDF streams
-- **Stock List** — modern 2×2 summary grid, aging chart, spreadsheet-style unit table with row-level ad shortcut
+- Stock List — modern 2×2 summary grid, aging chart, spreadsheet-style unit table with row-level ad shortcut

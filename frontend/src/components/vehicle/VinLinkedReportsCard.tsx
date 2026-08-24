@@ -17,12 +17,13 @@
 //   • the router push into the license-disk scan flow
 // This component is purely presentational and forwards the callbacks.
 // -----------------------------------------------------------------------------
-import React from "react";
+import React, { useState } from "react";
 import { View, Text, ActivityIndicator } from "react-native";
 import { TouchableOpacity } from "@/src/components/HapticButtons";
 import { Ionicons } from "@expo/vector-icons";
 import { spacing } from "@/src/theme";
 import CollapsibleSection from "@/src/components/vehicle/CollapsibleSection";
+import OwnerTimelineModal from "@/src/components/vehicle/OwnerTimelineModal";
 import type { Submission, ReportOrder } from "@/src/types/vehicle";
 
 export type CartrustState = {
@@ -101,8 +102,20 @@ export function VinLinkedReportsCard({
     (r) => r.type !== ("cover_offer" as any),
   );
 
+  // Local state — opens the OwnerTimelineModal when the "N owners"
+  // chip on the CarTrust card is tapped. Local because only this
+  // component knows the shape of the summary and where to source
+  // the timeline rows from.
+  const [ownerTimelineOpen, setOwnerTimelineOpen] = useState(false);
+  const ownershipSummary =
+    (cartrust as any)?.ownership_summary || {};
+  const ownershipTimeline: { name?: string; kind?: string; date_iso?: string | null }[] =
+    Array.isArray(ownershipSummary.timeline) ? ownershipSummary.timeline : [];
+  const hasTimeline = ownershipTimeline.length > 0;
+
   return (
-    <CollapsibleSection
+    <>
+      <CollapsibleSection
       title={isAdmin || isCoverMode ? "VIN-Linked Reports" : "Order a VIN-Linked Report"}
       open={open}
       onToggle={onToggle}
@@ -346,9 +359,18 @@ export function VinLinkedReportsCard({
                           label = "NaTIS owners query complete";
                         }
                         return (
-                          <View
+                          <TouchableOpacity
                             style={[styles.cartrustOwnershipChip, styles.cartrustOwnershipChipReady]}
                             testID="cartrust-ownership-ready"
+                            onPress={() => hasTimeline && setOwnerTimelineOpen(true)}
+                            disabled={!hasTimeline}
+                            activeOpacity={hasTimeline ? 0.65 : 1}
+                            accessibilityRole={hasTimeline ? "button" : "text"}
+                            accessibilityLabel={
+                              hasTimeline
+                                ? `${label}. Tap to view the full ownership timeline.`
+                                : label
+                            }
                           >
                             <Ionicons
                               name="people-outline"
@@ -361,7 +383,15 @@ export function VinLinkedReportsCard({
                             >
                               {label}
                             </Text>
-                          </View>
+                            {hasTimeline ? (
+                              <Ionicons
+                                name="chevron-forward"
+                                size={12}
+                                color="#065F46"
+                                style={{ marginLeft: 2 }}
+                              />
+                            ) : null}
+                          </TouchableOpacity>
                         );
                       })()
                     ) : (
@@ -440,6 +470,18 @@ export function VinLinkedReportsCard({
         </View>
       )}
     </CollapsibleSection>
+      <OwnerTimelineModal
+        visible={ownerTimelineOpen}
+        onClose={() => setOwnerTimelineOpen(false)}
+        timeline={ownershipTimeline as any}
+        count={
+          typeof ownershipSummary.count === "number"
+            ? ownershipSummary.count
+            : null
+        }
+        colors={colors}
+      />
+    </>
   );
 }
 
