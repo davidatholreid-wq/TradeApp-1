@@ -38,11 +38,12 @@ import { apiFetch } from "@/src/api";
 //      the cinematic buffers, and the client prefers a rock-solid
 //      still-image hero on the browser anyway.
 const HERO_VIDEO = require("../../assets/video/hero_v2.mp4");
-// Static logo lockup used as the fallback poster behind the VideoView
-// so the panel is never a blank rectangle. Points at the "TRADE APP"
-// logo-reveal frame extracted from the video (feb 2027 rebrand — the
-// previous `tradeai_hero.png` was branded "POWERED BY FOURBUY").
-const HERO_LOGO = require("../../assets/video/hero_v2_poster.jpg");
+// Static, glare-free wordmark shown BENEATH the video (as the poster
+// while it buffers) and OVER the top of the video once it finishes
+// playing. Using the crisp AI-generated logo (auto-cropped 965×392)
+// so the final freeze state is a clean, artefact-free wordmark
+// regardless of the video's spotlight composition.
+const HERO_LOGO = require("../../assets/images/logo-tradeapp.png");
 
 // Advertising rotation — bundled bitmaps, cycled per-tap.
 const AD_TCS = require("../../assets/brands/ad_tcs.jpeg");
@@ -243,7 +244,16 @@ export default function HomeScreen() {
   // — fires 4×/second (250 ms interval configured above) — and only
   // triggers the pause once per playback cycle (guarded by a ref so
   // subsequent time updates after the pause are no-ops).
+  //
+  // Feb 2027 (glare fix) — the video's freeze frame has a subtle
+  // radial spotlight/glare baked into the composition. On the smaller
+  // web panel that reads as a washed-out grey ring around the logo.
+  // Once we pause, we ALSO flip `heroEnded` on so the render layer
+  // fades the VideoView out and reveals the crisp `HERO_LOGO`
+  // (logo-tradeapp.png) still image underneath — no glare, no
+  // artefacts, just a clean wordmark.
   const heroPaused = useRef(false);
+  const [heroEnded, setHeroEnded] = useState(false);
   const HERO_FREEZE_AT = 7.5; // seconds — matches the logo-reveal frame
   const heroTime = useEvent(heroPlayer, "timeUpdate", { currentTime: 0 });
   useEffect(() => {
@@ -253,6 +263,8 @@ export default function HomeScreen() {
       try {
         heroPlayer.pause();
       } catch { /* no-op */ }
+      // Small delay so the fade feels natural (video fades → static logo appears).
+      setTimeout(() => setHeroEnded(true), 100);
     }
   }, [heroTime, heroPlayer]);
 
@@ -573,15 +585,23 @@ export default function HomeScreen() {
               */}
           <View>
             <View style={[styles.heroWrap, Platform.OS === "web" && styles.heroWrapWeb]}>
+              {/* Layer order (back → front):
+                    1. Crisp static wordmark — always visible, so if
+                       the browser blocks video autoplay the user
+                       still sees a proper hero (never a black hole).
+                    2. Cinematic video — plays on top; hidden once
+                       playback reaches the 7.5s freeze mark, so the
+                       final state is the glare-free static wordmark
+                       from layer 1. */}
               <Image
                 source={HERO_LOGO}
-                style={styles.heroPoster}
-                resizeMode="cover"
-                accessibilityLabel="TradeAPP hero poster"
+                style={styles.heroLogoBase}
+                resizeMode="contain"
+                accessibilityLabel="TradeAPP"
               />
               <VideoView
                 player={heroPlayer}
-                style={styles.hero}
+                style={[styles.hero, heroEnded && styles.heroHidden]}
                 contentFit="cover"
                 nativeControls={false}
                 allowsFullscreen={false}
@@ -1488,6 +1508,24 @@ const makeStyles = (colors: Palette, isWide: boolean, windowWidth: number = 0) =
     },
     hero: { width: "100%", height: "100%" },
     heroPoster: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, width: "100%", height: "100%" },
+    // Base logo layer — sits BEHIND the video, always visible so the
+    // hero panel is never a blank rectangle (browser autoplay may
+    // block the video). Once the intro finishes we hide the video
+    // and this crisp glare-free wordmark stays. Feb 2027.
+    heroLogoBase: {
+      position: "absolute",
+      top: "18%",
+      left: "12%",
+      right: "12%",
+      bottom: "18%",
+      width: "76%",
+      height: "64%",
+    },
+    // Applied to the VideoView once playback hits the freeze mark to
+    // reveal the base logo underneath without any glare artefacts.
+    heroHidden: {
+      opacity: 0,
+    },
     // Web override — drop the black boxed backdrop so the TRADE AI
     // wordmark sits directly on the surrounding surface. Also removes
     // the platform shadow (transparent element casting a shadow
