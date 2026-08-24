@@ -58,6 +58,7 @@ import ConditionSection from "@/src/components/vehicle/ConditionSection";
 import IdentityLicenseSection from "@/src/components/vehicle/IdentityLicenseSection";
 import TyreEstimateCard from "@/src/components/vehicle/TyreEstimateCard";
 import VehicleInsightsCard from "@/src/components/vehicle/VehicleInsightsCard";
+import AdBlurbCard from "@/src/components/vehicle/AdBlurbCard";
 import CoverOffersReceivedCard from "@/src/components/vehicle/CoverOffersReceivedCard";
 import DealerOfferCard from "@/src/components/vehicle/DealerOfferCard";
 import CoverPlacementBar from "@/src/components/vehicle/CoverPlacementBar";
@@ -92,7 +93,7 @@ import {
 export default function VehicleDetail() {
   const colors = useThemeColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const { id, cover, attach, from } = useLocalSearchParams<{ id: string; cover?: string; attach?: string; from?: string }>();
+  const { id, cover, attach, from, openAdBlurb } = useLocalSearchParams<{ id: string; cover?: string; attach?: string; from?: string; openAdBlurb?: string }>();
   const router = useRouter();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -1296,6 +1297,9 @@ export default function VehicleDetail() {
   // them when they want the deep dive; keeps the vehicle detail lean.
   const [tyreCollapsed, setTyreCollapsed] = useState(true);
   const [insightsCollapsed, setInsightsCollapsed] = useState(true);
+  // Ad Blurb (Feb 2027) — GPT-5.2 marketing copy generator.
+  const [loadingAdBlurb, setLoadingAdBlurb] = useState(false);
+  const [adBlurbCollapsed, setAdBlurbCollapsed] = useState(true);
   const handleFetchInsights = async () => {
     if (!sub) return;
     setLoadingInsights(true);
@@ -1308,6 +1312,40 @@ export default function VehicleDetail() {
       setLoadingInsights(false);
     }
   };
+  const handleFetchAdBlurb = async (refresh?: boolean) => {
+    if (!sub) return;
+    setLoadingAdBlurb(true);
+    try {
+      const path = `/api/submissions/${id}/ad-blurb${refresh ? "?refresh=1" : ""}`;
+      const data = await apiFetch(path, { method: "POST" });
+      setSub({ ...sub, ad_blurb: data } as any);
+      // Expand automatically on the first generation so the dealer
+      // sees the result without a second tap.
+      if (refresh || !((sub as any)?.ad_blurb)) {
+        setAdBlurbCollapsed(false);
+      }
+    } catch (e: any) {
+      Alert.alert("Advert copy failed", e?.message || "Please try again in a moment.");
+    } finally {
+      setLoadingAdBlurb(false);
+    }
+  };
+
+  // Deep-link support: when Stock List taps the "megaphone" quick action,
+  // we arrive with `?openAdBlurb=1`. Expand the card immediately and
+  // auto-generate the blurb if the submission doesn't have one yet so
+  // the dealer sees the copy without any extra taps.
+  const adBlurbAutoTriggered = useRef(false);
+  useEffect(() => {
+    if (adBlurbAutoTriggered.current) return;
+    if (!sub) return;
+    if (openAdBlurb !== "1") return;
+    adBlurbAutoTriggered.current = true;
+    setAdBlurbCollapsed(false);
+    if (!(sub as any)?.ad_blurb) {
+      handleFetchAdBlurb(false);
+    }
+  }, [sub, openAdBlurb]);
 
   const REPORT_CATALOG: Record<
     ReportOrder["type"] | "kredo_cartrust",
@@ -2618,6 +2656,15 @@ export default function VehicleDetail() {
               styles={styles}
               collapsed={insightsCollapsed}
               onToggleCollapsed={() => setInsightsCollapsed(v => !v)}
+            />
+            <AdBlurbCard
+              blurb={(sub as any).ad_blurb}
+              loading={loadingAdBlurb}
+              onFetch={handleFetchAdBlurb}
+              colors={colors}
+              styles={styles}
+              collapsed={adBlurbCollapsed}
+              onToggleCollapsed={() => setAdBlurbCollapsed(v => !v)}
             />
           </>
         ) : null}

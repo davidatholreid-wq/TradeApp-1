@@ -1071,10 +1071,56 @@ async def kredo_cartrust_status(
                         logger.exception("cartrust status: PDF ownership scan failed")
             if derived != current_ownership:
                 report["ownership_status"] = derived
+                update_set: dict[str, Any] = {
+                    "reports.kredo_cartrust.ownership_status": derived
+                }
+                # When we flip to populated, also derive & persist the
+                # owner-history peek (count + last change) so the UI can
+                # render it inline. JSON first, PDF fallback.
+                if derived == "populated":
+                    summary = _derive_ownership_summary(cb)
+                    if summary.get("count") is None or summary.get("last_change") is None:
+                        pdf_b64 = report.get("pdf_b64")
+                        if pdf_b64:
+                            try:
+                                import base64 as _b64
+                                pdf_bytes = _b64.b64decode(pdf_b64)
+                                pdf_summary = _pdf_extract_ownership_summary(pdf_bytes)
+                                if summary.get("count") is None and pdf_summary.get("count"):
+                                    summary["count"] = pdf_summary["count"]
+                                if summary.get("last_change") is None and pdf_summary.get("last_change"):
+                                    summary["last_change"] = pdf_summary["last_change"]
+                            except Exception:
+                                logger.exception("cartrust status: PDF ownership summary scan failed")
+                    report["ownership_summary"] = summary
+                    update_set["reports.kredo_cartrust.ownership_summary"] = summary
                 await db.submissions.update_one(
                     {"id": submission_id},
-                    {"$set": {"reports.kredo_cartrust.ownership_status": derived}},
+                    {"$set": update_set},
                 )
+        # Legacy backfill: reports that were already `populated` from a
+        # prior callback (predating the owner-history peek feature) still
+        # need `ownership_summary` derived once so the card can render it.
+        elif current_ownership == "populated" and not report.get("ownership_summary") and cb:
+            legacy_summary = _derive_ownership_summary(cb)
+            if legacy_summary.get("count") is None or legacy_summary.get("last_change") is None:
+                pdf_b64 = report.get("pdf_b64")
+                if pdf_b64:
+                    try:
+                        import base64 as _b64
+                        pdf_bytes = _b64.b64decode(pdf_b64)
+                        pdf_summary = _pdf_extract_ownership_summary(pdf_bytes)
+                        if legacy_summary.get("count") is None and pdf_summary.get("count"):
+                            legacy_summary["count"] = pdf_summary["count"]
+                        if legacy_summary.get("last_change") is None and pdf_summary.get("last_change"):
+                            legacy_summary["last_change"] = pdf_summary["last_change"]
+                    except Exception:
+                        logger.exception("cartrust status: legacy PDF summary scan failed")
+            report["ownership_summary"] = legacy_summary
+            await db.submissions.update_one(
+                {"id": submission_id},
+                {"$set": {"reports.kredo_cartrust.ownership_summary": legacy_summary}},
+            )
     return {"status": report.get("status", "unknown"), "report": report}
 
 
@@ -1304,6 +1350,25 @@ async def kredo_cartrust_callback(request: Request):
     set_updates["reports.kredo_cartrust.ownership_status"] = ownership_status
     set_updates["reports.kredo_cartrust.last_callback_at"] = now
 
+    # Owner-history peek — surfaced inline on the CarTrust card once the
+    # NaTIS query resolves. Best-effort; JSON first, PDF fallback if the
+    # JSON block came back empty but the PDF text has the data.
+    if ownership_status == "populated":
+        summary = _derive_ownership_summary(payload)
+        # If the JSON-derived summary is thin, try the PDF as a fallback.
+        if (summary.get("count") is None or summary.get("last_change") is None) and fetched.get("pdf_b64"):
+            try:
+                pdf_summary = _pdf_extract_ownership_summary(
+                    _base64.b64decode(fetched["pdf_b64"])
+                )
+                if summary.get("count") is None and pdf_summary.get("count"):
+                    summary["count"] = pdf_summary["count"]
+                if summary.get("last_change") is None and pdf_summary.get("last_change"):
+                    summary["last_change"] = pdf_summary["last_change"]
+            except Exception:
+                logger.exception("cartrust callback: PDF ownership summary scan failed")
+        set_updates["reports.kredo_cartrust.ownership_summary"] = summary
+
     await db.submissions.update_one({"id": sub_id}, {"$set": set_updates})
     return {"ok": True, "matched": True, "status": "completed", "ownership_status": ownership_status}
 
@@ -1423,6 +1488,228 @@ def _derive_ownership_status(callback_payload: dict[str, Any]) -> str:
     except Exception:
         logger.exception("_derive_ownership_status: unexpected failure")
         return "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Ownership summary derivation
+# ---------------------------------------------------------------------------
+# Once `ownership_status` flips to `populated` we also try to derive a tiny
+# summary the mobile card can render inline — the total number of registered
+# owners and the most-recent ownership change date. Kredo's callback JSON
+# doesn't have a single canonical schema across VINs (some payloads carry a
+# list under `owner_history`, others carry sibling `PreviousOwner1_ID`
+# fields, others only carry a single `PreviousOwnerDate`). This helper walks
+# every shape we've seen, keeps whatever it can extract, and returns `None`
+# for the fields we couldn't confidently derive. Never raises.
+_OWNERSHIP_DATE_KEYS = (
+    "PreviousOwnerDate", "OwnershipChangeDate", "TransferDate", "Date",
+    "date", "date_of_change", "change_date", "transfer_date",
+)
+
+
+def _parse_ownership_date(raw: Any) -> Optional[str]:
+    """Return an ISO date string (YYYY-MM-DD) parsed from a variety of
+    date shapes Kredo emits. Returns `None` on failure."""
+    if not raw:
+        return None
+    s = str(raw).strip()
+    if not s or s.lower() in _OWNERSHIP_EMPTY_MARKERS:
+        return None
+    # Common shapes: 2024-03-15, 15/03/2024, 15-03-2024, 2024/03/15,
+    # 2024-03-15T00:00:00, 15 Mar 2024
+    fmts = (
+        "%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y", "%d-%m-%Y",
+        "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%SZ",
+        "%d %b %Y", "%d %B %Y", "%b %Y", "%B %Y",
+    )
+    for fmt in fmts:
+        try:
+            return datetime.strptime(s, fmt).date().isoformat()
+        except Exception:
+            continue
+    # Last-ditch: extract YYYY-MM-DD substring
+    m = re.search(r"(\d{4})[-/](\d{2})[-/](\d{2})", s)
+    if m:
+        try:
+            return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3))).date().isoformat()
+        except Exception:
+            return None
+    m = re.search(r"(\d{2})[-/](\d{2})[-/](\d{4})", s)
+    if m:
+        try:
+            return datetime(int(m.group(3)), int(m.group(2)), int(m.group(1))).date().isoformat()
+        except Exception:
+            return None
+    return None
+
+
+def _derive_ownership_summary(callback_payload: dict[str, Any]) -> dict[str, Any]:
+    """Peek at the Kredo callback payload and try to extract:
+      * ``count``       — total number of registered owners (int or None)
+      * ``last_change`` — ISO date of the most recent ownership change (or None)
+
+    Robust across shapes. Never raises.
+    """
+    result: dict[str, Any] = {"count": None, "last_change": None}
+    try:
+        ct_raw = callback_payload.get("cartrust_json") or callback_payload.get("cartrustJson")
+        if ct_raw is None:
+            data = callback_payload
+        elif isinstance(ct_raw, str):
+            data = _json.loads(ct_raw)
+        else:
+            data = ct_raw
+
+        # Collect ownership blocks — could be dict OR list.
+        found_blocks: list[Any] = []
+
+        def _walk(o, depth: int = 0):
+            if depth > 4:
+                return
+            if isinstance(o, dict):
+                for k, v in o.items():
+                    if isinstance(k, str) and k.lower() in (
+                        "ownership", "owner_history", "owners",
+                        "ownershiphistory", "previousowners",
+                    ):
+                        found_blocks.append(v)
+                    _walk(v, depth + 1)
+            elif isinstance(o, list):
+                for x in o[:20]:
+                    _walk(x, depth + 1)
+
+        _walk(data)
+
+        dates_found: list[str] = []
+        count: Optional[int] = None
+
+        for block in found_blocks:
+            if isinstance(block, list):
+                # A list of owner objects — count each with any real value.
+                real = 0
+                for item in block:
+                    if isinstance(item, dict):
+                        has_data = any(
+                            (str(v).strip().lower() not in _OWNERSHIP_EMPTY_MARKERS)
+                            for v in item.values()
+                            if v is not None and str(v).strip()
+                        )
+                        if has_data:
+                            real += 1
+                            for dk in _OWNERSHIP_DATE_KEYS:
+                                iso = _parse_ownership_date(item.get(dk))
+                                if iso:
+                                    dates_found.append(iso)
+                if real:
+                    count = max(count or 0, real)
+            elif isinstance(block, dict):
+                # Count non-empty PreviousOwnerN_ID or PreviousOwnerID keys.
+                prev_owners = 0
+                has_current = False
+                for k, v in block.items():
+                    if v is None:
+                        continue
+                    s = str(v).strip().lower()
+                    if not s or s in _OWNERSHIP_EMPTY_MARKERS:
+                        continue
+                    lk = str(k).lower()
+                    if "previousowner" in lk and ("id" in lk or "surname" in lk):
+                        prev_owners += 1
+                    elif lk.startswith("ownerid") or lk in ("ownerid", "owner_id"):
+                        has_current = True
+                # Dates
+                for dk in _OWNERSHIP_DATE_KEYS:
+                    iso = _parse_ownership_date(block.get(dk))
+                    if iso:
+                        dates_found.append(iso)
+                block_total = (1 if has_current else 0) + prev_owners
+                if block_total:
+                    count = max(count or 0, block_total)
+
+        if dates_found:
+            # Latest ownership change wins.
+            result["last_change"] = max(dates_found)
+        if count is not None:
+            result["count"] = int(count)
+    except Exception:
+        logger.exception("_derive_ownership_summary: unexpected failure")
+    return result
+
+
+def _pdf_extract_ownership_summary(pdf_bytes: bytes) -> dict[str, Any]:
+    """Fallback: scrape the CarTrust PDF text for owner count and last
+    ownership-change date. Kredo sometimes ships fully populated owner
+    tables inside the PDF while leaving the JSON stub empty.
+
+    Kredo's PDF ownership table is rendered as one row per owner with
+    the shape:
+        NAME [HIDDEN] (CURRENT|PREVIOUS) OWNER dd/mm/yyyy
+    We count these rows and pull the most recent date to derive the
+    owner count and last ownership change respectively.
+    """
+    result: dict[str, Any] = {"count": None, "last_change": None}
+    try:
+        import pdfplumber  # local — heavy
+        import io as _io
+        with pdfplumber.open(_io.BytesIO(pdf_bytes)) as pdf:
+            text_parts = []
+            for page in pdf.pages[:10]:
+                try:
+                    text_parts.append(page.extract_text() or "")
+                except Exception:
+                    continue
+            text = "\n".join(text_parts)
+    except Exception:
+        return result
+    if not text:
+        return result
+
+    # Owner-row detector: line ending in "CURRENT OWNER dd/mm/yyyy" or
+    # "PREVIOUS OWNER dd/mm/yyyy". Anchored on the OWNER keyword + date
+    # to sidestep other "Owner" appearances (e.g. "Owner ID" table
+    # headers) that were previously inflating the count.
+    owner_row_re = re.compile(
+        r"(CURRENT|PREVIOUS)\s+OWNER\s+(\d{2}/\d{2}/\d{4})", re.I
+    )
+    matches = owner_row_re.findall(text)
+    if matches:
+        result["count"] = len(matches)
+        # Pick the most recent ownership change date. Ignore future
+        # dates (Kredo's report generation date can occasionally end up
+        # in the current-owner row on very fresh registrations).
+        today = datetime.now().date().isoformat()
+        iso_dates: list[str] = []
+        for _kind, dstr in matches:
+            iso = _parse_ownership_date(dstr)
+            if iso and "1980" <= iso <= today:
+                iso_dates.append(iso)
+        if iso_dates:
+            result["last_change"] = max(iso_dates)
+        return result
+
+    # ---- Fallback path: table-less PDFs -------------------------------
+    # Some VINs' reports use a different rendering ("Owner 1", "Owner 2"
+    # headings). Only trust this if we see an explicit "Number of
+    # Owners: N" line — the previous loose regex was picking up column
+    # headers and inflating counts.
+    m = re.search(r"(?:number\s+of\s+owners|total\s+owners|owner\s+count)\s*[:\-]?\s*(\d{1,2})", text, re.I)
+    if m:
+        try:
+            result["count"] = int(m.group(1))
+        except Exception:
+            pass
+
+    # Explicit "Latest change / Ownership Change Date / Transfer Date".
+    m = re.search(
+        r"(?:latest\s+change|ownership\s+change\s+date|transfer\s+date|date\s+of\s+ownership)"
+        r"[:\-\s]+([\d]{1,4}[-/][\d]{1,2}[-/][\d]{1,4})",
+        text, re.I,
+    )
+    if m:
+        iso = _parse_ownership_date(m.group(1))
+        if iso:
+            result["last_change"] = iso
+    return result
 
 
 @router.get("/kredo/cartrust/pdf/{submission_id}")

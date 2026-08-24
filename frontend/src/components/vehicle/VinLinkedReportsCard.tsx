@@ -302,22 +302,68 @@ export function VinLinkedReportsCard({
                       </View>
                     ) : cartrust.status === "completed" &&
                     cartrust.ownership_status === "populated" ? (
-                      <View
-                        style={[styles.cartrustOwnershipChip, styles.cartrustOwnershipChipReady]}
-                        testID="cartrust-ownership-ready"
-                      >
-                        <Ionicons
-                          name="checkmark-circle"
-                          size={12}
-                          color="#065F46"
-                        />
-                        <Text
-                          style={[styles.cartrustOwnershipChipText, styles.cartrustOwnershipChipTextReady]}
-                          numberOfLines={2}
-                        >
-                          NaTIS owners query complete
-                        </Text>
-                      </View>
+                      (() => {
+                        // Build the owner-history peek text from
+                        // `ownership_summary` (backfilled on the backend
+                        // once NaTIS returns real data). If we have both
+                        // count + last change → e.g. "3 owners · last change Mar 2024".
+                        // If we only have one, gracefully degrade.
+                        const summary =
+                          (cartrust as any).ownership_summary || {};
+                        const count: number | null =
+                          typeof summary.count === "number" && summary.count > 0
+                            ? summary.count
+                            : null;
+                        const lastChangeIso: string | null =
+                          typeof summary.last_change === "string" &&
+                          summary.last_change.length >= 7
+                            ? summary.last_change
+                            : null;
+                        let lastChangeLabel: string | null = null;
+                        if (lastChangeIso) {
+                          try {
+                            const d = new Date(lastChangeIso);
+                            if (!isNaN(d.getTime())) {
+                              // "Mar 2024" — compact, month + year is
+                              // the right granularity for an inline peek.
+                              lastChangeLabel = d.toLocaleString("en-ZA", {
+                                month: "short",
+                                year: "numeric",
+                              });
+                            }
+                          } catch {
+                            /* leave lastChangeLabel null */
+                          }
+                        }
+                        let label: string;
+                        if (count !== null && lastChangeLabel) {
+                          label = `${count} owner${count === 1 ? "" : "s"} · last change ${lastChangeLabel}`;
+                        } else if (count !== null) {
+                          label = `${count} owner${count === 1 ? "" : "s"} registered`;
+                        } else if (lastChangeLabel) {
+                          label = `Last ownership change ${lastChangeLabel}`;
+                        } else {
+                          label = "NaTIS owners query complete";
+                        }
+                        return (
+                          <View
+                            style={[styles.cartrustOwnershipChip, styles.cartrustOwnershipChipReady]}
+                            testID="cartrust-ownership-ready"
+                          >
+                            <Ionicons
+                              name="people-outline"
+                              size={12}
+                              color="#065F46"
+                            />
+                            <Text
+                              style={[styles.cartrustOwnershipChipText, styles.cartrustOwnershipChipTextReady]}
+                              numberOfLines={2}
+                            >
+                              {label}
+                            </Text>
+                          </View>
+                        );
+                      })()
                     ) : (
                       <Text style={styles.reportStatusMeta}>
                         {cartrust.status === "pending"

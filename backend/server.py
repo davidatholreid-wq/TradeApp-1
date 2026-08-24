@@ -7823,6 +7823,193 @@ async def vehicle_insights(sub_id: str, current: dict = Depends(get_current_user
     return payload
 
 
+# ---------------------------------------------------------------------------
+# Ad Blurb Generator (Feb 2027)
+# ---------------------------------------------------------------------------
+# Dealers asked for a one-tap "generate a marketing advert" button that
+# spits out ready-to-copy copy for the three channels they actually use:
+#   * Facebook Marketplace (short, casual, hook-first)
+#   * AutoTrader Listing   (structured, spec-heavy, professional)
+#   * WhatsApp Broadcast   (very short, punchy, high-emoji density)
+# Uses GPT-5.2 via the Emergent LLM key.
+# The result is cached on the submission so re-opens don't burn budget;
+# passing `refresh=1` regenerates.
+# ---------------------------------------------------------------------------
+@api_router.post("/submissions/{sub_id}/ad-blurb")
+async def submission_ad_blurb(
+    sub_id: str,
+    refresh: int = 0,
+    current: dict = Depends(get_current_user),
+):
+    sub = await db.submissions.find_one({"id": sub_id}, {"_id": 0, "photos": 0})
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+    if current["role"] != "admin":
+        if sub.get("dealer_id") != current.get("id"):
+            raise HTTPException(403, "Not authorized")
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(500, "LLM key not configured")
+
+    # Return cached if fresh & caller didn't force refresh.
+    cached = sub.get("ad_blurb")
+    if cached and not refresh:
+        return cached
+
+    # ---- Compose the vehicle brief ----------------------------------------
+    # Pull every meaningful signal from the valuation the LLM can use to
+    # make the copy specific: warranty/service plan status, options,
+    # condition, target sell price if set, and paint colour.
+    make = sub.get("make_name") or ""
+    model = sub.get("model_name") or ""
+    deriv = sub.get("derivative_name") or ""
+    year = sub.get("year_of_production") or sub.get("year") or ""
+    mileage = sub.get("mileage_km") or sub.get("mileage") or None
+    colour = sub.get("colour") or ""
+    condition = sub.get("condition_score")
+    warranty = sub.get("factory_warranty_status")
+    service_plan = sub.get("service_plan_status")
+    maint_plan = sub.get("maintenance_plan_status")
+    fsh = sub.get("full_service_history") or sub.get("service_history")
+    accident_free = sub.get("accident_free")
+    ownership_history = sub.get("ownership_history") or {}
+    # Options — either explicit factory options captured during the flow
+    # or the enriched OEM datacard if we already ordered it.
+    fac_opts = sub.get("factory_options") or []
+    reports = sub.get("reports") or {}
+    bmw_opts = (reports.get("bmw_options") or {}).get("options") or []
+    # Target sell price — if the dealer already set it, quote it in the
+    # copy. Fall back to retail range so we NEVER quote the trade offer.
+    price_hint = sub.get("target_sell_price_zar") or None
+    retail = (
+        (sub.get("kredo_value") or {}).get("retail_zar")
+        or (sub.get("valuation_report") or {}).get("retail_zar")
+    )
+
+    def _fmt_km(v):
+        try:
+            n = int(v)
+            return f"{n:,} km"
+        except Exception:
+            return "km unknown"
+
+    brief_lines = [
+        f"Make: {make}",
+        f"Model: {model}",
+        f"Derivative: {deriv}",
+        f"Year: {year}",
+        f"Odometer: {_fmt_km(mileage) if mileage else 'unknown'}",
+        f"Colour: {colour or 'unknown'}",
+    ]
+    if condition is not None:
+        brief_lines.append(f"Condition score (1-10): {condition}")
+    if warranty:
+        brief_lines.append(f"Factory warranty: {warranty}")
+    if service_plan:
+        brief_lines.append(f"Service plan: {service_plan}")
+    if maint_plan:
+        brief_lines.append(f"Maintenance plan: {maint_plan}")
+    if fsh:
+        brief_lines.append(f"Service history: {fsh}")
+    if accident_free is True:
+        brief_lines.append("Accident free: yes")
+    if isinstance(ownership_history, dict):
+        prev = ownership_history.get("previous_owners")
+        if isinstance(prev, int) and prev >= 0:
+            brief_lines.append(f"Previous owners: {prev}")
+    # Only include the first 12 options — plenty for hook copy without
+    # blowing the token budget.
+    if fac_opts:
+        opt_names = [str(o.get("name") or o.get("code") or o) for o in fac_opts[:12] if o]
+        if opt_names:
+            brief_lines.append("Factory options: " + ", ".join(opt_names))
+    if bmw_opts and not fac_opts:
+        opt_names = [str(o.get("description") or o.get("code") or o) for o in bmw_opts[:12] if o]
+        if opt_names:
+            brief_lines.append("BMW factory options: " + ", ".join(opt_names))
+    if price_hint:
+        try:
+            brief_lines.append(f"Target sell price: R {int(price_hint):,}")
+        except Exception:
+            pass
+    elif retail:
+        try:
+            brief_lines.append(f"Kredo retail estimate: R {int(retail):,}")
+        except Exception:
+            pass
+
+    brief = "\n".join(brief_lines)
+
+    system_prompt = (
+        "You are a top South African car-sales copywriter. Given a vehicle "
+        "brief, you produce THREE polished advertising blurbs the dealer "
+        "can copy straight into their marketing channel. Respond with "
+        "ONLY a valid JSON object (no markdown, no explanation) in this "
+        "exact shape:\n"
+        "{\n"
+        '  "headline": "<one strong 6-10 word headline for the vehicle>",\n'
+        '  "highlights": ["<3-6 punchy bullet-worthy selling points, no emoji>"],\n'
+        '  "facebook": "<Facebook Marketplace advert. 60-120 words. Casual, hook-first, uses 3-6 well-placed emojis, ends with a CTA to WhatsApp.>",\n'
+        '  "autotrader": "<AutoTrader listing style. 100-180 words. Professional, structured with a lead paragraph then a bullet list of key spec/features rendered as one line separated by \\n• .>",\n'
+        '  "whatsapp": "<WhatsApp broadcast. 40-70 words. Very punchy, emoji-heavy, break lines aggressively so it reads well on a small screen.>"\n'
+        "}\n\n"
+        "Rules:\n"
+        "- Never invent features that aren't in the brief.\n"
+        "- Do NOT quote a trade / My Offer price — only use the target sell "
+        "price if provided in the brief (label it 'Priced at R...' or "
+        "'Yours for R...'). If no price is provided, close with 'Price on "
+        "request' or similar.\n"
+        "- If the vehicle has an active factory warranty, service plan, "
+        "or full service history — HIGHLIGHT it (buyers care).\n"
+        "- South African English (colour, tyre, kilometres).\n"
+        "- WhatsApp variant must use '\\n' newlines aggressively for "
+        "readability on mobile.\n"
+        "- Keep it truthful, warm, and confident — not gimmicky."
+    )
+    prompt = "Vehicle brief:\n" + brief + "\n\nProduce the three blurbs now."
+
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"ad-blurb-{sub_id}",
+            system_message=system_prompt,
+        ).with_model("openai", "gpt-5.2")
+        reply = await chat.send_message(UserMessage(text=prompt))
+    except Exception as e:
+        logger.exception("LLM ad blurb generation failed")
+        raise HTTPException(502, f"Advert copy unavailable: {e}")
+
+    import json as _json, re as _re
+    text = reply.strip()
+    text = _re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=_re.MULTILINE).strip()
+    try:
+        parsed = _json.loads(text)
+    except Exception:
+        # Fallback — return the raw text so the UI can at least show
+        # something even if the LLM broke JSON. Not fatal.
+        parsed = {
+            "headline": "",
+            "highlights": [],
+            "facebook": text,
+            "autotrader": text,
+            "whatsapp": text,
+        }
+
+    payload = {
+        "headline": parsed.get("headline") or "",
+        "highlights": parsed.get("highlights") or [],
+        "facebook": parsed.get("facebook") or "",
+        "autotrader": parsed.get("autotrader") or "",
+        "whatsapp": parsed.get("whatsapp") or "",
+        "generated_at": now_utc(),
+        "model": "gpt-5.2",
+    }
+    await db.submissions.update_one(
+        {"id": sub_id},
+        {"$set": {"ad_blurb": payload}},
+    )
+    return payload
+
+
 # ============ Admin dealership management ============
 @api_router.get("/admin/dealerships")
 async def admin_list_dealerships(current: dict = Depends(require_admin)):

@@ -146,12 +146,6 @@ export default function StockScreen() {
   // Target-price inline edit --------------------------------------------
   const [editingTarget, setEditingTarget] = useState<string | null>(null);
   const [targetDraft, setTargetDraft] = useState<string>("");
-  // Editable Floorplan — same pattern as target-sell price. Only one
-  // cell across the whole table can be in edit mode at a time so we
-  // key by stock-item id.
-  const [editingFloorplan, setEditingFloorplan] = useState<string | null>(null);
-  const [floorplanDraft, setFloorplanDraft] = useState<string>("");
-  const [savingFloorplan, setSavingFloorplan] = useState(false);
   const [savingTarget, setSavingTarget] = useState<boolean>(false);
 
   const load = useCallback(async () => {
@@ -237,35 +231,6 @@ export default function StockScreen() {
       setSavingTarget(false);
     }
   }, [load, targetDraft]);
-
-  /**
-   * Commit the floorplan-amount edit. Mirrors {@link commitTarget} —
-   * validates the input, PATCHes the stock item, refreshes the list
-   * (so the summary totals reflect the new floorplan liability) and
-   * closes the inline edit UI.
-   */
-  const commitFloorplan = useCallback(async (item: StockItem) => {
-    const raw = (floorplanDraft || "").replace(/[^\d]/g, "");
-    const n = raw ? parseInt(raw, 10) : null;
-    if (raw && (!Number.isFinite(n as number) || (n as number) < 0)) {
-      Alert.alert("Invalid amount", "Please enter a positive number in Rands.");
-      return;
-    }
-    setSavingFloorplan(true);
-    try {
-      await apiFetch(`/api/stock/${item.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ floorplan_amount_zar: n }),
-      });
-      setEditingFloorplan(null);
-      setFloorplanDraft("");
-      await load();
-    } catch (e: any) {
-      Alert.alert("Couldn't save", e?.message || "Please try again.");
-    } finally {
-      setSavingFloorplan(false);
-    }
-  }, [load, floorplanDraft]);
 
   // Optimistic toggle for boolean stock fields (advertised, fully_reconditioned).
   // We flip the local state immediately for snappy UX, PATCH in the
@@ -586,21 +551,6 @@ export default function StockScreen() {
                     }}
                     onChangeTargetDraft={setTargetDraft}
                     onCommitTarget={() => commitTarget(row)}
-                    editingFloorplan={editingFloorplan === row.id}
-                    floorplanDraft={floorplanDraft}
-                    savingFloorplan={savingFloorplan}
-                    onStartEditFloorplan={() => {
-                      setEditingFloorplan(row.id);
-                      setFloorplanDraft(
-                        row.floorplan_amount_zar != null ? String(row.floorplan_amount_zar) : ""
-                      );
-                    }}
-                    onCancelEditFloorplan={() => {
-                      setEditingFloorplan(null);
-                      setFloorplanDraft("");
-                    }}
-                    onChangeFloorplanDraft={setFloorplanDraft}
-                    onCommitFloorplan={() => commitFloorplan(row)}
                     onToggleFlag={(field) => toggleFlag(row, field)}
                     togglingFlag={togglingFlag}
                     removing={removingId === row.id}
@@ -621,6 +571,23 @@ export default function StockScreen() {
                     }}
                     onMarkSold={() => setSoldModalFor(row)}
                     onDelete={() => untransferFromStock(row)}
+                    onGenerateAd={() => {
+                      if (!row.submission_id) {
+                        Alert.alert(
+                          "Original submission unavailable",
+                          "This stock item is no longer linked to a submission.",
+                        );
+                        return;
+                      }
+                      router.push({
+                        pathname: "/(app)/vehicle/[id]",
+                        params: {
+                          id: row.submission_id,
+                          from: "/(app)/stock",
+                          openAdBlurb: "1",
+                        },
+                      } as never);
+                    }}
                   />
                 ))}
               </View>
@@ -646,7 +613,10 @@ export default function StockScreen() {
 }
 
 // ---------------------------------------------------------------------------
-// SummaryStrip
+// SummaryStrip — Feb 2027 redesign.
+// A 2×2 grid of big, glanceable tiles: Units, Total Cost, Exp. GP, Avg Age.
+// Each tile has an icon chip in a tinted colour + a big value + a supportive
+// subtext line. Floorplan tile removed per Feb 2027 request.
 // ---------------------------------------------------------------------------
 function SummaryStrip({
   summary,
@@ -657,92 +627,122 @@ function SummaryStrip({
   styles: ReturnType<typeof makeStyles>;
   colors: Palette;
 }) {
-  const s = summary || { total_units: 0, total_capital_zar: 0, total_floorplan_zar: 0, total_expected_gp_zar: 0, gp_priced_units: 0, avg_age_days: null, over_60_days: 0, buckets: {} };
-  // GP colour cue — green when positive, red when the total dips below
-  // zero. Neutral grey when nothing's been priced yet so the tile
-  // doesn't scream at dealers who haven't set target prices yet.
+  const s =
+    summary || {
+      total_units: 0,
+      total_capital_zar: 0,
+      total_expected_gp_zar: 0,
+      gp_priced_units: 0,
+      avg_age_days: null,
+      over_60_days: 0,
+      buckets: {},
+    };
+  const priced = s.gp_priced_units || 0;
   const gp = s.total_expected_gp_zar || 0;
-  const gpTint = (s.gp_priced_units || 0) === 0
-    ? "#6B7280"
-    : gp >= 0 ? "#22C55E" : "#DC2626";
+  const gpTint = priced === 0 ? "#6B7280" : gp >= 0 ? "#22C55E" : "#DC2626";
+  const gpSub =
+    priced === 0
+      ? "Set target sell prices"
+      : priced === s.total_units
+      ? "All units priced"
+      : `Priced on ${priced}/${s.total_units}`;
+  const ageValue = s.avg_age_days != null ? `${s.avg_age_days}d` : "—";
+  const ageSub =
+    s.over_60_days > 0
+      ? `${s.over_60_days} over 60 days`
+      : s.avg_age_days == null
+      ? "No stock yet"
+      : "Fleet ageing";
+
   return (
-    <View style={styles.summaryWrap} testID="stock-summary">
-      <SummaryCell
-        label="UNITS"
+    <View style={styles.summaryGrid} testID="stock-summary">
+      <SummaryCard
+        label="Units in stock"
         value={String(s.total_units)}
+        subtext={s.total_units === 1 ? "1 vehicle" : `${s.total_units} vehicles`}
         icon="car-sport"
         tint={colors.primary}
         styles={styles}
+        testID="stock-summary-units"
       />
-      <SummaryCell
-        label="TOTAL COST"
+      <SummaryCard
+        label="Capital tied up"
         value={fmtZar(s.total_capital_zar)}
+        subtext="Total offer paid"
         icon="wallet"
         tint="#22C55E"
         styles={styles}
+        testID="stock-summary-cost"
       />
-      <SummaryCell
-        label="FLOORPLAN"
-        value={fmtZar(s.total_floorplan_zar || 0)}
-        icon="business"
-        tint="#0EA5E9"
-        styles={styles}
-      />
-      <SummaryCell
-        label="EXP. GP"
+      <SummaryCard
+        label="Expected GP"
         value={fmtZar(gp)}
+        subtext={gpSub}
         icon="trending-up"
         tint={gpTint}
         styles={styles}
-        // Footnote surfaces when only a subset of the fleet has target
-        // prices set, so the total isn't misread as covering every unit.
-        subtext={
-          (s.gp_priced_units || 0) > 0 && s.gp_priced_units !== s.total_units
-            ? `on ${s.gp_priced_units}/${s.total_units}`
-            : undefined
-        }
+        testID="stock-summary-gp"
       />
-      <SummaryCell
-        label="AVG AGE"
-        value={s.avg_age_days != null ? `${s.avg_age_days}d` : "—"}
+      <SummaryCard
+        label="Average age"
+        value={ageValue}
+        subtext={ageSub}
         icon="hourglass"
         tint="#F97316"
         styles={styles}
+        testID="stock-summary-age"
       />
     </View>
   );
 }
 
-function SummaryCell({
+function SummaryCard({
   label,
   value,
+  subtext,
   icon,
   tint,
   styles,
-  subtext,
+  testID,
 }: {
   label: string;
   value: string;
+  subtext?: string;
   icon: keyof typeof Ionicons.glyphMap;
   tint: string;
   styles: ReturnType<typeof makeStyles>;
-  /** Optional caption rendered below the value in muted text —
-   *  used to disclose partial coverage (e.g. "on 3/12") on the
-   *  Expected GP tile. */
-  subtext?: string;
+  testID?: string;
 }) {
   return (
-    <View style={styles.summaryCell}>
-      <View style={[styles.summaryIconChip, { backgroundColor: tint + "22", borderColor: tint + "66" }]}>
-        <Ionicons name={icon} size={16} color={tint} />
+    <View style={styles.summaryCardBig} testID={testID}>
+      <View style={styles.summaryCardInner}>
+        <View style={styles.summaryCardHead}>
+          <View
+            style={[
+              styles.summaryCardIcon,
+              { backgroundColor: tint + "22", borderColor: tint + "55" },
+            ]}
+          >
+            <Ionicons name={icon} size={18} color={tint} />
+          </View>
+          <Text style={styles.summaryCardLabel} numberOfLines={1}>
+            {label}
+          </Text>
+        </View>
+        <Text
+          style={[styles.summaryCardValue, { color: tint }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.65}
+        >
+          {value}
+        </Text>
+        {subtext ? (
+          <Text style={styles.summaryCardSubtext} numberOfLines={1}>
+            {subtext}
+          </Text>
+        ) : null}
       </View>
-      <Text style={styles.summaryLabel}>{label}</Text>
-      <Text style={styles.summaryValue} numberOfLines={1} adjustsFontSizeToFit>
-        {value}
-      </Text>
-      {subtext ? (
-        <Text style={styles.summarySubtext} numberOfLines={1}>{subtext}</Text>
-      ) : null}
     </View>
   );
 }
@@ -868,7 +868,6 @@ const TABLE_COLS_WEB = {
   mm:         { w: 90,  align: "left"  as const, label: "M&M" },
   vin:        { w: 156, align: "left"  as const, label: "VIN" },
   cost:       { w: 118, align: "right" as const, label: "COST (MY OFFER)" },
-  floorplan:  { w: 128, align: "right" as const, label: "FLOORPLAN" },
   reconCost:  { w: 108, align: "right" as const, label: "EXP. RECON" },
   // Nov 2026 — Estimated Gross Profit column. Value = target sell
   // price - (My Offer cost + Expected Recon). Shows both the ZAR
@@ -881,9 +880,9 @@ const TABLE_COLS_WEB = {
   retail:     { w: 124, align: "right" as const, label: "RETAIL" },
   age:        { w: 92,  align: "left"  as const, label: "AGE" },
   dship:      { w: 160, align: "left"  as const, label: "DEALERSHIP" },
-  // Widened to 140 (was 100) to comfortably fit three icon buttons —
-  // open · mark sold · remove — on the managerial UI without cropping.
-  actions:    { w: 140, align: "right" as const, label: "" },
+  // Widened to 180 (was 140) to comfortably fit four icon buttons —
+  // open · advert · mark sold · remove — on the managerial UI without cropping.
+  actions:    { w: 180, align: "right" as const, label: "" },
 } as const;
 
 const TABLE_COLS_MOBILE = {
@@ -895,7 +894,7 @@ const TABLE_COLS_MOBILE = {
   retail: { w: 108, align: "right" as const, label: "RETAIL" },
   age:    { w: 88,  align: "left"  as const, label: "AGE" },
   dship:  { w: 140, align: "left"  as const, label: "DEALER" },
-  actions:{ w: 90,  align: "right" as const, label: "" },
+  actions:{ w: 128, align: "right" as const, label: "" },
 } as const;
 
 // Note: no shared `TABLE_COLS` — each variant uses its own constant so
@@ -915,7 +914,7 @@ function StockTableHeader({
   const order: string[] = isWeb
     ? [
         "stock", "year", "make", "derivative", "mileage", "colour",
-        "mm", "vin", "cost", "floorplan", "reconCost", "expGp",
+        "mm", "vin", "cost", "reconCost", "expGp",
         "advertised", "reconDone",
         "retail", "age",
         ...(isAdmin ? ["dship"] : []),
@@ -962,16 +961,10 @@ function StockTableRow({
   onCancelEditTarget,
   onChangeTargetDraft,
   onCommitTarget,
-  editingFloorplan,
-  floorplanDraft,
-  savingFloorplan,
-  onStartEditFloorplan,
-  onCancelEditFloorplan,
-  onChangeFloorplanDraft,
-  onCommitFloorplan,
   onOpenSubmission,
   onMarkSold,
   onDelete,
+  onGenerateAd,
   removing,
   onToggleFlag,
   togglingFlag,
@@ -989,15 +982,9 @@ function StockTableRow({
   onCancelEditTarget: () => void;
   onChangeTargetDraft: (v: string) => void;
   onCommitTarget: () => void;
-  editingFloorplan: boolean;
-  floorplanDraft: string;
-  savingFloorplan: boolean;
-  onStartEditFloorplan: () => void;
-  onCancelEditFloorplan: () => void;
-  onChangeFloorplanDraft: (v: string) => void;
-  onCommitFloorplan: () => void;
   onOpenSubmission: () => void;
   onMarkSold: () => void;
+  onGenerateAd: () => void;
   onToggleFlag: (field: "advertised" | "fully_reconditioned") => void;
   togglingFlag: string | null;
   onDelete: () => void;
@@ -1099,61 +1086,6 @@ function StockTableRow({
     </TouchableOpacity>
   );
 
-  // ------- Floorplan editable cell (mirrors retail-price pattern) ----
-  // Any active user can edit the floorplan amount so dealers can keep
-  // their bank/floorplan liability in sync as loans are drawn or
-  // settled. Managerial-only gating isn't applied here — floorplan is
-  // a working cost input, not a pricing decision.
-  const floorplanCell = editingFloorplan ? (
-    <View style={styles.tableTargetEdit}>
-      <TextInput
-        value={floorplanDraft}
-        onChangeText={onChangeFloorplanDraft}
-        keyboardType="number-pad"
-        placeholder="0"
-        placeholderTextColor={colors.textDisabled}
-        style={styles.tableTargetInput}
-        autoFocus
-        testID={`stock-floorplan-input-${row.id}`}
-      />
-      <TouchableOpacity
-        onPress={onCommitFloorplan}
-        disabled={savingFloorplan}
-        style={styles.tableTargetSave}
-        testID={`stock-floorplan-save-${row.id}`}
-      >
-        {savingFloorplan ? (
-          <ActivityIndicator size="small" color={colors.onPrimary} />
-        ) : (
-          <Ionicons name="checkmark" size={14} color={colors.onPrimary} />
-        )}
-      </TouchableOpacity>
-      <TouchableOpacity onPress={onCancelEditFloorplan} style={styles.tableTargetCancel}>
-        <Ionicons name="close" size={14} color={colors.textSecondary} />
-      </TouchableOpacity>
-    </View>
-  ) : (
-    <TouchableOpacity
-      onPress={onStartEditFloorplan}
-      activeOpacity={0.7}
-      testID={`stock-floorplan-cell-${row.id}`}
-    >
-      <Text
-        style={[
-          styles.tableCell,
-          styles.tableCellNumeric,
-          {
-            color: row.floorplan_amount_zar != null ? colors.text : colors.textDisabled,
-          },
-          styles.tableCellEditable,
-        ]}
-        numberOfLines={1}
-      >
-        {row.floorplan_amount_zar != null ? fmtZar(row.floorplan_amount_zar) : "Set…"}
-      </Text>
-    </TouchableOpacity>
-  );
-
   // ------- Expected Gross Profit cell (read-only, computed) ----------
   // GP = sell − (cost + recon). Only rendered when the two required
   // inputs (sell price + cost) are present; recon is treated as 0
@@ -1214,6 +1146,19 @@ function StockTableRow({
         testID={`stock-open-${row.id}`}
       >
         <Ionicons name="open-outline" size={14} color={colors.text} />
+      </TouchableOpacity>
+      {/* Feb 2027 — quick "Write advert" shortcut. Deep-links into the
+          vehicle detail with `?openAdBlurb=1` so the AI ad-blurb card
+          auto-expands (or auto-generates if it hasn't been made yet).
+          Dealers can then copy the copy straight into their marketing
+          channels without leaving the stock context. */}
+      <TouchableOpacity
+        onPress={onGenerateAd}
+        style={[styles.tableIconBtn, { backgroundColor: "#7C3AED" }]}
+        testID={`stock-ad-blurb-${row.id}`}
+        accessibilityLabel="Write advertising blurb"
+      >
+        <Ionicons name="megaphone-outline" size={14} color="#FFFFFF" />
       </TouchableOpacity>
       {isManagerial ? (
         <TouchableOpacity
@@ -1308,8 +1253,6 @@ function StockTableRow({
         >
           {fmtZar(row.my_offer_price_zar)}
         </Text>
-        {/* Floorplan Amount — editable, click-to-edit pattern */}
-        <View style={{ width: C.floorplan.w }}>{floorplanCell}</View>
         {/* Expected Recon Cost */}
         <Text
           style={[
@@ -1819,6 +1762,62 @@ const makeStyles = (colors: Palette) =>
     center: { flex: 1, alignItems: "center", justifyContent: "center" },
 
     // Summary strip -----------------------------------------------------
+    // Feb 2027 redesign — 2×2 grid of large glanceable tiles.
+    summaryGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      marginHorizontal: -6,
+      marginBottom: spacing.md,
+    },
+    summaryCardBig: {
+      width: "50%",
+      paddingHorizontal: 6,
+      paddingVertical: 6,
+    },
+    summaryCardInner: {
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.paper,
+      padding: 14,
+    },
+    summaryCardHead: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      marginBottom: 8,
+    },
+    summaryCardIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: 1,
+    },
+    summaryCardLabel: {
+      color: colors.textSecondary,
+      fontSize: 11,
+      fontWeight: "800",
+      letterSpacing: 0.6,
+      textTransform: "uppercase",
+      flexShrink: 1,
+    },
+    summaryCardValue: {
+      color: colors.text,
+      fontSize: 22,
+      fontWeight: "900",
+      fontFamily: fonts.number,
+      letterSpacing: -0.4,
+    },
+    summaryCardSubtext: {
+      color: colors.textSecondary,
+      fontSize: 11,
+      fontWeight: "600",
+      marginTop: 4,
+    },
+    // Retained legacy names (unused by the new grid, kept for other
+    // code paths that might still reference them via style prop drift).
     summaryWrap: {
       flexDirection: "row",
       gap: 8,
