@@ -2265,12 +2265,16 @@ export const makeStyles = (colors: Palette) => StyleSheet.create({
     borderWidth: 1,
     borderColor: (colors as any).warningBorder || "#F4C36B",
     backgroundColor: (colors as any).warningBg || "#FEF3C7",
+    flexShrink: 1,
+    alignSelf: "flex-start",
+    maxWidth: "100%",
   },
   cartrustOwnershipChipText: {
     color: (colors as any).warningText || "#78350F",
     fontSize: 10,
     fontWeight: "700",
     letterSpacing: 0.2,
+    flexShrink: 1,
   },
   // Success variant — flips the amber "pending" chip to green once the
   // NaTIS owners query has been fulfilled by Kredo. Matches other

@@ -293,8 +293,11 @@ export function VinLinkedReportsCard({
                           size={11}
                           color={(colors as any).warningText || "#78350F"}
                         />
-                        <Text style={styles.cartrustOwnershipChipText}>
-                          NaTIS owners query pending — we&apos;ll notify you once it lands
+                        <Text
+                          style={styles.cartrustOwnershipChipText}
+                          numberOfLines={2}
+                        >
+                          NaTIS owners query pending
                         </Text>
                       </View>
                     ) : cartrust.status === "completed" &&
@@ -308,7 +311,10 @@ export function VinLinkedReportsCard({
                           size={12}
                           color="#065F46"
                         />
-                        <Text style={[styles.cartrustOwnershipChipText, styles.cartrustOwnershipChipTextReady]}>
+                        <Text
+                          style={[styles.cartrustOwnershipChipText, styles.cartrustOwnershipChipTextReady]}
+                          numberOfLines={2}
+                        >
                           NaTIS owners query complete
                         </Text>
                       </View>
