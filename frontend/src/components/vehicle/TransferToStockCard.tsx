@@ -211,21 +211,26 @@ export function TransferToStockCard({
                 )}
               </TouchableOpacity>
 
-              {/* Transfer to Stock — primary CTA, gated on Deal Done. */}
-              <TouchableOpacity
-                testID="transfer-to-stock-open-btn"
-                disabled={!canTransfer || !isFullyValued}
-                onPress={onOpenTransferModal}
-                style={[
-                  styles.primaryBtn,
-                  (!canTransfer || !isFullyValued) && styles.primaryBtnDisabled,
-                  { backgroundColor: colors.primary },
-                ]}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="arrow-forward-circle" size={18} color={colors.onPrimary} />
-                <Text style={[styles.primaryBtnTxt, { color: colors.onPrimary }]}>Transfer to Stock</Text>
-              </TouchableOpacity>
+              {/* Transfer to Stock — primary CTA, gated on Deal Done.
+                  Hidden entirely on not-fully-valued submissions (the
+                  notice above already explains why); we don't want a
+                  greyed-out button competing for attention. */}
+              {isFullyValued ? (
+                <TouchableOpacity
+                  testID="transfer-to-stock-open-btn"
+                  disabled={!canTransfer}
+                  onPress={onOpenTransferModal}
+                  style={[
+                    styles.primaryBtn,
+                    !canTransfer && styles.primaryBtnDisabled,
+                    { backgroundColor: colors.primary },
+                  ]}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="arrow-forward-circle" size={18} color={colors.onPrimary} />
+                  <Text style={[styles.primaryBtnTxt, { color: colors.onPrimary }]}>Transfer to Stock</Text>
+                </TouchableOpacity>
+              ) : null}
             </>
           ) : null}
 
