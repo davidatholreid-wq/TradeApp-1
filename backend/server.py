@@ -342,7 +342,7 @@ REPORT_CATALOG = {
     # REPORT_CATALOG so the "OPEN FULL REPORT PDF" download endpoint
     # accepts it.
     "kredo_vin_history": {
-        "name": "Accident / Claim History (Kredo VIN)",
+        "name": "Accident / Claim History",
         "cost_zar": 100.0,
     },
     # Porsche VIN Decode — 100% rule-based, no external vendor. Uses
@@ -4218,22 +4218,35 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
         story.append(unseen_tbl)
         story.append(Spacer(1, 4))
 
-    # ============ OFFER CARD (top when priced/declined) ============
-    price = sub.get("price")
-    if status == "PRICED" and price is not None:
-        priced_at = (sub.get("priced_at") or "")[:10]
-        notes = sub.get("price_notes") or ""
-        # Two-column layout: label + big price on the left, meta on the right.
+    # ============ MY OFFER CARD ============
+    # Feb 2027 — the dealer valuation PDF no longer surfaces the
+    # TradeAPP-price/decision. Only the DEALER's latest "My Offer"
+    # (`deal.dealer_offer_zar` — the amount they've set as their
+    # target sell / pre-purchase offer) is shown here. If no My Offer
+    # has been captured yet we render a subtle "MY OFFER — not set"
+    # placeholder so the card slot on the layout is preserved and
+    # the dealer knows what field to fill in. No history, just the
+    # current value.
+    deal = sub.get("deal") or {}
+    my_offer = deal.get("dealer_offer_zar")
+    if my_offer is None:
+        # Also check top-level in case the aggregator has hoisted it.
+        my_offer = sub.get("dealer_offer_zar")
+    my_offer_at = deal.get("dealer_offer_at") or sub.get("dealer_offer_at") or ""
+    my_offer_at_txt = my_offer_at[:10] if isinstance(my_offer_at, str) else ""
+    if my_offer is not None:
         left = Paragraph(
-            f'<font name="Helvetica-Bold" size="7" color="#6B6B6B">OFFER</font><br/>'
-            f'<font name="Helvetica-Bold" size="22" color="#111111">{_fmt_zar(price)}</font>',
+            f'<font name="Helvetica-Bold" size="7" color="#6B6B6B">MY OFFER</font><br/>'
+            f'<font name="Helvetica-Bold" size="22" color="#111111">{_fmt_zar(my_offer)}</font>',
             ParagraphStyle("offerL", parent=styles["Normal"], leading=26),
         )
-        right_bits = [f'<font name="Helvetica" size="8" color="#6B6B6B">Offered on {priced_at}</font>']
-        if notes:
-            right_bits.append(f'<font name="Helvetica" size="8" color="#6B6B6B"><i>“{notes}”</i></font>')
+        right_bits = []
+        if my_offer_at_txt:
+            right_bits.append(
+                f'<font name="Helvetica" size="8" color="#6B6B6B">Captured {my_offer_at_txt}</font>'
+            )
         right = Paragraph(
-            f'<para align="right">' + "<br/>".join(right_bits) + '</para>',
+            '<para align="right">' + ("<br/>".join(right_bits) or "") + '</para>',
             ParagraphStyle("offerR", parent=styles["Normal"], leading=11),
         )
         offer_card = Table([[left, right]], colWidths=[90 * mm, 96 * mm])
@@ -4247,41 +4260,23 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
             ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
         ]))
         story.append(offer_card)
-    elif status == "DECLINED":
-        decl = Paragraph(
-            '<para align="center"><font name="Helvetica-Bold" size="10" color="#B3261E">'
-            'CANNOT OFFER — WE UNFORTUNATELY ARE NOT ABLE TO MAKE AN OFFER ON THIS VEHICLE'
-            '</font></para>',
-            body,
-        )
-        decl_card = Table([[decl]], colWidths=[CONTENT_W_MM * mm])
-        decl_card.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor("#FFF3F2")),
-            ("BOX", (0, 0), (-1, -1), 0.6, DANGER),
-            ("TOPPADDING", (0, 0), (-1, -1), 8),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-        ]))
-        story.append(decl_card)
     else:
-        # Aug 2026: dealers can download the valuation snapshot PDF
-        # before TradeAPP prices the vehicle — surface a clear
-        # "PRICE PENDING" banner so anyone reading the doc knows
-        # the offer field is intentionally missing rather than lost.
-        pending = Paragraph(
+        # No dealer offer captured yet — subtle placeholder card that
+        # matches the same footprint so the layout stays consistent.
+        placeholder = Paragraph(
             '<para align="center"><font name="Helvetica-Bold" size="10" color="#0F172A">'
-            'PRICE PENDING — TradeAPP has not yet made an offer on this vehicle. '
-            'The offer will appear here once pricing is complete.'
+            'MY OFFER — not set yet. Enter it on the vehicle detail page to have it appear here.'
             '</font></para>',
             body,
         )
-        pending_card = Table([[pending]], colWidths=[CONTENT_W_MM * mm])
-        pending_card.setStyle(TableStyle([
+        placeholder_card = Table([[placeholder]], colWidths=[CONTENT_W_MM * mm])
+        placeholder_card.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor("#F1F5F9")),
             ("BOX", (0, 0), (-1, -1), 0.6, LINE),
             ("TOPPADDING", (0, 0), (-1, -1), 8),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
         ]))
-        story.append(pending_card)
+        story.append(placeholder_card)
 
     # ============ PHOTOS (single row of 5, no labels) ============
     photos = sub.get("photos") or {}
@@ -4728,14 +4723,12 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
             ]))
             story.append(total_row)
 
-    # ============ KREDO MARKET VALUES ============
-    # Snapshot of the Kredo Vehicle Values pulled at the time of valuation
-    # (new list + M&M code from the flatfile, trade + retail from Kredo's
-    # /value endpoint). These are locked once captured, so what appears
-    # here matches the app's "Market Values" card exactly.
+    # ============ MARKET VALUES ============
+    # Feb 2027 — vendor name (Kredo) removed from the PDF at the
+    # client's request. Data is still Kredo-sourced under the hood.
     mv = sub.get("market_values") or {}
     if isinstance(mv, dict) and mv.get("status") == "ok":
-        story.append(Paragraph("KREDO MARKET VALUES", section_title))
+        story.append(Paragraph("MARKET VALUES", section_title))
         mv_mono = ParagraphStyle("mvMono", parent=val_style, fontName="Courier-Bold", fontSize=9)
         mv_rows = [
             ["New List Price", Paragraph(_fmt_zar(mv.get("new_list_price_zar")), mv_mono)],
@@ -4759,8 +4752,12 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
         except Exception:
             ts_txt = "—"
         story.append(Spacer(1, 2))
+        # Feb 2027 — client asked to keep the source of VIN-linked
+        # data OFF the PDF. The market-values were still captured &
+        # locked at valuation time, so we surface the timestamp
+        # (useful for reference) without naming Kredo.
         story.append(Paragraph(
-            f"Source: Kredo Vehicle Values · captured {ts_txt} · locked at valuation",
+            f"Captured {ts_txt} · locked at valuation",
             small,
         ))
 
@@ -5099,22 +5096,106 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
         t_t.setStyle(_row_style())
         story.append(t_t)
 
-    # ============ PRICE HISTORY ============
-    ph = sub.get("price_history") or []
-    if ph:
-        story.append(Paragraph("PRICE HISTORY", section_title))
-        ph_rows = [["Date", "Change", "Comment"]]
-        for h in ph:
-            prev = h.get("previous_price")
-            new = h.get("new_price")
-            arrow = f"{_fmt_zar(prev)} → {_fmt_zar(new)}" if prev is not None else f"Initial: {_fmt_zar(new)}"
-            ph_rows.append([
-                (h.get("at") or "")[:10],
-                _P(arrow),
-                _P(h.get("comment") or "—"),
-            ])
-        t_ph = Table(ph_rows, colWidths=[24 * mm, 62 * mm, 100 * mm])
-        t_ph.setStyle(TableStyle([
+    # ============ AI VEHICLE INSIGHTS (recalls / known issues) ============
+    # Feb 2027 — if the dealer generated GPT-5.2 vehicle insights on
+    # the vehicle detail page, replay the salient bullets here so the
+    # PDF captures the same expert brief buyers see in-app.
+    insights_wrap = sub.get("vehicle_insights") or {}
+    insights = insights_wrap.get("insights") if isinstance(insights_wrap, dict) else None
+    if isinstance(insights, dict):
+        recalls = insights.get("recalls") or []
+        known = insights.get("known_issues") or []
+        recomm = insights.get("recommendations") or []
+        summary_txt = (insights.get("summary") or "").strip()
+        if recalls or known or recomm or summary_txt:
+            story.append(Paragraph("AI VEHICLE ANALYSIS", section_title))
+
+            def _esc(v: str) -> str:
+                s = str(v)
+                # Feb 2027 — GPT-5.2 sometimes appends "Source: <vendor>"
+                # citations to recall/known-issue bullets. Strip any
+                # vendor citation before escaping so the PDF stays
+                # source-agnostic per client request.
+                s = re.sub(
+                    r"\s*[\(\[\—\-]\s*Source[s]?:.*?(?=$|[\n\.\;\)\]])",
+                    "",
+                    s,
+                    flags=re.I,
+                )
+                s = re.sub(r"\bSource[s]?:\s*[^.\n]*", "", s, flags=re.I)
+                s = re.sub(
+                    r"\b(Kredo(?:\s+VIN|\s+Mobility)?|Bimmervin|MBTools|Outvin)\b",
+                    "",
+                    s,
+                    flags=re.I,
+                )
+                # Tidy up leftover whitespace / dangling separators.
+                s = re.sub(r"\s{2,}", " ", s).strip(" —-·,;:")
+                return (
+                    s.replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;")
+                )
+
+            if summary_txt:
+                story.append(Paragraph(_esc(summary_txt), body))
+                story.append(Spacer(1, 4))
+
+            def _bullets(items):
+                lines = []
+                for item in items[:8]:
+                    if isinstance(item, dict):
+                        txt = item.get("title") or item.get("description") or ""
+                        note = item.get("description") or ""
+                        if note and note != txt:
+                            txt = f"<b>{_esc(str(txt))}</b> — {_esc(str(note))}"
+                        else:
+                            txt = _esc(str(txt))
+                    else:
+                        txt = _esc(str(item))
+                    if txt.strip():
+                        lines.append(f"• {txt}")
+                return lines
+
+            if recalls:
+                story.append(Paragraph("<b>Recalls</b>", body))
+                for line in _bullets(recalls):
+                    story.append(Paragraph(line, body))
+                story.append(Spacer(1, 3))
+            if known:
+                story.append(Paragraph("<b>Known issues to check</b>", body))
+                for line in _bullets(known):
+                    story.append(Paragraph(line, body))
+                story.append(Spacer(1, 3))
+            if recomm:
+                story.append(Paragraph("<b>Recommendations</b>", body))
+                for line in _bullets(recomm):
+                    story.append(Paragraph(line, body))
+            story.append(Spacer(1, 4))
+            story.append(Paragraph(
+                "AI-generated summary — verify against a workshop inspection before committing to purchase.",
+                small,
+            ))
+
+    # ============ OWNERSHIP HISTORY (NaTIS registered owners) ============
+    # Feb 2027 — natively render the per-owner timeline captured from
+    # NaTIS instead of embedding the vendor's raw PDF page. Same data,
+    # our layout, no vendor branding leaks into the export.
+    kct_report = (sub.get("reports") or {}).get("kredo_cartrust") or {}
+    ownership_summary = kct_report.get("ownership_summary") or {}
+    timeline = ownership_summary.get("timeline") if isinstance(ownership_summary, dict) else None
+    if isinstance(timeline, list) and timeline:
+        story.append(Paragraph("OWNERSHIP HISTORY", section_title))
+        owner_rows = [["#", "Registered Owner", "Kind", "Date"]]
+        for idx, entry in enumerate(timeline[:20], start=1):
+            if not isinstance(entry, dict):
+                continue
+            name = str(entry.get("name") or "Unknown owner").strip()
+            kind = (entry.get("kind") or "").upper()
+            iso = entry.get("date_iso") or ""
+            owner_rows.append([str(idx), _P(name), kind, iso[:10]])
+        t_owner = Table(owner_rows, colWidths=[10 * mm, 108 * mm, 30 * mm, 38 * mm])
+        t_owner.setStyle(TableStyle([
             ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 7),
             ("TEXTCOLOR", (0, 0), (-1, 0), MUTED),
             ("BACKGROUND", (0, 0), (-1, 0), PAPER),
@@ -5126,15 +5207,37 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
             ("LEFTPADDING", (0, 0), (-1, -1), 6),
             ("RIGHTPADDING", (0, 0), (-1, -1), 6),
         ]))
-        story.append(t_ph)
+        story.append(t_owner)
+        count = ownership_summary.get("count") or len(timeline)
+        last_change = ownership_summary.get("last_change") or ""
+        meta_bits = [f"{count} owners on record"]
+        if last_change:
+            meta_bits.append(f"last change {last_change}")
+        story.append(Spacer(1, 3))
+        story.append(Paragraph(" · ".join(meta_bits), small))
 
     # ============ VIN REPORTS ============
     if reports:
         story.append(Paragraph("ORDERED VIN REPORTS", section_title))
+
+        # Feb 2027 — vendor names must be stripped from the report
+        # label on the PDF (e.g. "Accident / Claim History (Kredo VIN)"
+        # → "Accident / Claim History"). Legacy reports still hold the
+        # old name string, so we filter here at render time.
+        import re as _re_vendor
+        _VENDOR_PATTERN = _re_vendor.compile(
+            r"\s*\((?:Kredo[^)]*|Bimmervin[^)]*|MBTools[^)]*|Outvin[^)]*)\)",
+            flags=_re_vendor.I,
+        )
+        def _strip_vendor(name: str) -> str:
+            if not name:
+                return ""
+            return _VENDOR_PATTERN.sub("", str(name)).strip()
+
         rep_rows = [["Report", "Cost", "Status", "Ordered"]]
         for r in reports:
             rep_rows.append([
-                _P(r.get("name") or r.get("type")),
+                _P(_strip_vendor(r.get("name") or r.get("type"))),
                 _fmt_zar(r.get("cost_zar")),
                 (r.get("status") or "pending").upper(),
                 (r.get("ordered_at") or "")[:10],
@@ -5179,7 +5282,7 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
                 continue
             story.append(PageBreak())
             story.append(Paragraph(
-                (r.get("name") or r.get("type") or "REPORT").upper(),
+                _strip_vendor(r.get("name") or r.get("type") or "REPORT").upper(),
                 ParagraphStyle(
                     "repHdr", parent=styles["Heading2"], fontSize=14,
                     textColor=INK, spaceAfter=6,
@@ -5285,11 +5388,9 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
                     prov_bits.append(
                         f"Captured {str(data['captured_at'])[:19].replace('T', ' ')} UTC"
                     )
-                if data.get("source"):
-                    prov_bits.append(f"Source: {data['source']}")
-                url = data.get("service_history_url") or data.get("result_url")
-                if url:
-                    prov_bits.append(f'<a href="{url}"><u>View on JLR OSH</u></a>')
+                # Feb 2027 — client asked to keep the SOURCE of VIN-linked
+                # reports off the PDF. Removed `Source: <vendor>` and any
+                # deep-link back to the vendor's portal.
                 if prov_bits:
                     prov_style = ParagraphStyle(
                         "prov", parent=small, textColor=MUTED, fontSize=6.5, leading=8,
@@ -5598,7 +5699,7 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
             self.setFont("Helvetica", 7)
             self.drawString(
                 12 * mm, foot_y,
-                "TradeAPP  ·  Confidential  ·  Offer prices are indicative and subject to physical inspection.",
+                "TradeAPP  ·  Confidential  ·  Values are indicative and subject to physical inspection.",
             )
             self.setFont("Helvetica-Bold", 7)
             self.setFillColor(INK)
@@ -5610,36 +5711,15 @@ async def _build_valuation_pdf(sub: dict, reports: list, expired: bool = False) 
     doc.build(story, canvasmaker=NumberedCanvas)
     pdf_bytes = buf.getvalue()
 
-    # ---- Append Kredo's original CarTrust PDF -------------------------
-    # The JSON-based CarTrust section that reportlab renders above only
-    # exposes the fields Kredo puts in the callback JSON — which
-    # notoriously leaves the "Ownership History Only" and full owner-
-    # history table EMPTY (`ownership: No Record Found`).
-    # Those tables are exclusive to the standalone Kredo PDF stored on
-    # the submission (`reports.kredo_cartrust.pdf_b64`).  To restore the
-    # dealer's full picture inside the combined Valuation PDF we merge
-    # Kredo's original PDF pages onto the end using pypdf.  This is a
-    # no-op when the CarTrust report hasn't been ordered.
-    try:
-        _ct_b64 = (kct or {}).get("pdf_b64") if isinstance(kct, dict) else None
-        if _ct_b64:
-            import base64 as _b64
-            from io import BytesIO as _BIO
-            from pypdf import PdfReader as _PR, PdfWriter as _PW
-            valuation_r = _PR(_BIO(pdf_bytes))
-            cartrust_r = _PR(_BIO(_b64.b64decode(_ct_b64)))
-            writer = _PW()
-            for pg in valuation_r.pages:
-                writer.add_page(pg)
-            for pg in cartrust_r.pages:
-                writer.add_page(pg)
-            out = _BIO()
-            writer.write(out)
-            pdf_bytes = out.getvalue()
-    except Exception:
-        # Best-effort merge — never let a corrupt CarTrust PDF break
-        # the whole valuation download.
-        logger.exception("Failed to append Kredo CarTrust PDF to valuation")
+    # ---- (Removed) Kredo CarTrust PDF page-append ----------------------
+    # Previously we appended Kredo's original CarTrust PDF pages after
+    # the reportlab-generated valuation so the "Ownership History Only"
+    # table (which their callback JSON leaves empty) still reached the
+    # dealer. Feb 2027 — client asked to strip vendor source info from
+    # the exported PDF, so we no longer merge the vendor's branded
+    # pages. The ownership timeline is now surfaced natively above via
+    # `ownership_summary.timeline`, rendered by reportlab with our
+    # brand — no vendor branding, no marketing pages.
 
     return pdf_bytes
 
@@ -6114,11 +6194,8 @@ async def _build_report_pdf(sub: dict, order: dict) -> bytes:
             prov_bits.append(
                 f"Captured {str(data['captured_at'])[:19].replace('T', ' ')} UTC"
             )
-        if data.get("source"):
-            prov_bits.append(f"Source: {data['source']}")
-        url = data.get("service_history_url") or data.get("result_url")
-        if url:
-            prov_bits.append(f'<a href="{url}"><u>View on JLR OSH</u></a>')
+        # Feb 2027 — source vendor and deep-link intentionally omitted
+        # from the exported PDF at the client's request.
         if prov_bits:
             story.append(Spacer(1, 6))
             story.append(Paragraph(" · ".join(prov_bits), small))
@@ -7787,7 +7864,10 @@ async def vehicle_insights(sub_id: str, current: dict = Depends(get_current_user
         "}\n"
         "If no recalls or known issues are broadly reported for this vehicle, return empty arrays for those keys "
         "rather than inventing entries. Focus on the SPECIFIC year range that matches the vehicle — do not repeat "
-        "generic advice that applies to every car. Keep each summary under 40 words."
+        "generic advice that applies to every car. Keep each summary under 40 words. "
+        "IMPORTANT: NEVER include source/vendor citations inside any bullet or summary — no 'Source: ...', "
+        "no vendor names (Kredo, Bimmervin, MBTools, Outvin, NHTSA, etc.), and no citation-style parentheses. "
+        "The output is copy-ready for a dealer PDF that must be source-agnostic."
     )
     prompt = (
         "Vehicle:\n"
