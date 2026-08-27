@@ -118,8 +118,7 @@ export function TransferToStockCard({
             <View style={styles.notice} testID="transfer-guard-notice">
               <Ionicons name="alert-circle" size={14} color="#F97316" />
               <Text style={styles.noticeTxt}>
-                Subject-to-view vehicles can't be transferred to stock yet — please
-                complete the full valuation first.
+                Transfer to stock unlocks once the full valuation is complete. You can still mark the deal outcome below.
               </Text>
             </View>
           ) : null}

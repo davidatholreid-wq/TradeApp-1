@@ -1224,16 +1224,30 @@ async def deal_outcomes_stats(current: dict = Depends(get_current_user)):
     # Build the mongo filter for submissions we should count.
     # Exclude retracted submissions (Aug 2026 Edit & Re-submit) — they've
     # been superseded by a `-vN` version and would double-count outcomes.
-    query: dict = {"status": {"$ne": "pending"}, "retracted": {"$ne": True}}
+    #
+    # Aug 2026 refinement: dealers can now mark deal-done / no-deal on
+    # `pending` (still-un-priced) submissions too, so those must
+    # participate in the stats when they carry a real outcome. The
+    # query therefore includes ANY non-retracted submission that is
+    # either priced OR has an explicit deal.done value.
+    query: dict = {
+        "retracted": {"$ne": True},
+        "$or": [
+            {"status": {"$ne": "pending"}},
+            {"deal.done": {"$in": [True, False]}},
+        ],
+    }
     if role != "admin":
         my_dship = await _get_user_dealership_id(current)
         if my_dship:
-            query["$or"] = [
-                {"dealership_id": my_dship},
-                # Legacy submissions without dealership_id — fall back to
-                # the ownership check.
-                {"dealer_id": current.get("id")},
-            ]
+            query["$and"] = [{
+                "$or": [
+                    {"dealership_id": my_dship},
+                    # Legacy submissions without dealership_id — fall back to
+                    # the ownership check.
+                    {"dealer_id": current.get("id")},
+                ],
+            }]
         else:
             query["dealer_id"] = current.get("id")
 
@@ -1296,22 +1310,34 @@ async def deal_outcomes_list(current: dict = Depends(get_current_user)):
     """
     role = current.get("role")
     ninety_days_ago = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
+    # Aug 2026: include pending submissions that already carry a
+    # dealer-recorded outcome (deal.done true/false). For those we use
+    # `submitted_at` as the date proxy since they have no `priced_at`.
     query: dict = {
-        "status": {"$ne": "pending"},
-        "priced_at": {"$gte": ninety_days_ago},
-        # Exclude retracted (Edit & Re-submit) originals — the -vN
-        # replacement is what counts for outcomes.
-        "retracted": {"$ne": True},
+        "$and": [
+            {
+                "$or": [
+                    {"status": {"$ne": "pending"}, "priced_at": {"$gte": ninety_days_ago}},
+                    {"deal.done": {"$in": [True, False]}, "submitted_at": {"$gte": ninety_days_ago}},
+                    {"deal.done": {"$in": [True, False]}, "created_at": {"$gte": ninety_days_ago}},
+                ]
+            },
+            # Exclude retracted (Edit & Re-submit) originals — the -vN
+            # replacement is what counts for outcomes.
+            {"retracted": {"$ne": True}},
+        ],
     }
     if role != "admin":
         my_dship = await _get_user_dealership_id(current)
         if my_dship:
-            query["$or"] = [
-                {"dealership_id": my_dship},
-                {"dealer_id": current.get("id")},
-            ]
+            query["$and"].append({
+                "$or": [
+                    {"dealership_id": my_dship},
+                    {"dealer_id": current.get("id")},
+                ],
+            })
         else:
-            query["dealer_id"] = current.get("id")
+            query["$and"].append({"dealer_id": current.get("id")})
 
     # Retroactively close any submission that expired without a
     # dealer-recorded outcome, so the report always reflects the

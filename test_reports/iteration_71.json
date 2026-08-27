@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 71 — Deal Done / No Deal on PENDING (un-priced) submissions. Full backend + frontend verification. Backend: 8/8 pytest cases pass (test_iteration_71_deal_on_pending.py). PATCH /api/submissions/{id}/deal with {done:true} and {done:false} both succeed against a pending sub for pricing-agent dealer Dave on his owning dealership; sub.status remains 'pending' after the write; deal.done persists; purchased_at auto-stamped when done=true. GET /api/stats/deal-outcomes and /api/stats/deal-outcomes/list correctly include pending subs that carry an explicit deal.done value (verified by finding both seeded pending subs in the deal_done and no_deal bucket lists) and still exclude unmarked pending subs. Regression 403s hold: admin PATCH → 403, non-pricing-agent dealer (minitest, Karam Motors) PATCH on Dave's sub → 403, unauth → 401. Frontend (Playwright, 390x844): logged in as dave@tradeapp.co.za, opened TA-000221 (pending, un-priced) — the transfer-to-stock-card renders (previously hidden), all three outcome chips (deal-outcome-pending / done / no_deal) present and enabled, notice reads the new copy 'Transfer to stock unlocks once the full valuation is complete. You can still mark the deal outcome below.' (old subject-to-view copy no longer present anywhere in the DOM). Tapping Deal Done persists via API (deal.done=true, status still 'pending') and after full page reload the Done chip is visually active (green-tint bg) while the other two are dark. Tapping No Deal flips deal.done=false via API. Transfer to Stock button IS rendered on the card once an outcome is set but is styled disabled/greyed out because isFullyValued=false — matches spec.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_71_deal_on_pending.py",
+    "/app/test_reports/pytest/iteration_71_deal_on_pending.xml",
+    "/app/test_reports/screenshots/iter71_card.png",
+    "/app/test_reports/screenshots/iter71_deal_done.png",
+    "/app/test_reports/screenshots/iter71_no_deal.png"
+  ],
+  "action_items": [
+    "No action required — feature works end-to-end. Optional polish: consider hiding the disabled 'Transfer to Stock' button entirely on pending subs (currently it renders greyed-out below the outcome chips). Not a bug, just clutter — the current behaviour matches the spec.",
+    "Housekeeping (unrelated to this iteration): /app/backend/tests/test_deal_outcomes_list.py still uses the pre-rebrand @fourbuy.co.za emails in its fixtures; those logins fail on the current DB. Suggest bulk-renaming to @tradeapp.co.za for the module fixtures next time that file is touched."
+  ],
+  "critical_code_review_comments": [
+    "server.py update_submission_deal (line ~6640): correctly enforces role=dealer AND is_pricing_agent AND same dealership. No status gate exists (never did) — so removing the frontend gate on status=='pending' is safe.",
+    "server.py /stats/deal-outcomes (line ~1233): the $or query {status: {$ne:'pending'}} OR {deal.done: {$in:[True,False]}} correctly widens the scope without double-counting because each sub is evaluated once and bucketised by deal.done tri-state. Verified with the pending sub landing in deal_done / no_deal lists.",
+    "frontend TransferToStockCard.tsx line 217 keeps the Transfer button `disabled={!canTransfer || !isFullyValued}` — correct guard so pricing-not-done vehicles cannot be stock-transferred even though the deal chips are usable.",
+    "frontend vehicle/[id].tsx line 2900: `!isCoverMode && (isAdmin || isOwningDealer)` correctly renders the card for admins too. Admin's PATCH will 403 (server-side), which the UI surfaces via the standard patchDeal error path — could be pre-hidden client-side to reduce confusion but not a bug."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_71_deal_on_pending.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 pytest cases pass)",
+    "frontend": "100% (all Playwright assertions pass: card visible, 3 chips present, new notice text, Deal Done persists across reload + API, No Deal flips)"
+  },
+  "seed_data_creation": "Reused existing pending submissions TA-000221 / TA-000220 / TA-000219 belonging to dave@tradeapp.co.za on Fourbuy Fourways Gardens. Reset admin password for dave@tradeapp.co.za to Dave1234! at the start of the run (it had rotated). All three pending subs restored to deal.done=null at end of run so subsequent iterations see the same starting state.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Dave's password is Dave1234! (reset again this iteration). Pending subs TA-000221 / TA-000220 / TA-000219 on his dealership are the working set for Deal Done / No Deal manual QA on un-priced vehicles. All left with deal.done=null for a clean slate. The old test_deal_outcomes_list.py fixtures use stale @fourbuy.co.za emails and will fail if re-run against this env — replace with @tradeapp.co.za next time.",
+  "rca_of_issue": "N/A — no bugs found. Feature works end-to-end for the specified behaviour."
+}

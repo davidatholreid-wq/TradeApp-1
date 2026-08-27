@@ -2897,7 +2897,7 @@ export default function VehicleDetail() {
             to users on the OWNING dealership + admins.  Hidden in
             cover-mode.  Requires a fully-valued submission (subject-
             to-view vehicles cannot be transferred). */}
-        {!isCoverMode && sub.status !== "pending" && (isAdmin || isOwningDealer) ? (
+        {!isCoverMode && (isAdmin || isOwningDealer) ? (
           (() => {
             const stockItemId = (sub as any)?.stock_item_id || null;
             const stockNumber = (sub as any)?.stock_number || null;
