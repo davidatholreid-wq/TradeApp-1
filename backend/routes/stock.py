@@ -298,7 +298,9 @@ async def transfer_to_stock(
     """Create a new stock item from a fully-valued submission.
 
     Business rules enforced:
-      1. Submission must be **fully valued** (``priced_at`` set).
+      1. Submission must be **fully valued** — either TradeAPP has
+         priced it (``priced_at`` set) OR the managerial user has
+         committed their own dealer offer (``deal.dealer_offer_zar``).
       2. Caller must be managerial (``is_pricing_agent``) on the
          owning dealership — or an admin.
       3. The submission must not already be transferred (has
@@ -319,13 +321,22 @@ async def transfer_to_stock(
         if not (owner and owner == my_dship) and sub.get("dealer_id") != current.get("id"):
             raise HTTPException(403, "You can only transfer submissions from your dealership.")
 
-    # Rule 1 — must be a fully-valued submission (not subject-to-view).
-    if not sub.get("priced_at"):
+    # Rule 1 — must have a committed price we can transfer against.
+    # Aug 2026 update: either TradeAPP's price OR a dealer-committed
+    # offer is enough. Some dealerships close deals off their own
+    # valuation without waiting for TradeAPP to price the file.
+    _deal = sub.get("deal") or {}
+    _dealer_offer = _deal.get("dealer_offer_zar") or sub.get("dealer_offer_zar") or 0
+    try:
+        _dealer_offer_int = int(_dealer_offer or 0)
+    except Exception:
+        _dealer_offer_int = 0
+    if not sub.get("priced_at") and _dealer_offer_int <= 0:
         raise HTTPException(
             400,
-            "This submission has not been fully valued yet. Subject-to-view "
-            "vehicles cannot be transferred to stock — please complete the "
-            "valuation first.",
+            "This submission has not been fully valued yet — enter your "
+            "own dealer offer or wait for TradeAPP to price the vehicle "
+            "before transferring to stock.",
         )
 
     # Rule 3 — already transferred?

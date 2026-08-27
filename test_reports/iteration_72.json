@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 72 — Transfer-to-Stock gate now unlocks on committed dealer offer OR TradeAPP price. Full backend + frontend verification. Backend (test_iteration_72_transfer_gate.py, 5/5 passing): (1) Dave (managerial) PATCH deal {dealer_offer_zar:250000} on a pending un-priced sub → 200, then POST /transfer-to-stock with fresh stock_number → 200 with body carrying the new stock id + stock_number. (2) Same endpoint with no priced_at and no dealer_offer → 400, response body contains both 'dealer offer' and 'fully valued' phrases (new copy). (3) Non-managerial dealer (minitest) → 403. (4) Managerial user targeting a foreign dealership's sub → 403. (5) Priced sub with no dealer offer still transfers → 200 (regression). Frontend (Playwright, 390x844, dave@tradeapp.co.za): pending sub TA-000219 baseline (dealer_offer_zar=0, no priced_at) shows the transfer-guard-notice with the EXACT new copy 'Transfer to stock unlocks once TradeAPP prices the vehicle or a managerial user commits their own offer. You can still mark the deal outcome below.' and transfer-to-stock-open-btn is NOT rendered. After PATCH-ing dealer_offer_zar=250000 + done=true and reloading, the guard notice disappears (count=0) and transfer-to-stock-open-btn IS rendered (count=1). Regression on priced sub (FB-000208): button visible, notice hidden. Access rules verified: managerial + owning dealership can transfer, non-managerial 403, foreign dealership 403. No bugs found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_72_transfer_gate.py",
+    "/app/test_reports/pytest/iteration_72.xml",
+    "/app/test_reports/iter72_baseline.png",
+    "/app/test_reports/iter72_with_offer.png",
+    "/app/test_reports/iter72_priced.png"
+  ],
+  "action_items": [
+    "No action required — feature works end-to-end across backend and frontend. Notice copy is exactly what the spec requested."
+  ],
+  "critical_code_review_comments": [
+    "routes/stock.py line 328-340: correctly reads dealer_offer_zar from both sub.deal.dealer_offer_zar AND sub.dealer_offer_zar (legacy fallback) before deciding to reject. int() coerce with try/except is safe against string values.",
+    "routes/stock.py line 316-322: 403 chain unchanged — managerial-only + owning-dealership gate is intact; regression tests 3/4 confirm.",
+    "vehicle/[id].tsx line 2912-2914: isFullyValued = hasTradeAppPrice || hasDealerOffer correctly mirrors the backend rule (OR gate). Number() coerce handles string vs number safely.",
+    "TransferToStockCard.tsx line 121: notice text exactly matches spec. Line 218 gates the button on isFullyValued so the flow stays symmetric between guard notice and CTA."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_72_transfer_gate.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (5/5 pytest cases pass)",
+    "frontend": "100% (3/3 scenarios: baseline hidden button + new notice copy present; button appears with dealer_offer; priced regression still works)"
+  },
+  "seed_data_creation": "Reused existing subs on Dave's dealership: pending TA-000219 (id 562bd8c5-092b-4bff-bcbc-203897e071ad) and priced FB-000208 (id 443a507c-006e-4c0f-85a6-2f57b1ea709d). Every test resets deal.dealer_offer_zar=0 and deal.done=null at end and un-transfers any stock rows it created; state is clean for the next iteration.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Dave (dave@tradeapp.co.za / Dave1234!) has 33 subs on Fourbuy Fourways Gardens. Pending un-priced working sub is TA-000219; a good priced regression target is FB-000208. GET /api/submissions/{id} returns {\"submission\":{...}} — unwrap before reading fields (use _get_sub helper in the new test module). Dave login response .user has both dealership_id and id for scoping tests.",
+  "rca_of_issue": "N/A — no bugs. Backend and frontend both correctly implement the OR gate (priced_at OR deal.dealer_offer_zar > 0)."
+}

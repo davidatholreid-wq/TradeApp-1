@@ -118,7 +118,7 @@ export function TransferToStockCard({
             <View style={styles.notice} testID="transfer-guard-notice">
               <Ionicons name="alert-circle" size={14} color="#F97316" />
               <Text style={styles.noticeTxt}>
-                Transfer to stock unlocks once the full valuation is complete. You can still mark the deal outcome below.
+                Transfer to stock unlocks once TradeAPP prices the vehicle or a managerial user commits their own offer. You can still mark the deal outcome below.
               </Text>
             </View>
           ) : null}

@@ -2903,7 +2903,15 @@ export default function VehicleDetail() {
             const stockNumber = (sub as any)?.stock_number || null;
             const transferredAt = (sub as any)?.transferred_to_stock_at || null;
             const canTransfer = isAdmin || (isOwningDealer && !!((user as any)?.is_pricing_agent));
-            const isFullyValued = !!(sub as any)?.priced_at;
+            // "Fully valued" = the vehicle has a committed price we can
+            // transfer against. That can be EITHER a TradeAPP price
+            // (`priced_at`) OR the managerial user's own dealer offer
+            // (`deal.dealer_offer_zar`). Either counts — dealers who
+            // already know what they'll pay don't need to wait for
+            // TradeAPP to price the file before moving it to stock.
+            const hasTradeAppPrice = !!(sub as any)?.priced_at;
+            const hasDealerOffer = Number((sub as any)?.deal?.dealer_offer_zar || 0) > 0;
+            const isFullyValued = hasTradeAppPrice || hasDealerOffer;
             // Normalise the deal.done tri-state so the card can drive
             // the outcome chips: true → Deal Done, false → No Deal,
             // undefined/null → Pending.
