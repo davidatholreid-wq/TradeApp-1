@@ -77,10 +77,12 @@ type Submission = {
 type DealBucket = "all" | "pending" | "deal_done" | "no_deal";
 
 // Map a submission's `deal.done` value into one of the three outcome
-// buckets. Non-priced submissions are always "pending" because there's
-// nothing yet to close a deal against.
+// buckets. Aug 2026: dealers can mark deal-done / no-deal on any
+// submission (including pending / not-yet-priced ones), so the
+// bucketing now looks at `deal.done` FIRST regardless of the pricing
+// status and only falls back to "pending" when the dealer hasn't
+// answered yet.
 function computeDealBucket(s: Submission): Exclude<DealBucket, "all"> {
-  if (s.status !== "priced") return "pending";
   const done = s.deal?.done;
   if (done === true) return "deal_done";
   if (done === false) return "no_deal";
