@@ -14,7 +14,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TextInput, ActivityIndicator, Platform, Alert, Modal } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { TouchableOpacity } from "@/src/components/HapticButtons";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -42,6 +42,7 @@ export default function VinReportsNewScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ orderId?: string }>();
   const styles = makeStyles(colors);
+  const insets = useSafeAreaInsets();
 
   const [makes, setMakes] = useState<string[]>([]);
   const [selectedMake, setSelectedMake] = useState<string>("");
@@ -52,6 +53,10 @@ export default function VinReportsNewScreen() {
   const [makePickerOpen, setMakePickerOpen] = useState(false);
   const [makeQuery, setMakeQuery] = useState("");
   const [scanNotice, setScanNotice] = useState<string | null>(null);
+  // CarTrust-only extra inputs. Prompted inline once the user picks
+  // the CarTrust row from the reports list.
+  const [ctPlate, setCtPlate] = useState<string>("");
+  const [ctMileage, setCtMileage] = useState<string>("");
   // Result / view-order mode — if `orderId` was passed we're viewing
   // a previously completed order rather than starting a new one.
   const [viewOrder, setViewOrder] = useState<any | null>(null);
@@ -228,6 +233,20 @@ export default function VinReportsNewScreen() {
       Alert.alert("VIN required", "Please enter or scan a valid VIN before ordering a report.");
       return;
     }
+    // CarTrust needs a plate + mileage — validate before firing.
+    const isCartrust = entry.id === "kredo_cartrust";
+    const cleanedPlate = ctPlate.trim().toUpperCase().replace(/\s+/g, "");
+    const mileageNum = Math.round(Number((ctMileage || "").replace(/[,\s]/g, "")) || 0);
+    if (isCartrust) {
+      if (cleanedPlate.length < 4) {
+        Alert.alert("Registration required", "Enter the license plate (registration number) — CarTrust needs it to pull the NaTIS record.");
+        return;
+      }
+      if (mileageNum <= 0) {
+        Alert.alert("Mileage required", "Enter the current odometer reading (km) — CarTrust prints this on the report.");
+        return;
+      }
+    }
     setOrdering(entry.id);
     try {
       const r = await apiFetch("/api/vin-reports/order", {
@@ -237,11 +256,19 @@ export default function VinReportsNewScreen() {
           make: selectedMake,
           vin: vin.trim().toUpperCase(),
           report_type: entry.id,
+          ...(isCartrust ? {
+            registration_number: cleanedPlate,
+            mileage: mileageNum,
+            vehicle_condition: "Used",
+          } : {}),
         }),
       });
       const orderId = r?.order?.id;
+      const isPending = !!r?.async_pending;
       const cost = entry.cost_zar || 0;
-      const notice = cost > 0
+      const notice = isPending
+        ? "CarTrust order placed — Kredo delivers this report asynchronously (usually within 1–2 minutes). You will be billed only when the report lands."
+        : cost > 0
         ? `Report ready — you were billed R${cost}.`
         : "Report ready — no charge for this report.";
       // Clear the form so a fresh order can be placed immediately.
@@ -249,10 +276,12 @@ export default function VinReportsNewScreen() {
       setVin("");
       setAvailable([]);
       setScanNotice(null);
+      setCtPlate("");
+      setCtMileage("");
       if (Platform.OS === "web") {
         (globalThis as any).alert?.(notice);
       } else {
-        Alert.alert("Report ready", notice);
+        Alert.alert(isPending ? "Order placed" : "Report ready", notice);
       }
       if (orderId) {
         router.replace({ pathname: "/(app)/vin-reports/new", params: { orderId } } as any);
@@ -462,47 +491,96 @@ export default function VinReportsNewScreen() {
           </View>
         ) : (
           available.map((r) => (
-            <TouchableOpacity
-              key={r.id}
-              testID={`vin-reports-order-${r.id}`}
-              disabled={ordering !== null || !vin.trim()}
-              style={[
-                styles.reportRow,
-                { borderColor: colors.border, backgroundColor: colors.card, opacity: (!vin.trim() || (ordering && ordering !== r.id)) ? 0.55 : 1 },
-              ]}
-              onPress={() => orderReport(r)}
-              activeOpacity={0.85}
-            >
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.reportLbl}>{r.label}</Text>
-                <Text style={styles.reportSub}>{r.blurb}</Text>
-              </View>
-              <View style={{ alignItems: "flex-end", gap: 6, marginLeft: 8 }}>
-                <View style={[styles.costChip, { borderColor: colors.primary + "77", backgroundColor: colors.primary + "18" }]}>
-                  <Text style={[styles.costChipTxt, { color: colors.primary }]}>
-                    {r.cost_zar > 0 ? `R${r.cost_zar}` : "FREE"}
+            <View key={r.id}>
+              <TouchableOpacity
+                testID={`vin-reports-order-${r.id}`}
+                disabled={ordering !== null || !vin.trim()}
+                style={[
+                  styles.reportRow,
+                  { borderColor: colors.border, backgroundColor: colors.card, opacity: (!vin.trim() || (ordering && ordering !== r.id)) ? 0.55 : 1 },
+                ]}
+                onPress={() => orderReport(r)}
+                activeOpacity={0.85}
+              >
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.reportLbl}>{r.label}</Text>
+                  <Text style={styles.reportSub}>{r.blurb}</Text>
+                </View>
+                <View style={{ alignItems: "flex-end", gap: 6, marginLeft: 8 }}>
+                  <View style={[styles.costChip, { borderColor: colors.primary + "77", backgroundColor: colors.primary + "18" }]}>
+                    <Text style={[styles.costChipTxt, { color: colors.primary }]}>
+                      {r.cost_zar > 0 ? `R${r.cost_zar}` : "FREE"}
+                    </Text>
+                  </View>
+                  {ordering === r.id ? (
+                    <ActivityIndicator color={colors.primary} size="small" />
+                  ) : (
+                    <Ionicons name="arrow-forward-circle" size={22} color={colors.primary} />
+                  )}
+                </View>
+              </TouchableOpacity>
+
+              {/* CarTrust extras — plate + mileage inputs shown inline
+                  when this row is the CarTrust report. Both are required
+                  before Kredo will accept the order. */}
+              {r.id === "kredo_cartrust" ? (
+                <View style={[styles.ctExtrasBox, { borderColor: colors.border, backgroundColor: colors.card + "88" }]}>
+                  <Text style={[styles.stepLabel, { marginBottom: 6 }]}>CarTrust extras (required)</Text>
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.ctExtraLbl}>License plate</Text>
+                      <TextInput
+                        testID="vin-reports-ct-plate"
+                        style={styles.ctExtraInput}
+                        value={ctPlate}
+                        onChangeText={(t) => setCtPlate(t.toUpperCase())}
+                        placeholder="e.g. CA123456"
+                        placeholderTextColor={colors.textDisabled}
+                        autoCapitalize="characters"
+                        autoCorrect={false}
+                        maxLength={12}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.ctExtraLbl}>Mileage (km)</Text>
+                      <TextInput
+                        testID="vin-reports-ct-mileage"
+                        style={styles.ctExtraInput}
+                        value={ctMileage}
+                        onChangeText={(t) => setCtMileage(t.replace(/[^0-9]/g, ""))}
+                        placeholder="e.g. 45000"
+                        placeholderTextColor={colors.textDisabled}
+                        keyboardType="number-pad"
+                        maxLength={7}
+                      />
+                    </View>
+                  </View>
+                  <Text style={{ color: colors.textSecondary, fontSize: 11, marginTop: 6, lineHeight: 15 }}>
+                    Delivered asynchronously — the PDF usually lands within 1–2 minutes and you are only billed on success.
                   </Text>
                 </View>
-                {ordering === r.id ? (
-                  <ActivityIndicator color={colors.primary} size="small" />
-                ) : (
-                  <Ionicons name="arrow-forward-circle" size={22} color={colors.primary} />
-                )}
-              </View>
-            </TouchableOpacity>
+              ) : null}
+            </View>
           ))
         )}
       </ScrollView>
 
-      {/* MAKE PICKER — full-screen modal with a search input. */}
+      {/* MAKE PICKER — full-screen modal with a search input.
+
+          On iOS the native <Modal> presents outside the app-level
+          SafeAreaProvider, so the `SafeAreaView` inside it does NOT get
+          real insets (top comes back as 0). We instead read the insets
+          from the parent context and apply them manually as top padding
+          on the header row — this is the recommended pattern from
+          `react-native-safe-area-context` for modal contents. */}
       <Modal visible={makePickerOpen} animationType="slide" transparent={false}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={["top"]}>
+        <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: Platform.OS === "ios" ? insets.top : 0 }}>
           <View style={styles.pickerHead}>
-            <TouchableOpacity onPress={() => setMakePickerOpen(false)} style={{ padding: 6 }}>
-              <Ionicons name="close" size={22} color={colors.text} />
+            <TouchableOpacity onPress={() => setMakePickerOpen(false)} style={styles.pickerCloseBtn}>
+              <Ionicons name="close" size={24} color={colors.text} />
             </TouchableOpacity>
             <Text style={styles.pickerTitle}>Choose a make</Text>
-            <View style={{ width: 22 }} />
+            <View style={{ width: 40 }} />
           </View>
           <View style={{ paddingHorizontal: spacing.md }}>
             <View style={[styles.searchBox, { borderColor: colors.border, backgroundColor: colors.card }]}>
@@ -517,7 +595,7 @@ export default function VinReportsNewScreen() {
               />
             </View>
           </View>
-          <ScrollView contentContainerStyle={{ padding: spacing.md, paddingBottom: 96 }}>
+          <ScrollView contentContainerStyle={{ padding: spacing.md, paddingBottom: 96 + insets.bottom }}>
             {filteredMakes.map((m) => (
               <TouchableOpacity
                 key={m}
@@ -531,7 +609,7 @@ export default function VinReportsNewScreen() {
               </TouchableOpacity>
             ))}
           </ScrollView>
-        </SafeAreaView>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -712,13 +790,47 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: spacing.md,
     paddingVertical: 12,
+    minHeight: 52,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+  },
+  pickerCloseBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
   },
   pickerTitle: {
     color: colors.text,
     fontSize: 17,
     fontWeight: "800",
+  },
+  ctExtrasBox: {
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: 12,
+    marginTop: 8,
+  },
+  ctExtraLbl: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+    textTransform: "uppercase" as const,
+    marginBottom: 4,
+  },
+  ctExtraInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    borderRadius: radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "700",
+    letterSpacing: 0.4,
   },
   searchBox: {
     flexDirection: "row",

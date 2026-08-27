@@ -1,0 +1,44 @@
+{
+  "summary": "VIN Reports Jan-2026 changes tested (backend + frontend). Makes catalog merge works — Suzuki, all 12 admin makes, Porsche & Ferrari present. Available reports for Suzuki includes vin_history and kredo_cartrust. CarTrust valid submission returns async_pending=true with status=pending as designed, and regression vin_history still completes end-to-end. Frontend flow verified end-to-end: dealer login → /vin-reports/new → make picker shows Suzuki → BMW select → CarTrust row + inline plate/mileage inputs render → valid submit produces 'CarTrust order placed' async notice and navigates to the pending-order view. HOWEVER one HIGH backend bug found: POST /api/vin-reports/order for kredo_cartrust returns 502 (via Cloudflare 'Bad gateway' HTML page) instead of 400 when registration_number or mileage are missing/invalid — root cause is that the HTTPException(400) raised inside the vendor-dispatch try/except in routes/vin_reports.py is caught by `except HTTPException as e` and coerced into `HTTPException(502, 'Report failed: ...')`.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/vin-reports/order (report_type=kredo_cartrust)",
+        "issue": "Missing registration_number OR mileage<=0 returns 502 (Cloudflare wraps FastAPI's 502 into a Bad Gateway HTML page) instead of the expected 400 with 'Registration number is required' / 'A valid mileage (km) is required'. Root cause: the HTTPException(400) raised inside the CarTrust branch (routes/vin_reports.py lines 296-300) is caught by the outer `except HTTPException as e: error = str(...)` block (lines 351-353), then rethrown as HTTPException(502, f'Report failed: {error}') at line 369. The 400 validation should either happen BEFORE the try/except, or the except HTTPException handler should re-raise 4xx exceptions unchanged.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_vin_reports_cartrust.py",
+    "/app/test_reports/pytest/iteration_70_vin_reports.xml"
+  ],
+  "action_items": [
+    "Fix routes/vin_reports.py CarTrust validation: hoist the registration_number / mileage validation OUT of the vendor-dispatch try/except so HTTPException(400) propagates correctly. Suggested patch: perform the plate + mileage checks after `entry = _catalog_entry(...)` and before `await db.vin_report_orders.insert_one(base_row)`. Alternatively, change the outer `except HTTPException as e:` clause to `if e.status_code < 500: raise` before assigning to `error`.",
+    "Re-run test_vin_reports_cartrust.py::TestCarTrustOrderValidation to confirm both missing_registration and zero_mileage cases return 400 with the intended message."
+  ],
+  "critical_code_review_comments": [
+    "routes/vin_reports.py: the outer `except HTTPException` at line 351 swallows and mis-classifies caller-side 4xx errors as vendor 502s. Any future validation raised inside the vendor branch will suffer the same fate.",
+    "routes/vin_reports.py list_supported_makes: merge logic looks correct; case-insensitive dedupe against Outvin + Porsche + Ferrari. Verified 79 makes returned in prod-like env.",
+    "frontend/app/(app)/vin-reports/new.tsx: the modal's `paddingTop: Platform.OS === 'ios' ? insets.top : 0` correctly protects iOS notch; verified in web preview the X close button sits at y≈26 (title y≈32) — safe on Android/web (no inset) and will offset on iOS builds."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_vin_reports_cartrust.py (new)"
+  ],
+  "success_rate": {
+    "backend": "78% (7/9 pytest cases pass — 2 failures both stem from the SAME 4xx→502 bug)",
+    "frontend": "100% (all UI flow steps pass: login → agreement accept → picker → Suzuki present → BMW select → VIN → CarTrust row + inline inputs → valid submit → 'Order placed' notice → pending order view)"
+  },
+  "seed_data_creation": "Created dealer user minitest@example.com (password 'password') under Karam Motors dealership via POST /api/admin/dealerships/{id}/users. SA ID 9001015800086. Used across pytest + Playwright.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Dealer minitest@example.com/password now exists under Karam Motors. When re-running test_vin_reports_cartrust.py the two CarTrust validation cases should turn from 502 → 400 once the vin_reports.py exception-handling is fixed. The valid CarTrust path DOES create a pending vin_report_orders row (real Kredo call succeeds and returns client_guid) — clean these up periodically. Playwright note: the app blocks with a first-login TRADEAPP PRICING AGREEMENT modal; click 'I ACCEPT' before navigating.",
+  "rca_of_issue": "BUG: 4xx validation errors from CarTrust dispatch are converted to 502. Reproduce: POST /api/vin-reports/order with report_type=kredo_cartrust and no registration_number (or mileage=0). Expected 400 'Registration number is required to order a CarTrust report.' — Actual 502 (Cloudflare Bad Gateway HTML). Backend log confirms FastAPI returned 502 (not upstream failure). Trace: routes/vin_reports.py line 296 raises HTTPException(400) → line 351 `except HTTPException as e` catches it and sets `error = 'Registration number is required...'` → line 358-369 stamps status=failed and raises HTTPException(502, f'Report failed: {error}'). Mitigation: move plate/mileage validation before the try block, or narrow the except to `except HTTPException as e: if e.status_code >= 500: error = ...; else: raise`."
+}

@@ -1,3 +1,11 @@
+# TradeAPP — Product Requirements (Latest)
+
+## Recent Update — VIN Reports UI & CarTrust Ordering (2026-08-27)
+- **Full make catalog** — `/api/vin-reports/makes` now unions `db.makes` (admin-managed catalog, 12 makes including **Suzuki**) with Outvin's supported list and adds Porsche + Ferrari. No more "missing make" gaps.
+- **CarTrust orderable from VIN Reports** — Selecting "CarTrust NaTIS History" reveals inline **License Plate + Mileage** inputs. Order returns immediately as `pending`; the existing Kredo webhook fills in the PDF & bills only on success.
+- **iOS Safe Area fix** — Make picker header now correctly clears the notch using `useSafeAreaInsets` (native `<Modal>` doesn't inherit the app-level `SafeAreaProvider`, so we apply top padding manually).
+- **Robust 4xx validation** — Client errors from CarTrust (missing plate / zero mileage) now propagate as **400** with a clear message instead of being collapsed into a generic 502.
+
 # TradeAPP — PRD
 
 ## Latest Change: Fourbuy → TradeAPP Full Rebrand (Feb 2027)

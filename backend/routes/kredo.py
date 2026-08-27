@@ -1320,29 +1320,67 @@ async def kredo_cartrust_callback(request: Request):
             {"vin": vin, "reports.kredo_cartrust.status": "completed"},
             {"_id": 0, "id": 1},
         )
+
+    # ------------------------------------------------------------------
+    # Second search path — standalone VIN Report orders (from the
+    # /vin-reports flow). These live in `db.vin_report_orders` and
+    # don't have an owning submission. Match strategy mirrors the
+    # submission path: pending row by VIN → client_guid → completed
+    # row by VIN as a last resort.
+    # ------------------------------------------------------------------
+    vin_order: Optional[dict] = None
     if not sub:
-        logger.warning("cartrust_callback: no matching submission for vin=%s", vin)
+        vin_order = await db.vin_report_orders.find_one(
+            {"vin": vin, "report_type": "kredo_cartrust", "status": "pending"},
+            {"_id": 0, "id": 1},
+        )
+        if not vin_order:
+            client_guid = payload.get("client_guid") or payload.get("clientGuid")
+            if client_guid:
+                vin_order = await db.vin_report_orders.find_one(
+                    {"report_type": "kredo_cartrust", "kredo_client_guid": client_guid},
+                    {"_id": 0, "id": 1},
+                )
+        if not vin_order and vin:
+            vin_order = await db.vin_report_orders.find_one(
+                {"vin": vin, "report_type": "kredo_cartrust", "status": "completed"},
+                {"_id": 0, "id": 1},
+            )
+
+    if not sub and not vin_order:
+        logger.warning("cartrust_callback: no matching submission or vin-report order for vin=%s", vin)
         return {"ok": True, "matched": False}
 
-    sub_id = sub["id"]
+    sub_id = sub["id"] if sub else None
+    vin_order_id = vin_order["id"] if vin_order else None
     now = now_utc()
 
     if kredo_status in ("failed", "error", "rejected"):
-        await db.submissions.update_one(
-            {"id": sub_id},
-            {"$set": {
-                "reports.kredo_cartrust.status": "failed",
-                "reports.kredo_cartrust.failed_at": now,
-                "reports.kredo_cartrust.error": payload.get("error") or payload.get("message"),
-            }},
-        )
+        if sub_id:
+            await db.submissions.update_one(
+                {"id": sub_id},
+                {"$set": {
+                    "reports.kredo_cartrust.status": "failed",
+                    "reports.kredo_cartrust.failed_at": now,
+                    "reports.kredo_cartrust.error": payload.get("error") or payload.get("message"),
+                }},
+            )
+        if vin_order_id:
+            await db.vin_report_orders.update_one(
+                {"id": vin_order_id},
+                {"$set": {
+                    "status": "failed",
+                    "error": payload.get("error") or payload.get("message") or "Kredo reported failure",
+                    "completed_at": now,
+                }},
+            )
         return {"ok": True, "matched": True, "status": "failed"}
 
     fetched: Optional[dict] = None
     fetch_error: Optional[str] = None
     if download_url:
         try:
-            fetched = await _fetch_and_host_cartrust_pdf(sub_id, download_url)
+            fetched = await _fetch_and_host_cartrust_pdf(sub_id or vin_order_id, download_url)
         except Exception as e:
             fetch_error = f"{type(e).__name__}: {e}"
             logger.exception("cartrust_callback: fetch/host failed")
@@ -1386,7 +1424,7 @@ async def kredo_cartrust_callback(request: Request):
             or summary.get("last_change") is None
             or not summary.get("timeline")
         )
-        if needs_pdf and fetched.get("pdf_b64"):
+        if needs_pdf and fetched and fetched.get("pdf_b64"):
             try:
                 pdf_summary = _pdf_extract_ownership_summary(
                     _base64.b64decode(fetched["pdf_b64"])
@@ -1401,7 +1439,77 @@ async def kredo_cartrust_callback(request: Request):
                 logger.exception("cartrust callback: PDF ownership summary scan failed")
         set_updates["reports.kredo_cartrust.ownership_summary"] = summary
 
-    await db.submissions.update_one({"id": sub_id}, {"$set": set_updates})
+    if sub_id:
+        await db.submissions.update_one({"id": sub_id}, {"$set": set_updates})
+
+    if vin_order_id:
+        # Mirror the completed callback onto the vin_report_orders row.
+        # Store the PDF payload + ownership block under `result_data`
+        # so the standalone /api/vin-reports/{id} endpoint has a single
+        # coherent blob to return. We also stamp billing here (this is
+        # the auth point for cartrust — we only charge on a successful
+        # PDF fetch).
+        completed_ok = bool(fetched)
+        result_data = {
+            "callback_payload": payload,
+            "pdf_url": download_url,
+            "pdf_b64": (fetched or {}).get("pdf_b64"),
+            "pdf_size_bytes": (fetched or {}).get("size_bytes"),
+            "pdf_public_id": (fetched or {}).get("pdf_public_id"),
+            "ownership_status": ownership_status,
+        }
+        if ownership_status == "populated" and "reports.kredo_cartrust.ownership_summary" in set_updates:
+            result_data["ownership_summary"] = set_updates["reports.kredo_cartrust.ownership_summary"]
+
+        # Look up the order so we know the flat fee to bill.
+        order_row = await db.vin_report_orders.find_one({"id": vin_order_id}, {"_id": 0})
+        cost_zar = 100  # CarTrust flat fee mirrored from vin_reports.REPORT_CATALOG
+        billing_charge_cents = cost_zar * 100 if completed_ok else 0
+        vin_updates = {
+            "status": "completed" if completed_ok else "failed",
+            "result_data": result_data,
+            "completed_at": now,
+            "cost_zar": cost_zar if completed_ok else 0,
+            "billing_charge_cents": billing_charge_cents,
+            "billed": completed_ok,
+        }
+        if not completed_ok:
+            vin_updates["error"] = fetch_error or "Vendor could not deliver the PDF."
+        await db.vin_report_orders.update_one({"id": vin_order_id}, {"$set": vin_updates})
+
+        # Mirror into db.report_orders (billing) — only when we truly
+        # billed. Idempotent via `vin_report_order_id`.
+        if completed_ok and order_row and order_row.get("dealership_id"):
+            await db.report_orders.update_one(
+                {"vin_report_order_id": vin_order_id},
+                {"$setOnInsert": {
+                    "id": vin_order_id,
+                    "vin_report_order_id": vin_order_id,
+                    "submission_id": None,
+                    "dealer_id": order_row.get("user_id"),
+                    "dealership_id": order_row.get("dealership_id"),
+                    "vin": order_row.get("vin"),
+                    "make": order_row.get("make"),
+                    "type": "vin_reports.kredo_cartrust",
+                    "name": order_row.get("report_label") or "CarTrust NaTIS History",
+                    "cost_zar": cost_zar,
+                    "status": "delivered",
+                    "ordered_at": order_row.get("ordered_at") or now,
+                    "ordered_by": order_row.get("user_id"),
+                    "ordered_by_name": order_row.get("ordered_by_name"),
+                    "delivered_at": now,
+                    "note": "Standalone VIN Report — CarTrust.",
+                    "billed": True,
+                }},
+                upsert=True,
+            )
+            # Debit the dealership wallet.
+            try:
+                from routes.billing import _recompute_wallet as _bill_recompute
+                await _bill_recompute(order_row["dealership_id"])
+            except Exception as e:
+                logger.warning("cartrust vin-report wallet debit failed (non-blocking): %s", e)
+
     return {"ok": True, "matched": True, "status": "completed", "ownership_status": ownership_status}
 
 

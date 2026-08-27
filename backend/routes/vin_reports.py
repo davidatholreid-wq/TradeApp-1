@@ -95,6 +95,14 @@ REPORT_CATALOG: list[dict[str, Any]] = [
         "supports": is_outvin_supported_make,
     },
     {
+        "id": "kredo_cartrust",
+        "label": "CarTrust NaTIS History",
+        "cost_zar": 100,
+        "blurb": "NaTIS-linked ownership history, colour, engine/chassis alignment and mileage timeline.",
+        # CarTrust works for any registered SA vehicle regardless of make.
+        "supports": lambda make: True,
+    },
+    {
         "id": "porsche_vin",
         "label": "Porsche VIN Decode",
         "cost_zar": 20,
@@ -143,22 +151,34 @@ def _available_for_make(make: str) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 @router.get("/vin-reports/makes")
 async def list_supported_makes(_: dict = Depends(get_current_user)):
-    """Return a de-duplicated list of makes any vendor supports.
-    Currently just Outvin's list is authoritative (broadest) — BMW /
-    Mercedes-Benz are already in it — plus `vin_history` which is
-    always-True, plus Porsche which has its own rule-based decoder.
-    Frontend shows this as a dropdown.
+    """Return a de-duplicated list of makes the platform knows about.
+
+    Union of THREE sources so no dealer ever gets stuck without a make:
+      1. ``db.makes`` — the canonical catalog seeded from admin. This
+         matches what dealers see when submitting a valuation and is
+         the source of truth for "makes the platform supports today".
+      2. Outvin's supported-marque list — even if a make isn't in the
+         admin catalog yet, if Outvin covers it we should still let
+         users pull an OEM decode.
+      3. ``Porsche`` and ``Ferrari`` — served by our own rule-based
+         VIN decoders (no vendor dependency).
+
+    All three are merged case-insensitively, then sorted alphabetically.
     """
-    # Outvin's list is title-case; we return it verbatim so the UI can
-    # display "Mercedes-Benz" exactly as the vendor sees it. Porsche
-    # and Ferrari aren't in Outvin's dataset (see conversation with
-    # the user 2026-08-15 / 2026-08-16) so we append them separately.
-    makes = list(OUTVIN_SUPPORTED_MAKES)
-    for extra in ("Porsche", "Ferrari"):
-        if not any(str(m).strip().upper() == extra.upper() for m in makes):
-            makes.append(extra)
-    makes.sort()
-    return {"makes": makes}
+    # Start with the admin-managed catalog — this is the same list the
+    # /submit picker uses so dealers see a coherent set of makes.
+    catalog = await db.makes.find({}, {"_id": 0, "name": 1}).to_list(1000)
+    names: list[str] = [m.get("name") for m in catalog if m.get("name")]
+
+    # Merge in vendor-supported makes we might not have in the catalog
+    # yet — Outvin covers ~30+ marques (very broad), plus Porsche and
+    # Ferrari for our rule-based decoders.
+    for extra in list(OUTVIN_SUPPORTED_MAKES) + ["Porsche", "Ferrari"]:
+        if not any(str(m).strip().upper() == extra.strip().upper() for m in names):
+            names.append(extra)
+
+    names.sort(key=lambda s: str(s).upper())
+    return {"makes": names}
 
 
 @router.get("/vin-reports/available")
@@ -183,6 +203,12 @@ class VinReportOrderRequest(BaseModel):
     # can accept a model hint, Outvin doesn't; we forward whatever's
     # supplied.
     model_hint: Optional[str] = None
+    # Required only for kredo_cartrust — the NaTIS registry key on
+    # this VIN + the current odometer. The frontend prompts for these
+    # inline when CarTrust is selected.
+    registration_number: Optional[str] = None
+    mileage: Optional[int] = None
+    vehicle_condition: Optional[str] = None
 
 
 @router.post("/vin-reports/order")
@@ -249,6 +275,7 @@ async def order_vin_report(
     # Dispatch to the appropriate vendor.
     result: Optional[dict[str, Any]] = None
     error: Optional[str] = None
+    is_async_pending = False   # Set true for cartrust — bill on callback
     try:
         if entry["id"] == "vin_history":
             raw = await get_kredo_client().vin_history(vin)
@@ -259,6 +286,51 @@ async def order_vin_report(
             result = await fetch_mb_datacard(vin)
         elif entry["id"] == "outvin":
             result = await fetch_outvin_spec(vin)
+        elif entry["id"] == "kredo_cartrust":
+            # CarTrust is an async webhook-based report. The dealer
+            # must supply a license plate + mileage — VIN alone isn't
+            # enough for Kredo's NaTIS lookup. We store the order as
+            # `pending`, kick off Kredo, and let the existing
+            # /api/kredo/cartrust/callback fill in the PDF once ready.
+            reg = (payload.registration_number or "").strip().upper().replace(" ", "")
+            if len(reg) < 4:
+                raise HTTPException(400, "Registration number is required to order a CarTrust report.")
+            mileage_val = int(payload.mileage or 0)
+            if mileage_val <= 0:
+                raise HTTPException(400, "A valid mileage (km) is required to order a CarTrust report.")
+            condition = (payload.vehicle_condition or "Used").strip() or "Used"
+
+            # Build a friendly requester profile from whatever the caller
+            # has attached to their user row.
+            dealer_info = current.get("dealer_info") or {}
+            ack = await get_kredo_client().order_cartrust_pdf(
+                requester_name=(dealer_info.get("first_name") or current.get("name") or current.get("email") or "Dealer"),
+                requester_surname=(dealer_info.get("last_name") or "User"),
+                requester_email=current.get("email") or "noreply@tradeapp.co.za",
+                requester_phone=(dealer_info.get("phone") or "0000000000"),
+                vin=vin,
+                registration_number=reg,
+                mileage=mileage_val,
+                vehicle_condition=condition,
+                manufacturer=make,
+            )
+            # We DON'T bill / complete here — Kredo will POST to
+            # /api/kredo/cartrust/callback with the presigned PDF URL
+            # (usually inside 60 seconds). The callback updates the
+            # same order row.
+            await db.vin_report_orders.update_one(
+                {"id": order_id},
+                {"$set": {
+                    "status": "pending",
+                    "kredo_ack": ack,
+                    "kredo_client_guid": (ack or {}).get("client_guid"),
+                    "registration_number": reg,
+                    "mileage": mileage_val,
+                    "vehicle_condition": condition,
+                }},
+            )
+            is_async_pending = True
+            result = None   # not ready yet
         elif entry["id"] == "porsche_vin":
             # Pure rule-based decode — no external call, no failure
             # mode beyond "malformed VIN" which we surface as a 400
@@ -277,7 +349,23 @@ async def order_vin_report(
     except KredoAPIError as e:
         error = f"Kredo error: {e}"
     except HTTPException as e:
-        # Vendor client-side validation — surface the detail.
+        # 4xx from client-side validation (missing plate, bad mileage,
+        # decoder rejecting VIN etc) must propagate unchanged — those
+        # tell the caller EXACTLY what to fix and are not vendor
+        # failures. Only 5xx-shape HTTPExceptions get collapsed into
+        # the generic 502 "report failed" envelope below.
+        if getattr(e, "status_code", 500) < 500:
+            # Mark the order as failed so it doesn't linger in `pending`
+            # forever, then re-raise the original 4xx verbatim.
+            await db.vin_report_orders.update_one(
+                {"id": order_id},
+                {"$set": {
+                    "status": "failed",
+                    "error": str(getattr(e, "detail", e)),
+                    "completed_at": now_utc(),
+                }},
+            )
+            raise
         error = str(getattr(e, "detail", e))
     except Exception as e:  # pragma: no cover — vendor edge cases
         logger.exception("vin_reports: vendor call failed for %s / %s", entry["id"], vin)
@@ -295,6 +383,12 @@ async def order_vin_report(
         # 502 so the client can distinguish "we couldn't deliver" from
         # "you're not allowed" (403) or "bad request" (400).
         raise HTTPException(502, f"Report failed: {error}")
+
+    # Async report — return the pending row immediately. Kredo's callback
+    # will flip it to `completed` (billing + PDF stamped there).
+    if is_async_pending:
+        row = await db.vin_report_orders.find_one({"id": order_id}, {"_id": 0})
+        return {"order": row, "async_pending": True}
 
     # Some vendors return empty payloads for VINs they don't have —
     # treat those as failed so we don't bill for nothing. Bimmervin /
@@ -820,6 +914,27 @@ async def get_order_pdf(
         raise HTTPException(403, "You cannot access this order")
     if (row.get("status") or "") != "completed":
         raise HTTPException(400, "Report is not ready yet.")
+
+    # CarTrust is a vendor-hosted PDF — Kredo delivers a fully-formatted
+    # NaTIS report we cannot recreate. Serve those bytes directly rather
+    # than the local ReportLab builder.
+    if row.get("report_type") == "kredo_cartrust":
+        rd = row.get("result_data") or {}
+        pdf_b64 = rd.get("pdf_b64")
+        if pdf_b64:
+            import base64 as _b64
+            try:
+                pdf_bytes = _b64.b64decode(pdf_b64)
+            except Exception as e:
+                raise HTTPException(500, f"Failed to decode CarTrust PDF: {e}")
+            fn = f"cartrust_{row.get('vin') or order_id[:8]}.pdf"
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'inline; filename="{fn}"'},
+            )
+        raise HTTPException(500, "CarTrust PDF is not available on this order.")
+
     try:
         pdf_bytes = _build_vin_report_pdf(row)
     except Exception as e:  # pragma: no cover
